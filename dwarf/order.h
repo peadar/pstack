@@ -1,0 +1,2 @@
+DWARF_ORDERING(DW_ORD_row_major, 0)
+DWARF_ORDERING(DW_ORD_col_major, 1)
