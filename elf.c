@@ -56,31 +56,41 @@ static unsigned long	elf_hash(const char *name);
 
 #define READOBJ(file, offset, object) \
     (fseek(file, offset, SEEK_SET) == 0 && fread(&object, sizeof object, 1, file) == 1)
+#define READELE(file, base, idx, object) \
+    (fseek(file, base + idx * sizeof object, SEEK_SET) == 0 && fread(&object, sizeof object, 1, file) == 1)
 
 #define READDAT(file, offset, size, data) \
     (fseek(file, offset, SEEK_SET) == 0 && fread(data, 1, size, file) == 1)
 
 
-
-const char *
-readString(struct ElfObject *obj, size_t offset)
+size_t
+elfStrlen(struct ElfObject *obj, size_t offset)
 {
     int c, count;
-    char *rv;
     if (fseek(obj->file, offset, SEEK_SET) == 0)
         return 0;
     do {
         c = fgetc(obj->file);
         count++;
     } while (c != 0 && c != -1);
-    rv = elfAlloc(obj, count);
-    if (fseek(obj->file, offset, SEEK_SET))
-        return 0;
-    if (fread(rv, 1, count, obj->file) != count)
-        return 0;
-    return rv;
+    return count;
 }
 
+const char *
+readString(struct ElfObject *obj, size_t offset, char *buf, size_t maxlen)
+{
+    size_t len = elfStrlen(obj, offset);
+    if (buf == 0)
+        buf = elfAlloc(obj, len);
+    if (fseek(obj->file, offset, SEEK_SET))
+        return 0;
+    size_t count = MIN(len, maxlen - 1);
+    if (fread(buf, 1, count, obj->file) != count)
+        return 0;
+    if (maxlen - 1 < len)
+        buf[maxlen - 1] = 0;
+    return buf;
+}
 
 
 int
@@ -117,7 +127,7 @@ elfLoadObjectFromData(FILE *content, size_t size, struct ElfObject **objp)
             return -1;
         switch (pHdrs[i].p_type) {
         case PT_INTERP:
-                obj->interpreterName = readString(obj, pHdrs[i].p_offset);
+                obj->interpreterName = readString(obj, pHdrs[i].p_offset, 0, 0);
                 break;
         case PT_DYNAMIC:
                 obj->dynamic = pHdrs + i;
@@ -138,7 +148,8 @@ elfLoadObjectFromData(FILE *content, size_t size, struct ElfObject **objp)
         Elf_Shdr *sshdr = &sHdrs[eHdr->e_shstrndx];
         char *p;
         obj->sectionStrings = p = elfAlloc(obj, sshdr->sh_size);
-        READDAT(content, sshdr->sh_offset, sshdr->sh_size, p);
+        if (!READDAT(content, sshdr->sh_offset, sshdr->sh_size, p))
+            return -1;
     } else {
         obj->sectionStrings = 0;
     }
@@ -149,13 +160,13 @@ elfLoadObjectFromData(FILE *content, size_t size, struct ElfObject **objp)
 
 const char *getSectionContent(struct ElfObject *obj, size_t section)
 {
-    if (section == SHN_UNDEF)
-        return 0;
+
+    const Elf_Shdr *sh = &obj->sectionHeaders[section];
     if (obj->sectionContents[section] == 0) {
-        Elf_Shdr *sh = &obj->sectionHeaders[section];
-        char *p;
-        obj->sectionContents[section] = p = elfAlloc(obj, sh->sh_size);
-        READDAT(obj-file, sh->sh_offset, sh->sh_size, p);
+        char *p = elfAlloc(obj, sh->sh_size);
+        obj->sectionContents[section] = p;
+        if (!READDAT(obj->file, sh->sh_offset, sh->sh_size, p))
+            return 0;
     }
     return obj->sectionContents[section];
 }
@@ -163,7 +174,6 @@ const char *getSectionContent(struct ElfObject *obj, size_t section)
 int
 elfLoadObject(const char *fileName, struct ElfObject **objp)
 {
-    unsigned char *data;
     FILE *file;
     int rc;
     struct stat sb;
@@ -176,7 +186,7 @@ elfLoadObject(const char *fileName, struct ElfObject **objp)
     if (rc == 0) {
         (*objp)->fileName = elfStrdup((*objp), fileName);
     } else {
-        munmap(data, sb.st_size);
+        fclose(file);
     }
     return rc;
 }
@@ -187,17 +197,17 @@ elfLoadObject(const char *fileName, struct ElfObject **objp)
  * Given an Elf object, find a particular section.
  */
 int
-elfFindSectionByName(struct ElfObject *obj, const char *name,
-			const Elf_Shdr **shdrp)
+elfFindSectionByName(struct ElfObject *obj, const char *name, const Elf_Shdr **shdrp)
 {
     int i;
 
     for (i = 0; i < obj->elfHeader.e_shnum; i++)
         if (strcmp(obj->sectionHeaders[i].sh_name + obj->sectionStrings, name) == 0) {
-            *shdrp = &obj->sectionHeaders[i];
-            return (0);
+            if (shdrp)
+                *shdrp = &obj->sectionHeaders[i];
+            return i;
         }
-    return (-1);
+    return SHN_UNDEF;
 }
 
 /*
@@ -211,114 +221,146 @@ elfFindSectionByName(struct ElfObject *obj, const char *name,
  */
 int
 elfFindSymbolByAddress(struct ElfObject *obj, Elf_Addr addr,
-			int type, const Elf_Sym **symp, const char **namep)
+			int type, Elf_Sym *symp, off_t *nameoff)
 {
-    const Elf_Shdr *symSection, *shdrs;
-    const Elf_Sym *sym, *endSym;
-    const char *symStrings;
+    const Elf_Shdr *symSection, *shdrs, *stringSection;
+    Elf_Sym sym;
     const char *sectionNames[] = { ".dynsym", ".symtab", 0 };
-    int i, exact = 0;
+    int i, exact = 0, rc = -1;
 
     /* Try to find symbols in these sections */
-    *symp = 0;
     shdrs = obj->sectionHeaders;
     for (i = 0; sectionNames[i] && !exact; i++) {
-        if (elfFindSectionByName(obj, sectionNames[i],
-            &symSection) != 0)
-                continue;
+        int sectIdx = elfFindSectionByName(obj, sectionNames[i], &symSection);
+        if (sectIdx == SHN_UNDEF || symSection->sh_link == SHN_UNDEF)
+            continue;
         /*
          * Found the section in question: get the associated
-         * string section's data, and a pointer to the start
-         * and end of the table
+         * string section's data.
          */
-        symStrings = getSectionContent(obj, shdrs[symSection->sh_link]);
-        sym = (const Elf_Sym *)getSectionContent(obj, symSection);
 
-        endSym = (const Elf_Sym *)(obj->fileData + symSection->sh_offset + symSection->sh_size);
+        stringSection = &obj->sectionHeaders[symSection->sh_link];
 
-        for (; sym < endSym; sym++) {
-            if ((type == STT_NOTYPE || ELF_ST_TYPE(sym->st_info) == type) && sym->st_value <= addr && (shdrs[sym->st_shndx].sh_flags & SHF_ALLOC)) {
-                if (sym->st_size) {
-                    if (sym->st_size + sym->st_value > addr) {
+        for (off_t symOff = symSection->sh_offset
+                ; symOff < symSection->sh_offset + symSection->sh_size;) {
+            if (!READDAT(obj->file, symOff, sizeof sym, &sym))
+                return -1;
+            if ((type == STT_NOTYPE || ELF_ST_TYPE(symp->st_info) == type)
+                        && sym.st_value <= addr
+                        && (shdrs[sym.st_shndx].sh_flags & SHF_ALLOC)) {
+                if (sym.st_size) {
+                    if (sym.st_size + sym.st_value > addr) {
                         *symp = sym;
-                        *namep = symStrings + sym->st_name;
+                        *nameoff = stringSection->sh_offset + sym.st_name;
                         exact = 1;
+                        rc = 0;
                     }
                 } else {
-                    if ((*symp) == 0 || (*symp)->st_value < sym->st_value) {
+                    if (!exact || symp->st_value < sym.st_value) {
                         *symp = sym;
-                        *namep = symStrings +
-                        sym->st_name;
+                        *nameoff = stringSection->sh_offset + sym.st_name;
+                        rc = 0;
                     }
                 }
             }
         }
     }
-    return (*symp ? 0 : -1);
+    return rc;
 }
 
 int
-elfLinearSymSearch(struct ElfObject *o, const Elf_Shdr *hdr,
-			const char *name, const Elf_Sym **symp)
+elfLinearSymSearch(struct ElfObject *o, const Elf_Shdr *hdr, const char *name, Elf_Sym *symp)
 {
-    const char *symStrings;
-    const Elf_Sym *sym, *endSym;
+    off_t stringSection;
+    off_t symOff = hdr->sh_offset;
+    off_t endSym = hdr->sh_offset + hdr->sh_size;
+    int rc = -1;
+    size_t namlen = strlen(name) + 1;
+    char *buf = malloc(namlen);
 
-    symStrings = (const char *)o->fileData +
-        o->sectionHeaders[hdr->sh_link]->sh_offset;
+    if (hdr->sh_link == SHN_UNDEF)
+        goto err;
+    stringSection = o->sectionHeaders[hdr->sh_link].sh_offset;
+    Elf_Sym sym;
+    while (symOff < endSym) {
+        if (!READDAT(o->file, symOff, sizeof sym, &sym))
+            goto err;
 
-    sym = (const Elf_Sym *)(o->fileData + hdr->sh_offset);
-    endSym = (const Elf_Sym *)
-        (o->fileData + hdr->sh_offset + hdr->sh_size);
-    for (; sym < endSym; sym++)
-            if (!strcmp(symStrings + sym->st_name, name)) {
-                    *symp = sym;
-                    return (0);
-            }
-    return (-1);
+        if (readString(o, stringSection + sym.st_name, buf, namlen) == 0)
+            goto err;
+
+        if (strcmp(buf, name) == 0) {
+            rc = 0;
+            break;
+        }
+        symOff += sizeof sym;
+    }
+    *symp = sym;
+err:
+    free(buf);
+    return rc;
 }
 
 /*
  * Locate a symbol in an ELF image.
  */
 int
-elfFindSymbolByName(struct ElfObject *o, const char *name, const Elf_Sym **symp)
+elfFindSymbolByName(struct ElfObject *o, const char *name, Elf_Sym *symp)
 {
 	const Elf_Shdr *hash, *syms;
-	const char *symStrings;
-	const Elf_Sym *sym;
-	Elf_Word nbucket, nchain, i;
-	const Elf_Word *buckets, *chains, *hashData;
+	off_t symStrings, hashOff, symOff, buckets, chains;
+	Elf_Word nbucket, nchain;
 	unsigned long hashv;
+        int rc = -1;
+        char *buf = 0;
 
 	/* First, search the hashed symbols in .dynsym.  */
-	if (elfFindSectionByName(o, ".hash", &hash) == 0) {
-		syms = o->sectionHeaders[hash->sh_link];
-		hashData = (const Elf_Word *)(o->fileData + hash->sh_offset);
-		sym = (const Elf_Sym *)(o->fileData + syms->sh_offset);
-		symStrings = (const char *)(o->fileData +
-		    o->sectionHeaders[syms->sh_link]->sh_offset);
-		nbucket = hashData[0];
-		nchain = hashData[1];
-		buckets = hashData + 2;
-		chains = buckets + nbucket;
-		hashv = elf_hash(name) % nbucket;
-		for (i = buckets[hashv]; i != STN_UNDEF; i = chains[i])
-			if (strcmp(symStrings + sym[i].st_name, name) == 0) {
-				*symp = sym + i;
-				return (0);
-			}
-	} else if (elfFindSectionByName(o, ".dynsym", &syms) == 0) {
-		/* No ".hash", but have ".dynsym": do linear search */
-		if (elfLinearSymSearch(o, syms, name, symp) == 0)
-			return (0);
+        if (elfFindSectionByName(o, ".hash", &hash) != SHN_UNDEF) {
+            syms = &o->sectionHeaders[hash->sh_link];
+            hashOff = hash->sh_offset;
+            symOff = syms->sh_offset;
+            symStrings = o->sectionHeaders[syms->sh_link].sh_offset;
+
+            if (READELE(o->file, hashOff, 0, nbucket) == 0 || READELE(o->file, hashOff, 1, nchain) == 0)
+                goto err;
+
+            buckets = hashOff + 2 * sizeof (Elf_Word);
+            chains = buckets + nbucket * sizeof (Elf_Word);
+
+            size_t namlen = strlen(name) + 1;
+            buf = malloc(namlen);
+            hashv = elf_hash(name) % nbucket;
+            
+            Elf_Word symidx;
+            if (READELE(o->file, buckets, hashv, symidx) == 0)
+                goto err;
+            while (symidx != STN_UNDEF) {
+                Elf_Sym sym;
+                if (READELE(o->file, symOff, symidx, sym) == 0
+                || READELE(o->file, chains, symidx, symidx) == 0)
+                    goto err;
+
+                if (readString(o, symStrings + sym.st_name, buf, namlen) == 0)
+                    goto err;
+
+                if (strcmp(buf, name) == 0) {
+                    *symp = sym;
+                    rc = 0;
+                    goto err;
+                }
+            }
+        } else if (elfFindSectionByName(o, ".dynsym", &syms) != SHN_UNDEF) {
+            /* No ".hash", but have ".dynsym": do linear search */
+            if (elfLinearSymSearch(o, syms, name, symp) == 0)
+                    return (0);
 	}
 	/* Do a linear search of ".symtab" if present */
-	if (elfFindSectionByName(o, ".symtab", &syms) == 0 &&
+	if (elfFindSectionByName(o, ".symtab", &syms) != SHN_UNDEF &&
 	    elfLinearSymSearch(o, syms, name, symp) == 0) {
 		return (0);
 	}
-	return (-1);
+err:
+	return rc;
 }
 
 /*
@@ -330,35 +372,43 @@ elfGetNotes(struct ElfObject *obj,
 		u_int32_t type, const void *datap, size_t len), void *cookie)
 {
 	enum NoteIter iter;
-	const Elf_Phdr **phdr;
-	const Elf_Note *note;
-	const char *noteName;
-	const unsigned char *s, *e, *data;
+	const Elf_Phdr *phdr;
+	Elf_Note note;
+	off_t s, e, noteNameLen, dataLen;
+    char *noteName, *data;
 
-	for (phdr = obj->programHeaders; *phdr; phdr++) {
-		if ((*phdr)->p_type == PT_NOTE) {
-			s = obj->fileData + (*phdr)->p_offset;
-			e = s + (*phdr)->p_filesz;
-			while (s < e) {
-				note = (const Elf_Note *)s;
-				s += sizeof(*note);
-				noteName = (const char *)s;
-				s += roundup2(note->n_namesz, 4);
-				data = s;
-				s += roundup2(note->n_descsz, 4);
-				iter = callback(cookie, noteName,
-					note->n_type, data, note->n_descsz);
-				switch (iter) {
-				case NOTE_DONE:
-					return 0;
-				case NOTE_CONTIN:
-					break;
-				case NOTE_ERROR:
-					return -1;
-				}
-			}
-		}
-	}
+    for (size_t i = 0; i < obj->elfHeader.e_phnum; ++i) {
+        phdr = obj->programHeaders + i;
+        if (phdr->p_type == PT_NOTE) {
+            s = phdr->p_offset;
+            e = s + phdr->p_filesz;
+            while (s < e) {
+                if (READOBJ(obj->file, s, note))
+                    goto err;
+                s += sizeof(note);
+                noteNameLen = roundup2(note.n_namesz, 4);
+                noteName = malloc(noteNameLen);
+                readString(obj, s, noteName, noteNameLen);
+                s += noteNameLen;
+                dataLen = roundup2(note.n_descsz, 4);
+                data = malloc(dataLen);
+                readString(obj, s, data, dataLen);
+                s += dataLen;
+                iter = callback(cookie, noteName, note.n_type, data, note.n_descsz);
+                free(data);
+                free(noteName);
+                switch (iter) {
+                case NOTE_DONE:
+                        return 0;
+                case NOTE_CONTIN:
+                        break;
+                case NOTE_ERROR:
+                        return -1;
+                }
+            }
+        }
+    }
+err:
 	return -2;
 }
 
@@ -450,15 +500,10 @@ int
 elfUnloadObject(struct ElfObject *obj)
 {
 	struct ElfMemChunk *next, *chunk;
-	/* Hack to avoid casting away constness. */
-	union {
-		void *p;
-		const void *cp;
-	} u;
 
-	u.cp = obj->fileData;
-        if (u.cp)
-            munmap(u.p, obj->fileSize);
+    if (obj->file)
+        fclose(obj->file);
+
 	for (chunk = obj->mem; chunk != &obj->firstChunk; chunk = next) {
 	    next = chunk->next;
 	    free(chunk);
@@ -492,8 +537,8 @@ void
 elfDumpSection(FILE *f, struct ElfObject *obj, const Elf_Shdr *hdr,
 		size_t snapSize, int indent)
 {
-	const char *symStrings;
-	const Elf_Sym * sym, *esym;
+	off_t symStrings, esym, symoff;
+	Elf_Sym sym;
 	int i;
 	static const char *sectionTypeNames[] = {
 		"SHT_NULL",
@@ -534,19 +579,21 @@ elfDumpSection(FILE *f, struct ElfObject *obj, const Elf_Shdr *hdr,
 	switch (hdr->sh_type) {
 	case SHT_SYMTAB:
 	case SHT_DYNSYM:
-		symStrings = (const char *)(obj->fileData +
-		    obj->sectionHeaders[hdr->sh_link]->sh_offset);
-		sym = (const Elf_Sym *) (obj->fileData + hdr->sh_offset);
-		esym = (const Elf_Sym *) ((const char *)sym + hdr->sh_size);
-		for (i = 0; sym < esym; i++, sym++) {
+		symStrings = obj->sectionHeaders[hdr->sh_link].sh_offset;
+		symoff = hdr->sh_offset;
+		esym = symoff + hdr->sh_size;
+		for (i = 0; symoff < esym; i++, symoff += sizeof sym, ++i) {
+            if (READOBJ(obj->file, symoff, sym) == 0)
+                return;
 			printf("%ssymbol %d:\n", pad(indent), i);
-			elfDumpSymbol(f, sym, symStrings, indent + 4);
+			elfDumpSymbol(f, obj, &sym, symStrings, indent + 4);
 		}
 		break;
 	}
-	fprintf(f,"%sstart of data:\n", pad(indent));
-	hexdump(f, indent, obj->fileData + hdr->sh_offset,
-	    MIN(hdr->sh_size, snapSize));
+	fprintf(f,"%sstart of data: FIXME\n", pad(indent));
+
+	/*hexdump(f, indent, obj->fileData + hdr->sh_offset,
+	    MIN(hdr->sh_size, snapSize)); */
 }
 
 /*
@@ -590,16 +637,16 @@ elfDumpProgramSegment(FILE *f, struct ElfObject *obj, const Elf_Phdr *hdr,
 	fprintf(f, "%salignment = %jxH (%jd)\n",
 	    pad(indent), (intmax_t)hdr->p_align, (intmax_t)hdr->p_align);
 
-	fprintf(f, "%sstart of data:\n", pad(indent));
-	hexdump(f, indent, obj->fileData + hdr->p_offset,
-	    MIN(hdr->p_filesz, 64));
+	fprintf(f, "%sstart of data:FIXME\n", pad(indent));
+	//hexdump(f, indent, obj->fileData + hdr->p_offset,
+	 //   MIN(hdr->p_filesz, 64));
 }
 
 /*
  * Debug output of an Elf symbol.
  */
 void
-elfDumpSymbol(FILE *f, const Elf_Sym * sym, const char *strings, int indent)
+elfDumpSymbol(FILE *f, struct ElfObject *obj, const Elf_Sym * sym, off_t strings, int indent)
 {
 	static const char *bindingNames[] = {
 		"STB_LOCAL",
@@ -637,6 +684,16 @@ elfDumpSymbol(FILE *f, const Elf_Sym * sym, const char *strings, int indent)
 		"STT_LOPROC + 1",
 		"STT_HIPROC"
 	};
+    char *symname;
+
+    if (sym->st_name) {
+        size_t len = elfStrlen(obj, strings + sym->st_name);
+        symname = malloc(len + 1);
+        if (READDAT(obj->file, strings + sym->st_name, len, symname) == 0)
+            goto err;
+    } else {
+        symname = 0;
+    }
 
 	fprintf(f,
 	    "%sname = %s\n"
@@ -647,7 +704,7 @@ elfDumpSymbol(FILE *f, const Elf_Sym * sym, const char *strings, int indent)
 	    "%stype = %s\n"
 	    "%sother = %d (%xH)\n"
 	    "%sshndx = %d (%xH)\n",
-	    pad(indent), sym->st_name ? strings + sym->st_name : "(unnamed)",
+	    pad(indent), symname ? symname : "(unnamed)",
 	    pad(indent), (intmax_t)sym->st_value, (intmax_t)sym->st_value,
 	    pad(indent), (intmax_t)sym->st_size, (intmax_t)sym->st_size,
 	    pad(indent), sym->st_info, sym->st_info,
@@ -655,6 +712,9 @@ elfDumpSymbol(FILE *f, const Elf_Sym * sym, const char *strings, int indent)
 	    pad(indent + 4), typeNames[sym->st_info & 0xf],
 	    pad(indent), sym->st_other, sym->st_other,
 	    pad(indent), sym->st_shndx, sym->st_shndx);
+
+err:
+    free(symname);
 }
 
 /*
@@ -662,7 +722,7 @@ elfDumpSymbol(FILE *f, const Elf_Sym * sym, const char *strings, int indent)
  */
 
 void
-elfDumpDynamic(FILE *f, const Elf_Dyn *dyn, int indent)
+elfDumpDynamic(FILE *f, struct ElfObject *obj, const Elf_Dyn *dyn, int indent)
 {
 	static const char *tagNames[] = {
 		"DT_NULL",
@@ -790,8 +850,9 @@ elfDumpObject(FILE *f, struct ElfObject *obj, int snaplen, int indent)
 		"Modesto",
 		"OpenBSD"
 	};
-	const Elf_Ehdr *ehdr = obj->elfHeader;
-	const Elf_Dyn *dyn, *edyn;
+	const Elf_Ehdr *ehdr = &obj->elfHeader;
+	Elf_Dyn dyn;
+    off_t dynoff, edyn;
 
 	brand = ehdr->e_ident[EI_OSABI];
 	fprintf(f, "%sType= %s\n", pad(indent), typeNames[ehdr->e_type]);
@@ -799,25 +860,23 @@ elfDumpObject(FILE *f, struct ElfObject *obj, int snaplen, int indent)
 	fprintf(f, "%sExetype= %d (%s)\n", pad(indent), brand,
 		brand >= 0  && brand <= ELFOSABI_OPENBSD ?
 		abiNames[brand] : "unknown");
-	for (i = 1; i < obj->elfHeader->e_shnum; i++) {
+	for (i = 1; i < obj->elfHeader.e_shnum; i++) {
 		fprintf(f, "%ssection %d:\n", pad(indent), i);
-		elfDumpSection(f, obj, obj->sectionHeaders[i], snaplen,
-		    indent + 4);
+		elfDumpSection(f, obj, &obj->sectionHeaders[i], snaplen, indent + 4);
 	}
-	for (i = 0; i < obj->elfHeader->e_phnum; i++) {
+	for (i = 0; i < obj->elfHeader.e_phnum; i++) {
 		fprintf(f, "%ssegment %d:\n", pad(indent), i);
-		elfDumpProgramSegment(f, obj, obj->programHeaders[i],
-		    indent + 4);
+		elfDumpProgramSegment(f, obj, &obj->programHeaders[i], indent + 4);
 	}
 	if (obj->dynamic) {
-		dyn = (const Elf_Dyn *)
-		    (obj->fileData + obj->dynamic->p_offset);
-		edyn = (const Elf_Dyn *)
-		    ((const char *)dyn + obj->dynamic->p_filesz);
-		while (dyn < edyn) {
+		dynoff = obj->dynamic->p_offset;
+		edyn = dynoff + obj->dynamic->p_filesz;
+		while (dynoff < edyn) {
+            if (READOBJ(obj->file, dynoff, dyn) == 0)
+                return;
+            dynoff += sizeof dyn;
 			printf("%sdynamic entry\n", pad(indent) - 4);
-			elfDumpDynamic(f, dyn, indent + 8);
-			dyn++;
+			elfDumpDynamic(f, obj, &dyn, indent + 8);
 		}
 	}
 	if (obj->interpreterName)
@@ -917,8 +976,8 @@ procFindObject(Process *p, Elf_Addr addr, struct ElfObject **objp)
 
     for (obj = p->objectList; obj; obj = obj->next) {
         Elf32_Addr va = elfAddrProc2Obj(obj, addr);
-        for (i = 0; i < obj->elfHeader->e_phnum; i++) {
-            phdr = obj->programHeaders[i];
+        for (i = 0; i < obj->elfHeader.e_phnum; i++) {
+            phdr = &obj->programHeaders[i];
             if (va >= phdr->p_vaddr && va < phdr->p_vaddr + phdr->p_memsz) {
                 *objp = obj;
                 return (0);
@@ -926,4 +985,30 @@ procFindObject(Process *p, Elf_Addr addr, struct ElfObject **objp)
         }
     }
     return (-1);
+}
+
+off_t
+elfGetOffset(struct ElfObject *obj)
+{
+    return ftell(obj->file);
+}
+
+void
+elfSetOffset(struct ElfObject *obj, off_t off)
+{
+    fseek(obj->file, off, SEEK_SET);
+}
+
+void
+elfSkip(struct ElfObject *obj, off_t off)
+{
+    fseek(obj->file, off, SEEK_CUR);
+}
+
+void
+elfRead(struct ElfObject *obj, void *p, size_t len)
+{
+    int rc = fread(p, len, 1, obj->file);
+    if (rc != 1)
+        abort();
 }
