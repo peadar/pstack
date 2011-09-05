@@ -154,9 +154,9 @@ typedef struct tagDwarfFDE {
     uintmax_t iloc;
     uintmax_t irange;
     uint32_t offset;
-    const unsigned char *instructions;
-    const unsigned char *end;
-    const unsigned char *adata;
+    off_t instructions;
+    off_t end;
+    off_t adata;
     uint32_t alen;
 } DwarfFDE;
 
@@ -203,8 +203,8 @@ typedef struct tagDwarfCIE {
     int rar;
     uint8_t version;
     uint8_t addressEncoding;
-    const unsigned char *instructions;
-    const unsigned char *end;
+    off_t instructions;
+    off_t end;
 } DwarfCIE;
 
 enum FIType {
@@ -229,7 +229,7 @@ struct tagDwarfInfo {
     DwarfPubnameUnit *pubnameUnits;
     DwarfARangeSet *aranges;
     const char *debugStrings;
-    const unsigned char *lines;
+    off_t lines;
     unsigned addrLen;
     DwarfFrameInfo *debugFrame;
     DwarfFrameInfo *ehFrame;

@@ -11,11 +11,11 @@
 #include "dwarf.h"
 
 extern int gVerbose;
-static int dwarfDecodeAbbrevs(DwarfInfo *, DwarfUnit *, const unsigned char *p);
+static int dwarfDecodeAbbrevs(DwarfInfo *, DwarfUnit *);
 static void dwarfDumpEntries(FILE *, int , const DwarfInfo *, const DwarfUnit *, const DwarfEntry *);
 static void dwarfDumpEntry(FILE *, int, const DwarfInfo *, const DwarfUnit *,  const DwarfEntry *);
-static void dwarfDecodeEntries(DwarfInfo *, DwarfUnit *, const unsigned char **, const unsigned char *, DwarfEntry **);
-static void dwarfDumpCFAInsns(FILE *f, int indent, const DwarfInfo *, unsigned const char *p, unsigned const char *e);
+static void dwarfDecodeEntries(DwarfInfo *dwarf, DwarfUnit *unit, off_t end, DwarfEntry **entryp);
+static void dwarfDumpCFAInsns(FILE *out, int indent, const DwarfInfo *dwarf, off_t e);
 
 uintmax_t
 getuint(struct ElfObject *f, int len)
@@ -328,7 +328,7 @@ dwarfDecodeLineInfo(DwarfInfo *dwarf, const DwarfUnit *unit)
 
 
 static DwarfEntry *
-dwarfDecodeEntry(DwarfInfo *dwarf, DwarfUnit *unit, off_t len)
+dwarfDecodeEntry(DwarfInfo *dwarf, DwarfUnit *unit, off_t end)
 {
     DwarfAttributeSpec *spec;
     DwarfAttribute *attr, **attrp;
@@ -440,24 +440,23 @@ dwarfDecodeEntry(DwarfInfo *dwarf, DwarfUnit *unit, off_t len)
         cattr = dwarfEntryAttrByName(ent, DW_AT_stmt_list);
         assert(cattr);
         offset = dwarfAttr2Int(cattr);
-        q = dwarf->lines + offset;
-        unit->lines = dwarfDecodeLineInfo(dwarf, unit, &q);
+        elfSetOffset(dwarf->elf, dwarf->lines + offset);
+        unit->lines = dwarfDecodeLineInfo(dwarf, unit);
         break;
     }
     if (ent->type->hasChildren)
-        dwarfDecodeEntries(dwarf, unit, p, e, &ent->children);
+        dwarfDecodeEntries(dwarf, unit, end, &ent->children);
     else
         ent->children = 0;
     return ent;
 }
 
 static void
-dwarfDecodeEntries(DwarfInfo *dwarf, DwarfUnit *unit,
-        const unsigned char **p, const unsigned char *e, DwarfEntry **entryp)
+dwarfDecodeEntries(DwarfInfo *dwarf, DwarfUnit *unit, off_t end, DwarfEntry **entryp)
 {
     DwarfEntry *entry;
-    for (; *p < e; entryp = &entry->sibling) {
-        *entryp = entry = dwarfDecodeEntry(dwarf, unit, p, e);
+    for (; elfGetOffset(dwarf->elf) < end; entryp = &entry->sibling) {
+        *entryp = entry = dwarfDecodeEntry(dwarf, unit, end);
         if (entry == 0)
             break;
     }
@@ -634,7 +633,8 @@ dwarfDumpCIE(FILE *out, int indent, const DwarfInfo *dwarf, const DwarfCIE *cie)
     fprintf(out, "%sreturn address reg: %d\n", pad(indent + 4), cie->rar);
     fprintf(out, "%soffset: 0x%x\n", pad(indent + 4), cie->offset);
     fprintf(out, "%saug size: 0x%lx\n", pad(indent + 4), cie->augSize);
-    dwarfDumpCFAInsns(out, indent + 4, dwarf, cie->instructions, cie->end);
+    elfSetOffset(dwarf->elf, cie->instructions);
+    dwarfDumpCFAInsns(out, indent + 4, dwarf, cie->end);
     fprintf(out, "%s}\n", pad(indent));
 }
 
@@ -647,7 +647,8 @@ dwarfDumpFDE(FILE *out, int indent, const DwarfInfo *dwarf, const DwarfFDE *fde)
     fprintf(out, "%srange: 0x%jx\n", pad(indent + 4), fde->irange);
     fprintf(out, "%soffset: 0x%x\n", pad(indent + 4), fde->offset);
     fprintf(out, "%sauglen: 0x%x\n", pad(indent + 4), fde->alen);
-    dwarfDumpCFAInsns(out, indent + 4, dwarf, fde->instructions, fde->end);
+    elfSetOffset(dwarf->elf, fde->instructions);
+    dwarfDumpCFAInsns(out, indent + 4, dwarf, fde->end);
     fprintf(out, "%s}\n", pad(indent));
 }
 
@@ -704,38 +705,37 @@ dwarfDump(FILE *out, int indent, const DwarfInfo *dwarf)
 }
 
 static int
-dwarfDecodeAbbrevs(DwarfInfo *dwarf, DwarfUnit *unit,
-        const unsigned char *p)
+dwarfDecodeAbbrevs(DwarfInfo *dwarf, DwarfUnit *unit)
 {
     DwarfAbbreviation *first, *abb, **abbp;
     uintmax_t code;
     DwarfAttributeSpec *spec, **specp;
     static uintmax_t abbrCount = 0;
+    struct ElfObject *elf = dwarf->elf;
 
-    for (abbp = &first; (code = getuleb128(&p)) != 0; abbp = &abb->next) {
+    for (abbp = &first; (code = getuleb128(elf)) != 0; abbp = &abb->next) {
         abb = *abbp = elfAlloc(dwarf->elf, sizeof *abb);
         abb->code = code;
         if (code >= abbrCount)
             abbrCount = code + 1;
 
-        abb->tag = getuleb128(&p);
-        abb->hasChildren = *p++;
+        abb->tag = getuleb128(elf);
+        abb->hasChildren = getu8(elf);
         specp = &abb->specs;
         for (;;) {
             uintmax_t name, form;
-            name = getuleb128(&p);
-            form = getuleb128(&p);
+            name = getuleb128(elf);
+            form = getuleb128(elf);
             if (name == 0 && form == 0)
                 break;
-            *specp = spec = elfAlloc(dwarf->elf, sizeof *spec);
+            *specp = spec = elfAlloc(elf, sizeof *spec);
             specp = &spec->next;
             spec->name = name;
             spec->form = form;
         }
         *specp = 0;
     }
-    unit->abbreviations =
-            elfAlloc(dwarf->elf, sizeof *unit->abbreviations * abbrCount);
+    unit->abbreviations = elfAlloc(dwarf->elf, sizeof *unit->abbreviations * abbrCount);
     for (abb = first; abb; abb = abb->next)
         unit->abbreviations[abb->code] = abb;
 
@@ -744,17 +744,18 @@ dwarfDecodeAbbrevs(DwarfInfo *dwarf, DwarfUnit *unit,
 }
 
 static void
-dwarfDumpCFAInsns(FILE *out, int indent, const DwarfInfo *dwarf, unsigned const char *p, unsigned const char *e)
+dwarfDumpCFAInsns(FILE *out, int indent, const DwarfInfo *dwarf, off_t e)
 {
     uint16_t u16;
     uint32_t u32;
     uintmax_t reg, reg2, offset;
     uintmax_t loc = 0;
+    struct ElfObject *elf = dwarf->elf;
 
     fprintf(out, "%sCFA instructions {\n", pad(indent));
     indent += 4;
-    while (p < e) {
-        uint8_t op = getu8(&p), u8;
+    while (elfGetOffset(elf) < e) {
+        uint8_t op = getu8(elf), u8;
         switch (op >> 6) {
         case 1:
             loc += op & 0x3f;
@@ -762,7 +763,7 @@ dwarfDumpCFAInsns(FILE *out, int indent, const DwarfInfo *dwarf, unsigned const 
                     pad(indent), op & 0x3f, loc);
             break;
         case 2:
-            offset = getuleb128(&p);
+            offset = getuleb128(elf);
             fprintf(out, "%sDW_CFA_offset(register=0x%x, offset=0x%jx)\n",
                     pad(indent), op & 0x3f, offset);
             break;
@@ -777,50 +778,50 @@ dwarfDumpCFAInsns(FILE *out, int indent, const DwarfInfo *dwarf, unsigned const 
                 fprintf(out, "%sDW_CFA_nop\n", pad(indent));
                 break;
             case 0x1:
-                offset = loc = getuint(&p, dwarf->addrLen);
+                offset = loc = getuint(elf, dwarf->addrLen);
                 fprintf(out, "%sDW_CFA_set_loc(0x%jx, cur=%jx)\n", pad(indent), offset, loc);
                 break;
             case 0x2:
-                u8 = getu8(&p);
+                u8 = getu8(elf);
                 loc += u8;
                 fprintf(out, "%sDW_CFA_advance_loc1(delta=0x%x, cur=0x%jx)\n",
                         pad(indent), u8, loc);
                 break;
             case 0x3:
-                u16 = getu16(&p);
+                u16 = getu16(elf);
                 loc += u16;
                 fprintf(out, "%sDW_CFA_advance_loc2(delta=0x%x, loc=0x%jx)\n",
                         pad(indent), u16, loc);
                 break;
             case 0x4:
-                u32 = getu32(&p);
+                u32 = getu32(elf);
                 loc += u32;
                 fprintf(out, "%sDW_CFA_advance_loc4(delta=0x%x, loc=0x%jx)\n",
                         pad(indent), u32, loc);
                 break;
             case 0x5:
-                reg = getuleb128(&p);
-                offset = getuleb128(&p);
+                reg = getuleb128(elf);
+                offset = getuleb128(elf);
                 fprintf(out, "%sDW_CFA_offset_extended(reg=0x%jx, offset=0x%jx)\n",
                         pad(indent), reg, offset);
                 break;
             case 0x6:
-                reg = getuleb128(&p);
+                reg = getuleb128(elf);
                 fprintf(out, "%sDW_CFA_restore_extended(reg=0x%jx)\n",
                         pad(indent), reg);
                 break;
             case 0x7:
-                reg = getuleb128(&p);
+                reg = getuleb128(elf);
                 fprintf(out, "%sDW_CFA_undefined(reg=0x%jx)\n", pad(indent), reg);
                 break;
             case 0x8:
-                reg = getuleb128(&p);
+                reg = getuleb128(elf);
                 fprintf(out, "%sDW_CFA_same_value(reg=0x%jx)\n",
                         pad(indent), reg);
                 break;
             case 0x9:
-                reg = getuleb128(&p);
-                reg2 = getuleb128(&p);
+                reg = getuleb128(elf);
+                reg2 = getuleb128(elf);
                 fprintf(out, "%sDW_CFA_register(reg1=0x%jx, reg2=0x%jx)\n",
                         pad(indent), reg, reg2);
                 break;
@@ -831,41 +832,40 @@ dwarfDumpCFAInsns(FILE *out, int indent, const DwarfInfo *dwarf, unsigned const 
                 fprintf(out, "%sDW_CFA_restore_state()\n", pad(indent));
                 break;
             case 0xc: 
-                reg = getuleb128(&p);
-                offset = getuleb128(&p);
+                reg = getuleb128(elf);
+                offset = getuleb128(elf);
                 fprintf(out, "%sDW_CFA_def_cfa(reg=0x%jx, offset=0x%jx)\n",
                         pad(indent), reg, offset);
                 break;
             case 0xd:
-                reg = getuleb128(&p);
+                reg = getuleb128(elf);
                 fprintf(out, "%sDW_CFA_def_cfa_register(reg=0x%jx)\n",
                         pad(indent), reg);
                 break;
             case 0xe:
-                offset = getuleb128(&p);
+                offset = getuleb128(elf);
                 fprintf(out, "%sDW_CFA_def_cfa_offset(offset=0x%jx)\n",
                         pad(indent), offset);
                 break;
 
             case 0xf:
-                offset = getuleb128(&p);
+                offset = getuleb128(elf);
                 fprintf(out, "%sDW_CFA_def_cfa_expression(size=0x%jx)\n",
                         pad(indent), offset);
-                p += offset;
+                elfSkip(elf, offset);
                 break;
 
             case 0x10:
-                reg = getuleb128(&p);
-                offset = getuleb128(&p);
+                reg = getuleb128(elf);
+                offset = getuleb128(elf);
                 fprintf(out, "%sDW_CFA_expression(reg=0x%jx, size=0x%jx)\n",
                         pad(indent), reg, offset);
-                p += offset;
+                elfSkip(elf, offset);
                 break;
 
             case 0x2e: // DW_CFA_GNU_args_size
-                offset = getuleb128(&p);
-                fprintf(out, "%sFW_CFA_GNU_args_size(xxx=0x%jx)\n", pad(indent),
-                        offset);
+                offset = getuleb128(elf);
+                fprintf(out, "%sFW_CFA_GNU_args_size(xxx=0x%jx)\n", pad(indent), offset);
                 break;
 
             case 0x2d: // DW_CFA_GNU_window_size
@@ -933,15 +933,15 @@ opname(DwarfExpressionOp op)
 static intmax_t
 dwarfEvalExpr(
             Process *proc,
+            DwarfInfo *dwarf,
             const DwarfRegisters *frame,
             DwarfExpressionStack *stack,
-            const unsigned char *p,
-            const unsigned char *e)
+            off_t p, off_t e)
 {
     if (gVerbose)
         fprintf(stderr, "dwarfEvalExpr:\n");
-    while (p < e) {
-        DwarfExpressionOp op = (DwarfExpressionOp)*p++;
+    for (elfSetOffset(dwarf->elf, p);  elfGetOffset(dwarf->elf) < e;) {
+        DwarfExpressionOp op = (DwarfExpressionOp) getu8(dwarf->elf);
         if (gVerbose)
             fprintf(stderr, "\t%s\n", opname(op));
         switch (op) {
@@ -961,7 +961,7 @@ dwarfEvalExpr(
             case DW_OP_breg20: case DW_OP_breg21: case DW_OP_breg22: case DW_OP_breg23:
             case DW_OP_breg24: case DW_OP_breg25: case DW_OP_breg26: case DW_OP_breg27:
             case DW_OP_breg28: case DW_OP_breg29: case DW_OP_breg30: case DW_OP_breg31: {
-                intmax_t offset = getsleb128(&p);
+                intmax_t offset = getsleb128(dwarf->elf);
                 dwarfStackPush(stack, frame->reg[op - DW_OP_breg0] + offset);
                 break;
             }
@@ -978,8 +978,7 @@ dwarfEvalExpr(
 
 static uintmax_t
 dwarfExecInsns(Process *proc, const DwarfInfo *dwarf, DwarfCIE *cie, DwarfCallFrame *frame,
-        const unsigned char *p, const unsigned char *e,
-        uintmax_t addr, uintmax_t wantAddr)
+        off_t p, off_t e, uintmax_t addr, uintmax_t wantAddr)
 {
     DwarfCallFrame *tmpFrame;
     DwarfCallFrame *startFrame = frame;
@@ -987,7 +986,7 @@ dwarfExecInsns(Process *proc, const DwarfInfo *dwarf, DwarfCIE *cie, DwarfCallFr
     int reg, reg2;
 
     while (p < e && addr <= wantAddr) {
-        uint8_t rawOp = getu8(&p);
+        uint8_t rawOp = getu8(dwarf->elf);
         reg = rawOp &0x3f;
         DwarfCFAInstruction op = (DwarfCFAInstruction)(rawOp & ~0x3f);
         switch (op) {
@@ -996,7 +995,7 @@ dwarfExecInsns(Process *proc, const DwarfInfo *dwarf, DwarfCIE *cie, DwarfCallFr
             break;
 
         case DW_CFA_offset:
-            offset = getuleb128(&p);
+            offset = getuleb128(dwarf->elf);
             frame->registers[reg].type = OFFSET;
             frame->registers[reg].u.offset = offset * cie->dataAlign;
             break;
@@ -1012,46 +1011,46 @@ dwarfExecInsns(Process *proc, const DwarfInfo *dwarf, DwarfCIE *cie, DwarfCallFr
                 break;
                 
             case DW_CFA_set_loc:
-                addr = getuint(&p, dwarf->addrLen);
+                addr = getuint(dwarf->elf, dwarf->addrLen);
                 break;
 
             case DW_CFA_advance_loc1:
-                addr += getu8(&p) * cie->codeAlign;
+                addr += getu8(dwarf->elf) * cie->codeAlign;
                 break;
 
             case DW_CFA_advance_loc2:
-                addr += getu16(&p) * cie->codeAlign;
+                addr += getu16(dwarf->elf) * cie->codeAlign;
                 break;
 
             case DW_CFA_advance_loc4:
-                addr += getu32(&p) * cie->codeAlign;
+                addr += getu32(dwarf->elf) * cie->codeAlign;
                 break;
 
             case DW_CFA_offset_extended:
-                reg = getuleb128(&p);
-                offset = getuleb128(&p);
+                reg = getuleb128(dwarf->elf);
+                offset = getuleb128(dwarf->elf);
                 frame->registers[reg].type = OFFSET;
                 frame->registers[reg].u.offset = offset * cie->dataAlign;
                 break;
 
             case DW_CFA_restore_extended:
-                reg = getuleb128(&p);
+                reg = getuleb128(dwarf->elf);
                 frame->registers[reg] = cie->defaultFrame.registers[reg];
                 break;
 
             case DW_CFA_undefined:
-                reg = getuleb128(&p);
+                reg = getuleb128(dwarf->elf);
                 frame->registers[reg].type = UNDEF;
                 break;
 
             case DW_CFA_same_value:
-                reg = getuleb128(&p);
+                reg = getuleb128(dwarf->elf);
                 frame->registers[reg].type = SAME;
                 break;
 
             case DW_CFA_register:
-                reg = getuleb128(&p);
-                reg2 = getuleb128(&p);
+                reg = getuleb128(dwarf->elf);
+                reg2 = getuleb128(dwarf->elf);
                 frame->registers[reg].type = REG;
                 frame->registers[reg].u.reg = reg2;
                 break;
@@ -1070,58 +1069,64 @@ dwarfExecInsns(Process *proc, const DwarfInfo *dwarf, DwarfCIE *cie, DwarfCallFr
                 break;
 
             case DW_CFA_def_cfa:
-                frame->cfaReg = getuleb128(&p);
+                frame->cfaReg = getuleb128(dwarf->elf);
                 frame->cfaValue.type = OFFSET;
-                frame->cfaValue.u.offset = getuleb128(&p);
+                frame->cfaValue.u.offset = getuleb128(dwarf->elf);
                 break;
 
             case DW_CFA_def_cfa_sf:
-                frame->cfaReg = getuleb128(&p);
+                frame->cfaReg = getuleb128(dwarf->elf);
                 frame->cfaValue.type = OFFSET;
-                frame->cfaValue.u.offset = getsleb128(&p) * cie->dataAlign;
+                frame->cfaValue.u.offset = getsleb128(dwarf->elf) * cie->dataAlign;
                 break;
 
             case DW_CFA_def_cfa_register:
-                frame->cfaReg = getuleb128(&p);
+                frame->cfaReg = getuleb128(dwarf->elf);
                 frame->cfaValue.type = OFFSET;
                 break;
 
             case DW_CFA_def_cfa_offset:
                 frame->cfaValue.type = OFFSET;
-                frame->cfaValue.u.offset = getuleb128(&p);
+                frame->cfaValue.u.offset = getuleb128(dwarf->elf);
                 break;
 
             case DW_CFA_def_cfa_offset_sf:
                 frame->cfaValue.type = OFFSET;
-                frame->cfaValue.u.offset = getuleb128(&p) * cie->dataAlign;
+                frame->cfaValue.u.offset = getuleb128(dwarf->elf) * cie->dataAlign;
                 break;
 
             case DW_CFA_val_expression: {
-                reg = getuleb128(&p);
-                offset = getuleb128(&p);
-                frame->registers[reg].type = VAL_EXPRESSION;
-                frame->registers[reg].u.expression.data = p;
-                frame->registers[reg].u.expression.length = offset;
-                p += offset;
+                DwarfRegisterUnwind *unwind;
+                reg = getuleb128(dwarf->elf);
+                offset = getuleb128(dwarf->elf);
+                unwind = &frame->registers[reg];
+                unwind->type = VAL_EXPRESSION;
+                unwind->u.expression.data = elfAlloc(dwarf->elf, offset);
+                unwind->u.expression.length = offset;
+                elfRead(dwarf->elf, unwind->u.expression.data, unwind->u.expression.length);
                 break;
             }
 
             case DW_CFA_expression: {
-                reg = getuleb128(&p);
-                offset = getuleb128(&p);
-                frame->registers[reg].type = EXPRESSION;
-                frame->registers[reg].u.expression.length = offset;
-                frame->registers[reg].u.expression.data = p;
-                p += offset;
+                DwarfRegisterUnwind *unwind;
+                reg = getuleb128(dwarf->elf);
+                offset = getuleb128(dwarf->elf);
+                unwind = &frame->registers[reg];
+                unwind->type = EXPRESSION;
+                unwind->u.expression.length = offset;
+                unwind->u.expression.data = elfAlloc(dwarf->elf, offset);
+                elfRead(dwarf->elf, unwind->u.expression.data, unwind->u.expression.length);
                 break;
             }
 
             case DW_CFA_def_cfa_expression: {
                 frame->cfaValue.type = EXPRESSION;
-                offset = getuleb128(&p);
-                frame->cfaValue.u.expression.data = p;
+                offset = getuleb128(dwarf->elf);
+                frame->cfaValue.u.expression.data = elfAlloc(dwarf->elf, offset);
                 frame->cfaValue.u.expression.length = offset;
-                p += offset;
+                elfRead(dwarf->elf,
+                    frame->cfaValue.u.expression.data,
+                    frame->cfaValue.u.expression.length);
                 break;
             }
 
@@ -1171,33 +1176,36 @@ dwarfGetCIE(DwarfFrameInfo *info, uint32_t offset)
 }
 
 intmax_t
-decodeAddress(DwarfFrameInfo *info, int encoding, const unsigned char **p, intmax_t offset)
+decodeAddress(DwarfFrameInfo *info, int encoding)
 {
     intmax_t base;
+    struct ElfObject *elf = info->dwarf->elf;
+
+    off_t off = elfGetOffset(elf);
     switch (encoding & 0xf) {
     case DW_EH_PE_sdata2:
-        base = getint(p, 2);
+        base = getint(elf, 2);
         break;
     case DW_EH_PE_sdata4:
-        base = getint(p, 4);
+        base = getint(elf, 4);
         break;
     case DW_EH_PE_sdata8:
-        base = getint(p, 8);
+        base = getint(elf, 8);
         break;
     case DW_EH_PE_udata2:
-        base = getuint(p, 2);
+        base = getuint(elf, 2);
         break;
     case DW_EH_PE_udata4:
-        base = getuint(p, 4);
+        base = getuint(elf, 4);
         break;
     case DW_EH_PE_udata8:
-        base = getuint(p, 8);
+        base = getuint(elf, 8);
         break;
     case DW_EH_PE_sleb128:
-        base = getsleb128(p);
+        base = getsleb128(elf);
         break;
     case DW_EH_PE_uleb128:
-        base = getuleb128(p);
+        base = getuleb128(elf);
         break;
     case DW_EH_PE_absptr:
     default:
@@ -1209,37 +1217,33 @@ decodeAddress(DwarfFrameInfo *info, int encoding, const unsigned char **p, intma
     case 0:
         break;
     case DW_EH_PE_pcrel:
-        base += offset + info->dwarf->elf->base;;
+        base += off + info->dwarf->elf->base;
         break;
     }
     return base;
 }
 
 static DwarfFDE *
-decodeFDE(DwarfFrameInfo *info, uint32_t offset, uint32_t cieid, const unsigned char **p, const unsigned char *e)
+decodeFDE(DwarfFrameInfo *info, uint32_t offset, uint32_t cieid, off_t off, off_t end)
 {
     DwarfFDE *fde = elfAlloc(info->dwarf->elf, sizeof *fde);
+    struct ElfObject *elf = info->dwarf->elf;
+
     uint32_t cieOff = info->type == FI_EH_FRAME ? offset - cieid - 4 : cieid;
     fde->cie = dwarfGetCIE(info, cieOff);
-
-    // Offset of FDE from start of object.
-    intmax_t off = *p - info->dwarf->elf->fileData;
-
-    fde->iloc = decodeAddress(info, fde->cie->addressEncoding, p, off);
-    fde->irange = decodeAddress(info, fde->cie->addressEncoding & 0xf, p, off);
-    
+    fde->offset = elfGetOffset(elf);
+    fde->end = end;
+    fde->iloc = decodeAddress(info, fde->cie->addressEncoding);
+    fde->irange = decodeAddress(info, fde->cie->addressEncoding & 0xf);
     if (fde->cie->augmentation && fde->cie->augmentation[0] == 'z') {
-        fde->alen = getuleb128(p);
-        fde->adata = *p;
-        *p += fde->alen;
+        fde->alen = getuleb128(elf);
+        fde->adata = elfGetOffset(elf);
+        elfSkip(elf, fde->alen);
     } else {
         fde->alen = 0;
         fde->adata = 0;
     }
-    
-    fde->instructions = *p;
-    fde->end = e;
-    fde->offset = offset;
+    fde->instructions = elfGetOffset(elf);
     return fde;
 }
 
@@ -1278,18 +1282,19 @@ DW_EH_PE_relStr(unsigned char c)
 #undef T
 
 static DwarfCIE *
-decodeCIE(Process *proc, DwarfFrameInfo *info, uint32_t offset, const unsigned char **p, const unsigned char *e)
+decodeCIE(Process *proc, DwarfFrameInfo *info, off_t end)
 {
-    DwarfCIE *cie = elfAlloc(info->dwarf->elf, sizeof *cie);
-    cie->offset = offset;
+    struct ElfObject *elf = info->dwarf->elf;
+    DwarfCIE *cie = elfAlloc(elf, sizeof *cie);
+    cie->offset = elfGetOffset(elf);
     cie->next = info->cieList;
     info->cieList = cie;
 
-    cie->version = getu8(p);
-    cie->augmentation = getstring(p);
-    cie->codeAlign = getuleb128(p);
-    cie->dataAlign = getsleb128(p);
-    cie->rar = getu8(p);
+    cie->version = getu8(elf);
+    cie->augmentation = getstring(elf);
+    cie->codeAlign = getuleb128(elf);
+    cie->dataAlign = getsleb128(elf);
+    cie->rar = getu8(elf);
 
     // Get augmentations...
 
@@ -1306,21 +1311,21 @@ decodeCIE(Process *proc, DwarfFrameInfo *info, uint32_t offset, const unsigned c
     if (augStr && augStr[0]) {
         if (*augStr == 'z') {
             augStr++;
-            cie->augSize = getuleb128(p);
-            const unsigned char *augData = *p;
-            *p += cie->augSize;
-            for (const char *augEnd = augStr + cie->augSize; augStr < augEnd; ++augStr) {
+            cie->augSize = getuleb128(elf);
+            off_t endaug = elfGetOffset(elf) + cie->augSize;
+
+            for (off_t const char *augEnd = augStr + cie->augSize; augStr < augEnd; ++augStr) {
                 switch (*augStr) {
                     case 'P': {
-                        unsigned char encoding = getu8(&augData);
-                        cie->personality = decodeAddress(info, encoding, &augData, 0);
+                        unsigned char encoding = getu8(elf);
+                        cie->personality = decodeAddress(info, encoding, 0);
                         break;
                     }
                     case 'L':
-                        cie->lsdaEncoding = getu8(&augData);
+                        cie->lsdaEncoding = getu8(elf);
                         break;
                     case 'R':
-                        cie->addressEncoding = *augData++;
+                        cie->addressEncoding = getu8(elf);
                         if (gVerbose)
                             fprintf(stderr, "CIE address encoding: %s|%s\n",
                                 DW_EH_PE_typeStr(cie->addressEncoding),
@@ -1334,16 +1339,17 @@ decodeCIE(Process *proc, DwarfFrameInfo *info, uint32_t offset, const unsigned c
                         break;
                 }
             }
+            elfSetOffset(elf, endaug);
         } else {
             fprintf(stderr, "augmentation without length delimiter: '%s'\n", augStr);
         }
     }
 
-    cie->instructions = *p;
-    cie->end = e;
+    cie->instructions = elfGetOffset(elf);
+    cie->end = end;
     // Get the starting point for this CIE.
     frameDefault(&cie->defaultFrame);
-    dwarfExecInsns(proc, info->dwarf, cie, &cie->defaultFrame, cie->instructions, cie->end, 0, 0);
+    dwarfExecInsns(proc, info->dwarf, cie, &cie->defaultFrame, cie->instructions, end, 0, 0);
     return cie;
 }
 
@@ -1387,11 +1393,11 @@ dwarfDecodeFrameInfo(Process *proc, DwarfInfo *dwarf, off_t len, enum FIType typ
     const unsigned char *next;
     off_t start = elfGetOffset(dwarf->elf);
 
-    while ((offset = elfGetOffset(dwarf->elf) != len) {
+    while ((offset = elfGetOffset(dwarf->elf)) != len) {
         if (decodeCIEFDEHdr(elf, &cieid, type) == 0)
             break;
         if ((type == FI_DEBUG_FRAME && cieid == 0xffffffff) || (type == FI_EH_FRAME && cieid == 0))
-            decodeCIE(proc, info, offset, &p, next);
+            decodeCIE(proc, info, next);
     }
 
     fdep = &info->fdeList;
@@ -1470,7 +1476,7 @@ dwarfLoad(Process *proc, struct ElfObject *obj, FILE *errs)
     dwarf->debugStrings = debstr
             ? (const char *)(obj->fileData + debstr->sh_offset)
             : 0;
-    dwarf->lines = lines ? obj->fileData + lines->sh_offset : 0;
+    dwarf->lines = lines ? lines->sh_offset : 0;
 
     unitp = &dwarf->units;
     if (info) {
@@ -1660,7 +1666,7 @@ default: return 0;
 }
 
 static uintmax_t
-dwarfGetCFA(Process *proc, const DwarfCallFrame *frame, const DwarfRegisters *regs)
+dwarfGetCFA(Process *proc, struct DwarfInfo *dwarf, const DwarfCallFrame *frame, const DwarfRegisters *regs)
 {
     switch (frame->cfaValue.type) {
         case SAME:
@@ -1677,7 +1683,7 @@ dwarfGetCFA(Process *proc, const DwarfCallFrame *frame, const DwarfRegisters *re
         case EXPRESSION: {
             DwarfExpressionStack stack;
             dwarfStackInit(&stack);
-            dwarfEvalExpr(proc, regs, &stack,
+            dwarfEvalExpr(proc, dwarf, regs, &stack,
                     frame->cfaValue.u.expression.data,
                     frame->cfaValue.u.expression.data +
                         frame->cfaValue.u.expression.length);
@@ -1717,7 +1723,7 @@ dwarfUnwind(Process *proc, DwarfRegisters *regs, uintmax_t addr)
     dwarfExecInsns(proc, obj->dwarf, fde->cie, &frame, fde->instructions, fde->end, fde->iloc, addr);
 
     // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
-    uintmax_t cfa = dwarfGetCFA(proc, &frame, regs);
+    uintmax_t cfa = dwarfGetCFA(proc, obj->dwarf, &frame, regs);
 
     for (i = 0; i < MAXREG; i++) {
         if (!dwarfIsArchReg(i))
