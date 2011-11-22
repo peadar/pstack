@@ -102,8 +102,8 @@ typedef struct tagDwarfPubnameUnit {
 } DwarfPubnameUnit;
 
 typedef struct tagDwarfBlock {
-    const unsigned char *data;
-    uintmax_t length;
+    off_t offset;
+    off_t length;
 } DwarfBlock;
 
 union DwarfValue {
@@ -230,8 +230,8 @@ struct tagDwarfInfo {
     DwarfUnit *units;
     DwarfPubnameUnit *pubnameUnits;
     DwarfARangeSet *aranges;
-    const char *debugStrings;
-    const unsigned char *lines;
+    char *debugStrings;
+    off_t lines;
     unsigned addrLen;
     DwarfFrameInfo *debugFrame;
     DwarfFrameInfo *ehFrame;
