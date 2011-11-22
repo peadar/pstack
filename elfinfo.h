@@ -34,7 +34,6 @@
 #include <sys/queue.h>
 #include <proc_service.h>
 #include <thread_db.h>
-#include <stdio.h>
 typedef struct ps_prochandle Process;
 
 /*
@@ -96,7 +95,7 @@ struct ElfObject {
 	struct ElfObject *next;
 	Elf_Addr	 base; /* For loaded objects */
 	Elf_Addr	 load;
-    void            *file;
+        FILE            *file;
 	char		*fileName;
 	size_t		 fileSize;
 	Elf_Ehdr	 elfHeader;
@@ -112,11 +111,6 @@ struct ElfObject {
         char buf[MEMBUF];
         struct ElfMemChunk *mem;
 };
-
-off_t elfGetOffset(struct ElfObject *elf);
-void elfSetOffset(struct ElfObject *elf, off_t);
-void elfSkip(struct ElfObject *elf, off_t);
-void elfRead(struct ElfObject *elf, void *p, size_t len);
 
 struct stab {
 	unsigned long n_strx;
@@ -251,10 +245,14 @@ int	procFindObject(Process *p, Elf_Addr addr, struct ElfObject **objp);
 
 int	elfFindSectionByName(struct ElfObject *obj,
 			const char *name, const Elf_Shdr **sectionp);
-int     elfFindSymbolByAddress(struct ElfObject *obj, Elf_Addr addr,
-			int type, Elf_Sym *symp, off_t *nameoff);
-int     elfLinearSymSearch(struct ElfObject *o, const Elf_Shdr *hdr, const char *name, Elf_Sym *symp);
-int     elfFindSymbolByName(struct ElfObject *o, const char *name, Elf_Sym *symp);
+int	elfFindSymbolByAddress(struct ElfObject *obj,
+			Elf_Addr addr, int type,
+			const Elf_Sym **symp, const char **namep);
+int	elfLinearSymSearch(struct ElfObject *o,
+			const Elf_Shdr *hdr,
+			const char *name, const Elf_Sym **symp);
+int	elfFindSymbolByName(struct ElfObject *o,
+			const char *name, const Elf_Sym **symp);
 int	elfLoadObject(const char *fileName, struct ElfObject **objp);
 int     elfLoadObjectFromData(FILE *data, size_t size, struct ElfObject **objp);
 int	elfGetNotes(struct ElfObject *obj, enum NoteIter
@@ -263,11 +261,14 @@ int	elfGetNotes(struct ElfObject *obj, enum NoteIter
 int	elfGetImageFromCore(struct ElfObject *obj, const char **name);
 int	elfUnloadObject(struct ElfObject *obj);
 const char *elfGetAbiPrefix(struct ElfObject *o);
-void    elfDumpSymbol(FILE *f, struct ElfObject *, const Elf_Sym * sym, off_t strings, int indent);
-void	elfDumpDynamic(FILE *f, struct ElfObject *, const Elf_Dyn *dyn, int indent);
+void	elfDumpSymbol(FILE *f, const Elf_Sym *sym,
+			const char *strings, int indent);
+void	elfDumpDynamic(FILE *f, const Elf_Dyn *dyn, int indent);
 void	elfDumpObject(FILE *f, struct ElfObject *obj, int snap, int indent);
-void	elfDumpSection(FILE * f, struct ElfObject * obj, const Elf_Shdr * hdr, size_t snap, int indent);
-void	elfDumpProgramSegment(FILE *f, struct ElfObject *obj, const Elf_Phdr *hdr, int indent);
+void	elfDumpSection(FILE * f, struct ElfObject * obj,
+			const Elf_Shdr * hdr, size_t snap, int indent);
+void	elfDumpProgramSegment(FILE *f, struct ElfObject *obj,
+			const Elf_Phdr *hdr, int indent);
 void	hexdump(FILE *f, int indent, const unsigned char *p, int len);
 const char *	pad(size_t size);
 void   *elfAlloc(struct ElfObject *, size_t);

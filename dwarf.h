@@ -6,13 +6,13 @@
 #include <sys/ptrace.h>
 #include <asm/ptrace.h>
 
-uint32_t getu32(struct ElfObject *);
-uint16_t getu16(struct ElfObject *);
-uint8_t getu8(struct ElfObject *);
-int8_t gets8(struct ElfObject *);
-uintmax_t getuleb128(struct ElfObject *);
-intmax_t getsleb128(struct ElfObject *);
-const char *getstring(struct ElfObject *);
+uint32_t getu32(const unsigned char **p);
+uint16_t getu16(const unsigned char **p);
+uint8_t getu8(const unsigned char **p);
+int8_t gets8(const unsigned char **p);
+uintmax_t getuleb128(const unsigned char **p);
+intmax_t getsleb128(const unsigned char **p);
+const char *getstring(const unsigned char **p);
 #define DWARF_MAXREG 128
 
 enum DwarfHasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
@@ -102,7 +102,7 @@ typedef struct tagDwarfPubnameUnit {
 } DwarfPubnameUnit;
 
 typedef struct tagDwarfBlock {
-    unsigned char *data;
+    const unsigned char *data;
     uintmax_t length;
 } DwarfBlock;
 
@@ -142,8 +142,10 @@ typedef struct tagDwarfUnit {
     uint16_t version;
     DwarfAbbreviation **abbreviations;
     uint8_t addrlen;
-    off_t start;
-    off_t end;
+    const unsigned char *start;
+    const unsigned char *entryPtr;
+    const unsigned char *end;
+    const unsigned char *lineInfo;
     DwarfEntry *entries;
     const struct tagDwarfLineInfo *lines;
 } DwarfUnit;
@@ -154,9 +156,9 @@ typedef struct tagDwarfFDE {
     uintmax_t iloc;
     uintmax_t irange;
     uint32_t offset;
-    off_t instructions;
-    off_t end;
-    off_t adata;
+    const unsigned char *instructions;
+    const unsigned char *end;
+    const unsigned char *adata;
     uint32_t alen;
 } DwarfFDE;
 
@@ -203,8 +205,8 @@ typedef struct tagDwarfCIE {
     int rar;
     uint8_t version;
     uint8_t addressEncoding;
-    off_t instructions;
-    off_t end;
+    const unsigned char *instructions;
+    const unsigned char *end;
 } DwarfCIE;
 
 enum FIType {
@@ -229,14 +231,13 @@ struct tagDwarfInfo {
     DwarfPubnameUnit *pubnameUnits;
     DwarfARangeSet *aranges;
     const char *debugStrings;
-    off_t lines;
+    const unsigned char *lines;
     unsigned addrLen;
     DwarfFrameInfo *debugFrame;
     DwarfFrameInfo *ehFrame;
 };
 
 typedef struct tagDwarfFileEntry {
-    struct tagDwarfFileEntry *next;
     const char *name;
     const char *directory;
     unsigned lastMod;
@@ -256,7 +257,7 @@ typedef struct tagDwarfLineState {
 typedef struct tagDwarfLineInfo {
     const char **directories;
     int default_is_stmt;
-    DwarfFileEntry **files;
+    DwarfFileEntry *files;
     DwarfLineState *matrix;
     int rows;
     int maxrows;
@@ -268,8 +269,8 @@ const char *dwarfTagName(enum DwarfTag);
 const char *dwarfAttrName(enum DwarfAttrName);
 const char *dwarfFormName(enum DwarfForm);
 const DwarfAbbreviation *dwarfUnitGetAbbrev(const DwarfUnit *unit, intmax_t code);
-uintmax_t getuint(struct ElfObject *, int len);
-intmax_t getint(struct ElfObject *, int len);
+uintmax_t getuint(const unsigned char **p, int len);
+intmax_t getint(const unsigned char **p, int len);
 void dwarfDumpSpec(FILE *out, int indent, const DwarfAttributeSpec *spec);
 void dwarfDumpAbbrev(FILE *out, int indent, const DwarfAbbreviation *abbrev);
 void dwarfDumpUnit(FILE *, int indent, const DwarfInfo *, const DwarfUnit *);
