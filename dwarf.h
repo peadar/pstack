@@ -7,13 +7,6 @@
 #include <asm/ptrace.h>
 #include <map>
 
-uint32_t getu32(const unsigned char **p);
-uint16_t getu16(const unsigned char **p);
-uint8_t getu8(const unsigned char **p);
-int8_t gets8(const unsigned char **p);
-uintmax_t getuleb128(const unsigned char **p);
-intmax_t getsleb128(const unsigned char **p);
-const char *getstring(const unsigned char **p);
 #define DWARF_MAXREG 128
 
 enum DwarfHasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
@@ -282,8 +275,6 @@ const char *dwarfTagName(enum DwarfTag);
 const char *dwarfAttrName(enum DwarfAttrName);
 const char *dwarfFormName(enum DwarfForm);
 const DwarfAbbreviation *dwarfUnitGetAbbrev(const DwarfUnit *unit, intmax_t code);
-uintmax_t getuint(const unsigned char **p, int len);
-intmax_t getint(const unsigned char **p, int len);
 void dwarfDumpSpec(FILE *out, int indent, const DwarfAttributeSpec *spec);
 void dwarfDumpAbbrev(FILE *out, int indent, const DwarfAbbreviation *abbrev);
 void dwarfDumpUnit(FILE *, int indent, const DwarfInfo *, const DwarfUnit *);

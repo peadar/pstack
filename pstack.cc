@@ -56,7 +56,9 @@
  * avoid warnings
  */
 
+extern "C" {
 #include <thread_db.h>
+}
 #ifdef __FreeBSD__
 #include <proc_service.h>
 typedef struct regs ptrace_regs;

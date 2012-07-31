@@ -34,8 +34,10 @@
 #include <string>
 #include <list>
 #include <vector>
+extern "C" {
 #include <proc_service.h>
 #include <thread_db.h>
+}
 #include "reader.h"
 typedef struct ps_prochandle Process;
 
@@ -129,8 +131,6 @@ public:
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(std::string name, Elf_Sym &sym);
     const char *getABIPrefix();
-    void *alloc(size_t);
-    char *strdup(const char *);
     ElfObject(Reader &);
     ~ElfObject();
     inline Elf_Addr addrProc2Obj(Elf_Addr va) const { return va - load + base; }

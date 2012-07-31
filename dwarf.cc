@@ -44,7 +44,7 @@ public:
     uint32_t getu32();
     uint16_t getu16();
     uint8_t getu8();
-    uint8_t gets8();
+    int8_t gets8();
     uintmax_t getuint(int size);
     intmax_t getint(int size);
     uintmax_t getuleb128();
@@ -57,25 +57,34 @@ public:
 };
 
 uintmax_t
-getuint(const unsigned char **p, int len)
+DWARFReader::getuint(int len)
 {
     uintmax_t rc = 0;
     int i;
-    *p += len;
+    uint8_t bytes[16];
+    if (len > 16)
+        throw 999;
+    io.readObj(off, bytes, len);
+    uint8_t *p = bytes + len;
     for (i = 1; i <= len; i++)
-        rc = rc << 8 | (*p)[-i];
+        rc = rc << 8 | p[-i];
     return rc;
 }
 
 intmax_t
-getint(const unsigned char **p, int len)
+DWARFReader::getint(int len)
 {
     intmax_t rc;
     int i;
-    *p += len;
-    rc = ((*p)[-1] & 0x80) ? -1 : 0;
+    uint8_t bytes[16];
+    if (len > 16)
+        throw 999;
+    io.readObj(off, bytes, len);
+
+    uint8_t *p = bytes + len;
+    rc = (p[-1] & 0x80) ? -1 : 0;
     for (i = 1; i <= len; i++)
-        rc = rc << 8 | (*p)[-i];
+        rc = rc << 8 | p[-i];
     return rc;
 }
 
@@ -83,7 +92,7 @@ uint32_t
 DWARFReader::getu32()
 {
     unsigned char q[4];
-    io.read(off, q, sizeof q);
+    io.readObj(off, q, 4);
     off += sizeof q;
     return q[0] | q[1] << 8 | q[2] << 16 | q[3] << 24;
 }
@@ -91,28 +100,28 @@ DWARFReader::getu32()
 uint16_t
 DWARFReader::getu16()
 {
-    const unsigned char q[2];
-    io.read(off, q, sizeof q);
+    unsigned char q[2];
+    io.readObj(off, q, 2);
     off += sizeof q;
     return q[0] | q[1] << 8;
 }
 
 uint8_t
-getu8(const unsigned char **p)
+DWARFReader::getu8()
 {
-    const unsigned char q;
-    io.read(off, q, sizeof q);
-    off += sizeof q;
+    unsigned char q;
+    io.readObj(off, &q, 1);
+    off++;
     return q;
 }
 
 int8_t
-gets8(const unsigned char **p)
+DWARFReader::gets8()
 {
-    const unsigned char q;
-    io.read(off, q, sizeof q);
-    off += sizeof q;
-    return (int8_t)q;
+    int8_t q;
+    io.readObj(off, &q, 1);
+    off += 1;
+    return q;
 }
 
 std::string
@@ -261,7 +270,7 @@ DwarfInfo::DwarfInfo(struct ElfObject *obj)
     }
 
     if (debstr) {
-        debugStrings = (char *)elf->alloc(debstr->sh_size);
+        debugStrings = new char[debstr->sh_size];
         elf->io.readObj(debstr->sh_offset, debugStrings, debstr->sh_size);
     } else {
         debugStrings = 0;
@@ -1591,10 +1600,8 @@ uintmax_t
 dwarfUnwind(Process *proc, DwarfRegisters *regs, uintmax_t addr)
 {
     int i;
-    const unsigned char *p;
     DwarfRegisters newRegs;
     DwarfRegisterUnwind *unwind;
-    unsigned char reg[sizeof (uintmax_t)];
     DwarfCallFrame frame;
 
     ElfObject *obj = proc->findObject(addr);
@@ -1641,11 +1648,12 @@ dwarfUnwind(Process *proc, DwarfRegisters *regs, uintmax_t addr)
             case SAME:
                 dwarfSetReg(&newRegs, i, dwarfGetReg(regs, i));
                 break;
-            case OFFSET:
-                proc->readMem((char *)reg, cfa + unwind->u.offset, dwarf->addrLen);
-                p = reg;
-                dwarfSetReg(&newRegs, i, getuint(&p, obj->dwarf->addrLen));
+            case OFFSET: {
+                Elf_Addr reg;
+                proc->readMem((char *)&reg, cfa + unwind->u.offset, dwarf->addrLen);
+                dwarfSetReg(&newRegs, i, reg);
                 break;
+            }
             case REG:
                 dwarfSetReg(&newRegs, i, dwarfGetReg(regs, unwind->u.reg));
                 break;

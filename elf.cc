@@ -276,34 +276,33 @@ ElfObject::findSymbolByName(std::string name, Elf_Sym &sym)
     return false;
 }
 
-#if 0
 /*
  * Get the data and length from a specific "note" in the ELF file
  */
 int
-elfGetNotes(struct ElfObject *obj,
-		enum NoteIter (*callback)(void *cookie, const char *name,
+ElfObject::getNotes(enum NoteIter (*callback)(void *cookie, const char *name,
 		u_int32_t type, const void *datap, size_t len), void *cookie)
 {
-	enum NoteIter iter;
-	const Elf_Phdr **phdr;
-	const Elf_Note *note;
-	const char *noteName;
-	const unsigned char *s, *e, *data;
 
-	for (phdr = obj->programHeaders; *phdr; phdr++) {
-		if ((*phdr)->p_type == PT_NOTE) {
-			s = obj->fileData + (*phdr)->p_offset;
-			e = s + (*phdr)->p_filesz;
-			while (s < e) {
-				note = (const Elf_Note *)s;
-				s += sizeof(*note);
-				noteName = (const char *)s;
-				s += roundup2(note->n_namesz, 4);
-				data = s;
-				s += roundup2(note->n_descsz, 4);
-				iter = callback(cookie, noteName,
-					note->n_type, data, note->n_descsz);
+	for (auto phdr : programHeaders) {
+		if (phdr->p_type == PT_NOTE) {
+            Elf_Note note;
+            off_t off = phdr->p_offset;
+            off_t e = off + phdr->p_filesz;
+			while (off < e) {
+                io.readObj(off, &note);
+                char *name = new char[note.n_namesz + 1];
+                io.readObj(off, &note, note.n_namesz);
+                name[note.n_namesz] = 0;
+                off += note.n_namesz;
+				off = roundup2(off, 4);
+                char *data = new char[note.n_descsz];
+                io.readObj(off, data, note.n_descsz);
+                off += note.n_descsz;
+				off = roundup2(off, 4);
+				NoteIter iter = callback(cookie, name, note.n_type, data, note.n_descsz);
+                delete[] data;
+                delete[] name;
 				switch (iter) {
 				case NOTE_DONE:
 					return 0;
@@ -317,7 +316,6 @@ elfGetNotes(struct ElfObject *obj,
 	}
 	return -2;
 }
-#endif
 
 #ifdef __FreeBSD__
 /*
