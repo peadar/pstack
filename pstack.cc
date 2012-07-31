@@ -49,6 +49,7 @@
 #include <string.h>
 #include <sysexits.h>
 #include <unistd.h>
+#include <iostream>
 
 /*
  * ps_prochandle should be declared before including thread_db.h to
@@ -82,6 +83,7 @@ typedef struct user_regs_struct  elf_regs;
 #endif
 
 #include "elfinfo.h"
+#include "procinfo.h"
 #include "dwarf.h"
 
 /* Callback data for procRegsFromNote */
@@ -101,38 +103,27 @@ int gVerbose = 0;
 static int gWantDwarf = 0;
 
 /* Prototypes */
-static Elf_Addr procFindRDebugAddr(Process *p);
-static int	procOpen(pid_t pid, const char *exeName, const char *coreFile,
-			Process **procp);
-static int	procDumpStacks(FILE *file, Process *p, int indent);
-static void	procAddElfObject(Process *p, struct ElfObject *obj,
-			Elf_Addr base);
-static void	procClose(Process *p);
-static void	procFreeThreads(Process *p);
-static void	procFreeObjects(Process *p);
-static void	procLoadSharedObjects(Process *p);
-static int	procGetRegs(Process *p, lwpid_t pid, CoreRegisters *reg);
-static int	procOpenLive(Process *p, pid_t pid, const char *core);
-static void	procCloseLive(Process *p);
 static int	usage(void);
 static int	procThreadIterate(const td_thrhandle_t *thr, void *p);
-static void	procAddThread(Process *p, thread_t id, const CoreRegisters *regs, lwpid_t);
 
 static enum NoteIter procAddThreadsFromNotes(void *, const char *, u_int32_t,
 			const void *, size_t);
 static enum NoteIter procRegsFromNote(void *cookie, const char *name,
 			u_int32_t type, const void *data, size_t len);
 
+template <typename T> static void
+delall(T &container)
+{
+    for (auto i : container)
+        delete i;
+}
+
 
 static void
 dwarf(struct ElfObject *obj)
 {
-    char error[1024];
-    DwarfInfo *dwarf = dwarfLoad(0, obj, stderr);
-    if (dwarf)
-        dwarfDump(stdout, 0, dwarf);
-    else
-        fprintf(stderr, "can't load DWARF: %s", error);
+    DwarfInfo dwarf(obj);
+    dwarfDump(stdout, 0, &dwarf);
 }
 
 int
@@ -140,15 +131,12 @@ main(int argc, char **argv)
 {
     const char *coreFile, *execFile;
     char *cp;
-    int error, i, c, snap;
-    Process *p;
+    int error, i, c;
     pid_t pid;
-    struct ElfObject *dumpObj;
 
     execFile = NULL;
-    snap = 64;
 
-    while ((c = getopt(argc, argv, "a:d:D:e:f:hloOs:v")) != -1) {
+    while ((c = getopt(argc, argv, "a:d:D:e:f:hloOv")) != -1) {
         switch (c) {
         case 'a':
             gFrameArgs = atoi(optarg);
@@ -158,24 +146,20 @@ main(int argc, char **argv)
             gWantDwarf = 1;
             break;
 
-        case 'D':
-            if (elfLoadObject(optarg, &dumpObj) == 0) {
-                    dwarf(dumpObj);
-                    return (0);
-            } else {
-                    return (-1);
-            }
+        case 'D': {
+            FileReader r(optarg);
+            ElfObject dumpObj(r);
+            dwarf(&dumpObj);
             break;
+        }
 
-        case 'd':
+        case 'd': {
             /* Undocumented option to dump image contents */
-            if (elfLoadObject(optarg, &dumpObj) == 0) {
-                    elfDumpObject(stdout, dumpObj, snap, 0);
-                    return (0);
-            } else {
-                    return (-1);
-            }
+            FileReader r(optarg);
+            ElfObject dumpobj(r);
+            std::cout << dumpobj;
             break;
+        }
 
         case 'e':
             execFile = optarg;
@@ -197,10 +181,6 @@ main(int argc, char **argv)
 
         case 'O':
             gShowObjectNames = 2;
-            break;
-
-        case 's':
-            snap = atoi(optarg);
             break;
 
         case 'v':
@@ -226,12 +206,8 @@ main(int argc, char **argv)
             /* Assume argv[i] is a pid */
             coreFile = 0;
         }
-        if (procOpen(pid, execFile, coreFile, &p) == 0) {
-            procDumpStacks(stdout, p, 0);
-            procClose(p);
-        } else {
-            error = EX_OSERR;
-        }
+        Process p(pid, execFile, coreFile);
+        p.dumpStacks(stdout, 0);
     }
     return (error);
 }
@@ -255,7 +231,7 @@ static enum NoteIter
 procAddVDSO(void *cookie, const char *name, u_int32_t type, const void *datap, size_t len)
 {
     if (type == NT_AUXV) {
-        const Elf_auxv_t *aux = datap;
+        const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
         const Elf_auxv_t *eaux = aux + len / sizeof *aux;
         Elf32_Addr hdr = 0, load = 0;
         while (aux < eaux) {
@@ -266,14 +242,12 @@ procAddVDSO(void *cookie, const char *name, u_int32_t type, const void *datap, s
             aux++;
         }
         if (load && hdr) {
-            Process *proc = cookie;
-            proc->vdso = malloc(getpagesize());
-            if (procReadMem(proc, proc->vdso, hdr, getpagesize()) == getpagesize()) {
-                struct ElfObject *elf;
-                if (elfLoadObjectFromData(proc->vdso, getpagesize(), &elf) == 0) {
-                    elf->fileName = "vdso";
-                    procAddElfObject(proc, elf, hdr);
-                }
+            Process *proc = (Process *)cookie;
+            proc->vdso = new char[getpagesize()];
+            if (proc->readMem(proc->vdso, hdr, getpagesize()) == size_t(getpagesize())) {
+                MemReader r(proc->vdso, getpagesize());
+                ElfObject *elf = new ElfObject(r);
+                proc->addElfObject(elf, hdr);
             }
         }
         return NOTE_DONE;
@@ -289,31 +263,18 @@ procAddVDSO(void *cookie, const char *name, u_int32_t type, const void *datap, s
  *	 running thread.
  */
 
-static int
-procOpen(pid_t pid, const char *exeName, const char *coreFile, Process **procp)
+ps_prochandle::ps_prochandle(pid_t pid_, const char *exeName, const char *coreFile)
+    : pid(pid_)
 {
-    char tmpBuf[PATH_MAX];
-    Process *p;
     td_err_e the;
-    int rc, i;
 
-    p = malloc(sizeof(*p));
-    memset(p, 0, sizeof *p);
-    p->objectList = NULL;
-    p->threadList = NULL;
-    p->objectCount = 0;
-    p->coreImage = NULL;
-    p->pid = -1;
-    for (i = 0; i < PAGECACHE_SIZE; i++)
-        p->pageCache.pages[i].data = 0;
-    p->pageCache.accessGeneration = 0;
-
-    if (coreFile && elfLoadObject(coreFile, &p->coreImage) != 0) {
-        warn("cannot open corefile");
-        procClose(p);
-        return (-1);
+    coreImage = 0;
+    if (coreFile) {
+        FileReader r(coreFile);
+        coreImage = new ElfObject(r);
     }
 
+#if 0
     /*
      * Do our best to automatically find the executable.
      */
@@ -331,23 +292,22 @@ procOpen(pid_t pid, const char *exeName, const char *coreFile, Process **procp)
         }
         if (!exeName) {
             warn("cannot find executable: try using \"-e\"");
-            procClose(p);
+            procClose(p); xxx delete p
             return -1;
         }
     }
+#endif
 
     /* read executable image */
-    if (elfLoadObject(exeName, &p->execImage)) {
-        procClose(p);
-        return (-1);
-    }
-
-    p->abiPrefix = elfGetAbiPrefix(p->execImage);
+    FileReader r(exeName);
+    execImage = new ElfObject(r);
+    abiPrefix = execImage->getABIPrefix();
 
     /* Add the image to the list of loaded objects. */
-    procAddElfObject(p, p->execImage, 0);
+    addElfObject(execImage, 0);
+
     /* An executable is loaded at its own base address */
-    p->execImage->load = p->execImage->base;
+    execImage->load = execImage->base;
 
     /*
      * Get access to the address space of live process.
@@ -355,15 +315,14 @@ procOpen(pid_t pid, const char *exeName, const char *coreFile, Process **procp)
      * effectively suspended, so we cannot spend too long between here
      * and the procCloseLive().
      */
-    if (pid != -1 && procOpenLive(p, pid, coreFile) != 0) {
-        procClose(p);
-        return (-1);
-    }
+    if (pid != -1)
+        openLive(pid);
+
     /* Attach any dynamically-linked libraries */
-    procLoadSharedObjects(p);
+    loadSharedObjects();
 #ifdef __linux__
     /* Find the linux-gate VDSO, and treat as an ELF file */
-    elfGetNotes(p->coreImage, procAddVDSO, p);
+    coreImage->getNotes(procAddVDSO, this);
 #endif
 
 
@@ -373,43 +332,35 @@ procOpen(pid_t pid, const char *exeName, const char *coreFile, Process **procp)
      * from the core, or grab the registers via ptrace() if
      * debugging a live process.
      */
-    the = td_ta_new(p, &p->agent);
+    the = td_ta_new(this, &agent);
     if (the == TD_OK) {
-        td_ta_thr_iter(p->agent, procThreadIterate, p,
+        td_ta_thr_iter(agent, procThreadIterate, this,
                 TD_THR_ANY_STATE, TD_THR_LOWEST_PRIORITY,
                 TD_SIGNO_MASK, TD_THR_ANY_USER_FLAGS);
     }
-    if (p->threadList == 0) {
+    if (threadList.empty()) {
 #ifdef XXX
         if (pid != -1) {
             if (ptrace(PT_GETREGS, pid, (caddr_t)&regs, 0) == 0) {
                 elf_regs elf;
-                procAddThread(p, 0, &regs, pid);
+                addThread(0, &regs, pid);
             } else
                 warn("fetch non-threaded process registers");
         } else
 #endif
-        {
-            elfGetNotes(p->coreImage, procAddThreadsFromNotes, p);
-        }
+            coreImage->getNotes(procAddThreadsFromNotes, this);
     }
     if (pid != -1)
-            procCloseLive(p);
-    *procp = p;
-    return (0);
+        closeLive();
 }
 
-static const Elf_Phdr *
-procFindHeaderForAddress(Process *p, const struct ElfObject *obj, Elf_Addr pa)
+const Elf_Phdr *
+ElfObject::findHeaderForAddress(Elf_Addr pa)
 {
-    const Elf_Phdr **hdr;
-    Elf_Addr va = elfAddrProc2Obj(obj, pa);
-    for (hdr = obj->programHeaders; *hdr; hdr++) {
-        if ((*hdr)->p_vaddr <= va && (*hdr)->p_vaddr + (*hdr)->p_filesz > va) {
-            if ((*hdr)->p_type == PT_LOAD)
-                return *hdr;
-        }
-    }
+    Elf_Addr va = addrProc2Obj(pa);
+    for (auto hdr : programHeaders)
+        if (hdr->p_vaddr <= va && hdr->p_vaddr + hdr->p_filesz > va && hdr->p_type == PT_LOAD)
+            return hdr;
     return 0;
 }
 
@@ -417,18 +368,15 @@ procFindHeaderForAddress(Process *p, const struct ElfObject *obj, Elf_Addr pa)
  * Read data from the target's address space.
  */
 size_t
-procReadMem(Process *p, void *ptr, Elf_Addr remoteAddr, size_t size)
+ps_prochandle::readMem(char *ptr, Elf_Addr remoteAddr, size_t size)
 {
     size_t fragSize, readLen;
     const Elf_Phdr *hdr;
-    const unsigned char *data;
     unsigned char *cp;
-    struct PageCache *pcache = &p->pageCache;
+    struct PageCache *pcache = &pageCache;
 
-    pcache = &p->pageCache;
     readLen = 0;
-
-    if (p->pid != -1) {
+    if (pid != -1) {
         /*
          * A simple LRU page cache, to avoid dragging pointer-sized
          * amounts of data across the ptrace interace.
@@ -457,7 +405,7 @@ procReadMem(Process *p, void *ptr, Elf_Addr remoteAddr, size_t size)
                  * least-recently used cache slot
                  */
                 page = luPage;
-                cp = malloc(pagesize);
+                cp = new unsigned char[pagesize];
 #ifdef PT_IO
                 {
                     struct ptrace_io_desc iod;
@@ -475,7 +423,7 @@ procReadMem(Process *p, void *ptr, Elf_Addr remoteAddr, size_t size)
 #endif
 
                 if (page->data)
-                        free(page->data);
+                    delete[] page->data;
                 page->data = cp;
                 page->address = pageLoc;
             }
@@ -490,19 +438,17 @@ procReadMem(Process *p, void *ptr, Elf_Addr remoteAddr, size_t size)
     } else {
         /* Locate "remoteAddr" in the core file */
         while (size) {
-            const struct ElfObject *obj = p->coreImage;
-            hdr = procFindHeaderForAddress(p, obj, remoteAddr);
+            hdr = coreImage->findHeaderForAddress(remoteAddr);
             if (hdr == 0)
-                for (obj = p->objectList; obj != 0; obj = obj->next) {
-                    hdr = procFindHeaderForAddress(p, obj, remoteAddr);
+                for (auto obj : objectList) {
+                    hdr = obj->findHeaderForAddress(remoteAddr);
                     if (hdr)
                         break;
                 }
             if (hdr != 0) {
-                Elf_Addr addr = elfAddrProc2Obj(obj, remoteAddr);
+                Elf_Addr addr = coreImage->addrProc2Obj(remoteAddr);
                 fragSize = MIN(hdr->p_vaddr + hdr->p_memsz - remoteAddr, size);
-                data = obj->fileData + hdr->p_offset + addr - hdr->p_vaddr;
-                memcpy((char *)ptr + readLen, data, fragSize);
+                coreImage->io.readObj(hdr->p_offset + addr - hdr->p_vaddr, ptr, fragSize);
                 size -= fragSize;
                 readLen += fragSize;
             } else {
@@ -513,125 +459,116 @@ procReadMem(Process *p, void *ptr, Elf_Addr remoteAddr, size_t size)
     }
 }
 
-static void
-stackUnwind(Process *p, struct Thread *thread, CoreRegisters *regs)
+Thread::Thread(Process *p, thread_t id, lwpid_t lwp, CoreRegisters regs)
+    : running(0)
+    , threadId(id)
+    , lwpid(lwp)
+{
+    stackUnwind(p, regs);
+}
+
+void
+Thread::stackUnwind(Process *p, CoreRegisters &regs)
 {
 
     int frameCount, i;
     struct StackFrame *frame;
-    const int frameSize = sizeof(*frame) + sizeof(Elf_Word) * gFrameArgs;
     Elf_Addr ip;
 
-    STAILQ_INIT(&thread->stack);
+    stack.clear();
 
     /* Put a bound on the number of iterations. */
     for (frameCount = 0; frameCount < gMaxFrames; frameCount++) {
-        frame = calloc(1, frameSize);
-        frame->ip = ip = REG(*regs, ip);
-        frame->bp = REG(*regs, bp);
-        STAILQ_INSERT_TAIL(&thread->stack, frame, link);
+        frame = new StackFrame(ip = REG(regs, ip), REG(regs, bp));
+        stack.push_back(frame);
 
         DwarfRegisters dr;
-        dwarfPtToDwarf(&dr, regs);
+        dwarfPtToDwarf(&dr, &regs);
 
         if (gWantDwarf && (ip = dwarfUnwind(p, &dr, ip - 3)) != 0) {
-            frame->argCount = 0;
             frame->unwindBy = "dwarf";
-            dwarfDwarfToPt(regs, &dr);
+            dwarfDwarfToPt(&regs, &dr);
         } else {
-            for (i = 0; i < gFrameArgs; i++)
-                    if (procReadMem(p, &frame->args[i],
-                        REG(*regs, bp) + sizeof(Elf_Word) * 2 +
-                        i * sizeof(Elf_Word), sizeof(Elf_Word)) !=
-                        sizeof(Elf_Word))
-                            break;
-            frame->argCount = i;
+            for (i = 0; i < gFrameArgs; i++) {
+                Elf_Word arg;
+                if (p->readMem((char *)&arg
+                        , REG(regs, bp) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word)
+                        , sizeof(Elf_Word)) != sizeof(Elf_Word))
+                    break;
+                frame->args.push_back(arg);
+            }
             frame->unwindBy = "END  ";
             /* Read the next frame */
-            if (procReadMem(p, &ip,
-                REG(*regs, bp) + sizeof(REG(*regs, bp)), sizeof ip)
-                != sizeof(ip))
-                    break;
-            REG(*regs, ip) = ip;
+            if (p->readMem((char *)&ip, REG(regs, bp) + sizeof(REG(regs, bp)), sizeof ip) != sizeof(ip))
+                break;
+            REG(regs, ip) = ip;
             // XXX: if no return instruction, break out.
             if (ip == 0)
                     break;
             // Read new frame pointer from stack.
-            if (procReadMem(p, &REG(*regs, bp), REG(*regs, bp),
-                sizeof(REG(*regs, bp))) != sizeof(REG(*regs, bp)))
-                    break;
+            if (p->readMem((char *)&REG(regs, bp), REG(regs, bp), sizeof(REG(regs, bp))) != sizeof(REG(regs, bp)))
+                break;
             // XXX: If new frame pointer is lower than old one,
             // there's a problem.
-            if ((uintmax_t)REG(*regs, bp) <= frame->bp)
-                    break;
+            if ((uintmax_t)REG(regs, bp) <= frame->bp)
+                break;
             frame->unwindBy = "stdc  ";
         }
     }
 }
- 
+
 /*
  * Take a snapshot of a thread from a set of registers.
  * This is the x86-specific bit.
  */
-static void
-procAddThread(Process *p, thread_t id, const CoreRegisters *regsp, lwpid_t lwp)
+void
+ps_prochandle::addThread(thread_t id, const CoreRegisters &regs, lwpid_t lwp)
 {
-    struct Thread *thread;
-
-    thread = malloc(sizeof(struct Thread));
-    thread->running = 0;
-
-    CoreRegisters regs = *regsp;
-
-    stackUnwind(p, thread, &regs);
-
-    thread->threadId = id;
-    thread->lwpid = lwp;
-    thread->next = p->threadList;
-    p->threadList = thread;
+    threadList.push_back(new Thread(this, id, lwp, regs));
 }
 
 /*
  * Print a stack trace of each stack in the process
  */
-static int
-procDumpStacks(FILE *file, Process *p, int indent)
+void
+ps_prochandle::dumpStacks(FILE *file, int indent)
 {
-    struct StackFrame *frame;
     struct ElfObject *obj;
-    int i, lineNo;
-    struct Thread *thread;
-    const Elf_Sym *sym;
-    const char *fileName, *symName, *cp, *padding;
+    int lineNo;
+    Elf_Sym sym;
+    std::string fileName;
+    const char *cp, *padding;
+    std::string symName;
 
     padding = pad(indent);
     fprintf(file, "%s", padding);
 
+#ifdef NOTYET
     if (p->pid != -1)
         fprintf(file, "(process %d)", p->pid);
     else
-            fprintf(file, "(core file \"%s\")", p->coreImage->fileName);
-
+        fprintf(file, "(core file \"%s\")", p->coreImage->fileName);
     fprintf(file, ", executable \"%s\"\n", p->execImage->fileName);
-    for (thread = p->threadList; thread; thread = thread->next) {
-        fprintf(file, "%s----------------- thread %lu (LWP %ld) ",
-            padding, (unsigned long)thread->threadId, (unsigned long)thread->lwpid);
+#endif
+
+    for (auto thread : threadList) {
+        fprintf(file, "%s----------------- thread %lu (LWP %ld) ", padding, (unsigned long)thread->threadId, (unsigned long)thread->lwpid);
         if (thread->running)
                 printf("(running) ");
         fprintf(file, "-----------------\n");
-        STAILQ_FOREACH(frame, &thread->stack, link) {
+        for (auto frame : thread->stack) {
             symName = fileName = "????????";
-            sym = NULL;
             Elf_Addr objIp;
-            if (procFindObject(p, frame->ip, &obj) == 0) {
-                fileName = obj->fileName;
-                elfFindSymbolByAddress(obj, elfAddrProc2Obj(obj, frame->ip), STT_FUNC, &sym, &symName);
-                objIp = elfAddrProc2Obj(obj, frame->ip);
+            obj = findObject(frame->ip);
+
+            if (obj != 0) {
+                fileName = "XXX"; // obj->fileName;
+                obj->findSymbolByAddress(obj->addrProc2Obj(frame->ip), STT_FUNC, sym, symName);
+                objIp = obj->addrProc2Obj(frame->ip);
             } else {
-                obj = 0;
                 objIp = 0;
             }
-            fprintf(file, "%s%6.16p ", padding - 1, (void *)frame->ip);
+            fprintf(file, "%s%p ", padding - 1, (void *)(intptr_t)frame->ip);
             if (gVerbose) { /* Show ebp for verbose */
 #ifdef i386
                 fprintf(file, "%p ", (void *)frame->bp);
@@ -639,134 +576,120 @@ procDumpStacks(FILE *file, Process *p, int indent)
                 fprintf(file, "%s ", frame->unwindBy);
             }
 
-            fprintf(file, "%s (", symName);
-            if (frame->argCount) {
-                for (i = 0; i < frame->argCount - 1; i++)
-                    fprintf(file, "%x, ", frame->args[i]);
-                fprintf(file, "%x", frame->args[i]);
+            fprintf(file, "%s (", symName.c_str());
+            if (frame->args.size()) {
+                auto i = frame->args.begin();
+                for (; i != frame->args.end(); ++i)
+                    fprintf(file, "%x, ", *i);
+                fprintf(file, "%x", *i);
             }
             fprintf(file, ")");
             if (obj != 0) {
-                if (sym != NULL)
-                    printf(" + %p", (void *)((intptr_t)objIp - sym->st_value));
+                printf(" + %p", (void *)((intptr_t)objIp - sym.st_value));
                 if (gShowObjectNames)
-                    printf(" in %s", gShowObjectNames > 1 || !(cp = strrchr(obj->fileName, '/')) ? obj->fileName : cp + 1);
-                if (obj->dwarf && dwarfSourceFromAddr(obj->dwarf, objIp - 1, &fileName, &lineNo))
-                    printf(" (source %s:%d)", fileName, lineNo);
+                    printf(" in %s", gShowObjectNames > 1 || !(cp = strrchr("XXX", '/')) ? "XXX" : cp + 1);
+                if (obj->dwarf && obj->dwarf->sourceFromAddr(objIp - 1, fileName, lineNo))
+                    printf(" (source %s:%d)", fileName.c_str(), lineNo);
             }
             printf("\n");
         }
         fprintf(file, "\n");
     }
-    return (0);
 }
 
 /*
  * Add ELF object description into process.
  */
-static void
-procAddElfObject(Process *p, struct ElfObject *obj, Elf_Addr load)
+void
+ps_prochandle::addElfObject(struct ElfObject *obj, Elf_Addr load)
 {
     obj->load = load;
     obj->base = (Elf_Addr)-1;
-    for (const Elf_Phdr **hdrp = obj->programHeaders; *hdrp; hdrp++) {
-        const Elf_Phdr *hdr = *hdrp;
+
+    for (auto hdr : obj->programHeaders)
         if (hdr->p_type == PT_LOAD && hdr->p_vaddr < obj->base)
             obj->base = hdr->p_vaddr;
-    }
-    obj->next = p->objectList;
-    p->objectList = obj;
-    p->objectCount++;
+
+    objectList.push_back(obj);
 
     if (gVerbose) {
         fprintf(stderr, "object %s loaded at address %p, base=%p\n",
-            obj->fileName, (void *)obj->load, (void *)obj->base);
+            "XXX", (void *)obj->load, (void *)obj->base);
     }
 
     if (gWantDwarf) {
-        DwarfInfo *di = obj->dwarf = dwarfLoad(p, obj, stderr);
+        DwarfInfo *di = obj->dwarf = new DwarfInfo(obj);
         if (gVerbose)
             fprintf(stderr, "unwind info: %s\n", 
                     di->ehFrame ? di->debugFrame ? "BOTH" : "EH" : di->debugFrame ? "DEBUG" : "NONE");
     } else {
         obj->dwarf = 0;
     }
-
 }
 
 /*
  * Grovel through the rtld's internals to find any shared libraries.
  */
-static void
-procLoadSharedObjects(Process *p)
+void
+ps_prochandle::loadSharedObjects()
 {
-    int loaded, maxpath;
-    struct r_debug rDebug;
+    int maxpath;
     struct link_map map;
-    Elf_Addr mapAddr, lAddr, r_debug_addr;
     char prefixedPath[PATH_MAX + 1], *path;
-    struct ElfObject *obj;
 
     /* Does this process look like it has shared libraries loaded? */
-    r_debug_addr = procFindRDebugAddr(p);
+    Elf_Addr r_debug_addr = findRDebugAddr();
     if (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1)
         return;
 
-    if (procReadMem(p, &rDebug, r_debug_addr, sizeof(rDebug)) != sizeof(rDebug))
+    struct r_debug rDebug;
+    if (readMem((char *)&rDebug, r_debug_addr, sizeof(rDebug)) != sizeof(rDebug))
         return;
 
-    if (p->abiPrefix) {
-        path = prefixedPath + snprintf(prefixedPath, sizeof(prefixedPath), "%s", p->abiPrefix);
-        maxpath = PATH_MAX - strlen(p->abiPrefix);
+    if (abiPrefix != "") {
+        path = prefixedPath + snprintf(prefixedPath, sizeof(prefixedPath), "%s", abiPrefix.c_str());
+        maxpath = PATH_MAX - strlen(abiPrefix.c_str());
     } else {
         path = prefixedPath;
         maxpath = PATH_MAX;
     }
 
     /* Iterate over the r_debug structure's entries, loading libraries */
-    for (mapAddr = (Elf_Addr)rDebug.r_map; mapAddr; mapAddr = (Elf_Addr)map.l_next) {
-        if (procReadMem(p, &map, mapAddr, sizeof(map)) != sizeof(map)) {
+    for (Elf_Addr mapAddr = (Elf_Addr)rDebug.r_map; mapAddr; mapAddr = (Elf_Addr)map.l_next) {
+        if (readMem((char *)&map, mapAddr, sizeof(map)) != sizeof(map)) {
             warnx("cannot read link_map @ %p", (void *)mapAddr);
             break;
         }
         /* Read the path to the file */
-        if (map.l_name == 0 || procReadMem(p, path, (Elf_Addr)map.l_name, maxpath) <= 0)
+        if (map.l_name == 0 || readMem(path, (Elf_Addr)map.l_name, maxpath) <= 0)
             continue;
-        lAddr = (Elf_Addr)map.l_addr;
-        if (p->abiPrefix && access(prefixedPath, R_OK) == 0)
-            loaded = !elfLoadObject(prefixedPath, &obj);
-        else
-            loaded = !elfLoadObject(path, &obj);
-        if (!loaded)
-            continue;
-        procAddElfObject(p, obj, lAddr);
+        Elf_Addr lAddr = (Elf_Addr)map.l_addr;
+
+        if (abiPrefix != "" && access(prefixedPath, R_OK) == 0)
+            path = prefixedPath;
+        FileReader f(path);
+        addElfObject(new ElfObject(f), lAddr);
     }
 }
 
 /*
  * Grab various bits of information from the run-time linker.
  */
-static Elf_Addr
-procFindRDebugAddr(Process *p)
+Elf_Addr
+ps_prochandle::findRDebugAddr()
 {
-    struct ElfObject *obj;
-    Elf_Dyn dyno;
-    const Elf_Dyn *dynp;
-    Elf_Addr dyn;
+    // Find DT_DEBUG in the process's dynamic section.
+    if (execImage->dynamic == 0)
+        return 0;
 
-    obj = p->execImage;
-    /* Find DT_DEBUG in the process's dynamic section. */
-    if (obj->dynamic) {
-        for (dyn = 0; dyn < obj->dynamic->p_filesz; dyn += sizeof(Elf_Dyn)) {
-            dynp = (const Elf_Dyn *)(obj->fileData +
-                obj->dynamic->p_offset + dyn);
-            if (dynp->d_tag == DT_DEBUG && procReadMem(p, &dyno,
-                obj->dynamic->p_vaddr + dyn,
-                sizeof(dyno)) == sizeof(dyno))
-                    return(dyno.d_un.d_ptr);
-        }
+    for (Elf_Addr dynOff = 0; dynOff < execImage->dynamic->p_filesz; dynOff += sizeof(Elf_Dyn)) {
+        Elf_Dyn dyn;
+        execImage->io.readObj(execImage->dynamic->p_offset + dynOff, &dyn);
+        if (dyn.d_tag == DT_DEBUG
+                && readMem((char *)&dyn, execImage->dynamic->p_vaddr + dynOff, sizeof(dyn)) == sizeof(dyn))
+            return dyn.d_un.d_ptr;
     }
-    return (0);
+    return 0;
 }
 
 static const char PRSTATUS_NOTENAME[] = 
@@ -783,9 +706,9 @@ procAddThreadsFromNotes(void *cookie, const char *name, u_int32_t type,
 {
 
     const prstatus_t *prstatus = (const prstatus_t *)data;
-    Process *p = cookie;
+    Process *p = (Process *)cookie;
     if (strcmp(name, PRSTATUS_NOTENAME) == 0 && type == NT_PRSTATUS)
-        procAddThread(p, 0, (const CoreRegisters *)&prstatus->pr_reg, prstatus->pr_pid);
+        p->addThread(0, *(const CoreRegisters *)&prstatus->pr_reg, prstatus->pr_pid);
 
     return (NOTE_CONTIN);
 }
@@ -798,22 +721,22 @@ procRegsFromNote(void *cookie, const char *name, u_int32_t type,
     struct RegnoteInfo *rni;
 
     prstatus = (const prstatus_t *)data;
-    rni = cookie;
+    rni = (RegnoteInfo *)cookie;
     if (strcmp(name, PRSTATUS_NOTENAME) == 0 && type == NT_PRSTATUS && prstatus->pr_pid == rni->pid) {
-            memcpy(rni->reg, (const DwarfRegisters *)&prstatus->pr_reg, sizeof(*rni->reg));
-            return (NOTE_DONE);
+        memcpy(rni->reg, (const DwarfRegisters *)&prstatus->pr_reg, sizeof(*rni->reg));
+        return (NOTE_DONE);
     }
     return (NOTE_CONTIN);
 }
 
-static int
-procGetRegs(Process *p, lwpid_t pid, CoreRegisters *reg)
+int
+ps_prochandle::getRegs(lwpid_t pid, CoreRegisters *reg)
 {
     struct RegnoteInfo rni;
     int rc;
 
 #ifdef __FreeBSD__
-    if (p->pid != -1) {
+    if (pid != -1) {
         rc = ptrace(PT_GETREGS, pid, (caddr_t)reg, 0);
         if (rc == -1)
             warn("failed to trace LWP %d", (int)pid);
@@ -822,10 +745,10 @@ procGetRegs(Process *p, lwpid_t pid, CoreRegisters *reg)
 #endif
     {
         /* Read from core file. */
-        rni.proc = p;
+        rni.proc = this;
         rni.pid = pid;
         rni.reg = reg;
-        rc = elfGetNotes(p->coreImage, procRegsFromNote, &rni);
+        rc = coreImage->getNotes(procRegsFromNote, &rni);
     }
     return (rc);
 }
@@ -833,15 +756,13 @@ procGetRegs(Process *p, lwpid_t pid, CoreRegisters *reg)
 /*
  * Setup what we need to read from the process memory (or core file)
  */
-static int
-procOpenLive(Process *p, pid_t pid, const char *core)
+void
+ps_prochandle::openLive(pid_t pid)
 {
     int status;
 
-    if (ptrace(PT_ATTACH, pid, 0, 0) != 0) {
-        warn("failed to attach to process %d", pid);
-        return (-1);
-    }
+    if (ptrace(PT_ATTACH, pid, 0, 0) != 0)
+        throw 999;
     /*
      * Wait for child to stop.
      * XXX: Due to an interaction between ptrace() and linux
@@ -855,79 +776,32 @@ procOpenLive(Process *p, pid_t pid, const char *core)
             warnx("(linux thread process detected: waiting with WLINUXCLONE)");
         else
 #endif
-        warn("can't wait for child: all bets " "are off");
+            warn("can't wait for child: all bets " "are off");
     }
-    p->pid = pid;
-    return (0);
 }
 
-static void
-procCloseLive(Process *p)
+void
+ps_prochandle::closeLive()
 {
-    if (p->pid != -1) {
-        if (ptrace(PT_DETACH, p->pid, (caddr_t)1, 0) != 0)
-            warn("failed to detach from process %d", p->pid);
-    }
+    if (pid != -1)
+        if (ptrace(PT_DETACH, pid, (caddr_t)1, 0) != 0)
+            warn("failed to detach from process %d", pid);
 }
 
 /*
  * Free any resources associated with a Process
  */
-static void
-procClose(Process *p)
+Process::~Process()
 {
-    size_t i;
-
-    procFreeObjects(p);
-    procFreeThreads(p);
-    if (p->pid != -1) {
-        for (i = 0; i < PAGECACHE_SIZE; i++)
-            if (p->pageCache.pages[i].data)
-                free(p->pageCache.pages[i].data);
-    }
-    if (p->coreImage)
-        elfUnloadObject(p->coreImage);
-    free(p);
+    delall(objectList);
+    delall(threadList);
+    delete coreImage;
+    delete[] vdso;
 }
 
-/*
- * Release resources associated with the thread list
- */
-static void
-procFreeThreads(Process *p)
+Thread::~Thread()
 {
-    struct StackFrameList *stackFrameList;
-    struct StackFrame *frame;
-    struct Thread *thread, *nextThread;
-
-    for (thread = p->threadList; thread; thread = nextThread) {
-        stackFrameList = &thread->stack;
-        while (!STAILQ_EMPTY(stackFrameList)) {
-                frame = STAILQ_FIRST(stackFrameList);
-                STAILQ_REMOVE_HEAD(stackFrameList, link);
-                free(frame);
-        }
-        nextThread = thread->next;
-        free(thread);
-    }
-}
-
-/*
- * Release the loaded ELF objects
- */
-static void
-procFreeObjects(Process *p)
-{
-    struct ElfObject *obj, *nextObj;
-
-    for (obj = p->objectList; obj; obj = nextObj) {
-        nextObj = obj->next;
-        if (obj->fileData == p->vdso) {
-            free(p->vdso);
-            obj->fileData = 0;
-        }
-        elfUnloadObject(obj);
-    }
+    delall(stack);
 }
 
 #ifdef __linux__
@@ -955,7 +829,7 @@ procThreadIterate(const td_thrhandle_t *thr, void *v)
 #endif
     if (the == TD_OK) {
         td_thr_get_info(thr, &ti);
-        procAddThread(p, THR_ID(thr), &regs, ti.ti_lid);
+        p->addThread(THR_ID(thr), regs, ti.ti_lid);
     } else {
         warn("cannot trace thread %lu", (unsigned long)THR_ID(thr));
     }
@@ -979,7 +853,7 @@ ps_err_e ps_lgetfpregs(struct ps_prochandle *p, lwpid_t pid, prfpregset_t *fpreg
 
 ps_err_e ps_lgetregs(struct ps_prochandle *p, lwpid_t pid, prgregset_t gregset)
 {
-    return (procGetRegs(p, pid, gregset) == 0 ? PS_OK : PS_ERR);
+    return (p->getRegs(pid, (CoreRegisters *)gregset) == 0 ? PS_OK : PS_ERR);
 }
 
 ps_err_e ps_lsetfpregs(struct ps_prochandle *p, lwpid_t pid, const prfpregset_t *fpregsetp)
@@ -1017,14 +891,12 @@ ps_err_e
 ps_pglobal_lookup(struct ps_prochandle *p, const char *ld_object_name,
 	const char *ld_symbol_name, psaddr_t *ld_symbol_addr)
 {
-    struct ElfObject *obj;
-    const Elf_Sym *sym;
-
-    for (obj = p->objectList; obj; obj = obj->next) {
-        const char *p = strrchr(obj->fileName, '/');
-        if (ld_object_name == 0 || strcmp(p ? p + 1 : obj->fileName, ld_object_name) == 0) {
-            if (elfFindSymbolByName(obj, ld_symbol_name, &sym) == 0) {
-                *ld_symbol_addr = (psaddr_t)elfAddrObj2Proc(obj, sym->st_value);
+    for (auto obj : p->objectList) {
+        const char *p = strrchr("XXX", '/');
+        if (ld_object_name == 0 || strcmp(p ? p + 1 : "XXX", ld_object_name) == 0) {
+            Elf_Sym sym;
+            if (obj->findSymbolByName(ld_symbol_name, sym) == 0) {
+                *ld_symbol_addr = (psaddr_t)obj->addrObj2Proc(sym.st_value);
                 return (PS_OK);
             }
             if (ld_object_name)
@@ -1048,7 +920,7 @@ ps_pread(struct ps_prochandle *p, psaddr_t addr, void *buf, size_t len)
 {
     size_t rc;
 
-    rc = procReadMem(p, buf, (Elf_Addr)addr, len);
+    rc = p->readMem((char *)buf, (Elf_Addr)addr, len);
     return (rc == len ? PS_OK : PS_ERR);
 }
 
@@ -1092,8 +964,7 @@ ps_getpid(struct ps_prochandle *p)
 ps_err_e
 ps_pdread(struct ps_prochandle *p, psaddr_t addr, void *d, size_t l)
 {
-    int rc = procReadMem(p, d, (Elf_Addr)addr, l);
-    return rc  == l ? PS_OK : PS_ERR;
+    return p->readMem((char *)d, (Elf_Addr)addr, l) == l ? PS_OK : PS_ERR;
 }
 
 ps_err_e
@@ -1140,3 +1011,18 @@ ps_lsetxmmregs (struct ps_prochandle *ph, lwpid_t pid, const char *xxx)
 #ifdef __amd64__
 
 #endif
+
+/*
+ * Find the mapped object within which "addr" lies
+ */
+ElfObject *
+ps_prochandle::findObject(Elf_Addr addr)
+{
+    for (auto obj : objectList) {
+        Elf32_Addr va = obj->addrProc2Obj(addr);
+        for (auto phdr : obj->programHeaders)
+            if (va >= phdr->p_vaddr && va < phdr->p_vaddr + phdr->p_memsz)
+                return obj;
+    }
+    return 0;
+}

@@ -5,6 +5,7 @@
 #include <sys/ucontext.h>
 #include <sys/ptrace.h>
 #include <asm/ptrace.h>
+#include <map>
 
 uint32_t getu32(const unsigned char **p);
 uint16_t getu16(const unsigned char **p);
@@ -16,6 +17,12 @@ const char *getstring(const unsigned char **p);
 #define DWARF_MAXREG 128
 
 enum DwarfHasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
+struct DwarfCIE;
+struct DwarfInfo;
+class DWARFReader;
+class DwarfLineInfo;
+struct DwarfUnit;
+struct DwarfFrameInfo;
 
 typedef struct {
     uintmax_t reg[DWARF_MAXREG];
@@ -56,55 +63,55 @@ enum DwarfLineEOpcode {
 };
 #undef DWARF_LINE_E
 
-typedef struct tagDwarfAttributeSpec {
-    struct tagDwarfAttributeSpec *next;
+struct DwarfAttributeSpec {
     enum DwarfAttrName name;
     enum DwarfForm form;
-} DwarfAttributeSpec;
+    DwarfAttributeSpec(DwarfAttrName name_, DwarfForm form_) : name(name_), form(form_) { }
+};
 
-typedef struct tagDwarfAbbreviation {
-    struct tagDwarfAbbreviation *next;
+struct DwarfAbbreviation {
     intmax_t code;
-    intmax_t tag;
+    DwarfTag tag;
     enum DwarfHasChildren hasChildren;
-    DwarfAttributeSpec *specs;
-} DwarfAbbreviation;
+    std::list<DwarfAttributeSpec *> specs;
+    DwarfAbbreviation(DWARFReader &, intmax_t code);
+};
 
-typedef struct tagDwarfPubname {
-    struct tagDwarfPubname *next;
-    const char *name;
-    uint64_t offset;
-} DwarfPubname;
+struct DwarfPubname {
+    uint32_t offset;
+    std::string name;
+    DwarfPubname(DWARFReader &r, uint32_t offset);
+};
 
-typedef struct tagDwarfARange {
+struct DwarfARange {
     uintmax_t start;
     uintmax_t length;
-} DwarfARange;
+    DwarfARange(uintmax_t start_, uintmax_t length_) : start(start_), length(length_) {}
+};
 
-typedef struct tagDwarfARangeSet {
-    struct tagDwarfARangeSet *next;
+struct DwarfARangeSet {
     uint32_t length;
     uint16_t version;
     uint32_t debugInfoOffset;
     uint8_t addrlen;
     uint8_t segdesclen;
-    DwarfARange *ranges;
-    int rangeCount;
-} DwarfARangeSet;
+    std::vector<DwarfARange> ranges;
+    DwarfARangeSet(DWARFReader &r);
+};
 
-typedef struct tagDwarfPubnameUnit {
-    struct tagDwarfPubnameUnit *next;
+struct DwarfPubnameUnit {
     uint16_t length;
     uint16_t version;
     uint32_t infoOffset;
     uint32_t infoLength;
-    DwarfPubname *pubnames;
-} DwarfPubnameUnit;
+    std::list<DwarfPubname *> pubnames;
+    DwarfPubnameUnit(DWARFReader &r);
+};
 
-typedef struct tagDwarfBlock {
+struct DwarfBlock {
     off_t offset;
     off_t length;
-} DwarfBlock;
+};
 
 union DwarfValue {
     uintmax_t addr;
@@ -122,45 +129,43 @@ union DwarfValue {
     char flag;
 };
 
-typedef struct tagDwarfAttribute {
-    struct tagDwarfAttribute *next;
+struct DwarfAttribute {
     DwarfAttributeSpec *spec; /* From abbrev table attached to type */
-    union DwarfValue value;
-} DwarfAttribute;
+    DwarfValue value;
+    DwarfAttribute(DWARFReader &, DwarfUnit *, DwarfAttributeSpec *spec);
+};
 
-typedef struct tagDwarfEntry {
-    struct tagDwarfEntry *sibling;
-    struct tagDwarfEntry *children;
+struct DwarfEntry {
+    std::list<DwarfEntry *> children;
     const DwarfAbbreviation *type;
-    DwarfAttribute *attributes;
+    std::map<DwarfAttrName, DwarfAttribute *> attributes;
     intmax_t offset;
-} DwarfEntry;
+    DwarfAttribute *attrForName(DwarfAttrName name) { return attributes[name]; }
+    DwarfEntry(DWARFReader &r, DwarfUnit *unit);
+};
 
-typedef struct tagDwarfUnit {
-    struct tagDwarfUnit *next;
+struct DwarfUnit {
+    DwarfUnit *next;
     uint32_t length;
     uint16_t version;
-    DwarfAbbreviation **abbreviations;
+    std::map<uintmax_t, DwarfAbbreviation *> abbreviations;
     uint8_t addrlen;
-    const unsigned char *start;
     const unsigned char *entryPtr;
-    const unsigned char *end;
     const unsigned char *lineInfo;
-    DwarfEntry *entries;
-    const struct tagDwarfLineInfo *lines;
-} DwarfUnit;
+    std::list<DwarfEntry *> entries;
+    const DwarfLineInfo *lines;
+    DwarfUnit(DWARFReader &);
+};
 
-typedef struct tagDwarfFDE {
-    struct tagDwarfFDE *next;
-    struct tagDwarfCIE *cie;
+struct DwarfFDE {
+    DwarfCIE *cie;
     uintmax_t iloc;
     uintmax_t irange;
-    uint32_t offset;
-    const unsigned char *instructions;
-    const unsigned char *end;
-    const unsigned char *adata;
-    uint32_t alen;
-} DwarfFDE;
+    Elf_Off instructions;
+    Elf_Off end;
+    std::vector<unsigned char> aug;
+    DwarfFDE(DWARFReader &, DwarfFrameInfo *, Elf_Off, Elf_Off cieid, Elf_Off end);
+};
 
 #define MAXREG 128
 enum DwarfRegisterType {
@@ -174,7 +179,7 @@ enum DwarfRegisterType {
     ARCH
 };
 
-typedef struct tagDwarfRegisterUnwind {
+struct DwarfRegisterUnwind {
     enum DwarfRegisterType type;
     union {
         uintmax_t same;
@@ -183,20 +188,19 @@ typedef struct tagDwarfRegisterUnwind {
         DwarfBlock expression;
         uintmax_t arch;
     } u;
-} DwarfRegisterUnwind;
+};
 
-typedef struct tagDwarfCallFrame {
-    struct tagDwarfCallFrame *stack;
+struct DwarfCallFrame {
+    DwarfCallFrame *stack;
     DwarfRegisterUnwind registers[MAXREG];
     int cfaReg;
     DwarfRegisterUnwind cfaValue;
-} DwarfCallFrame;
+    DwarfCallFrame();
+};
 
-typedef struct tagDwarfCIE {
-    struct tagDwarfCIE *next;
-    DwarfCallFrame defaultFrame;
+struct DwarfCIE {
     uint32_t offset;
-    const char *augmentation;
+    std::string augmentation;
     unsigned codeAlign;
     int dataAlign;
     unsigned long augSize;
@@ -205,46 +209,54 @@ typedef struct tagDwarfCIE {
     int rar;
     uint8_t version;
     uint8_t addressEncoding;
-    const unsigned char *instructions;
-    const unsigned char *end;
-} DwarfCIE;
+    Elf_Off instructions;
+    Elf_Off end;
+    DwarfCIE(DWARFReader &, Elf_Off, Elf_Off);
+};
 
 enum FIType {
     FI_DEBUG_FRAME,
     FI_EH_FRAME
 };
 
-
-struct tagDwarfInfo;
-typedef struct tagDwarfInfo DwarfInfo;
-
-typedef struct tagFrameInfo {
-    enum FIType type;
-    DwarfCIE *cieList;
-    DwarfFDE *fdeList;
+struct DwarfFrameInfo {
     DwarfInfo *dwarf;
-} DwarfFrameInfo;
+    FIType type;
+    std::list<DwarfCIE *> cieList;
+    std::list<DwarfFDE *> fdeList;
+    DwarfFrameInfo(DWARFReader &, FIType type);
+    DwarfCIE *getCIE(Elf_Off offset);
+    const DwarfFDE *findFDE(Elf_Addr) const;
+};
 
-struct tagDwarfInfo {
-    struct ElfObject *elf;
-    DwarfUnit *units;
-    DwarfPubnameUnit *pubnameUnits;
-    DwarfARangeSet *aranges;
+class DwarfInfo {
+public:
+    // interesting shdrs from the exe.
+    const Elf_Shdr *info, *abbrev, *debstr, *pubnames, *arangesh, *lineshdr, *eh_frame, *debug_frame;
+    ElfObject *elf;
+    std::list<DwarfUnit *> units;
+    std::list<DwarfPubnameUnit *> pubnameUnits;
+    std::list<DwarfARangeSet *> aranges;
     char *debugStrings;
     off_t lines;
     unsigned addrLen;
     DwarfFrameInfo *debugFrame;
     DwarfFrameInfo *ehFrame;
+    DwarfInfo(ElfObject *object);
+    bool sourceFromAddr(uintmax_t addr, std::string &file, int &line);
 };
 
-typedef struct tagDwarfFileEntry {
-    const char *name;
-    const char *directory;
+struct DwarfFileEntry {
+    std::string name;
+    std::string directory;
     unsigned lastMod;
     unsigned length;
-} DwarfFileEntry;
 
-typedef struct tagDwarfLineState {
+    DwarfFileEntry(std::string name_, std::string dir_, unsigned lastMod_, unsigned length_);
+    DwarfFileEntry(DWARFReader &r, DwarfLineInfo *info);
+};
+
+struct DwarfLineState {
     uintmax_t addr;
     DwarfFileEntry *file;
     unsigned line;
@@ -252,16 +264,17 @@ typedef struct tagDwarfLineState {
     unsigned is_stmt:1;
     unsigned basic_block:1;
     unsigned end_sequence:1;
-} DwarfLineState;
+    DwarfLineState(DwarfLineInfo *);
+    void reset(DwarfLineInfo *);
+};
 
-typedef struct tagDwarfLineInfo {
-    const char **directories;
+struct DwarfLineInfo {
+    std::vector<std::string> directories;
     int default_is_stmt;
-    DwarfFileEntry *files;
-    DwarfLineState *matrix;
-    int rows;
-    int maxrows;
-} DwarfLineInfo;
+    std::vector<DwarfFileEntry *> files;
+    std::vector<DwarfLineState> matrix;
+    DwarfLineInfo(DWARFReader &, const DwarfUnit *);
+};
 
 void dwarfDump(FILE *out, int, const DwarfInfo *info);
 DwarfInfo *dwarfLoad(Process *, struct ElfObject *obj, FILE *errs);
@@ -276,10 +289,6 @@ void dwarfDumpAbbrev(FILE *out, int indent, const DwarfAbbreviation *abbrev);
 void dwarfDumpUnit(FILE *, int indent, const DwarfInfo *, const DwarfUnit *);
 const char *dwarfSOpcodeName(enum DwarfLineSOpcode code);
 const char *dwarfEOpcodeName(enum DwarfLineEOpcode code);
-int dwarfSourceFromAddr(DwarfInfo *dwarf, uintmax_t addr, const char **file, int *line);
-int dwarfFindFDE(const DwarfFrameInfo *, uintmax_t addr, const DwarfFDE **fde);
-void dwarfDumpFDE(FILE *, int, const DwarfInfo *, const DwarfFDE *);
-
 int dwarfComputeCFA(Process *, const DwarfInfo *, DwarfFDE *, DwarfCallFrame *, DwarfRegisters *, uintmax_t addr);
 uintmax_t dwarfUnwind(Process *proc, DwarfRegisters *regs, uintmax_t addr);
 void dwarfArchGetRegs(const gregset_t *regs, uintmax_t *dwarfRegs);
@@ -290,7 +299,7 @@ const DwarfRegisters *dwarfDwarfToPt(CoreRegisters *sys, const DwarfRegisters *d
 
 /* Linux extensions: */
 
-typedef enum tagDwarfCFAInstruction {
+enum DwarfCFAInstruction {
 
     DW_CFA_advance_loc          = 0x40, // XXX: Lower 6 = delta
     DW_CFA_offset               = 0x80, // XXX: lower 6 = reg, (offset:uleb128)
@@ -333,14 +342,14 @@ typedef enum tagDwarfCFAInstruction {
      * padding to represent this value
      */
     DW_CFA_PAD                  = 0xff
-} DwarfCFAInstruction;
+};
 
 #define DWARF_OP(op, value, args) op = value,
 
-typedef enum tagDwarfExpressionOp {
+enum DwarfExpressionOp {
 #include "dwarf/ops.h"
     LASTOP = 0x100
-} DwarfExpressionOp;
+};
 
 #undef DWARF_OP
 
