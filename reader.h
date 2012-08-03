@@ -4,8 +4,10 @@ protected:
 public:
     template <typename Obj> void
     readObj(off_t offset, Obj *object, size_t count = 1) {
-        read(offset, count * sizeof *object, (char *)object);
+        if (count != 0)
+            read(offset, count * sizeof *object, (char *)object);
     }
+    virtual std::string describe() const = 0;
 };
 
 class FileReader : public Reader {
@@ -19,7 +21,7 @@ public:
             throw 999;
     }
     FileReader(std::string name, FILE * = 0);
-
+    std::string describe() const { return name; }
 };
 
 class MemReader : public Reader {
@@ -31,4 +33,5 @@ public:
     MemReader(char *data_, size_t len_)
         : data(data_), len(len_)
         {}
+    std::string describe() const { return "from memory image"; }
 };

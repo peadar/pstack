@@ -32,7 +32,7 @@ public:
     DwarfInfo &dwarf;
     ElfObject &elf;
     
-    Elf_Off decodeCIEFDEHdr(uint32_t *id, enum FIType type);
+    Elf_Off decodeCIEFDEHdr(Elf_Addr *id, enum FIType type);
     DWARFReader(DwarfInfo &dwarf_, Elf_Off off_, Elf_Word size_)
         : off(off_)
         , end(off_ + size_)
@@ -324,14 +324,12 @@ DwarfUnit::DwarfUnit(DWARFReader &r)
     Elf_Off nextoff = r.getOffset() + length;
     version = r.getu16();
 
-    off_t off = r.getu32();
-    off_t abbrevOff = r.dwarf.abbrev->sh_offset + off;
-
-    DWARFReader abbR(r.dwarf, abbrevOff, r.dwarf.abbrev->sh_size);
+    off_t off = version >= 3 ? r.getuint(8) : r.getu32();
+    DWARFReader abbR(r.dwarf, r.dwarf.abbrev->sh_offset + off, r.dwarf.abbrev->sh_size);
+    r.dwarf.addrLen = addrlen = r.getu8();
     uintmax_t code;
     while ((code = r.getuleb128()) != 0)
         abbreviations[code] = new DwarfAbbreviation(abbR, code);
-    r.dwarf.addrLen = addrlen = r.getu8();
     dwarfDecodeEntries(r, this, entries);
     r.setOffset(nextoff);
 }
@@ -603,12 +601,8 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, DwarfUnit *unit, DwarfAttributeSp
     }
 }
 
-DwarfEntry::DwarfEntry(DWARFReader &r, DwarfUnit *unit)
+DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
 {
-    intmax_t code = r.getuleb128();
-
-    if (code == 0)
-        throw 999;
 
     type = unit->abbreviations[code];
 
@@ -633,8 +627,11 @@ DwarfEntry::DwarfEntry(DWARFReader &r, DwarfUnit *unit)
 static void
 dwarfDecodeEntries(DWARFReader &r, DwarfUnit *unit, std::list<DwarfEntry *> &list)
 {
-    while (!r.empty())
-        list.push_back(new DwarfEntry(r, unit));
+    while (!r.empty()) {
+        intmax_t code = r.getuleb128();
+        if (code)
+            list.push_back(new DwarfEntry(r, code, unit));
+    }
 }
 
 static void
@@ -1304,10 +1301,9 @@ decodeAddress(DWARFReader f, int encoding)
     return base;
 }
 
-DwarfFDE::DwarfFDE(DWARFReader &reader, DwarfFrameInfo *info, Elf_Off startOff, Elf_Off cieid, Elf_Off end_)
+DwarfFDE::DwarfFDE(DWARFReader &reader, DwarfFrameInfo *info, Elf_Off cieid, Elf_Off end_)
 {
-
-    Elf_Off cieOff = info->type == FI_EH_FRAME ? startOff - cieid : cieid;
+    Elf_Off cieOff = info->type == FI_EH_FRAME ? reader.getOffset() - cieid : cieid;
     cie = info->getCIE(cieOff);
 
     iloc = decodeAddress(reader, cie->addressEncoding);
@@ -1421,7 +1417,7 @@ DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off offset, Elf_Off end)
 }
 
 Elf_Off
-DWARFReader::decodeCIEFDEHdr(uint32_t *id, enum FIType type)
+DWARFReader::decodeCIEFDEHdr(Elf_Addr *id, enum FIType type)
 {
     off_t next;
     size_t length = getu32();
@@ -1439,9 +1435,8 @@ DWARFReader::decodeCIEFDEHdr(uint32_t *id, enum FIType type)
         return 0;
 
     next = getOffset() + length;
-    // XXX: Dwarf 2 = 4 bytes, Dwarf 3 = word size.
-    *id = getuint(ELF_BITS/8);
-    skip(length - 4);
+    //*id = getuint(ELF_BITS/8);
+    *id = getuint(4);
     return next;
 }
 
@@ -1449,7 +1444,7 @@ DwarfFrameInfo::DwarfFrameInfo(DWARFReader &reader, enum FIType type_)
     : dwarf(&reader.dwarf)
     , type(type_)
 {
-    uint32_t cieid;
+    Elf_Addr cieid;
 
     // decode in 2 passes: first for CIE, then for FDE
     off_t start = reader.getOffset();
@@ -1464,12 +1459,11 @@ DwarfFrameInfo::DwarfFrameInfo(DWARFReader &reader, enum FIType type_)
     }
     reader.setOffset(start);
     for (reader.setOffset(start); !reader.empty(); reader.setOffset(nextoff)) {
-        size_t offset = reader.getOffset();
         nextoff = reader.decodeCIEFDEHdr(&cieid, type);
         if (nextoff == 0)
             break;
         if ((type == FI_DEBUG_FRAME && cieid != 0xffffffff) || (type == FI_EH_FRAME && cieid != 0))
-            fdeList.push_back(new DwarfFDE(reader, this, offset, cieid, nextoff));
+            fdeList.push_back(new DwarfFDE(reader, this, cieid, nextoff));
     }
 }
 

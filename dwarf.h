@@ -134,7 +134,7 @@ struct DwarfEntry {
     std::map<DwarfAttrName, DwarfAttribute *> attributes;
     intmax_t offset;
     DwarfAttribute *attrForName(DwarfAttrName name) { return attributes[name]; }
-    DwarfEntry(DWARFReader &r, DwarfUnit *unit);
+    DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit);
 };
 
 struct DwarfUnit {
@@ -157,7 +157,7 @@ struct DwarfFDE {
     Elf_Off instructions;
     Elf_Off end;
     std::vector<unsigned char> aug;
-    DwarfFDE(DWARFReader &, DwarfFrameInfo *, Elf_Off, Elf_Off cieid, Elf_Off end);
+    DwarfFDE(DWARFReader &, DwarfFrameInfo *, Elf_Off cieid, Elf_Off end);
 };
 
 #define MAXREG 128

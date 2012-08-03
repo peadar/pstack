@@ -106,23 +106,21 @@ enum NoteIter {
 };
 
 struct ElfObject {
-	Elf_Addr base; /* For loaded objects */
-	Elf_Addr load;
+    Elf_Addr base; /* For loaded objects */
+    Elf_Addr load;
     Reader &io;
-	size_t fileSize;
-	Elf_Ehdr elfHeader;
+    size_t fileSize;
+    Elf_Ehdr elfHeader;
     std::vector<Elf_Phdr *> programHeaders;
     std::vector<Elf_Shdr *> sectionHeaders;
-	const Elf_Phdr *dynamic;
-	off_t sectionStrings;
-	std::string interpreterName;
+    const Elf_Phdr *dynamic;
+    off_t sectionStrings;
+    std::string interpreterName;
     DwarfInfo *dwarf;
     struct ElfMemChunk firstChunk;
     char buf[MEMBUF];
     struct ElfMemChunk *mem;
     std::string readString(off_t offset) const;
-
-
     bool linearSymSearch(const Elf_Shdr *hdr, std::string name, Elf_Sym &);
     void init(FILE *);
     ElfSymHash *hash;
@@ -130,7 +128,7 @@ public:
     Elf_Shdr *findSectionByName(std::string name);
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(std::string name, Elf_Sym &sym);
-    const char *getABIPrefix();
+    std::string getABIPrefix();
     ElfObject(Reader &);
     ~ElfObject();
     inline Elf_Addr addrProc2Obj(Elf_Addr va) const { return va - load + base; }
@@ -147,16 +145,16 @@ public:
 
 class ElfSymHash {
     ElfObject *obj;
-	const Elf_Shdr *hash;
-	const Elf_Shdr *syms;
+    const Elf_Shdr *hash;
+    const Elf_Shdr *syms;
     off_t strings;
-	Elf_Word nbucket;
+    Elf_Word nbucket;
     Elf_Word nchain;
     const Elf_Word *buckets;
     const Elf_Word *chains;
     const Elf_Word *data;
 public:
-    ElfSymHash(ElfObject *object, Elf_Shdr *);
+    ElfSymHash(ElfObject *object, Elf_Shdr *hash);
     bool findSymbol(Elf_Sym &sym, std::string &name);
 };
 

@@ -76,7 +76,7 @@ FileReader::FileReader(std::string name_, FILE *file_)
     : name(name_)
     , file(file_)
 {
-    if (file != 0 && (file = fopen(name.c_str(), "r")) == 0)
+    if (file == 0 && (file = fopen(name.c_str(), "r")) == 0)
         throw 999;
 }
 
@@ -127,7 +127,7 @@ ElfObject::ElfObject(Reader &io_)
     } else {
         sectionStrings = 0;
     }
-	Elf_Shdr *tab = findSectionByName(".hash");
+    Elf_Shdr *tab = findSectionByName(".hash");
     hash = tab ? new ElfSymHash(this, tab) : 0;
 }
 
@@ -181,6 +181,8 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, std::strin
         Elf_Sym candidate;
         for (; symoff < symend && !exact; symoff += sizeof sym) {
             io.readObj(symoff, &candidate);
+            if (candidate.st_shndx >= sectionHeaders.size())
+                continue;
             Elf_Shdr *shdr = sectionHeaders[candidate.st_shndx];
             if (!(shdr->sh_flags & SHF_ALLOC))
                 continue;
@@ -225,10 +227,11 @@ ElfObject::linearSymSearch(const Elf_Shdr *hdr, std::string name, Elf_Sym &sym)
     return false;
 }
 
-ElfSymHash::ElfSymHash(ElfObject *obj_, Elf_Shdr *table)
+ElfSymHash::ElfSymHash(ElfObject *obj_, Elf_Shdr *hash_)
     : obj(obj_)
+    , hash(hash_)
 {
-	syms = obj->getSection(hash->sh_link);
+    syms = obj->getSection(hash->sh_link);
 
     // read the hash table into local memory.
     size_t words = hash->sh_size / sizeof (Elf_Word);
@@ -249,7 +252,7 @@ ElfSymHash::findSymbol(Elf_Sym &sym, std::string &name)
     for (Elf_Word i = buckets[bucket]; i != STN_UNDEF; i = chains[i]) {
         Elf_Sym candidate;
         obj->io.readObj(syms->sh_offset + i * sizeof candidate, &candidate);
-        std::string candidateName = obj->readString(strings + sym.st_name);
+        std::string candidateName = obj->readString(strings + candidate.st_name);
         if (candidateName == name) {
             sym = candidate;
             name = candidateName;
@@ -271,8 +274,8 @@ ElfObject::findSymbolByName(std::string name, Elf_Sym &sym)
     if (syms && linearSymSearch(syms, name, sym))
         return true;
     syms = findSectionByName(".symtab");
-	if (syms && linearSymSearch(syms, name, sym))
-		return true;
+    if (syms && linearSymSearch(syms, name, sym))
+        return true;
     return false;
 }
 
@@ -281,40 +284,41 @@ ElfObject::findSymbolByName(std::string name, Elf_Sym &sym)
  */
 int
 ElfObject::getNotes(enum NoteIter (*callback)(void *cookie, const char *name,
-		u_int32_t type, const void *datap, size_t len), void *cookie)
+        u_int32_t type, const void *datap, size_t len), void *cookie)
 {
 
-	for (auto phdr : programHeaders) {
-		if (phdr->p_type == PT_NOTE) {
+    for (auto phdr : programHeaders) {
+        if (phdr->p_type == PT_NOTE) {
             Elf_Note note;
             off_t off = phdr->p_offset;
             off_t e = off + phdr->p_filesz;
-			while (off < e) {
+            while (off < e) {
                 io.readObj(off, &note);
+                off += sizeof note;
                 char *name = new char[note.n_namesz + 1];
-                io.readObj(off, &note, note.n_namesz);
+                io.readObj(off, name, note.n_namesz);
                 name[note.n_namesz] = 0;
                 off += note.n_namesz;
-				off = roundup2(off, 4);
+                off = roundup2(off, 4);
                 char *data = new char[note.n_descsz];
                 io.readObj(off, data, note.n_descsz);
                 off += note.n_descsz;
-				off = roundup2(off, 4);
-				NoteIter iter = callback(cookie, name, note.n_type, data, note.n_descsz);
+                off = roundup2(off, 4);
+                NoteIter iter = callback(cookie, name, note.n_type, data, note.n_descsz);
                 delete[] data;
                 delete[] name;
-				switch (iter) {
-				case NOTE_DONE:
-					return 0;
-				case NOTE_CONTIN:
-					break;
-				case NOTE_ERROR:
-					return -1;
-				}
-			}
-		}
-	}
-	return -2;
+                switch (iter) {
+                case NOTE_DONE:
+                    return 0;
+                case NOTE_CONTIN:
+                    break;
+                case NOTE_ERROR:
+                    return -1;
+                }
+            }
+        }
+    }
+    return -2;
 }
 
 #ifdef __FreeBSD__
@@ -325,20 +329,20 @@ ElfObject::getNotes(enum NoteIter (*callback)(void *cookie, const char *name,
  */
 static enum NoteIter
 elfImageNote(void *cookie, const char *name, u_int32_t type,
-	    const void *data, size_t len)
+        const void *data, size_t len)
 {
-	const char **exename;
-	const prpsinfo_t *psinfo;
+    const char **exename;
+    const prpsinfo_t *psinfo;
 
-	exename = (const char **)cookie;
-	psinfo = data;
+    exename = (const char **)cookie;
+    psinfo = data;
 
-	if (!strcmp(name, "FreeBSD") && type == NT_PRPSINFO &&
-	    psinfo->pr_version == PRPSINFO_VERSION) {
-		*exename = psinfo->pr_fname;
-		return NOTE_DONE;
-	}
-	return NOTE_CONTIN;
+    if (!strcmp(name, "FreeBSD") && type == NT_PRPSINFO &&
+        psinfo->pr_version == PRPSINFO_VERSION) {
+        *exename = psinfo->pr_fname;
+        return NOTE_DONE;
+    }
+    return NOTE_CONTIN;
 }
 
 #endif
@@ -347,7 +351,7 @@ std::string
 ElfObject::getImageFromCore()
 {
 #ifdef __FreeBSD__
-	return elfGetNotes(obj, elfImageNote, name);
+    return elfGetNotes(obj, elfImageNote, name);
 #endif
 #ifdef __linux__
     return "";
@@ -357,53 +361,53 @@ ElfObject::getImageFromCore()
 /*
  * Attempt to find a prefix to an executable ABI's "emulation tree"
  */
-const char *
+std::string
 ElfObject::getABIPrefix()
 {
 #ifdef __FreeBSD__
-	int i;
-	static struct {
-		int brand;
-		const char *oldBrand;
-		const char *interpreter;
-		const char *prefix;
-	} knownABIs[] = {
-		{ ELFOSABI_FREEBSD,
-		    "FreeBSD", "/usr/libexec/ld-elf.so.1", 0},
-		{ ELFOSABI_LINUX,
-		    "Linux", "/lib/ld-linux.so.1", "/compat/linux"},
-		{ ELFOSABI_LINUX,
-		    "Linux", "/lib/ld-linux.so.2", "/compat/linux"},
-		{ -1,0,0,0 }
-	};
+    int i;
+    static struct {
+        int brand;
+        const char *oldBrand;
+        const char *interpreter;
+        const char *prefix;
+    } knownABIs[] = {
+        { ELFOSABI_FREEBSD,
+            "FreeBSD", "/usr/libexec/ld-elf.so.1", 0},
+        { ELFOSABI_LINUX,
+            "Linux", "/lib/ld-linux.so.1", "/compat/linux"},
+        { ELFOSABI_LINUX,
+            "Linux", "/lib/ld-linux.so.2", "/compat/linux"},
+        { -1,0,0,0 }
+    };
 
-	/* Trust EI_OSABI, or the 3.x brand string first */
-	for (i = 0; knownABIs[i].brand != -1; i++) {
-		if (knownABIs[i].brand == obj->elfHeader->e_ident[EI_OSABI] ||
-		    strcmp(knownABIs[i].oldBrand,
-		    (const char *)obj->elfHeader->e_ident + OLD_EI_BRAND) == 0)
-			return knownABIs[i].prefix;
-	}
-	/* ... Then the interpreter */
-	if (obj->interpreterName) {
-		for (i = 0; knownABIs[i].brand != -1; i++) {
-			if (strcmp(knownABIs[i].interpreter,
-			    obj->interpreterName) == 0)
-				return knownABIs[i].prefix;
-		}
-	}
+    /* Trust EI_OSABI, or the 3.x brand string first */
+    for (i = 0; knownABIs[i].brand != -1; i++) {
+        if (knownABIs[i].brand == obj->elfHeader->e_ident[EI_OSABI] ||
+            strcmp(knownABIs[i].oldBrand,
+            (const char *)obj->elfHeader->e_ident + OLD_EI_BRAND) == 0)
+            return knownABIs[i].prefix;
+    }
+    /* ... Then the interpreter */
+    if (obj->interpreterName) {
+        for (i = 0; knownABIs[i].brand != -1; i++) {
+            if (strcmp(knownABIs[i].interpreter,
+                obj->interpreterName) == 0)
+                return knownABIs[i].prefix;
+        }
+    }
 #endif
-	/* No prefix */
-	return 0;
+    /* No prefix */
+    return "";
 }
 
 ElfObject::~ElfObject()
 {
-	struct ElfMemChunk *next, *chunk;
-	for (chunk = mem; chunk != &firstChunk; chunk = next) {
-	    next = chunk->next;
-	    free(chunk);
-	}
+    struct ElfMemChunk *next, *chunk;
+    for (chunk = mem; chunk != &firstChunk; chunk = next) {
+        next = chunk->next;
+        free(chunk);
+    }
 }
 
 /*
@@ -412,14 +416,14 @@ ElfObject::~ElfObject()
 static uint32_t
 elf_hash(std::string name)
 {
-	uint32_t h = 0, g;
+    uint32_t h = 0, g;
     for (auto c : name) {
-		h = (h << 4) + c;
-		if ((g = h & 0xf0000000) != 0)
-			h ^= g >> 24;
-		h &= ~g;
-	}
-	return (h);
+        h = (h << 4) + c;
+        if ((g = h & 0xf0000000) != 0)
+            h ^= g >> 24;
+        h &= ~g;
+    }
+    return (h);
 }
 
 
@@ -429,51 +433,74 @@ elf_hash(std::string name)
 std::ostream &
 operator <<(std::ostream &os, const std::pair<const ElfObject *, const Elf_Shdr &> &p)
 {
-	static const char *sectionTypeNames[] = {
-		"SHT_NULL",
-		"SHT_PROGBITS",
-		"SHT_SYMTAB",
-		"SHT_STRTAB",
-		"SHT_RELA",
-		"SHT_HASH",
-		"SHT_DYNAMIC",
-		"SHT_NOTE",
-		"SHT_NOBITS",
-		"SHT_REL",
-		"SHT_SHLIB",
-		"SHT_DYNSYM",
-	};
+    static const char *sectionTypeNames[] = {
+        "SHT_NULL",
+        "SHT_PROGBITS",
+        "SHT_SYMTAB",
+        "SHT_STRTAB",
+        "SHT_RELA",
+        "SHT_HASH",
+        "SHT_DYNAMIC",
+        "SHT_NOTE",
+        "SHT_NOBITS",
+        "SHT_REL",
+        "SHT_SHLIB",
+        "SHT_DYNSYM",
+    };
 
     const ElfObject *o = p.first;
     const Elf_Shdr &h = p.second;
 
-    os << "{ name: \"" << o->readString(o->sectionStrings + h.sh_name) << "\""
-            << ", type= " << h.sh_type << "(" << (h.sh_type <= SHT_DYNSYM ?  sectionTypeNames[h.sh_type] : "unknown") << ")"
-            << ", flags= " << h.sh_flags << "("
-                << (h.sh_flags & SHF_WRITE ? "write " : "")
-                << (h.sh_flags & SHF_ALLOC ? "alloc " : "")
-                << (h.sh_flags & SHF_EXECINSTR ? "instructions " : "")
-                << ")"
+    os << "{ \"name\": \"" << o->readString(o->sectionStrings + h.sh_name) << "\"" << ", \"type\": ";
+            
+    if (h.sh_type <= SHT_DYNSYM)
+        os << "\"" << sectionTypeNames[h.sh_type] << "\"";
+    else
+        os << h.sh_type;
 
-            << ", address= " << h.sh_addr
-            << ", offset= " << h.sh_offset
-            << ", size=" << h.sh_size
-            << ", link=" << h.sh_link
-            << ", info=" << h.sh_info;
+    os << ", \"flags\": " << "[";
+   
+    std::string sep = "";
 
-	switch (h.sh_type) {
-	case SHT_SYMTAB:
-	case SHT_DYNSYM:
-		off_t symoff = h.sh_offset;
-		off_t esym = symoff + h.sh_size;
+    if (h.sh_flags & SHF_WRITE) {
+        os << sep << "\"write\"";
+        sep = ", ";
+    }
+
+    if (h.sh_flags & SHF_ALLOC) {
+        os << sep << "\"alloc\"";
+        sep = ", ";
+    }
+
+    if (h.sh_flags & SHF_WRITE) {
+        os << sep << "\"exec\"";
+        sep = ", ";
+    }
+    os
+        << "]"
+        << ", \"address\": " << h.sh_addr
+        << ", \"offset\": " << h.sh_offset
+        << ", \"size\":" << h.sh_size
+        << ", \"link\":" << h.sh_link
+        << ", \"info\":" << h.sh_info;
+
+    switch (h.sh_type) {
+    case SHT_SYMTAB:
+    case SHT_DYNSYM:
+        off_t symoff = h.sh_offset;
+        off_t esym = symoff + h.sh_size;
+        os << ", \"symbols\": [";
+        std::string sep = "";
         for (; symoff < esym; symoff += sizeof (Elf_Sym)) {
             Elf_Sym sym;
             o->io.readObj(symoff, &sym);
             std::tuple<const ElfObject *, const Elf_Shdr &, const Elf_Sym &> t = std::make_tuple(o, std::cref(h), std::cref(sym));
-            os << t;
-		}
-		break;
-	}
+            os << sep << t;
+            sep = ", ";
+        }
+        os << "]";
+        break;
+    }
     return os << " }";
 }
 
@@ -484,28 +511,29 @@ std::ostream &
 operator<< (std::ostream &os, const Elf_Phdr &h)
 {
 
-	static const char *segmentTypeNames[] = {
-		"PT_NULL",
-		"PT_LOAD",
-		"PT_DYNAMIC",
-		"PT_INTERP",
-		"PT_NOTE",
-		"PT_SHLIB",
-		"PT_PHDR"
-	};
+    static const char *segmentTypeNames[] = {
+            "PT_NULL",
+            "PT_LOAD",
+            "PT_DYNAMIC",
+            "PT_INTERP",
+            "PT_NOTE",
+            "PT_SHLIB",
+            "PT_PHDR"
+    };
 
-    os << "{ type: ";
+    os << "{ \"type\": ";
     if (h.p_type <= PT_PHDR)
         os << "\"" << segmentTypeNames[h.p_type] << "\"";
     else
         os << h.p_type;
 
-    os << "offset: " << h.p_offset
-        << ", vaddr: " << h.p_vaddr
-        << ", paddr: " << h.p_paddr
-        << ", filesz: " << h.p_filesz
-        << ", memsz: " << h.p_memsz
-        << ", flags: [";
+    os
+        << ", \"offset\": " << h.p_offset
+        << ", \"vaddr\": " << h.p_vaddr
+        << ", \"paddr\": " << h.p_paddr
+        << ", \"filesz\": " << h.p_filesz
+        << ", \"memsz\": " << h.p_memsz
+        << ", \"flags\": [";
 
     std::string sep = "";
 
@@ -523,8 +551,7 @@ operator<< (std::ostream &os, const Elf_Phdr &h)
         os << sep << "\"PF_X\"";
         sep = ", ";
     }
-
-	return os << ", alignment: " << h.p_align << " }";
+    return os << "], \"alignment\": " << h.p_align << " }";
 }
 
 /*
@@ -533,56 +560,56 @@ operator<< (std::ostream &os, const Elf_Phdr &h)
 std::ostream &
 operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr &, const Elf_Sym &> &t)
 {
-	static const char *bindingNames[] = {
-		"STB_LOCAL",
-		"STB_GLOBAL",
-		"STB_WEAK",
-		"unknown3",
-		"unknown4",
-		"unknown5",
-		"unknown6",
-		"unknown7",
-		"unknown8",
-		"unknown9",
-		"unknowna",
-		"unknownb",
-		"unknownc",
-		"STB_LOPROC",
-		"STB_LOPROC + 1",
-		"STB_HIPROC + 1",
-	};
-	static const char *typeNames[] = {
-		"STT_NOTYPE",
-		"STT_OBJECT",
-		"STT_FUNC",
-		"STT_SECTION",
-		"STT_FILE",
-		"STT_5",
-		"STT_6",
-		"STT_7",
-		"STT_8",
-		"STT_9",
-		"STT_A",
-		"STT_B",
-		"STT_C",
-		"STT_LOPROC",
-		"STT_LOPROC + 1",
-		"STT_HIPROC"
-	};
+    static const char *bindingNames[] = {
+        "STB_LOCAL",
+        "STB_GLOBAL",
+        "STB_WEAK",
+        "unknown3",
+        "unknown4",
+        "unknown5",
+        "unknown6",
+        "unknown7",
+        "unknown8",
+        "unknown9",
+        "unknowna",
+        "unknownb",
+        "unknownc",
+        "STB_LOPROC",
+        "STB_LOPROC + 1",
+        "STB_HIPROC + 1",
+    };
+    static const char *typeNames[] = {
+        "STT_NOTYPE",
+        "STT_OBJECT",
+        "STT_FUNC",
+        "STT_SECTION",
+        "STT_FILE",
+        "STT_5",
+        "STT_6",
+        "STT_7",
+        "STT_8",
+        "STT_9",
+        "STT_A",
+        "STT_B",
+        "STT_C",
+        "STT_LOPROC",
+        "STT_LOPROC + 1",
+        "STT_HIPROC"
+    };
 
     const ElfObject *o = std::get<0>(t);
     const Elf_Shdr &h = std::get<1>(t);
     const Elf_Sym &s = std::get<2>(t);
 
     off_t symStrings = o->sectionHeaders[h.sh_link]->sh_offset;
-    return os << "{ name: " << o->readString(symStrings + s.st_name)
-       << ", value: " << s.st_value
-       << ", size: " << s.st_size
-       << ", info: " << s.st_info
-       << ", binding: " << bindingNames[s.st_info >> 4]
-       << ", type: " << typeNames[s.st_info & 0xf]
-       << ", other: " << s.st_other
-       << ", shndx: " << s.st_shndx
+    return os << "{ \"name\": \"" << o->readString(symStrings + s.st_name) << "\""
+       << ", \"value\": " << s.st_value
+       << ", \"size\": " << s.st_size
+       << ", \"info\": " << (int)s.st_info
+       << ", \"binding\": \"" << bindingNames[s.st_info >> 4] << "\""
+       << ", \"type\": \"" << typeNames[s.st_info & 0xf] << "\""
+       << ", \"other\": " << (int)s.st_other
+       << ", \"shndx\": " << s.st_shndx
        << " }";
 
 }
@@ -590,40 +617,40 @@ operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr &, co
 std::ostream &
 operator<< (std::ostream &os, const Elf_Dyn &d)
 {
-	static const char *tagNames[] = {
-		"DT_NULL",
-		"DT_NEEDED",
-		"DT_PLTRELSZ",
-		"DT_PLTGOT",
-		"DT_HASH",
-		"DT_STRTAB",
-		"DT_SYMTAB",
-		"DT_RELA",
-		"DT_RELASZ",
-		"DT_RELAENT",
-		"DT_STRSZ",
-		"DT_SYMENT",
-		"DT_INIT",
-		"DT_FINI",
-		"DT_SONAME",
-		"DT_RPATH",
-		"DT_SYMBOLIC",
-		"DT_REL",
-		"DT_RELSZ",
-		"DT_RELENT",
-		"DT_PLTREL",
-		"DT_DEBUG",
-		"DT_TEXTREL",
-		"DT_JMPREL",
-		"DT_BIND_NOW"
-	};
+    static const char *tagNames[] = {
+        "DT_NULL",
+        "DT_NEEDED",
+        "DT_PLTRELSZ",
+        "DT_PLTGOT",
+        "DT_HASH",
+        "DT_STRTAB",
+        "DT_SYMTAB",
+        "DT_RELA",
+        "DT_RELASZ",
+        "DT_RELAENT",
+        "DT_STRSZ",
+        "DT_SYMENT",
+        "DT_INIT",
+        "DT_FINI",
+        "DT_SONAME",
+        "DT_RPATH",
+        "DT_SYMBOLIC",
+        "DT_REL",
+        "DT_RELSZ",
+        "DT_RELENT",
+        "DT_PLTREL",
+        "DT_DEBUG",
+        "DT_TEXTREL",
+        "DT_JMPREL",
+        "DT_BIND_NOW"
+    };
     os
-        << "{ tag: ";
+        << "{ \"tag\": ";
     if (d.d_tag >= 0 && d.d_tag <= DT_BIND_NOW)
         os << "\"" << tagNames[d.d_tag] << "\"";
     else
         os << d.d_tag;
-    return os << ", word: " << d.d_un.d_val;
+    return os << ", \"word\": " << d.d_un.d_val << " }";
 }
 
 static const char *
@@ -694,42 +721,39 @@ noteprinter(void *cookie, const char *name, u_int32_t type, const void *datap, s
  */
 std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
 {
-	static const char *typeNames[] = {
-		"ET_NONE",
-		"ET_REL",
-		"ET_EXEC",
-		"ET_DYN",
-		"ET_CORE"
-	};
-	static const char *abiNames[] = {
-		"SYSV/NONE",
-		"HP-UX",
-		"NetBSD",
-		"Linux",
-		"Hurd",
-		"86Open",
-		"Solaris",
-		"Monterey",
-		"Irix",
-		"FreeBSD",
-		"Tru64",
-		"Modesto",
-		"OpenBSD"
-	};
+    static const char *typeNames[] = {
+        "ET_NONE",
+        "ET_REL",
+        "ET_EXEC",
+        "ET_DYN",
+        "ET_CORE"
+    };
+    static const char *abiNames[] = {
+        "SYSV/NONE",
+        "HP-UX",
+        "NetBSD",
+        "Linux",
+        "Hurd",
+        "86Open",
+        "Solaris",
+        "Monterey",
+        "Irix",
+        "FreeBSD",
+        "Tru64",
+        "Modesto",
+        "OpenBSD"
+    };
 
-	const Elf_Ehdr &ehdr = obj.elfHeader;
+    const Elf_Ehdr &ehdr = obj.elfHeader;
 
-	size_t brand = ehdr.e_ident[EI_OSABI];
-    os
-        << "{ type: " << typeNames[ehdr.e_type]
-        << ", entry: " <<  ehdr.e_entry
-        << ", abi: ";
+    size_t brand = ehdr.e_ident[EI_OSABI];
+    os << "{ \"type\": \"" << typeNames[ehdr.e_type] << "\", \"entry\": " <<  ehdr.e_entry << ", \"abi\": ";
     if (brand >= 0 && brand < sizeof abiNames / sizeof abiNames[0])
         os << "\"" << abiNames[brand] << "\"";
     else
         os << brand;
 
-    os << ", sections: [";
+    os << ", \"sections\": [";
     std::string sep = "";
 
     for (auto i : obj.sectionHeaders) {
@@ -738,7 +762,7 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
     }
 
     sep = "";
-    os << "], segments: [";
+    os << "], \"segments\": [";
 
     for (auto i : obj.programHeaders) {
         os << sep << *i;
@@ -746,23 +770,25 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
     }
     os << "]";
 
-	if (obj.dynamic) {
-        os << ", dynamic: [";
+    if (obj.dynamic) {
+        os << ", \"dynamic\": [";
         sep = "";
 
         off_t dynoff = obj.dynamic->p_offset;
-		off_t edyn = dynoff + obj.dynamic->p_filesz;
-		for (; dynoff < edyn; dynoff += sizeof (Elf_Dyn)) {
+        off_t edyn = dynoff + obj.dynamic->p_filesz;
+        for (; dynoff < edyn; dynoff += sizeof (Elf_Dyn)) {
             Elf_Dyn dyn;
             obj.io.readObj(dynoff, &dyn);
             os << sep << dyn;
-		}
-	}
-	if (obj.interpreterName != "")
-        os << ", interpreter: " << obj.interpreterName;
+            sep = ", ";
+        }
+        os << "]";
+    }
+    if (obj.interpreterName != "")
+        os << ", \"interpreter\": \"" << obj.interpreterName << "\"";
     os << "}";
 #ifdef NOTYET
-	elfGetNotes(obj, noteprinter, f);
+    elfGetNotes(obj, noteprinter, f);
 #endif
     return os;
 }
@@ -774,39 +800,39 @@ const char *
 pad(size_t size)
 {
 
-	static const char padding[] =
-		"                                        "
-		"                                        "
-		"                                        "
-		"                                        "
-		"                                        ";
+    static const char padding[] =
+        "                                        "
+        "                                        "
+        "                                        "
+        "                                        "
+        "                                        ";
 
-	if (size > sizeof padding - 1)
-		size = sizeof padding - 1;
-	return (padding + sizeof padding - 1 - size);
+    if (size > sizeof padding - 1)
+        size = sizeof padding - 1;
+    return (padding + sizeof padding - 1 - size);
 }
 
 void
 hexdump(FILE *f, int indent, const unsigned char *p, int len)
 {
-	const unsigned char *cp = (const unsigned char *)p;
-	char hex[16 * 3 + 1], *hp, ascii[16 + 1], *ap;
-	int i, c;
+    const unsigned char *cp = (const unsigned char *)p;
+    char hex[16 * 3 + 1], *hp, ascii[16 + 1], *ap;
+    int i, c;
 
-	if (!len)
-		return;
-	while (len) {
-		hp = hex;
-		ap = ascii;
-		for (i = 0; len && i < 16; i++) {
-			c = *cp++;
-			len--;
-			hp += sprintf(hp, "%02x ", c);
-			*ap++ = c < 127 && c >= 32 ? c : '.';
-		}
-		*ap = 0;
-		fprintf(f, "%s%-48s |%-16s|\n", pad(indent), hex, ascii);
-	}
+    if (!len)
+        return;
+    while (len) {
+        hp = hex;
+        ap = ascii;
+        for (i = 0; len && i < 16; i++) {
+            c = *cp++;
+            len--;
+            hp += sprintf(hp, "%02x ", c);
+            *ap++ = c < 127 && c >= 32 ? c : '.';
+        }
+        *ap = 0;
+        fprintf(f, "%s%-48s |%-16s|\n", pad(indent), hex, ascii);
+    }
 }
 
 void *
