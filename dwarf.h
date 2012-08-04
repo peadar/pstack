@@ -132,9 +132,13 @@ struct DwarfEntry {
     std::list<DwarfEntry *> children;
     const DwarfAbbreviation *type;
     std::map<DwarfAttrName, DwarfAttribute *> attributes;
-    intmax_t offset;
     DwarfAttribute *attrForName(DwarfAttrName name) { return attributes[name]; }
     DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit);
+};
+
+enum FIType {
+    FI_DEBUG_FRAME,
+    FI_EH_FRAME
 };
 
 struct DwarfUnit {
@@ -157,7 +161,7 @@ struct DwarfFDE {
     Elf_Off instructions;
     Elf_Off end;
     std::vector<unsigned char> aug;
-    DwarfFDE(DWARFReader &, DwarfFrameInfo *, Elf_Off cieid, Elf_Off end);
+    DwarfFDE(DWARFReader &, DwarfFrameInfo *, Elf_Off start, Elf_Off cieid, Elf_Off end);
 };
 
 #define MAXREG 128
@@ -184,11 +188,11 @@ struct DwarfRegisterUnwind {
 };
 
 struct DwarfCallFrame {
-    DwarfCallFrame *stack;
     DwarfRegisterUnwind registers[MAXREG];
     int cfaReg;
     DwarfRegisterUnwind cfaValue;
     DwarfCallFrame();
+    // default copy constructor is valid.
 };
 
 struct DwarfCIE {
@@ -205,11 +209,7 @@ struct DwarfCIE {
     Elf_Off instructions;
     Elf_Off end;
     DwarfCIE(DWARFReader &, Elf_Off, Elf_Off);
-};
-
-enum FIType {
-    FI_DEBUG_FRAME,
-    FI_EH_FRAME
+    DwarfCallFrame execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr);
 };
 
 struct DwarfFrameInfo {
@@ -217,7 +217,8 @@ struct DwarfFrameInfo {
     FIType type;
     std::list<DwarfCIE *> cieList;
     std::list<DwarfFDE *> fdeList;
-    DwarfFrameInfo(DWARFReader &, FIType type);
+    DwarfFrameInfo(int version, DWARFReader &, FIType type);
+    Elf_Off decodeCIEFDEHdr(int version, DWARFReader &reader, Elf_Addr &id, enum FIType type, Elf_Addr &idoff);
     DwarfCIE *getCIE(Elf_Off offset);
     const DwarfFDE *findFDE(Elf_Addr) const;
 };
@@ -233,10 +234,12 @@ public:
     char *debugStrings;
     off_t lines;
     unsigned addrLen;
+    int version;
     DwarfFrameInfo *debugFrame;
     DwarfFrameInfo *ehFrame;
     DwarfInfo(ElfObject *object);
     bool sourceFromAddr(uintmax_t addr, std::string &file, int &line);
+    uintmax_t unwind(Process *proc, DwarfRegisters *regs, uintmax_t addr);
 };
 
 struct DwarfFileEntry {
@@ -281,7 +284,6 @@ void dwarfDumpUnit(FILE *, int indent, const DwarfInfo *, const DwarfUnit *);
 const char *dwarfSOpcodeName(enum DwarfLineSOpcode code);
 const char *dwarfEOpcodeName(enum DwarfLineEOpcode code);
 int dwarfComputeCFA(Process *, const DwarfInfo *, DwarfFDE *, DwarfCallFrame *, DwarfRegisters *, uintmax_t addr);
-uintmax_t dwarfUnwind(Process *proc, DwarfRegisters *regs, uintmax_t addr);
 void dwarfArchGetRegs(const gregset_t *regs, uintmax_t *dwarfRegs);
 uintmax_t dwarfGetReg(const DwarfRegisters *regs, int regno);
 void dwarfSetReg(DwarfRegisters *regs, int regno, uintmax_t regval);
@@ -359,4 +361,5 @@ enum DwarfExpressionOp {
 #define DW_EH_PE_datarel        0x30
 #define DW_EH_PE_funcrel        0x40
 #define DW_EH_PE_aligned        0x50
+uintmax_t dwarfUnwind(Process *, DwarfRegisters *, uintmax_t);
 #endif
