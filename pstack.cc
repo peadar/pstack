@@ -233,27 +233,28 @@ static enum NoteIter
 procAddVDSO(void *cookie, const char *name, u_int32_t type, const void *datap, size_t len)
 {
     if (type == NT_AUXV) {
-        const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
-        const Elf_auxv_t *eaux = aux + len / sizeof *aux;
-        Elf_Addr hdr = 0;
-        while (aux < eaux) {
-            if (aux->a_type == AT_SYSINFO_EHDR)
-                hdr = aux->a_un.a_val;
-            aux++;
-        }
-        if (hdr) {
-            Process *proc = (Process *)cookie;
-            proc->vdso = new char[getpagesize()];
-            if (proc->readMem(proc->vdso, hdr, getpagesize()) == size_t(getpagesize())) {
-                MemReader *r = new MemReader(proc->vdso, getpagesize());
-                proc->readers.push_back(r);
-                ElfObject *elf = new ElfObject(*r);
-                proc->addElfObject(elf, hdr);
-            }
-        }
+        static_cast<Process *>(cookie)->addVDSOfromAuxV(datap, len);
         return NOTE_DONE;
     }
     return NOTE_CONTIN;
+}
+
+void
+ps_prochandle::addVDSOfromAuxV(const void *datap, size_t len)
+{
+    const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
+    const Elf_auxv_t *eaux = aux + len / sizeof *aux;
+    Elf_Addr hdr = 0;
+    while (aux < eaux)
+        if (aux->a_type == AT_SYSINFO_EHDR) {
+            hdr = aux->a_un.a_val;
+            vdso = new char[getpagesize()];
+            readObj(hdr, vdso, getpagesize());
+            MemReader *r = new MemReader(vdso, getpagesize());
+            readers.push_back(r);
+            addElfObject(new ElfObject(*r), hdr);
+            return;
+        }
 }
 
 /*
@@ -272,30 +273,6 @@ CoreProcess::CoreProcess(Reader &exe, Reader &coreFile)
 ps_prochandle::ps_prochandle(Reader &exeData)
     : execImage(new ElfObject(exeData))
 {
-
-#ifdef NOTYET
-    /*
-     * Do our best to automatically find the executable.
-     */
-    if (exeName == 0) {
-        if (coreImage != 0) {
-            if (elfGetImageFromCore(p->coreImage, &exeName) != 0)
-                exeName = 0;
-        } else {
-            snprintf(tmpBuf, sizeof(tmpBuf), "/proc/%d/file", pid);
-            rc = readlink(tmpBuf, tmpBuf, sizeof(tmpBuf) - 1);
-            if (rc != -1) {
-                tmpBuf[rc] = 0;
-                exeName = tmpBuf;
-            }
-        }
-        if (!exeName) {
-            warn("cannot find executable: try using \"-e\"");
-            procClose(p); xxx delete p
-            return -1;
-        }
-    }
-#endif
     abiPrefix = execImage->getABIPrefix();
     addElfObject(execImage, 0);
     execImage->load = execImage->base; // An executable is loaded at its own base address
@@ -304,10 +281,28 @@ ps_prochandle::ps_prochandle(Reader &exeData)
 void
 CoreProcess::load()
 {
-
 #ifdef __linux__
     /* Find the linux-gate VDSO, and treat as an ELF file */
     coreImage.getNotes(procAddVDSO, this);
+#endif
+    Process::load();
+}
+
+void
+LiveProcess::load()
+{
+#ifdef __linux__
+    char path[PATH_MAX];
+    snprintf(path, sizeof path, "/proc/%d/auxv", pid);
+    int fd = open(path, O_RDONLY);
+    if (fd == -1)
+        throw 999;
+    char buf[4096];
+    ssize_t rc = ::read(fd, buf, sizeof buf);
+    close(fd);
+    if (rc == -1)
+        throw 999;
+    addVDSOfromAuxV(buf, rc);
 #endif
     Process::load();
 }
@@ -333,20 +328,6 @@ ps_prochandle::load()
                 TD_THR_ANY_STATE, TD_THR_LOWEST_PRIORITY,
                 TD_SIGNO_MASK, TD_THR_ANY_USER_FLAGS);
     }
-    if (threadList.empty()) {
-#ifdef NOTYET
-        if (pid != -1) {
-            if (ptrace(PT_GETREGS, pid, (caddr_t)&regs, 0) == 0) {
-                elf_regs elf;
-                addThread(0, &regs, pid);
-            } else
-                warn("fetch non-threaded process registers");
-        } else {
-            coreImage.getNotes(procAddThreadsFromNotes, this);
-        }
-#endif
-
-    }
 }
 
 const Elf_Phdr *
@@ -359,8 +340,8 @@ ElfObject::findHeaderForAddress(Elf_Addr pa)
     return 0;
 }
 
-size_t
-CoreProcess::readMem(char *ptr, Elf_Addr remoteAddr, size_t size)
+void
+CoreProcess::read(off_t remoteAddr, size_t size, char *ptr)
 {
     size_t readLen = 0;
     /* Locate "remoteAddr" in the core file */
@@ -376,90 +357,37 @@ CoreProcess::readMem(char *ptr, Elf_Addr remoteAddr, size_t size)
                 }
             }
         if (hdr == 0)
-            break;
+            throw 999;
         Elf_Addr addr = obj->addrProc2Obj(remoteAddr);
         size_t fragSize = MIN(hdr->p_vaddr + hdr->p_memsz - remoteAddr, size);
         obj->io.readObj(hdr->p_offset + addr - hdr->p_vaddr, ptr, fragSize);
         size -= fragSize;
         readLen += fragSize;
     }
-    return readLen;
 }
 
 LiveProcess::LiveProcess(Reader &ex, pid_t pid_)
     : ps_prochandle(ex)
     , pid(pid_)
 {
+    char buf[PATH_MAX];
+    snprintf(buf, sizeof buf, "/proc/%d/mem", pid);
+    procMem = fopen(buf, O_RDONLY);
+    if (procMem == 0)
+        throw 999;
 }
 
 /*
  * Read data from the target's address space.
  */
-size_t
-LiveProcess::readMem(char *ptr, Elf_Addr remoteAddr, size_t size)
+void
+LiveProcess::read(off_t remoteAddr, size_t size, char *ptr)
 {
-    size_t fragSize, readLen;
-    unsigned char *cp;
-    struct PageCache *pcache = &pageCache;
+    if (fseek(procMem, remoteAddr, SEEK_SET) == -1)
+        throw 999;
+    if (fread(ptr, size, 1, procMem) != 1)
+        throw 999;
 
-    /*
-     * A simple LRU page cache, to avoid dragging pointer-sized
-     * amounts of data across the ptrace interace.
-     */
-    int pagesize = getpagesize(), luGeneration;
-    struct MappedPage *page, *luPage = 0;
-    Elf_Addr pageLoc;
-    for (readLen = 0; size; readLen += fragSize) {
-        luGeneration = INT_MAX;
-        pageLoc = remoteAddr - remoteAddr % pagesize;
-        for (page = pcache->pages; page < pcache->pages + PAGECACHE_SIZE; page++) {
-
-            /* Did we find the page we want? */
-            if (page->address == pageLoc && page->data != NULL)
-                break;
-
-            /* No: keep an eye on least recently used */
-            if (page->lastAccess < luGeneration) {
-                luPage = page;
-                luGeneration = page->lastAccess;
-            }
-        }
-        if (page == pcache->pages + PAGECACHE_SIZE) {
-            /*
-             * Page not found: read entire page into
-             * least-recently used cache slot
-             */
-            page = luPage;
-            cp = new unsigned char[pagesize];
-#ifdef PT_IO
-            {
-                struct ptrace_io_desc iod;
-                iod.piod_op = PIOD_READ_D;
-                iod.piod_offs = (void *)pageLoc;
-                iod.piod_addr = cp;
-                iod.piod_len = pagesize;
-
-                rc = ptrace(PT_IO, p->pid, (caddr_t)&iod, 0);
-                if (rc != 0 || iod.piod_len != (size_t)pagesize) {
-                        free(cp);
-                        return (readLen);
-                }
-            }
-#endif
-
-            if (page->data)
-                delete[] page->data;
-            page->data = cp;
-            page->address = pageLoc;
-        }
-        /* This page has been recently used */
-        page->lastAccess = ++pcache->accessGeneration;
-        fragSize = MIN(size, pagesize - remoteAddr % pagesize);
-        memcpy((char *)ptr + readLen, page->data + remoteAddr % pagesize, fragSize);
-        remoteAddr += fragSize;
-        size -= fragSize;
-    }
-    return (readLen);
 }
 
 Thread::Thread(Process *p, thread_t id, lwpid_t lwp, CoreRegisters regs)
@@ -494,25 +422,17 @@ Thread::stackUnwind(Process *p, CoreRegisters &regs)
         } else {
             for (i = 0; i < gFrameArgs; i++) {
                 Elf_Word arg;
-                if (p->readMem((char *)&arg
-                        , REG(regs, bp) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word)
-                        , sizeof(Elf_Word)) != sizeof(Elf_Word))
-                    break;
+                p->readObj(REG(regs, bp) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word), &arg);
                 frame->args.push_back(arg);
             }
             frame->unwindBy = "END  ";
             /* Read the next frame */
-            if (p->readMem((char *)&ip, REG(regs, bp) + sizeof(REG(regs, bp)), sizeof ip) != sizeof(ip))
-                break;
+            p->readObj(REG(regs, bp) + sizeof(REG(regs, bp)), &ip);
             REG(regs, ip) = ip;
-            // XXX: if no return instruction, break out.
-            if (ip == 0)
+            if (ip == 0) // XXX: if no return instruction, break out.
                     break;
             // Read new frame pointer from stack.
-            if (p->readMem((char *)&REG(regs, bp), REG(regs, bp), sizeof(REG(regs, bp))) != sizeof(REG(regs, bp)))
-                break;
-            // XXX: If new frame pointer is lower than old one,
-            // there's a problem.
+            p->readObj(REG(regs, bp), &REG(regs, bp));
             if ((uintmax_t)REG(regs, bp) <= frame->bp)
                 break;
             frame->unwindBy = "stdc  ";
@@ -544,16 +464,6 @@ ps_prochandle::dumpStacks(FILE *file, int indent)
     std::string symName;
 
     padding = pad(indent);
-    fprintf(file, "%s", padding);
-
-#ifdef NOTYET
-    if (p->pid != -1)
-        fprintf(file, "(process %d)", p->pid);
-    else
-        fprintf(file, "(core file \"%s\")", p->coreImage.fileName);
-    fprintf(file, ", executable \"%s\"\n", p->execImage->fileName);
-#endif
-
     for (auto thread : threadList) {
         fprintf(file, "%s----------------- thread %lu (LWP %ld) ", padding, (unsigned long)thread->threadId, (unsigned long)thread->lwpid);
         if (thread->running)
@@ -637,7 +547,6 @@ void
 ps_prochandle::loadSharedObjects()
 {
     int maxpath;
-    struct link_map map;
     char prefixedPath[PATH_MAX + 1], *path;
 
     /* Does this process look like it has shared libraries loaded? */
@@ -646,9 +555,7 @@ ps_prochandle::loadSharedObjects()
         return;
 
     struct r_debug rDebug;
-    if (readMem((char *)&rDebug, r_debug_addr, sizeof(rDebug)) != sizeof(rDebug))
-        return;
-
+    readObj(r_debug_addr, &rDebug);
     if (abiPrefix != "") {
         path = prefixedPath + snprintf(prefixedPath, sizeof(prefixedPath), "%s", abiPrefix.c_str());
         maxpath = PATH_MAX - strlen(abiPrefix.c_str());
@@ -658,14 +565,14 @@ ps_prochandle::loadSharedObjects()
     }
 
     /* Iterate over the r_debug structure's entries, loading libraries */
+    struct link_map map;
     for (Elf_Addr mapAddr = (Elf_Addr)rDebug.r_map; mapAddr; mapAddr = (Elf_Addr)map.l_next) {
-        if (readMem((char *)&map, mapAddr, sizeof(map)) != sizeof(map)) {
-            warnx("cannot read link_map @ %p", (void *)mapAddr);
-            break;
-        }
+        readObj(mapAddr, &map);
+
         /* Read the path to the file */
-        if (map.l_name == 0 || readMem(path, (Elf_Addr)map.l_name, maxpath) <= 0)
+        if (map.l_name == 0)
             continue;
+        readObj((off_t)map.l_name, path, maxpath);
         Elf_Addr lAddr = (Elf_Addr)map.l_addr;
 
         if (abiPrefix != "" && access(prefixedPath, R_OK) == 0)
@@ -689,9 +596,10 @@ ps_prochandle::findRDebugAddr()
     for (Elf_Addr dynOff = 0; dynOff < execImage->dynamic->p_filesz; dynOff += sizeof(Elf_Dyn)) {
         Elf_Dyn dyn;
         execImage->io.readObj(execImage->dynamic->p_offset + dynOff, &dyn);
-        if (dyn.d_tag == DT_DEBUG
-                && readMem((char *)&dyn, execImage->dynamic->p_vaddr + dynOff, sizeof(dyn)) == sizeof(dyn))
+        if (dyn.d_tag == DT_DEBUG) {
+            readObj(execImage->dynamic->p_vaddr + dynOff, &dyn);
             return dyn.d_un.d_ptr;
+        }
     }
     return 0;
 }
@@ -927,10 +835,13 @@ ps_plog(const char *fmt, ...)
 ps_err_e
 ps_pread(struct ps_prochandle *p, psaddr_t addr, void *buf, size_t len)
 {
-    size_t rc;
-
-    rc = p->readMem((char *)buf, (Elf_Addr)addr, len);
-    return (rc == len ? PS_OK : PS_ERR);
+    try {
+        p->readObj((intptr_t)addr, (char *)buf, len);
+        return PS_OK;
+    } 
+    catch (...) {
+        return PS_ERR;
+    }
 }
 
 ps_err_e
@@ -1001,7 +912,13 @@ CoreProcess::getPID()
 ps_err_e
 ps_pdread(struct ps_prochandle *p, psaddr_t addr, void *d, size_t l)
 {
-    return p->readMem((char *)d, (Elf_Addr)addr, l) == l ? PS_OK : PS_ERR;
+    try {
+        p->readObj((intptr_t)addr, (char *)d, l);
+        return PS_OK;
+    }
+    catch (...) {
+        return PS_ERR;
+    }
 }
 
 ps_err_e

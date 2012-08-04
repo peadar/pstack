@@ -161,7 +161,7 @@ struct DwarfFDE {
     Elf_Off instructions;
     Elf_Off end;
     std::vector<unsigned char> aug;
-    DwarfFDE(DWARFReader &, DwarfFrameInfo *, Elf_Off start, Elf_Off cieid, Elf_Off end);
+    DwarfFDE(DWARFReader &, DwarfCIE *, Elf_Off end);
 };
 
 #define MAXREG 128
@@ -196,7 +196,6 @@ struct DwarfCallFrame {
 };
 
 struct DwarfCIE {
-    uint32_t offset;
     std::string augmentation;
     unsigned codeAlign;
     int dataAlign;
@@ -208,19 +207,19 @@ struct DwarfCIE {
     uint8_t addressEncoding;
     Elf_Off instructions;
     Elf_Off end;
-    DwarfCIE(DWARFReader &, Elf_Off, Elf_Off);
+    DwarfCIE(DWARFReader &, Elf_Off);
     DwarfCallFrame execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr);
 };
 
 struct DwarfFrameInfo {
     DwarfInfo *dwarf;
     FIType type;
-    std::list<DwarfCIE *> cieList;
+    std::map<Elf_Addr, DwarfCIE *> cies;
     std::list<DwarfFDE *> fdeList;
     DwarfFrameInfo(int version, DWARFReader &, FIType type);
-    Elf_Off decodeCIEFDEHdr(int version, DWARFReader &reader, Elf_Addr &id, enum FIType type, Elf_Addr &idoff);
-    DwarfCIE *getCIE(Elf_Off offset);
+    Elf_Addr decodeCIEFDEHdr(int version, DWARFReader &, Elf_Addr &id, enum FIType, DwarfCIE **);
     const DwarfFDE *findFDE(Elf_Addr) const;
+    bool isCIE(Elf_Off id);
 };
 
 class DwarfInfo {
