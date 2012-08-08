@@ -4,13 +4,13 @@
 #include <err.h>
 #include <pthread.h>
 
-static const int THREADCOUNT=3;
+static const size_t THREADCOUNT=3;
 static int crash = 0;
 
 
 int e(int (*cb)())
 {
-    cb();
+    return cb();
 }
 
 int
@@ -32,16 +32,15 @@ f()
 static
 void *threadent(void *)
 {
-    return (void *)e(f);
+    return (void *)(intptr_t)e(f);
 }
 
 int
 main(int argc, char *argv[])
 {
-    pthread_t threads[THREADCOUNT];
-    size_t i;
-    int c;
+    std::clog << "pid: " << getpid() << "\n";
 
+    int c;
     while ((c = getopt(argc, argv, "c")) != -1) {
         switch (c) {
             case -1:
@@ -52,12 +51,13 @@ main(int argc, char *argv[])
         }
     }
 
-    for (i = 0; i < THREADCOUNT; ++i) {
+    pthread_t threads[THREADCOUNT];
+    for (size_t i = 0; i < THREADCOUNT; ++i) {
         int rc = pthread_create(&threads[i], 0, threadent, 0);
         if (rc != 0)
             err(-1, "pthread_create");
     }
-    for (i = 0; i < THREADCOUNT; ++i) {
+    for (size_t i = 0; i < THREADCOUNT; ++i) {
         void *rv;
         pthread_join(threads[i], &rv);
     }

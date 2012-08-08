@@ -36,6 +36,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <limits.h>
+#include <sys/ptrace.h>
 
 #include <elf.h>
 #include <err.h>
@@ -50,6 +51,7 @@
 #include <sysexits.h>
 #include <unistd.h>
 #include <iostream>
+#include <set>
 
 /*
  * ps_prochandle should be declared before including thread_db.h to
@@ -90,7 +92,7 @@ typedef struct user_regs_struct  elf_regs;
 
 /* Callback data for procRegsFromNote */
 struct RegnoteInfo {
-    Process *proc;
+    const Process *proc;
     lwpid_t pid;
     CoreRegisters *reg;
 };
@@ -99,19 +101,16 @@ struct RegnoteInfo {
  * Command-line flags
  */
 static int gFrameArgs = 6;		/* number of arguments to print */
-static int gMaxFrames = 1024;		/* max number of frames to read */
+static size_t gMaxFrames = 1024;		/* max number of frames to read */
 static int gShowObjectNames = 0;	/* show names of objects for each IP */
 int gVerbose = 0;
 static int gWantDwarf = 0;
 
 /* Prototypes */
-static int	usage(void);
-static int	procThreadIterate(const td_thrhandle_t *thr, void *p);
+static int usage(void);
+static int procThreadIterate(const td_thrhandle_t *thr, void *p);
 
-static enum NoteIter procAddThreadsFromNotes(void *, const char *, u_int32_t,
-			const void *, size_t);
-static enum NoteIter procRegsFromNote(void *cookie, const char *name,
-			u_int32_t type, const void *data, size_t len);
+static enum NoteIter procRegsFromNote(void *cookie, const char *name, u_int32_t type, const void *data, size_t len);
 
 template <typename T> static void
 delall(T &container)
@@ -126,6 +125,65 @@ dwarf(struct ElfObject *obj)
 {
     DwarfInfo dwarf(obj);
     dwarfDump(stdout, 0, &dwarf);
+}
+
+void
+pstack(Process &proc)
+{
+    proc.load();
+    std::set<pid_t> lwps;
+
+    td_ta_thr_iter(
+        proc.agent,
+        [] (const td_thrhandle_t *thr, void *v) -> int {
+            auto lwps = static_cast<std::set<pid_t> *>(v);
+            if (td_thr_dbsuspend(thr) == TD_NOCAPAB) {
+                td_thrinfo_t info;
+                td_thr_get_info(thr, &info);
+                lwps->insert(info.ti_lid);
+            }
+            return 0;
+        },
+        &lwps,
+        TD_THR_ANY_STATE,
+        TD_THR_LOWEST_PRIORITY,
+        TD_SIGNO_MASK,
+        TD_THR_ANY_USER_FLAGS);
+
+
+    for (auto lwp : lwps)
+        ps_lstop(&proc, lwp);
+
+    std::list<ThreadStack> threadStacks;
+
+    // get its back trace.
+
+    td_ta_thr_iter(
+        proc.agent,
+        [] (const td_thrhandle_t *thr, void *v) -> int {
+            auto stacks = static_cast<std::list<ThreadStack> *>(v);
+            stacks->push_back(ThreadStack(t));
+            stacks->back().unwind(proc);
+        },
+        &threadStacks,
+        TD_THR_ANY_STATE,
+        TD_THR_LOWEST_PRIORITY,
+        TD_SIGNO_MASK,
+        TD_THR_ANY_USER_FLAGS);
+    for (auto t : threads) {
+    }
+
+    for (auto s : threadStacks)
+        proc.dumpStack(stdout, 0, s);
+
+    // resume each thread
+    for (auto handle = threads.begin(); handle != threads.end(); ++handle)
+        td_thr_dbresume(*handle);
+
+
+    // resume each lwp
+    for (auto lwp : lwps)
+        ps_lcontinue(&proc, lwp);
 }
 
 int
@@ -167,7 +225,7 @@ main(int argc, char **argv)
             break;
 
         case 'f':
-            gMaxFrames = strtol(optarg, &cp, 0);
+            gMaxFrames = strtoul(optarg, &cp, 0);
             if (gMaxFrames == 0 || *cp != '\0')
                     errx(EX_USAGE, "invalid stack frame count");
             break;
@@ -203,12 +261,10 @@ main(int argc, char **argv)
         if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
             FileReader coreFile(argv[i]);
             CoreProcess proc(execData, coreFile);
-            proc.load();
-            proc.dumpStacks(stdout, 0);
+            pstack(proc);
         } else {
             LiveProcess proc(execData, pid);
-            proc.load();
-            proc.dumpStacks(stdout, 0);
+            pstack(proc);
         }
     }
     return (error);
@@ -307,31 +363,25 @@ LiveProcess::load()
     Process::load();
 }
 
+ThreadList::ThreadList(Process &p)
+{
+}
+
 void
 ps_prochandle::load()
 {
 
     td_err_e the;
-
     /* Attach any dynamically-linked libraries */
     loadSharedObjects();
-
-    /*
-     * Try to use thread_db to iterate over the threads.
-     * If we can't, fall back to grabbing the PRSTATUS notes
-     * from the core, or grab the registers via ptrace() if
-     * debugging a live process.
-     */
     the = td_ta_new(this, &agent);
-    if (the == TD_OK) {
-        td_ta_thr_iter(agent, procThreadIterate, this,
-                TD_THR_ANY_STATE, TD_THR_LOWEST_PRIORITY,
-                TD_SIGNO_MASK, TD_THR_ANY_USER_FLAGS);
-    }
+    if (the != TD_OK)
+        throw 999;
 }
 
+
 const Elf_Phdr *
-ElfObject::findHeaderForAddress(Elf_Addr pa)
+ElfObject::findHeaderForAddress(Elf_Addr pa) const
 {
     Elf_Addr va = addrProc2Obj(pa);
     for (auto hdr : programHeaders)
@@ -341,7 +391,7 @@ ElfObject::findHeaderForAddress(Elf_Addr pa)
 }
 
 void
-CoreProcess::read(off_t remoteAddr, size_t size, char *ptr)
+CoreProcess::read(off_t remoteAddr, size_t size, char *ptr) const
 {
     size_t readLen = 0;
     /* Locate "remoteAddr" in the core file */
@@ -372,7 +422,7 @@ LiveProcess::LiveProcess(Reader &ex, pid_t pid_)
 {
     char buf[PATH_MAX];
     snprintf(buf, sizeof buf, "/proc/%d/mem", pid);
-    procMem = fopen(buf, O_RDONLY);
+    procMem = fopen(buf, "r");
     if (procMem == 0)
         throw 999;
 }
@@ -381,7 +431,7 @@ LiveProcess::LiveProcess(Reader &ex, pid_t pid_)
  * Read data from the target's address space.
  */
 void
-LiveProcess::read(off_t remoteAddr, size_t size, char *ptr)
+LiveProcess::read(off_t remoteAddr, size_t size, char *ptr) const
 {
     if (fseek(procMem, remoteAddr, SEEK_SET) == -1)
         throw 999;
@@ -390,71 +440,70 @@ LiveProcess::read(off_t remoteAddr, size_t size, char *ptr)
 
 }
 
-Thread::Thread(Process *p, thread_t id, lwpid_t lwp, CoreRegisters regs)
-    : running(0)
-    , threadId(id)
-    , lwpid(lwp)
-{
-    stackUnwind(p, regs);
-}
-
 void
-Thread::stackUnwind(Process *p, CoreRegisters &regs)
+ThreadStack::unwind(Process &p)
 {
+    CoreRegisters regs;
 
-    int frameCount, i;
-    struct StackFrame *frame;
-    Elf_Addr ip;
+    td_err_e the;
+#ifdef __linux__ // XXX: looks wrong on linux, right on BSD
+    the = td_thr_getgregs(handle, (elf_greg_t *) &regs);
+#else
+    the = td_thr_getgregs(handle, &regs);
+#endif
+    if (the != TD_OK)
+        throw 999;
 
     stack.clear();
-
     /* Put a bound on the number of iterations. */
-    for (frameCount = 0; frameCount < gMaxFrames; frameCount++) {
-        frame = new StackFrame(ip = REG(regs, ip), REG(regs, bp));
+    for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++) {
+        Elf_Addr ip;
+        StackFrame *frame = new StackFrame(ip = REG(regs, ip), REG(regs, bp));
         stack.push_back(frame);
 
         DwarfRegisters dr;
         dwarfPtToDwarf(&dr, &regs);
 
-        if (gWantDwarf && (ip = dwarfUnwind(p, &dr, ip - 3)) != 0) {
+        if (gWantDwarf && (ip = dwarfUnwind(p, &dr, ip)) != 0) {
             frame->unwindBy = "dwarf";
             dwarfDwarfToPt(&regs, &dr);
         } else {
-            for (i = 0; i < gFrameArgs; i++) {
-                Elf_Word arg;
-                p->readObj(REG(regs, bp) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word), &arg);
-                frame->args.push_back(arg);
+            try {
+                for (int i = 0; i < gFrameArgs; i++) {
+                    Elf_Word arg;
+                        p.readObj(REG(regs, bp) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word), &arg);
+                        frame->args.push_back(arg);
+                    }
+            }
+            catch (...) {
+                // not fatal if we can't read all the args.
             }
             frame->unwindBy = "END  ";
             /* Read the next frame */
-            p->readObj(REG(regs, bp) + sizeof(REG(regs, bp)), &ip);
-            REG(regs, ip) = ip;
-            if (ip == 0) // XXX: if no return instruction, break out.
+            try {
+                p.readObj(REG(regs, bp) + sizeof(REG(regs, bp)), &ip);
+                REG(regs, ip) = ip;
+                if (ip == 0) // XXX: if no return instruction, break out.
+                        break;
+                // Read new frame pointer from stack.
+                p.readObj(REG(regs, bp), &REG(regs, bp));
+                if ((uintmax_t)REG(regs, bp) <= frame->bp)
                     break;
-            // Read new frame pointer from stack.
-            p->readObj(REG(regs, bp), &REG(regs, bp));
-            if ((uintmax_t)REG(regs, bp) <= frame->bp)
+            }
+            catch (...) {
                 break;
+            }
             frame->unwindBy = "stdc  ";
         }
     }
 }
 
-/*
- * Take a snapshot of a thread from a set of registers.
- * This is the x86-specific bit.
- */
-void
-ps_prochandle::addThread(thread_t id, const CoreRegisters &regs, lwpid_t lwp)
-{
-    threadList.push_back(new Thread(this, id, lwp, regs));
-}
 
 /*
  * Print a stack trace of each stack in the process
  */
 void
-ps_prochandle::dumpStacks(FILE *file, int indent)
+ps_prochandle::dumpStack(FILE *file, int indent, const ThreadStack &thread)
 {
     struct ElfObject *obj;
     int lineNo;
@@ -464,50 +513,44 @@ ps_prochandle::dumpStacks(FILE *file, int indent)
     std::string symName;
 
     padding = pad(indent);
-    for (auto thread : threadList) {
-        fprintf(file, "%s----------------- thread %lu (LWP %ld) ", padding, (unsigned long)thread->threadId, (unsigned long)thread->lwpid);
-        if (thread->running)
-                printf("(running) ");
-        fprintf(file, "-----------------\n");
-        for (auto frame : thread->stack) {
-            symName = fileName = "????????";
-            Elf_Addr objIp;
-            obj = findObject(frame->ip);
+    for (auto frame : thread.stack) {
+        symName = fileName = "????????";
+        Elf_Addr objIp;
+        obj = findObject(frame->ip);
 
-            if (obj != 0) {
-                fileName = obj->io.describe();
-                obj->findSymbolByAddress(obj->addrProc2Obj(frame->ip), STT_FUNC, sym, symName);
-                objIp = obj->addrProc2Obj(frame->ip);
-            } else {
-                objIp = 0;
-            }
-            fprintf(file, "%s%p ", padding - 1, (void *)(intptr_t)frame->ip);
-            if (gVerbose) { /* Show ebp for verbose */
-#ifdef i386
-                fprintf(file, "%p ", (void *)frame->bp);
-#endif
-                fprintf(file, "%s ", frame->unwindBy);
-            }
-
-            fprintf(file, "%s (", symName.c_str());
-            if (frame->args.size()) {
-                auto i = frame->args.begin();
-                for (; i != frame->args.end(); ++i)
-                    fprintf(file, "%x, ", *i);
-                fprintf(file, "%x", *i);
-            }
-            fprintf(file, ")");
-            if (obj != 0) {
-                printf(" + %p", (void *)((intptr_t)objIp - sym.st_value));
-                if (gShowObjectNames)
-                    printf(" in %s", fileName.c_str());
-                if (obj->dwarf && obj->dwarf->sourceFromAddr(objIp - 1, fileName, lineNo))
-                    printf(" (source %s:%d)", fileName.c_str(), lineNo);
-            }
-            printf("\n");
+        if (obj != 0) {
+            fileName = obj->io.describe();
+            obj->findSymbolByAddress(obj->addrProc2Obj(frame->ip), STT_FUNC, sym, symName);
+            objIp = obj->addrProc2Obj(frame->ip);
+        } else {
+            objIp = 0;
         }
-        fprintf(file, "\n");
+        fprintf(file, "%s%p ", padding - 1, (void *)(intptr_t)frame->ip);
+        if (gVerbose) { /* Show ebp for verbose */
+#ifdef i386
+            fprintf(file, "%p ", (void *)frame->bp);
+#endif
+            fprintf(file, "%s ", frame->unwindBy);
+        }
+
+        fprintf(file, "%s (", symName.c_str());
+        if (frame->args.size()) {
+            auto i = frame->args.begin();
+            for (; i != frame->args.end(); ++i)
+                fprintf(file, "%x, ", *i);
+            fprintf(file, "%x", *i);
+        }
+        fprintf(file, ")");
+        if (obj != 0) {
+            printf(" + %p", (void *)((intptr_t)objIp - sym.st_value));
+            if (gShowObjectNames)
+                printf(" in %s", fileName.c_str());
+            if (obj->dwarf && obj->dwarf->sourceFromAddr(objIp - 1, fileName, lineNo))
+                printf(" (source %s:%d)", fileName.c_str(), lineNo);
+        }
+        printf("\n");
     }
+    fprintf(file, "\n");
 }
 
 /*
@@ -572,14 +615,20 @@ ps_prochandle::loadSharedObjects()
         /* Read the path to the file */
         if (map.l_name == 0)
             continue;
-        readObj((off_t)map.l_name, path, maxpath);
-        Elf_Addr lAddr = (Elf_Addr)map.l_addr;
-
-        if (abiPrefix != "" && access(prefixedPath, R_OK) == 0)
+        try {
+            readObj((off_t)map.l_name, path, maxpath);
+            if (abiPrefix != "" && access(prefixedPath, R_OK) == 0)
             path = prefixedPath;
-        FileReader *f = new FileReader(path);
-        readers.push_back(f);
-        addElfObject(new ElfObject(*f), lAddr);
+            FileReader *f = new FileReader(path);
+            readers.push_back(f);
+            Elf_Addr lAddr = (Elf_Addr)map.l_addr;
+            addElfObject(new ElfObject(*f), lAddr);
+        }
+        catch (...) {
+            std::clog << "warning: can't load text at " << (void *)mapAddr << "\n";
+            continue;
+        }
+
     }
 }
 
@@ -612,6 +661,8 @@ static const char PRSTATUS_NOTENAME[] =
 #endif
     ;
 
+#ifdef NOTYET
+static enum NoteIter procAddThreadsFromNotes(void *, const char *, u_int32_t, const void *, size_t);
 static enum NoteIter
 procAddThreadsFromNotes(void *cookie, const char *name, u_int32_t type,
     const void *data, size_t len)
@@ -620,10 +671,10 @@ procAddThreadsFromNotes(void *cookie, const char *name, u_int32_t type,
     const prstatus_t *prstatus = (const prstatus_t *)data;
     Process *p = (Process *)cookie;
     if (strcmp(name, PRSTATUS_NOTENAME) == 0 && type == NT_PRSTATUS)
-        p->addThread(0, *(const CoreRegisters *)&prstatus->pr_reg, prstatus->pr_pid);
-
+        p->addThread(new Thread(0, prstatus->pr_pid));
     return (NOTE_CONTIN);
 }
+#endif
 
 static enum NoteIter
 procRegsFromNote(void *cookie, const char *name, u_int32_t type,
@@ -642,7 +693,7 @@ procRegsFromNote(void *cookie, const char *name, u_int32_t type,
 }
 
 int
-CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
+CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg) const
 {
     struct RegnoteInfo rni;
     rni.proc = this;
@@ -652,7 +703,7 @@ CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
 }
 
 int
-LiveProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
+LiveProcess::getRegs(lwpid_t pid, CoreRegisters *reg) const
 {
 #ifdef __FreeBSD__
     int rc;
@@ -661,43 +712,11 @@ LiveProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
         warn("failed to trace LWP %d", (int)pid);
     return (rc);
 #endif
-    abort();
-    return -1;
-}
-
-/*
- * Setup what we need to read from the process memory (or core file)
- */
-void
-LiveProcess::stop()
-{
-    int status;
-
-    if (ptrace(PT_ATTACH, pid, 0, 0) != 0)
-        throw 999;
-    /*
-     * Wait for child to stop.
-     * XXX: Due to an interaction between ptrace() and linux
-     * thread semantics, the "normal" waitpid may fail. We
-     * do our best to guess when this happens, and try again
-     * with options |= WLINUXCLONE
-     */
-    if (waitpid(pid, &status, 0) == -1) {
-#if defined(__FreeBSD__) && !defined(MISC_39201_FIXED)
-        if (errno != ECHILD || waitpid(pid, &status, WLINUXCLONE) == -1)
-            warnx("(linux thread process detected: waiting with WLINUXCLONE)");
-        else
+#ifdef __linux__
+    return ptrace(__ptrace_request(PTRACE_GETREGS), pid, 0, reg) != -1 ? PS_OK : PS_ERR;
 #endif
-            warn("can't wait for child: all bets " "are off");
-    }
 }
 
-void
-LiveProcess::resume()
-{
-    if (ptrace(PT_DETACH, pid, (caddr_t)1, 0) != 0)
-        warn("failed to detach from process %d", pid);
-}
 
 /*
  * Free any resources associated with a Process
@@ -705,13 +724,7 @@ LiveProcess::resume()
 Process::~Process()
 {
     delall(objectList);
-    delall(threadList);
     delete[] vdso;
-}
-
-Thread::~Thread()
-{
-    delall(stack);
 }
 
 #ifdef __linux__
@@ -720,29 +733,11 @@ Thread::~Thread()
 #define THR_ID(t) ((t)->th_tid)
 #endif
 
-/*
- * Callback for threaddb iterator function
- */
 static int
 procThreadIterate(const td_thrhandle_t *thr, void *v)
 {
-    CoreRegisters regs;
-    td_thrinfo_t ti;
-    td_err_e the;
-    Process *p;
-
-    p = (Process *)v;
-#ifdef __linux__ // XXX: looks wrong on linux, right on BSD
-    the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
-#else
-    the = td_thr_getgregs(thr, &regs);
-#endif
-    if (the == TD_OK) {
-        td_thr_get_info(thr, &ti);
-        p->addThread(THR_ID(thr), regs, ti.ti_lid);
-    } else {
-        warn("cannot trace thread %lu", (unsigned long)THR_ID(thr));
-    }
+    ThreadList *list = reinterpret_cast<ThreadList *>(v);
+    list->push_back(thr);
     return (0);
 }
 
@@ -753,8 +748,26 @@ procThreadIterate(const td_thrhandle_t *thr, void *v)
 
 ps_err_e ps_lcontinue(const struct ps_prochandle *p, lwpid_t pid)
 {
-    abort();
-    return (PS_ERR);
+    try {
+        p->resume(pid);
+        return PS_OK;
+    }
+    catch (...) {
+        return PS_ERR;
+    }
+}
+
+void
+LiveProcess::resume(pid_t pid) const
+{
+    if (ptrace(PT_DETACH, pid, (caddr_t)1, 0) != 0)
+        warn("failed to detach from process %d", pid);
+}
+
+void
+CoreProcess::resume(pid_t) const
+{
+    // can't resume post-mortem debugger.
 }
 
 ps_err_e ps_lgetfpregs(struct ps_prochandle *p, lwpid_t pid, prfpregset_t *fpregsetp)
@@ -781,10 +794,52 @@ ps_err_e ps_lsetregs(struct ps_prochandle *p, lwpid_t pid,
     return (PS_ERR);
 }
 
-ps_err_e ps_lstop(const struct ps_prochandle *p, lwpid_t pid)
+ps_err_e ps_lstop(const struct ps_prochandle *p, lwpid_t lwpid)
 {
-    abort();
-    return (PS_ERR);
+    try {
+        p->stop(lwpid);
+        return PS_OK;
+    }
+    catch (...) {
+        return PS_ERR;
+    }
+}
+
+void
+CoreProcess::stop(lwpid_t pid) const
+{
+    // can't stop a dead process.
+}
+
+void
+LiveProcess::stop(lwpid_t pid) const
+{
+    int status;
+#ifdef __linux__
+    if (ptrace(PTRACE_ATTACH, pid, 0, 0) != 0)
+        throw 999;
+    if (waitpid(pid, &status, 0) == -1)
+        throw 999;
+#endif
+#ifdef __FreeBSD__
+    if (ptrace(PT_ATTACH, pid, 0, 0) != 0)
+        throw 999;
+    /*
+     * Wait for child to stop.
+     * XXX: Due to an interaction between ptrace() and linux
+     * thread semantics, the "normal" waitpid may fail. We
+     * do our best to guess when this happens, and try again
+     * with options |= WLINUXCLONE
+     */
+    if (waitpid(pid, &status, 0) == -1) {
+#if !defined(MISC_39201_FIXED)
+        if (errno != ECHILD || waitpid(pid, &status, WLINUXCLONE) == -1)
+            warnx("(linux thread process detected: waiting with WLINUXCLONE)");
+        else
+#endif
+            warn("can't wait for child: all bets " "are off");
+    }
+#endif
 }
 
 ps_err_e ps_pcontinue(const struct ps_prochandle *p)
@@ -876,7 +931,7 @@ ps_linfo(struct ps_prochandle *p, lwpid_t pid, void *info)
 #elif defined(__linux__)
 
 struct PIDFinder {
-    Process *p;
+    const Process *p;
     pid_t pid;
 };
 
@@ -899,7 +954,7 @@ ps_getpid(struct ps_prochandle *p)
 }
 
 pid_t
-CoreProcess::getPID()
+CoreProcess::getPID() const
 {
     PIDFinder pf;
     pf.p = this;
@@ -970,7 +1025,7 @@ ps_lsetxmmregs (struct ps_prochandle *ph, lwpid_t pid, const char *xxx)
  * Find the mapped object within which "addr" lies
  */
 ElfObject *
-ps_prochandle::findObject(Elf_Addr addr)
+ps_prochandle::findObject(Elf_Addr addr) const
 {
     for (auto obj : objectList) {
         Elf_Addr va = obj->addrProc2Obj(addr);

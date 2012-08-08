@@ -239,6 +239,7 @@ public:
     DwarfInfo(ElfObject *object);
     bool sourceFromAddr(uintmax_t addr, std::string &file, int &line);
     uintmax_t unwind(Process *proc, DwarfRegisters *regs, uintmax_t addr);
+    Elf_Addr getCFA(const Process &proc, const DwarfCallFrame *frame, const DwarfRegisters *regs);
 };
 
 struct DwarfFileEntry {
@@ -360,5 +361,5 @@ enum DwarfExpressionOp {
 #define DW_EH_PE_datarel        0x30
 #define DW_EH_PE_funcrel        0x40
 #define DW_EH_PE_aligned        0x50
-uintmax_t dwarfUnwind(Process *, DwarfRegisters *, uintmax_t);
+Elf_Addr dwarfUnwind(Process &, DwarfRegisters *, Elf_Addr);
 #endif

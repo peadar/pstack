@@ -138,9 +138,9 @@ public:
             throw 999;
         return sectionHeaders[idx];
     }
-    int	getNotes(enum NoteIter (*callback)(void *cookie, const char *name, uint32_t type, const void *datap, size_t len), void *cookie);
+    int	getNotes(enum NoteIter (*callback)(void *cookie, const char *name, uint32_t type, const void *datap, size_t len), void *cookie) const;
     std::string getImageFromCore();
-    const Elf_Phdr *findHeaderForAddress(Elf_Addr pa);
+    const Elf_Phdr *findHeaderForAddress(Elf_Addr pa) const;
 };
 
 class ElfSymHash {

@@ -283,10 +283,8 @@ ElfObject::findSymbolByName(std::string name, Elf_Sym &sym)
  * Get the data and length from a specific "note" in the ELF file
  */
 int
-ElfObject::getNotes(enum NoteIter (*callback)(void *cookie, const char *name,
-        u_int32_t type, const void *datap, size_t len), void *cookie)
+ElfObject::getNotes(enum NoteIter (*callback)(void *cookie, const char *name, u_int32_t type, const void *datap, size_t len), void *cookie) const
 {
-
     for (auto phdr : programHeaders) {
         if (phdr->p_type == PT_NOTE) {
             Elf_Note note;

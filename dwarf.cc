@@ -1018,7 +1018,7 @@ DwarfCallFrame::DwarfCallFrame()
 
 
 #define STACK_MAX 1024
-typedef std::stack<intmax_t> DwarfExpressionStack;
+typedef std::stack<Elf_Addr> DwarfExpressionStack;
 
 static const char *
 opname(DwarfExpressionOp op)
@@ -1031,8 +1031,8 @@ opname(DwarfExpressionOp op)
 #undef DWARF_OP
 }
 
-static intmax_t
-dwarfEvalExpr(Process *proc, DWARFReader r, const DwarfRegisters *frame, DwarfExpressionStack *stack)
+static Elf_Addr
+dwarfEvalExpr(const Process &proc, DWARFReader r, const DwarfRegisters *frame, DwarfExpressionStack *stack)
 {
     while (!r.empty()) {
         auto op = DwarfExpressionOp(r.getu8());
@@ -1040,7 +1040,7 @@ dwarfEvalExpr(Process *proc, DWARFReader r, const DwarfRegisters *frame, DwarfEx
             case DW_OP_deref: {
                 intmax_t addr = stack->top(); stack->pop();
                 Elf_Addr value;
-                proc->readObj(addr, &value);
+                proc.readObj(addr, &value);
                 stack->push((intmax_t)(intptr_t)value);
                 break;
             }
@@ -1565,8 +1565,8 @@ default: return 0;
 
 }
 
-static intmax_t
-dwarfGetCFA(Process *proc, DwarfInfo *dwarf, const DwarfCallFrame *frame, const DwarfRegisters *regs)
+Elf_Addr
+DwarfInfo::getCFA(const Process &proc, const DwarfCallFrame *frame, const DwarfRegisters *regs)
 {
     switch (frame->cfaValue.type) {
         case SAME:
@@ -1582,9 +1582,9 @@ dwarfGetCFA(Process *proc, DwarfInfo *dwarf, const DwarfCallFrame *frame, const 
             return dwarfGetReg(regs, frame->cfaReg) + frame->cfaValue.u.offset;
         case EXPRESSION: {
             DwarfExpressionStack stack;
-            DWARFReader r(*dwarf, frame->cfaValue.u.expression.offset, frame->cfaValue.u.expression.length);
+            DWARFReader r(*this, frame->cfaValue.u.expression.offset, frame->cfaValue.u.expression.length);
             dwarfEvalExpr(proc, r, regs, &stack);
-            intmax_t rv = stack.top();
+            Elf_Addr rv = stack.top();
             stack.pop();
             return rv;
         }
@@ -1592,14 +1592,14 @@ dwarfGetCFA(Process *proc, DwarfInfo *dwarf, const DwarfCallFrame *frame, const 
     return -1;
 }
 
-uintmax_t
-dwarfUnwind(Process *proc, DwarfRegisters *regs, uintmax_t addr)
+Elf_Addr
+dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr addr)
 {
     int i;
     DwarfRegisters newRegs;
     DwarfRegisterUnwind *unwind;
 
-    ElfObject *obj = proc->findObject(addr);
+    ElfObject *obj = p.findObject(addr);
     if (obj == 0)
         return 0;
 
@@ -1622,7 +1622,7 @@ dwarfUnwind(Process *proc, DwarfRegisters *regs, uintmax_t addr)
     DwarfCallFrame frame = fde->cie->execInsns(r, fde->iloc, addr);
 
     // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
-    uintmax_t cfa = dwarfGetCFA(proc, dwarf, &frame, regs);
+    uintmax_t cfa = dwarf->getCFA(p, &frame, regs);
 
     for (i = 0; i < MAXREG; i++) {
         if (!dwarfIsArchReg(i))
@@ -1636,7 +1636,7 @@ dwarfUnwind(Process *proc, DwarfRegisters *regs, uintmax_t addr)
                 break;
             case OFFSET: {
                 Elf_Addr reg; // XXX: assume addrLen = sizeof Elf_Addr
-                proc->readObj(cfa + unwind->u.offset, &reg);
+                p.readObj(cfa + unwind->u.offset, &reg);
                 dwarfSetReg(&newRegs, i, reg);
                 break;
             }
@@ -1648,7 +1648,7 @@ dwarfUnwind(Process *proc, DwarfRegisters *regs, uintmax_t addr)
                 DwarfExpressionStack stack;
                 stack.push(cfa);
                 DWARFReader reader(*dwarf, unwind->u.expression.offset, unwind->u.expression.length);
-                dwarfEvalExpr(proc, reader, regs, &stack);
+                dwarfEvalExpr(p, reader, regs, &stack);
                 dwarfSetReg(&newRegs, i, stack.top());
                 break;
             }
