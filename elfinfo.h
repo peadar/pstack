@@ -31,10 +31,14 @@
 
 #ifndef elfinfo_h_guard
 #define elfinfo_h_guard
-#include <sys/queue.h>
-#include <proc_service.h>
+#include <string>
+#include <list>
+#include <vector>
+extern "C" {
 #include <thread_db.h>
-typedef struct ps_prochandle Process;
+}
+#include <elf.h>
+#include "reader.h"
 
 /*
  * FreeBSD defines all elf types with a common header, defining the
@@ -44,7 +48,6 @@ typedef struct ps_prochandle Process;
  */
 
 #define ELF_WORDSIZE ((ELF_BITS)/8)
-
 
 #ifndef __FreeBSD__
 
@@ -64,6 +67,7 @@ ElfType(Dyn)
 ElfType(Word)
 ElfType(Note)
 ElfType(auxv_t)
+ElfType(Off)
 
 #if ELF_BITS==64
 #define ELF_ST_TYPE ELF64_ST_TYPE
@@ -82,34 +86,75 @@ static inline size_t roundup2(size_t val, size_t align)
 
 #endif
 
-struct tagDwarfInfo;
+struct DwarfInfo;
+class ElfSymHash;
+
 struct ElfMemChunk {
     struct ElfMemChunk *next;
     size_t size;
     size_t used;
     char data[1];
 };
+
 #define MEMBUF (1024 * 64)
 
-struct ElfObject {
-	struct ElfObject *next;
-	Elf_Addr	 base; /* For loaded objects */
-	Elf_Addr	 load;
-        FILE            *file;
-	char		*fileName;
-	size_t		 fileSize;
-	Elf_Ehdr	 elfHeader;
-	Elf_Phdr        *programHeaders;
-	Elf_Shdr        *sectionHeaders;
-	const char     **sectionContents;
-	const Elf_Phdr  *dynamic;
-	const char	*sectionStrings;
-	const char	*interpreterName;
-        struct tagDwarfInfo *dwarf;
+enum NoteIter {
+	NOTE_CONTIN,
+	NOTE_ERROR,
+	NOTE_DONE
+};
 
-        struct ElfMemChunk firstChunk;
-        char buf[MEMBUF];
-        struct ElfMemChunk *mem;
+struct ElfObject {
+    Elf_Addr base; /* For loaded objects */
+    Elf_Addr load;
+    Reader &io;
+    size_t fileSize;
+    Elf_Ehdr elfHeader;
+    std::vector<Elf_Phdr *> programHeaders;
+    std::vector<Elf_Shdr *> sectionHeaders;
+    const Elf_Phdr *dynamic;
+    off_t sectionStrings;
+    std::string interpreterName;
+    DwarfInfo *dwarf;
+    struct ElfMemChunk firstChunk;
+    char buf[MEMBUF];
+    struct ElfMemChunk *mem;
+    std::string readString(off_t offset) const;
+    bool linearSymSearch(const Elf_Shdr *hdr, std::string name, Elf_Sym &);
+    void init(FILE *);
+    ElfSymHash *hash;
+public:
+    Elf_Shdr *findSectionByName(std::string name);
+    bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
+    bool findSymbolByName(std::string name, Elf_Sym &sym);
+    std::string getABIPrefix();
+    ElfObject(Reader &);
+    ~ElfObject();
+    inline Elf_Addr addrProc2Obj(Elf_Addr va) const { return va - load + base; }
+    inline Elf_Addr addrObj2Proc(Elf_Addr va) const { return va - base + load; }
+    Elf_Shdr *getSection(size_t idx) const {
+        if (idx >= sectionHeaders.size())
+            throw 999;
+        return sectionHeaders[idx];
+    }
+    int	getNotes(enum NoteIter (*callback)(void *cookie, const char *name, uint32_t type, const void *datap, size_t len), void *cookie) const;
+    std::string getImageFromCore();
+    const Elf_Phdr *findHeaderForAddress(Elf_Addr pa) const;
+};
+
+class ElfSymHash {
+    ElfObject *obj;
+    const Elf_Shdr *hash;
+    const Elf_Shdr *syms;
+    off_t strings;
+    Elf_Word nbucket;
+    Elf_Word nchain;
+    const Elf_Word *buckets;
+    const Elf_Word *chains;
+    const Elf_Word *data;
+public:
+    ElfSymHash(ElfObject *object, Elf_Shdr *hash);
+    bool findSymbol(Elf_Sym &sym, std::string &name);
 };
 
 struct stab {
@@ -118,12 +163,6 @@ struct stab {
 	unsigned char n_other;
 	unsigned short n_desc;
 	unsigned long n_value;
-};
-
-enum NoteIter {
-	NOTE_CONTIN,
-	NOTE_ERROR,
-	NOTE_DONE
 };
 
 enum StabType {
@@ -196,17 +235,6 @@ enum StabType {
 	N_NBLCS = 0xf8
 };
 
-struct StackFrame {
-	STAILQ_ENTRY(StackFrame) link;
-	Elf_Addr	ip;
-	Elf_Addr	bp;
-	int		argCount;
-	Elf_Word	args[1];
-        const char     *unwindBy;
-};
-
-STAILQ_HEAD(StackFrameList, StackFrame);
-
 struct MappedPage {
 	unsigned char *data;
 	Elf_Addr address; /* Valid only if data != NULL */
@@ -214,69 +242,23 @@ struct MappedPage {
 };
 
 
-#define PAGECACHE_SIZE 4
-struct PageCache {
-	struct MappedPage pages[PAGECACHE_SIZE];
-	int		accessGeneration;
-};
+int elfGetImageFromCore(struct ElfObject *obj, const char **name);
 
-struct Thread {
-	int running;
-	struct Thread		*next;
-	struct StackFrameList	stack;
-	thread_t threadId;
-	lwpid_t lwpid;
-};
+void elfDumpSymbol(FILE *f, const Elf_Sym *sym, const char *strings, int indent);
+void elfDumpDynamic(FILE *f, const Elf_Dyn *dyn, int indent);
+void elfDumpObject(FILE *f, struct ElfObject *obj, int snap, int indent);
+void elfDumpSection(FILE * f, struct ElfObject * obj, const Elf_Shdr * hdr, size_t snap, int indent);
+void elfDumpProgramSegment(FILE *f, struct ElfObject *obj, const Elf_Phdr *hdr, int indent);
 
-struct ps_prochandle {
-	td_thragent_t	*agent;
-	pid_t		 pid;
-	int		 objectCount;
-	struct ElfObject *objectList;
-	struct ElfObject *execImage;
-	struct ElfObject *coreImage;
-	struct Thread	*threadList;
-	const char	*abiPrefix;
-	struct PageCache pageCache;
-        unsigned char *vdso;
-};
-
-int	procFindObject(Process *p, Elf_Addr addr, struct ElfObject **objp);
-
-int	elfFindSectionByName(struct ElfObject *obj,
-			const char *name, const Elf_Shdr **sectionp);
-int	elfFindSymbolByAddress(struct ElfObject *obj,
-			Elf_Addr addr, int type,
-			const Elf_Sym **symp, const char **namep);
-int	elfLinearSymSearch(struct ElfObject *o,
-			const Elf_Shdr *hdr,
-			const char *name, const Elf_Sym **symp);
-int	elfFindSymbolByName(struct ElfObject *o,
-			const char *name, const Elf_Sym **symp);
-int	elfLoadObject(const char *fileName, struct ElfObject **objp);
-int     elfLoadObjectFromData(FILE *data, size_t size, struct ElfObject **objp);
-int	elfGetNotes(struct ElfObject *obj, enum NoteIter
-		(*callback)(void *cookie, const char *name, uint32_t type,
-		const void *datap, size_t len), void *cookie);
-int	elfGetImageFromCore(struct ElfObject *obj, const char **name);
-int	elfUnloadObject(struct ElfObject *obj);
-const char *elfGetAbiPrefix(struct ElfObject *o);
-void	elfDumpSymbol(FILE *f, const Elf_Sym *sym,
-			const char *strings, int indent);
-void	elfDumpDynamic(FILE *f, const Elf_Dyn *dyn, int indent);
-void	elfDumpObject(FILE *f, struct ElfObject *obj, int snap, int indent);
-void	elfDumpSection(FILE * f, struct ElfObject * obj,
-			const Elf_Shdr * hdr, size_t snap, int indent);
-void	elfDumpProgramSegment(FILE *f, struct ElfObject *obj,
-			const Elf_Phdr *hdr, int indent);
-void	hexdump(FILE *f, int indent, const unsigned char *p, int len);
-const char *	pad(size_t size);
-void   *elfAlloc(struct ElfObject *, size_t);
-char   *elfStrdup(struct ElfObject *, const char *);
-static inline Elf_Addr elfAddrProc2Obj(const struct ElfObject *obj, Elf_Addr va) { return va - obj->load + obj->base; }
-static inline Elf_Addr elfAddrObj2Proc(const struct ElfObject *obj, Elf_Addr va) { return va - obj->base + obj->load; }
+void hexdump(FILE *f, int indent, const unsigned char *p, int len);
+const char *pad(size_t size);
 typedef struct user_regs_struct CoreRegisters;
 
-size_t	procReadMem(Process *p, void *ptr, Elf_Addr remoteAddr, size_t size);
+std::ostream& operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr &, const Elf_Sym &> &t);
+std::ostream& operator<< (std::ostream &os, const std::pair<const ElfObject *, const Elf_Shdr &> &p);
+std::ostream& operator<< (std::ostream &os, const Elf_Phdr &h);
+std::ostream& operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr &, const Elf_Sym &> &t);
+std::ostream& operator<< (std::ostream &os, const Elf_Dyn &d);
+std::ostream& operator<< (std::ostream &os, const ElfObject &obj);
 
 #endif /* Guard. */
