@@ -5,7 +5,10 @@
 #include <sys/ucontext.h>
 #include <sys/ptrace.h>
 #include <asm/ptrace.h>
+
 #include <map>
+#include <list>
+#include <vector>
 
 #define DWARF_MAXREG 128
 

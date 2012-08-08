@@ -76,31 +76,10 @@ void
 LiveProcess::stop(lwpid_t pid) const
 {
     int status;
-#ifdef __linux__
-    if (ptrace(PTRACE_ATTACH, pid, 0, 0) != 0)
-        throw 999;
-    if (waitpid(pid, &status, 0) == -1)
-        throw 999;
-#endif
-#ifdef __FreeBSD__
-    if (ptrace(PT_ATTACH, pid, 0, 0) != 0)
-        throw 999;
-    /*
-     * Wait for child to stop.
-     * XXX: Due to an interaction between ptrace() and linux
-     * thread semantics, the "normal" waitpid may fail. We
-     * do our best to guess when this happens, and try again
-     * with options |= WLINUXCLONE
-     */
-    if (waitpid(pid, &status, 0) == -1) {
-#if !defined(MISC_39201_FIXED)
-        if (errno != ECHILD || waitpid(pid, &status, WLINUXCLONE) == -1)
-            warnx("(linux thread process detected: waiting with WLINUXCLONE)");
-        else
-#endif
-            warn("can't wait for child: all bets " "are off");
-    }
-#endif
+    std::clog << "attach to " << pid << std::endl;
+    if (ptrace(PT_ATTACH, pid, 0, 0) == 0 && waitpid(pid, &status, 0) == 0)
+        return;
+    warn("can't wait for child: all bets " "are off");
 }
 
 

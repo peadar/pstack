@@ -111,8 +111,7 @@ Process::addElfObject(struct ElfObject *obj, Elf_Addr load)
     objectList.push_back(obj);
     obj->dwarf = new DwarfInfo(obj);
 
-    fprintf(stderr, "object %s loaded at address %p, base=%p\n",
-        "XXX", (void *)obj->load, (void *)obj->base);
+    fprintf(stderr, "object %s loaded at address %p, base=%p\n", "XXX", (void *)obj->load, (void *)obj->base);
     auto di = obj->dwarf;
     fprintf(stderr, "unwind info: %s\n",
         di->ehFrame ? di->debugFrame ? "BOTH" : "EH" : di->debugFrame ? "DEBUG" : "NONE");

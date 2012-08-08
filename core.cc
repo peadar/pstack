@@ -1,4 +1,6 @@
 #include <iostream>
+#include "elfinfo.h"
+#include "dwarf.h"
 #include "procinfo.h"
 
 struct PIDFinder {
@@ -66,18 +68,36 @@ CoreProcess::read(off_t remoteAddr, size_t size, char *ptr) const
     }
 }
 
+/* Callback data for procRegsFromNote */
+struct RegnoteInfo {
+    const Process *proc;
+    lwpid_t pid;
+    CoreRegisters *reg;
+};
+
+static enum NoteIter
+regsFromNote(void *cookie, const char *name, u_int32_t type,
+    const void *data, size_t len)
+{
+    const prstatus_t *prstatus;
+    struct RegnoteInfo *rni;
+    prstatus = (const prstatus_t *)data;
+    rni = (RegnoteInfo *)cookie;
+    if (type == NT_PRSTATUS && prstatus->pr_pid == rni->pid) {
+        memcpy(rni->reg, (const DwarfRegisters *)&prstatus->pr_reg, sizeof(*rni->reg));
+        return (NOTE_DONE);
+    }
+    return (NOTE_CONTIN);
+}
+ 
 bool
 CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg) const
 {
-    abort();
-    return false;
-/*
     struct RegnoteInfo rni;
     rni.proc = this;
     rni.pid = pid;
     rni.reg = reg;
-    return coreImage.getNotes(procRegsFromNote, &rni) == 0;
-*/
+    return coreImage.getNotes(regsFromNote, &rni) == 0;
 }
 
 void
