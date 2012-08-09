@@ -21,7 +21,7 @@ LiveProcess::load()
     close(fd);
     if (rc == -1)
         throw 999;
-    addVDSOfromAuxV(buf, rc);
+    processAUXV(buf, rc);
 #endif
     Process::load();
 }

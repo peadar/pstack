@@ -15,10 +15,9 @@ struct StackFrame {
 };
 
 struct ThreadStack {
-    const td_thrhandle_t *handle;
     std::list<StackFrame *> stack;
-    ThreadStack(const td_thrhandle_t *handle_) : handle(handle_) {}
-    void unwind(Process &);
+    ThreadStack() {}
+    void unwind(Process &, CoreRegisters &regs);
 };
 
 class Process : public Reader, public ps_prochandle {
@@ -31,7 +30,7 @@ protected:
     ElfObject *execImage;
     std::string abiPrefix;
     std::list<Reader *> readers; // readers allocated for objects.
-    void addVDSOfromAuxV(const void *data, size_t len);
+    void processAUXV(const void *data, size_t len);
 public:
     virtual void load(); // loads shared objects, gets stack traces.
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const = 0;
@@ -43,6 +42,7 @@ public:
     virtual pid_t getPID() const = 0;
     void dumpStack(FILE *file, int indent, const ThreadStack &, bool verbose);
     template <typename T> void listThreads(const T &);
+    void pstack();
     Elf_Addr findNamedSymbol(const char *objectName, const char *symbolName) const;
     ~Process();
 };

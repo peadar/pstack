@@ -33,7 +33,7 @@ CoreProcess::load()
     coreImage.getNotes(
         [] (void *cookie, const char *name, u_int32_t type, const void *datap, size_t len) {
             if (type == NT_AUXV) {
-                static_cast<CoreProcess *>(cookie)->addVDSOfromAuxV(datap, len);
+                static_cast<CoreProcess *>(cookie)->processAUXV(datap, len);
                 return NOTE_DONE;
             }
             return NOTE_CONTIN;

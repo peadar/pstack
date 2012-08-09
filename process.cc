@@ -4,6 +4,48 @@
 #include "procinfo.h"
 #include "dwarf.h"
 
+static std::string auxv_name(Elf_Word val)
+{
+#define AUXV(n) case n : return #n;
+    switch (val) {
+        AUXV(AT_NULL)
+        AUXV(AT_IGNORE)
+        AUXV(AT_EXECFD)
+        AUXV(AT_PHDR)
+        AUXV(AT_PHENT)
+        AUXV(AT_PHNUM)
+        AUXV(AT_PAGESZ)
+        AUXV(AT_BASE)
+        AUXV(AT_FLAGS)
+        AUXV(AT_ENTRY)
+        AUXV(AT_NOTELF)
+        AUXV(AT_UID)
+        AUXV(AT_EUID)
+        AUXV(AT_GID)
+        AUXV(AT_EGID)
+        AUXV(AT_CLKTCK)
+        AUXV(AT_PLATFORM)
+        AUXV(AT_HWCAP)
+        AUXV(AT_FPUCW)
+        AUXV(AT_DCACHEBSIZE)
+        AUXV(AT_ICACHEBSIZE)
+        AUXV(AT_UCACHEBSIZE)
+        AUXV(AT_IGNOREPPC)
+        AUXV(AT_SECURE)
+        AUXV(AT_BASE_PLATFORM)
+        AUXV(AT_RANDOM)
+        AUXV(AT_EXECFN)
+        AUXV(AT_SYSINFO)
+        AUXV(AT_SYSINFO_EHDR)
+        AUXV(AT_L1I_CACHESHAPE)
+        AUXV(AT_L1D_CACHESHAPE)
+        AUXV(AT_L2_CACHESHAPE)
+        AUXV(AT_L3_CACHESHAPE)
+        default: return "unknown";
+    }
+}
+#undef AUXV
+
 template <typename T> static void
 delall(T &container)
 {
@@ -31,21 +73,36 @@ Process::load()
 }
 
 void
-Process::addVDSOfromAuxV(const void *datap, size_t len)
+Process::processAUXV(const void *datap, size_t len)
 {
     const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
     const Elf_auxv_t *eaux = aux + len / sizeof *aux;
-    Elf_Addr hdr = 0;
-    while (aux < eaux)
-        if (aux->a_type == AT_SYSINFO_EHDR) {
-            hdr = aux->a_un.a_val;
-            vdso = new char[getpagesize()];
-            readObj(hdr, vdso, getpagesize());
-            MemReader *r = new MemReader(vdso, getpagesize());
-            readers.push_back(r);
-            addElfObject(new ElfObject(*r), hdr);
-            return;
+    for (; aux < eaux; aux += sizeof *aux) {
+        Elf_Addr hdr = aux->a_un.a_val;
+        std::cerr << "auxv: " << auxv_name(aux->a_type) << "= " << (void *)hdr << "\n";
+        switch (aux->a_type) {
+            case AT_SYSINFO_EHDR: {
+                vdso = new char[getpagesize()];
+                readObj(hdr, vdso, getpagesize());
+                MemReader *r = new MemReader(vdso, getpagesize());
+                readers.push_back(r);
+                addElfObject(new ElfObject(*r), hdr);
+                break;
+            }
+
+            case AT_EXECFN:
+                std::ostringstream os;
+                for (;;) {
+                    char c;
+                    readObj(hdr++, &c, 1);
+                    if (c == 0)
+                        break;
+                    os << c;
+                }
+                std::cerr << "filename: " << os.str() << "\n";
+                break;
         }
+    }
 }
 
 void
@@ -103,18 +160,17 @@ void
 Process::addElfObject(struct ElfObject *obj, Elf_Addr load)
 {
     obj->load = load;
-    obj->base = (Elf_Addr)-1;
+    obj->base = (Elf_Addr)0;
 
     for (auto hdr : obj->programHeaders)
-        if (hdr->p_type == PT_LOAD && hdr->p_vaddr < obj->base)
+        if (hdr->p_type == PT_LOAD && (Elf_Off)hdr->p_vaddr <= obj->base)
             obj->base = hdr->p_vaddr;
     objectList.push_back(obj);
     obj->dwarf = new DwarfInfo(obj);
 
-    fprintf(stderr, "object %s loaded at address %p, base=%p\n", "XXX", (void *)obj->load, (void *)obj->base);
+    std::cerr << "object " << obj->io.describe() << " loaded at address " << std::hex << obj->load << ", base=" << obj->base;
     auto di = obj->dwarf;
-    fprintf(stderr, "unwind info: %s\n",
-        di->ehFrame ? di->debugFrame ? "BOTH" : "EH" : di->debugFrame ? "DEBUG" : "NONE");
+    std::cerr << ", unwind info:  " << (di->ehFrame ? di->debugFrame ? "BOTH" : "EH" : di->debugFrame ? "DEBUG" : "NONE") << "\n";
 
 }
 /*
@@ -152,14 +208,14 @@ Process::loadSharedObjects()
         try {
             readObj((off_t)map.l_name, path, maxpath);
             if (abiPrefix != "" && access(prefixedPath, R_OK) == 0)
-            path = prefixedPath;
+                path = prefixedPath;
             FileReader *f = new FileReader(path);
             readers.push_back(f);
             Elf_Addr lAddr = (Elf_Addr)map.l_addr;
             addElfObject(new ElfObject(*f), lAddr);
         }
         catch (...) {
-            std::clog << "warning: can't load text at " << (void *)mapAddr << "\n";
+            std::clog << "warning: can't load text at " << (void *)mapAddr << "/" << (void *)mapAddr << "\n";
             continue;
         }
 

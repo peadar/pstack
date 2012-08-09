@@ -53,6 +53,7 @@
 
 extern "C" {
 #include <thread_db.h>
+#include "proc_service.h"
 }
 
 typedef struct regs ptrace_regs;
@@ -103,13 +104,13 @@ dwarf(struct ElfObject *obj)
 }
 
 void
-pstack(Process &proc)
+Process::pstack()
 {
-    proc.load();
+    load();
     std::set<pid_t> lwps;
 
     // suspend everything quickly.
-    proc.listThreads(
+    listThreads(
         [&lwps] (const td_thrhandle_t *thr) -> void {
             if (td_thr_dbsuspend(thr) == TD_NOCAPAB) {
                 td_thrinfo_t info;
@@ -118,25 +119,43 @@ pstack(Process &proc)
             }});
 
     for (auto lwp : lwps)
-        proc.stop(lwp);
+        stop(lwp);
 
     std::list<ThreadStack> threadStacks;
 
     // get its back trace.
 
-    proc.listThreads(
-        [&threadStacks, &proc](const td_thrhandle_t *thr) {
-            threadStacks.push_back(ThreadStack(thr));
-            threadStacks.back().unwind(proc);
+    listThreads(
+        [&threadStacks, this](const td_thrhandle_t *thr) {
+            CoreRegisters regs;
+            td_err_e the;
+#ifdef __linux__
+            the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
+#else
+            the = td_thr_getgregs(thr, &regs);
+#endif
+            if (the == TD_OK) {
+                threadStacks.push_back(ThreadStack());
+                threadStacks.back().unwind(*this, regs);
+            }
     });
 
-    for (auto s : threadStacks)
-        proc.dumpStack(stdout, 0, s, gVerbose);
+    if (threadStacks.empty()) {
+        // get the register for the process itself, and use those.
+        CoreRegisters regs;
+        getRegs(ps_getpid(this),  &regs);
+        threadStacks.push_back(ThreadStack());
+        threadStacks.back().unwind(*this, regs);
+    }
 
-    proc.listThreads([](const td_thrhandle_t *thr) { td_thr_dbresume(thr); }); 
+
+    for (auto s : threadStacks)
+        dumpStack(stdout, 0, s, gVerbose);
+
+    listThreads([](const td_thrhandle_t *thr) { td_thr_dbresume(thr); }); 
     // resume each lwp
     for (auto lwp : lwps)
-        proc.resume(lwp);
+        resume(lwp);
 }
 
 int
@@ -210,10 +229,10 @@ main(int argc, char **argv)
         if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
             FileReader coreFile(argv[i]);
             CoreProcess proc(execData, coreFile);
-            pstack(proc);
+            proc.pstack();
         } else {
             LiveProcess proc(execData, pid);
-            pstack(proc);
+            proc.pstack();
         }
     }
     return (error);
@@ -235,19 +254,8 @@ usage(void)
 }
 
 void
-ThreadStack::unwind(Process &p)
+ThreadStack::unwind(Process &p, CoreRegisters &regs)
 {
-    CoreRegisters regs;
-
-    td_err_e the;
-#ifdef __linux__ // XXX: looks wrong on linux, right on BSD
-    the = td_thr_getgregs(handle, (elf_greg_t *) &regs);
-#else
-    the = td_thr_getgregs(handle, &regs);
-#endif
-    if (the != TD_OK)
-        throw 999;
-
     stack.clear();
     /* Put a bound on the number of iterations. */
     for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++) {
