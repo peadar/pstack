@@ -274,20 +274,12 @@ DwarfUnit::DwarfUnit(DWARFReader &r)
     r.addrLen = addrlen = r.getu8();
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
-        abbreviations[code] = new DwarfAbbreviation(abbR, code);
+        abbreviations[DwarfTag(code)] = new DwarfAbbreviation(abbR, code);
 
     DWARFReader entriesR(r.dwarf, r.getOffset(), nextoff - r.getOffset());
     assert(nextoff <= r.getLimit());
-#if 1
     dwarfDecodeEntries(entriesR, this, entries);
-    std::clog << "unread data: " << nextoff - entriesR.getOffset() << std::endl;
-#else
-    dwarfDecodeEntries(r, this, entries);
-    std::clog << "unread data: " << nextoff - r.getOffset() << std::endl;
-#endif
-
     r.setOffset(nextoff);
-    std::clog << "got unit" << std::endl;
 }
 
 DwarfAbbreviation::DwarfAbbreviation(DWARFReader &r, intmax_t code_)
@@ -376,7 +368,7 @@ DwarfLineInfo::DwarfLineInfo(DWARFReader &r, const DwarfUnit *unit)
         files.push_back(new DwarfFileEntry(r, this));
     }
     if (r.getOffset() != expectedEnd)
-        std::clog << "have " << expectedEnd - r.getOffset() << " bytes left\n";
+        std::clog << "warning: left " << expectedEnd - r.getOffset() << " bytes\n";
 
     DwarfLineState state(this);
     while (r.getOffset() < end) {
@@ -567,16 +559,14 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, DwarfUnit *unit, DwarfAttributeSp
 DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
 {
 
-    type = unit->abbreviations[code];
+    type = unit->abbreviations[DwarfTag(code)];
 
     for (auto spec : type->specs)
         attributes[spec->name] = new DwarfAttribute(r, unit, spec);
 
-    size_t size;
-    std::clog << *this << std::endl;
     switch (type->tag) {
     case DW_TAG_compile_unit: {
-        size = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
+        size_t size = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
         DWARFReader r2(r.dwarf, r.dwarf.lineshdr->sh_offset + size, r.dwarf.lineshdr->sh_size - size);
         unit->lines = new DwarfLineInfo(r2, unit);
         break;
@@ -589,16 +579,16 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
 }
 
 static void
-dwarfDecodeEntries(DWARFReader &r, DwarfUnit *unit, std::list<DwarfEntry *> &list)
+dwarfDecodeEntries(DWARFReader &r, DwarfUnit *unit, std::list<DwarfEntry *> &entries)
 {
     while (!r.empty()) {
         intmax_t code = r.getuleb128();
         if (code == 0)
             return;
-        DwarfEntry *e = new DwarfEntry(r, code, unit);
-        list.push_back(e);
+        entries.push_back(new DwarfEntry(r, code, unit));
     }
 }
+
 DwarfCallFrame::DwarfCallFrame()
 {
     int i;
@@ -949,11 +939,10 @@ DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off end)
     std::string::iterator it = augmentation.begin();
     if (it != augmentation.end()) {
         if (*it == 'z') {
-            ++it;
             augSize = r.getuleb128();
             Elf_Off endaugdata = r.getOffset() + augSize;
-
-            for (std::string::iterator augEnd = it + augSize; it < augEnd; ++it) {
+            bool earlyExit = false;
+            while (++it != augmentation.end()) {
                 switch (*it) {
                     case 'P': {
                         unsigned char encoding = r.getu8();
@@ -969,12 +958,14 @@ DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off end)
                     case '\0':
                         break;
                     default:
-                        fprintf(stderr, "unknown augmentation '%c'\n", *it);
+                        std::clog << "unknown augmentation '" << *it << "' in " << augmentation << std::endl;
                         // The augmentations are in order, so we can't make any sense of the remaining data in the
                         // augmentation block
-                        it = augEnd - 1;
+                        earlyExit = true;
                         break;
                 }
+                if (earlyExit)
+                    break;
             }
             if (r.getOffset() != endaugdata) {
                 std::clog << "warning: " << endaugdata - r.getOffset()

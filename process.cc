@@ -205,6 +205,8 @@ Process::loadSharedObjects()
         /* Read the path to the file */
         if (map.l_name == 0)
             continue;
+        path[0] = '?';
+        path[1] = '\0';
         try {
             readObj((off_t)map.l_name, path, maxpath);
             if (abiPrefix != "" && access(prefixedPath, R_OK) == 0)
@@ -215,7 +217,7 @@ Process::loadSharedObjects()
             addElfObject(new ElfObject(*f), lAddr);
         }
         catch (...) {
-            std::clog << "warning: can't load text at " << (void *)mapAddr << "/" << (void *)mapAddr << "\n";
+            std::clog << "warning: can't load text for " << path << " at " << (void *)mapAddr << "/" << (void *)mapAddr << "\n";
             continue;
         }
 

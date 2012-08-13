@@ -153,7 +153,7 @@ struct DwarfUnit {
     DwarfUnit *next;
     uint32_t length;
     uint16_t version;
-    std::map<uintmax_t, DwarfAbbreviation *> abbreviations;
+    std::map<DwarfTag, DwarfAbbreviation *> abbreviations;
     uint8_t addrlen;
     const unsigned char *entryPtr;
     const unsigned char *lineInfo;
@@ -357,6 +357,7 @@ public:
         , end(off_ + size_)
         , io(dwarf_.elf->io)
         , addrLen(ELF_BITS / 8)
+        , version(dwarf_.version)
         , dwarf(dwarf_)
         , elf(*dwarf.elf)
     {
