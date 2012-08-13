@@ -137,10 +137,6 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
 {
     const DwarfAttributeSpec *type = attr.spec;
     const DwarfValue &value = attr.value;
-    os
-        << "{ \"name\": \"" << type->name << "\""
-        << ", \"form\": \"" << type->form << "\""
-        << ", \"value\": ";
     switch (type->form) {
     case DW_FORM_addr: os << value.addr; break;
     case DW_FORM_data1: os << int(value.data1); break;
@@ -149,7 +145,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_data8: os << value.data8; break;
     case DW_FORM_sdata: os << value.sdata; break;
     case DW_FORM_udata: os << value.udata; break;
-    case DW_FORM_string: case DW_FORM_strp: os << "\"" << value.udata << "\""; break;
+    case DW_FORM_string: case DW_FORM_strp: os << "\"" << value.string << "\""; break;
     case DW_FORM_ref2: os << "\"@" << value.ref2 << "\""; break;
     case DW_FORM_ref4: os << "\"@" << value.ref4 << "\""; break;
     case DW_FORM_ref8: os << "\"@" << value.ref8 << "\""; break;
@@ -157,7 +153,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_flag: os << (value.flag ? "true" : "false"); break;
     default: throw type->form;
     }
-    return os << " }";
+    return os;
 }
 
 std::ostream &

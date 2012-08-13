@@ -190,6 +190,14 @@ DwarfInfo::DwarfInfo(struct ElfObject *obj)
     for (loadsectsp = loadsects; loadsectsp->name; loadsectsp++)
         *loadsectsp->header = obj->findSectionByName(loadsectsp->name);
 
+    // want these first: other sections refer into this.
+    if (debstr) {
+        debugStrings = new char[debstr->sh_size];
+        elf->io.readObj(debstr->sh_offset, debugStrings, debstr->sh_size);
+    } else {
+        debugStrings = 0;
+    }
+
     if (info) {
         DWARFReader reader(*this, info->sh_offset, info->sh_size);
         while (!reader.empty()) {
@@ -211,13 +219,6 @@ DwarfInfo::DwarfInfo(struct ElfObject *obj)
         debugFrame = new DwarfFrameInfo(version, reader, FI_DEBUG_FRAME);
     } else {
         debugFrame = 0;
-    }
-
-    if (debstr) {
-        debugStrings = new char[debstr->sh_size];
-        elf->io.readObj(debstr->sh_offset, debugStrings, debstr->sh_size);
-    } else {
-        debugStrings = 0;
     }
 
     if (pubnames) {
@@ -497,7 +498,8 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, DwarfUnit *unit, DwarfAttributeSp
         break;
 
     case DW_FORM_strp:
-        value.string = r.dwarf.debugStrings + r.getu32();
+        value.string = r.dwarf.debugStrings + r.getint(r.version >= 3 ?  ELF_BITS/8 : 4);
+        std::clog << "got string " << value.string << std::endl;
         break;
 
     case DW_FORM_ref2:
@@ -513,7 +515,7 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, DwarfUnit *unit, DwarfAttributeSp
         break;
 
     case DW_FORM_string:
-        value.string = r.getstring().c_str();
+        value.string = strdup(r.getstring().c_str());
         break;
 
     case DW_FORM_block1:
