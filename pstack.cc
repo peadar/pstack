@@ -50,6 +50,7 @@
 #include <unistd.h>
 #include <iostream>
 #include <set>
+#include "dwarfdump.h"
 
 extern "C" {
 #include <thread_db.h>
@@ -99,8 +100,7 @@ static int usage(void);
 static void
 dwarf(struct ElfObject *obj)
 {
-    DwarfInfo dwarf(obj);
-    dwarfDump(stdout, 0, &dwarf);
+    std::cout << DwarfInfo(obj);
 }
 
 void

@@ -31,9 +31,11 @@
 
 #ifndef elfinfo_h_guard
 #define elfinfo_h_guard
+
 #include <string>
 #include <list>
 #include <vector>
+#include <elf.h>
 extern "C" {
 #include <thread_db.h>
 }

@@ -3,7 +3,7 @@
 ELF_BITS ?= 64
 
 PROG=pstack
-OBJS += elf.o dwarf.o pstack.o proc_service.o process.o core.o live.o
+OBJS += elf.o dwarf.o pstack.o proc_service.o process.o core.o live.o dwarfdump.o
 
 COMPILEFLAGS += \
     -Wno-unused-parameter \

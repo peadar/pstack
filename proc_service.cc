@@ -5,7 +5,8 @@
 #include "procinfo.h"
 
 extern "C" {
-#include <proc_service.h>
+#include "proc_service.h"
+
 ps_err_e ps_pcontinue(const struct ps_prochandle *p)
 {
     abort();

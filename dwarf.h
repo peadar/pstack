@@ -1,14 +1,17 @@
 #ifndef DWARF_H
 #define DWARF_H
 
+#include "elfinfo.h"
 #include <sys/procfs.h>
 #include <sys/ucontext.h>
 #include <sys/ptrace.h>
 #include <asm/ptrace.h>
+#include <stdint.h>
 
 #include <map>
 #include <list>
 #include <vector>
+#include <string>
 
 #define DWARF_MAXREG 128
 
@@ -217,7 +220,7 @@ struct DwarfCIE {
 };
 
 struct DwarfFrameInfo {
-    DwarfInfo *dwarf;
+    const DwarfInfo *dwarf;
     FIType type;
     std::map<Elf_Addr, DwarfCIE *> cies;
     std::list<DwarfFDE *> fdeList;
@@ -237,7 +240,6 @@ public:
     std::list<DwarfARangeSet *> aranges;
     char *debugStrings;
     off_t lines;
-    unsigned addrLen;
     int version;
     DwarfFrameInfo *debugFrame;
     DwarfFrameInfo *ehFrame;
@@ -279,9 +281,6 @@ struct DwarfLineInfo {
 
 void dwarfDump(FILE *out, int, const DwarfInfo *info);
 DwarfInfo *dwarfLoad(Process *, struct ElfObject *obj, FILE *errs);
-const char *dwarfTagName(enum DwarfTag);
-const char *dwarfAttrName(enum DwarfAttrName);
-const char *dwarfFormName(enum DwarfForm);
 const DwarfAbbreviation *dwarfUnitGetAbbrev(const DwarfUnit *unit, intmax_t code);
 void dwarfDumpSpec(FILE *out, int indent, const DwarfAttributeSpec *spec);
 void dwarfDumpAbbrev(FILE *out, int indent, const DwarfAbbreviation *abbrev);
@@ -341,6 +340,43 @@ enum DwarfCFAInstruction {
      */
     DW_CFA_PAD                  = 0xff
 };
+
+class DWARFReader {
+    Elf_Off off;
+    Elf_Off end;
+    uintmax_t getuleb128shift(int *shift, bool &isSigned);
+public:
+    Reader &io;
+    unsigned addrLen;
+    int version;
+    const DwarfInfo &dwarf;
+    ElfObject &elf;
+    
+    DWARFReader(const DwarfInfo &dwarf_, Elf_Off off_, Elf_Word size_)
+        : off(off_)
+        , end(off_ + size_)
+        , io(dwarf_.elf->io)
+        , addrLen(ELF_BITS / 8)
+        , dwarf(dwarf_)
+        , elf(*dwarf.elf)
+    {
+    }
+    uint32_t getu32();
+    uint16_t getu16();
+    uint8_t getu8();
+    int8_t gets8();
+    uintmax_t getuint(int size);
+    intmax_t getint(int size);
+    uintmax_t getuleb128();
+    intmax_t getsleb128();
+    std::string getstring();
+    Elf_Off getOffset() { return off; }
+    void setOffset(Elf_Off off_) { off = off_; }
+    bool empty() { return off == end; }
+    Elf_Off getlength();
+    void skip(Elf_Off amount) { off += amount; }
+};
+
 
 #define DWARF_OP(op, value, args) op = value,
 

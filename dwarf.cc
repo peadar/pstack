@@ -15,46 +15,10 @@
 #include "procinfo.h"
 #include "elfinfo.h"
 #include "dwarf.h"
+#include "dwarfdump.h"
 
 extern int gVerbose;
-
-static void dwarfDumpEntries(FILE *out, int indent, const DwarfInfo *dwarf, const DwarfUnit *unit, const std::list<DwarfEntry *> entries);
-static void dwarfDumpEntry(FILE *, int, const DwarfInfo *, const DwarfUnit *,  const DwarfEntry *);
-static void dwarfDumpCFAInsns(FILE *f, int indent, DWARFReader &);
 static void dwarfDecodeEntries(DWARFReader &r, DwarfUnit *unit, std::list<DwarfEntry *> &list);
-
-class DWARFReader {
-    Elf_Off off;
-    Elf_Off end;
-    uintmax_t getuleb128shift(int *shift, bool &isSigned);
-public:
-    Reader &io;
-    DwarfInfo &dwarf;
-    ElfObject &elf;
-    
-    DWARFReader(DwarfInfo &dwarf_, Elf_Off off_, Elf_Word size_)
-        : off(off_)
-        , end(off_ + size_)
-        , io(dwarf_.elf->io)
-        , dwarf(dwarf_)
-        , elf(*dwarf.elf)
-    {
-    }
-    uint32_t getu32();
-    uint16_t getu16();
-    uint8_t getu8();
-    int8_t gets8();
-    uintmax_t getuint(int size);
-    intmax_t getint(int size);
-    uintmax_t getuleb128();
-    intmax_t getsleb128();
-    std::string getstring();
-    Elf_Off getOffset() { return off; }
-    void setOffset(Elf_Off off_) { off = off_; }
-    bool empty() { return off == end; }
-    Elf_Off getlength();
-    void skip(Elf_Off amount) { off += amount; }
-};
 
 uintmax_t
 DWARFReader::getuint(int len)
@@ -129,13 +93,15 @@ std::string
 DWARFReader::getstring()
 {
     std::ostringstream s;
-    char c;
-    for (;;) {
+    for (size_t len = 0;; ++len) {
+        char c;
         io.readObj(off, &c);
         off += 1;
         if (c == 0)
             break;
         s << c;
+        if (len > 2000)
+            abort();
     }
     return s.str();
 }
@@ -175,30 +141,6 @@ DWARFReader::getsleb128()
     return result;
 }
 
-static void
-dwarfDumpBlock(FILE *out, int indent, const DwarfBlock *block)
-{
-    fprintf(out, "%jd bytes\n", block->length);
-}
-
-static void
-dwarfDumpPubname(FILE *out, int indent, const DwarfPubname *name)
-{
-    fprintf(out, "%s%x: \"%s\"\n", pad(indent), (unsigned)name->offset, name->name.c_str());
-}
-
-static void
-dwarfDumpPubnameUnit(FILE *out, int indent, const DwarfPubnameUnit *punit)
-{
-    fprintf(out, "%slength: %d\n", pad(indent), punit->length);
-    fprintf(out, "%sversion: %d\n", pad(indent), punit->version);
-    fprintf(out, "%sinfo offset: %d\n", pad(indent), punit->infoOffset);
-    fprintf(out, "%sinfo size: %d\n", pad(indent), punit->infoLength);
-    fprintf(out, "%snames:\n", pad(indent));
-    for (auto name : punit->pubnames)
-        dwarfDumpPubname(out, indent + 4, name);
-}
-
 
 DwarfPubname::DwarfPubname(DWARFReader &r, uint32_t offset)
     : offset(offset)
@@ -211,7 +153,7 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
     length = r.getu32();
     Elf_Off next = r.getOffset() + length;
 
-    version = r.getu16();
+    version = r.version = r.getu16();
     infoOffset = r.getu32();
     infoLength = r.getu32();
 
@@ -244,15 +186,6 @@ DwarfInfo::DwarfInfo(struct ElfObject *obj)
         { 0, 0 }
     };
 
-    addrLen = 
-#ifdef __i386__
-        4
-#endif
-#ifdef __amd64__
-        8
-#endif
-    ;
-
     // Load all sections we're interested in.
     for (loadsectsp = loadsects; loadsectsp->name; loadsectsp++)
         *loadsectsp->header = obj->findSectionByName(loadsectsp->name);
@@ -261,7 +194,7 @@ DwarfInfo::DwarfInfo(struct ElfObject *obj)
         DWARFReader reader(*this, info->sh_offset, info->sh_size);
         while (!reader.empty()) {
             auto unit = new DwarfUnit(reader);
-            version = unit->version;
+            version = reader.version = unit->version;
             units.push_back(unit);
         }
     }
@@ -308,9 +241,9 @@ DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
 
     length = r.getlength();
     Elf_Off next = r.getOffset() + length;
-    version = r.getu16();
+    version = r.version = r.getu16();
     debugInfoOffset = r.getu32();
-    addrlen = r.getu8();
+    r.addrLen = addrlen = r.getu8();
     segdesclen = r.getu8();
     tupleLen = addrlen * 2;
 
@@ -333,11 +266,11 @@ DwarfUnit::DwarfUnit(DWARFReader &r)
 {
     length = r.getlength();
     Elf_Off nextoff = r.getOffset() + length;
-    version = r.getu16();
+    version = r.version = r.getu16();
 
     off_t off = version >= 3 ? r.getuint(ELF_BITS/8) : r.getu32();
     DWARFReader abbR(r.dwarf, r.dwarf.abbrev->sh_offset + off, r.dwarf.abbrev->sh_size);
-    r.dwarf.addrLen = addrlen = r.getu8();
+    r.addrLen = addrlen = r.getu8();
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
         abbreviations[code] = new DwarfAbbreviation(abbR, code);
@@ -398,7 +331,7 @@ DwarfLineInfo::DwarfLineInfo(DWARFReader &r, const DwarfUnit *unit)
 {
     uint32_t total_length = r.getlength();
     Elf_Off end = r.getOffset() + total_length;
-    int version = r.getu16();
+    int version = r.version = r.getu16();
     Elf_Off prologue_length = r.getuint(version >= 3 ? ELF_BITS / 8 : 4);
     Elf_Off expectedEnd = prologue_length + r.getOffset();
     int min_insn_length = r.getu8();
@@ -649,364 +582,6 @@ dwarfDecodeEntries(DWARFReader &r, DwarfUnit *unit, std::list<DwarfEntry *> &lis
             list.push_back(new DwarfEntry(r, code, unit));
     }
 }
-
-static void
-dwarfDumpAttributes(FILE *out, int indent, const std::map<DwarfAttrName, DwarfAttribute *> &attrs)
-{
-    for (auto &i : attrs) {
-        DwarfAttribute *attr = i.second;
-        DwarfAttributeSpec *type = attr->spec;
-        const DwarfValue *value = &attr->value;
-        fprintf(out, "%s%s (%s) =", pad(indent), dwarfAttrName(type->name), dwarfFormName(type->form));
-        switch (type->form) {
-        case DW_FORM_addr:
-            fprintf(out, "0x%jx", value->addr);
-            break;
-
-        case DW_FORM_data1:
-            fprintf(out, "%u (0x%x)", value->data1, value->data1);
-            break;
-
-        case DW_FORM_data2:
-            fprintf(out, "%u (0x%x)", value->data2, value->data2);
-            break;
-
-        case DW_FORM_data4:
-            fprintf(out, "%u (0x%x)", value->data4, value->data4);
-            break;
-
-        case DW_FORM_data8:
-            fprintf(out, "%ju (0x%jx)", value->data8, value->data8);
-            break;
-
-        case DW_FORM_sdata:
-            fprintf(out, "%jd (0x%jx)", value->sdata, value->sdata);
-            break;
-
-        case DW_FORM_udata:
-            fprintf(out, "%jd (0x%jx)", value->udata, value->udata);
-            break;
-
-        case DW_FORM_string:
-        case DW_FORM_strp:
-            fprintf(out, "\"%s\"", value->string);
-            break;
-
-        case DW_FORM_ref2:
-            fprintf(out, "@0x%x", value->ref2);
-            break;
-
-        case DW_FORM_ref4:
-            fprintf(out, "@0x%jx", (intmax_t)value->ref4);
-            break;
-
-        case DW_FORM_ref8:
-            fprintf(out, "@0x%jx", value->ref8);
-            break;
-
-        case DW_FORM_block1:
-        case DW_FORM_block2:
-        case DW_FORM_block4:
-        case DW_FORM_block:
-            dwarfDumpBlock(out, indent + 4, &value->block);
-            break;
-
-        case DW_FORM_flag:
-            fprintf(out, "%s", value->flag ? "TRUE" : "FALSE");
-            break;
-
-        default:
-            fprintf(out, "unhandled form %s", dwarfFormName(type->form));
-            abort();
-            break;
-        }
-        fprintf(out, "\n");
-    }
-}
-
-static void
-dwarfDumpLineNumbers(FILE *out, int indent, const DwarfUnit *unit)
-{
-    const DwarfLineInfo *pl = unit->lines;
-    for (auto &row : pl->matrix) {
-        printf("%s%s (in %s):%d: 0x%jx\n", pad(indent + 4), 
-                row.file->name.c_str(),
-                row.file->directory.c_str(),
-                row.line,
-                row.addr);
-        if (row.end_sequence)
-            printf("\n");
-    }
-}
-
-static void
-dwarfDumpEntry(FILE *out, int indent, const DwarfInfo *dwarf, const DwarfUnit *unit, const DwarfEntry *entry)
-{
-    fprintf(stdout, "%sEntry type=%s {\n", pad(indent), dwarfTagName(entry->type->tag));
-    switch (entry->type->tag) {
-    case DW_TAG_compile_unit:
-    default:
-        break;
-    }
-    dwarfDumpAttributes(out, indent + 4, entry->attributes);
-    if (entry->children.size() > 0) {
-        fprintf(out, "%schildren: {\n", pad(indent + 4));
-        dwarfDumpEntries(out, indent + 8, dwarf, unit, entry->children);
-        fprintf(out, "%s}\n", pad(indent + 4));
-    }
-    fprintf(stdout, "%s}\n", pad(indent));
-}
-
-void
-dwarfDumpSpec(FILE *out, int indent, const DwarfAttributeSpec *spec)
-{
-    fprintf(out, "%s%s (%s)\n", pad(indent), dwarfAttrName(spec->name), dwarfFormName(spec->form));
-}
-
-void
-dwarfDumpAbbrev(FILE *out, int indent, const DwarfAbbreviation *abb)
-{
-    fprintf(out, "%s%ju: %s %s\n", pad(indent), abb->code, dwarfTagName(abb->tag), abb->hasChildren ? "(has children)" : "");
-    for (auto spec : abb->specs)
-        dwarfDumpSpec(out, indent + 4, spec);
-}
-
-static void
-dwarfDumpEntries(FILE *out, int indent, const DwarfInfo *dwarf, const
-                    DwarfUnit *unit, const std::list<DwarfEntry *> entries)
-{
-    for (auto entry : entries)
-        dwarfDumpEntry(out, indent, dwarf, unit, entry);
-}
-
-void
-dwarfDumpUnit(FILE *out, int indent, const DwarfInfo *dwarf, const DwarfUnit *unit)
-{
-    fprintf(out, "%slength: %u\n", pad(indent), unit->length);
-    fprintf(out, "%sversion: %u\n", pad(indent), unit->version);
-    fprintf(out, "%saddrlen: %u\n", pad(indent), unit->addrlen);
-    dwarfDumpLineNumbers(out, indent, unit);
-    dwarfDumpEntries(out, indent, dwarf, unit, unit->entries);
-}
-
-static void
-dwarfDumpARangeSet(FILE *out, int indent, const DwarfARangeSet *ranges)
-{
-    fprintf(out, "%slength: %d\n", pad(indent), (int)ranges->length);
-    fprintf(out, "%sversion: %d\n", pad(indent), (int)ranges->version);
-    fprintf(out, "%saddrlen: %d\n", pad(indent), (int)ranges->addrlen);
-    fprintf(out, "%sdescrlen: %d\n", pad(indent), (int)ranges->segdesclen);
-    for (size_t i = 0; i < ranges->ranges.size(); i++)
-        fprintf(out, "%s0x%jx + 0x%jx = 0x%jx\n", pad(indent),
-            ranges->ranges[i].start, ranges->ranges[i].length,
-            ranges->ranges[i].start + ranges->ranges[i].length);
-
-}
-
-static void
-dwarfDumpCIE(FILE *out, int indent, DwarfInfo *dwarf, const DwarfCIE *cie)
-{
-    fprintf(out, "%sCIE %p {\n", pad(indent), cie);
-    fprintf(out, "%sversion: %d\n", pad(indent + 4), cie->version);
-    fprintf(out, "%saugmentation: \"%s\"\n", pad(indent + 4), cie->augmentation.c_str());
-    fprintf(out, "%scodeAlign: %u\n", pad(indent + 4), cie->codeAlign);
-    fprintf(out, "%sdataAlign: %d\n", pad(indent + 4), cie->dataAlign);
-    fprintf(out, "%sreturn address reg: %d\n", pad(indent + 4), cie->rar);
-    fprintf(out, "%saug size: 0x%lx\n", pad(indent + 4), cie->augSize);
-
-    DWARFReader r(*dwarf, cie->instructions, cie->end - cie->instructions);
-    dwarfDumpCFAInsns(out, indent + 4, r);
-
-    fprintf(out, "%s}\n", pad(indent));
-}
-
-void
-dwarfDumpFDE(FILE *out, int indent, DwarfInfo *dwarf, const DwarfFDE *fde)
-{
-    fprintf(out, "%sFDE {\n", pad(indent));
-    fprintf(out, "%scie: %p\n", pad(indent + 4), fde->cie);
-    fprintf(out, "%sloc: 0x%jx\n", pad(indent + 4), fde->iloc);
-    fprintf(out, "%srange: 0x%jx\n", pad(indent + 4), fde->irange);
-    fprintf(out, "%sauglen: 0x%x\n", pad(indent + 4), (int)fde->aug.size());
-    DWARFReader r(*dwarf, fde->instructions, fde->end - fde->instructions);
-    dwarfDumpCFAInsns(out, indent + 4, r);
-    fprintf(out, "%s}\n", pad(indent));
-}
-
-void
-dwarfDumpFrameInfo(FILE *out, const DwarfFrameInfo *info, int indent)
-{
-    for (auto cie : info->cies)
-        dwarfDumpCIE(out, indent, info->dwarf, cie.second);
-    for (auto fde : info->fdeList)
-        dwarfDumpFDE(out, indent, info->dwarf, fde);
-}
-
-void
-dwarfDump(FILE *out, int indent, const DwarfInfo *dwarf)
-{
-    int i;
-
-    i = 0;
-    for (auto unit : dwarf->units) {
-        fprintf(out, "%sTranslationUnit %d {\n", pad(indent), i++);
-        dwarfDumpUnit(out, indent + 4, dwarf, unit);
-        fprintf(out, "%s}\n", pad(indent));
-    }
-
-    i = 0;
-    for (auto pubunit : dwarf->pubnameUnits) {
-        i++;
-        fprintf(out, "%spubname unit %d{\n", pad(indent), i);
-        dwarfDumpPubnameUnit(out, indent + 4, pubunit);
-        fprintf(out, "%s}\n", pad(indent));
-    }
-
-    i = 0;
-    for (auto arange : dwarf->aranges) {
-        fprintf(out, "%sarange set %d {\n", pad(indent), i++);
-        dwarfDumpARangeSet(out, indent + 4, arange);
-        fprintf(out, "%s}\n", pad(indent));
-    }
-
-    if (dwarf->debugFrame) {
-        fprintf(out, "%sDebug Frame Information {\n", pad(indent));
-        dwarfDumpFrameInfo(out, dwarf->debugFrame, indent + 4);
-        fprintf(out, "%s}\n", pad(indent));
-    }
-
-    if (dwarf->ehFrame) {
-        fprintf(out, "%sEH Frame Information {\n", pad(indent));
-        dwarfDumpFrameInfo(out, dwarf->ehFrame, indent + 4);
-        fprintf(out, "%s}\n", pad(indent));
-    }
-
-}
-
-static void
-dwarfDumpCFAInsns(FILE *out, int indent, DWARFReader &r)
-{
-    uint16_t u16;
-    uint32_t u32;
-    uintmax_t reg, reg2, offset;
-    uintmax_t loc = 0;
-
-    fprintf(out, "%sCFA instructions@%lx {\n", pad(indent), r.getOffset());
-    indent += 4;
-    while (!r.empty()) {
-        uint8_t op = r.getu8();
-        uint8_t u8;
-        switch (op >> 6) {
-        case 1:
-            loc += op & 0x3f;
-            fprintf(out, "%sDW_CFA_advance_loc(delta=0x%x cur=0x%jx)\n", pad(indent), op & 0x3f, loc);
-            break;
-        case 2:
-            offset = r.getuleb128();
-            fprintf(out, "%sDW_CFA_offset(register=0x%x, offset=0x%jx)\n", pad(indent), op & 0x3f, offset);
-            break;
-        case 3:
-            fprintf(out, "%sDW_CFA_restore(register=0x%x)\n", pad(indent), op & 0x3f);
-            break;
-
-        case 0:
-            switch (op & 0x3f) {
-            case 0x0:
-                fprintf(out, "%sDW_CFA_nop\n", pad(indent));
-                break;
-            case 0x1:
-                offset = loc = r.getuint(r.dwarf.addrLen);
-                fprintf(out, "%sDW_CFA_set_loc(0x%jx, cur=%jx)\n", pad(indent), offset, loc);
-                break;
-            case 0x2:
-                u8 = r.getu8();
-                loc += u8;
-                fprintf(out, "%sDW_CFA_advance_loc1(delta=0x%x, cur=0x%jx)\n", pad(indent), u8, loc);
-                break;
-            case 0x3:
-                u16 = r.getu16();
-                loc += u16;
-                fprintf(out, "%sDW_CFA_advance_loc2(delta=0x%x, loc=0x%jx)\n", pad(indent), u16, loc);
-                break;
-            case 0x4:
-                u32 = r.getu32();
-                loc += u32;
-                fprintf(out, "%sDW_CFA_advance_loc4(delta=0x%x, loc=0x%jx)\n", pad(indent), u32, loc);
-                break;
-            case 0x5:
-                reg = r.getuleb128();
-                offset = r.getuleb128();
-                fprintf(out, "%sDW_CFA_offset_extended(reg=0x%jx, offset=0x%jx)\n", pad(indent), reg, offset);
-                break;
-            case 0x6:
-                reg = r.getuleb128();
-                fprintf(out, "%sDW_CFA_restore_extended(reg=0x%jx)\n", pad(indent), reg);
-                break;
-            case 0x7:
-                reg = r.getuleb128();
-                fprintf(out, "%sDW_CFA_undefined(reg=0x%jx)\n", pad(indent), reg);
-                break;
-            case 0x8:
-                reg = r.getuleb128();
-                fprintf(out, "%sDW_CFA_same_value(reg=0x%jx)\n", pad(indent), reg);
-                break;
-            case 0x9:
-                reg = r.getuleb128();
-                reg2 = r.getuleb128();
-                fprintf(out, "%sDW_CFA_register(reg1=0x%jx, reg2=0x%jx)\n", pad(indent), reg, reg2);
-                break;
-            case 0xa:
-                fprintf(out, "%sDW_CFA_remember_state()\n", pad(indent));
-                break;
-            case 0xb:
-                fprintf(out, "%sDW_CFA_restore_state()\n", pad(indent));
-                break;
-            case 0xc: 
-                reg = r.getuleb128();
-                offset = r.getuleb128();
-                fprintf(out, "%sDW_CFA_def_cfa(reg=0x%jx, offset=0x%jx)\n", pad(indent), reg, offset);
-                break;
-            case 0xd:
-                reg = r.getuleb128();
-                fprintf(out, "%sDW_CFA_def_cfa_register(reg=0x%jx)\n", pad(indent), reg);
-                break;
-            case 0xe:
-                offset = r.getuleb128();
-                fprintf(out, "%sDW_CFA_def_cfa_offset(offset=0x%jx)\n", pad(indent), offset);
-                break;
-
-            case 0xf:
-                offset = r.getuleb128();
-                fprintf(out, "%sDW_CFA_def_cfa_expression(size=0x%jx)\n", pad(indent), offset);
-                r.skip(offset);
-                break;
-
-            case 0x10:
-                reg = r.getuleb128();
-                offset = r.getuleb128();
-                fprintf(out, "%sDW_CFA_expression(reg=0x%jx, size=0x%jx)\n", pad(indent), reg, offset);
-                r.skip(offset);
-                break;
-
-            case 0x2e: // DW_CFA_GNU_args_size
-                offset = r.getuleb128();
-                fprintf(out, "%sFW_CFA_GNU_args_size(xxx=0x%jx)\n", pad(indent), offset);
-                break;
-
-            case 0x2d: // DW_CFA_GNU_window_size
-            case 0x2f: // DW_CFA_GNU_negative_offset_extended
-            default:
-                fprintf(out, "%sDW_CFA_foobar(0x%x)\n", pad(indent), op);
-                goto done;
-            }
-            break;
-        }
-    }
-done:
-    indent -= 4;
-    fprintf(out, "%s}\n", pad(indent));
-}
-
 DwarfCallFrame::DwarfCallFrame()
 {
     int i;
@@ -1110,7 +685,7 @@ DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr)
                 break;
                 
             case DW_CFA_set_loc:
-                addr = r.getuint(r.dwarf.addrLen);
+                addr = r.getuint(r.addrLen);
                 break;
 
             case DW_CFA_advance_loc1:
@@ -1191,25 +766,22 @@ DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr)
                 break;
 
             case DW_CFA_val_expression: {
-                DwarfRegisterUnwind *unwind;
                 reg = r.getuleb128();
-                offset = r.getuleb128();
-                unwind = &frame.registers[reg];
-                unwind->type = VAL_EXPRESSION;
-                unwind->u.expression.offset = r.getOffset();
-                unwind->u.expression.length = offset;
-                r.skip(offset);
+                auto &unwind = frame.registers[reg];
+                unwind.type = VAL_EXPRESSION;
+                unwind.u.expression.length = r.getuleb128();
+                unwind.u.expression.offset = r.getOffset();
+                r.skip(unwind.u.expression.length);
                 break;
             }
 
             case DW_CFA_expression: {
-                DwarfRegisterUnwind *unwind;
                 reg = r.getuleb128();
                 offset = r.getuleb128();
-                unwind = &frame.registers[reg];
-                unwind->type = EXPRESSION;
-                unwind->u.expression.offset = r.getOffset();
-                unwind->u.expression.length = offset;
+                auto &unwind = frame.registers[reg];
+                unwind.type = EXPRESSION;
+                unwind.u.expression.offset = r.getOffset();
+                unwind.u.expression.length = offset;
                 r.skip(offset);
                 break;
             }
@@ -1340,8 +912,9 @@ DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off end)
 {
     this->end = end;
 
-    version = r.getu8();
+    version = r.version = r.getu8();
     augmentation = r.getstring();
+    std::clog << "augmentation: " << augmentation << std::endl;
     codeAlign = r.getuleb128();
     dataAlign = r.getsleb128();
     rar = r.getu8();
@@ -1467,61 +1040,6 @@ DwarfFrameInfo::DwarfFrameInfo(int version, DWARFReader &reader, enum FIType typ
             fdeList.push_back(fde);
         }
     }
-}
-
-const char *
-dwarfTagName(enum DwarfTag tag)
-{
-#define DWARF_TAG(x,y) case x: return #x;
-    switch (tag) {
-#include "dwarf/tags.h"
-    default: return "(unknown)";
-    }
-#undef DWARF_TAG
-}
-
-const char *
-dwarfEOpcodeName(enum DwarfLineEOpcode code)
-{
-#define DWARF_LINE_E(x,y) case x: return #x;
-    switch (code) {
-#include "dwarf/line_e.h"
-    default: return "(unknown)";
-    }
-#undef DWARF_LINE_E
-}
-
-const char *
-dwarfSOpcodeName(enum DwarfLineSOpcode code)
-{
-#define DWARF_LINE_S(x,y) case x: return #x;
-    switch (code) {
-#include "dwarf/line_s.h"
-    default: return "(unknown)";
-    }
-#undef DWARF_LINE_S
-}
-
-const char *
-dwarfFormName(enum DwarfForm form)
-{
-#define DWARF_FORM(x,y) case x: return #x;
-    switch (form) {
-#include "dwarf/forms.h"
-    default: return "(unknown)";
-    }
-#undef DWARF_FORM
-}
-
-const char *
-dwarfAttrName(enum DwarfAttrName attr)
-{
-#define DWARF_ATTR(x,y) case x: return #x;
-    switch (attr) {
-#include "dwarf/attr.h"
-    default: return "(unknown)";
-    }
-#undef DWARF_ATTR
 }
 
 const DwarfFDE *
