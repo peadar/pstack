@@ -25,7 +25,7 @@ std::ostream &operator << (std::ostream &os, const DwarfLineInfo &lines) {
 
 std::ostream & operator << (std::ostream &os, const DwarfEntry &entry) {
     return os
-        << "{ \"type\": " << entry.type->tag
+        << "{ \"type\": \"" << entry.type->tag << "\""
         << ", \"attributes\": " << entry.attributes
         << ", \"children\": " << entry.children
         << " }";
@@ -74,10 +74,10 @@ std::ostream & operator << (std::ostream &os, const DwarfARangeSet &ranges) {
 }
 
 std::ostream & operator << (std::ostream &os, DwarfTag tag) {
-#define DWARF_TAG(x,y) case x: return os << "\"" << #x << "\"";
+#define DWARF_TAG(x,y) case x: return os << #x;
     switch (tag) {
 #include "dwarf/tags.h"
-    default: return os << "(unknown)";
+    default: return os << int(tag);
     }
 #undef DWARF_TAG
 }
@@ -161,33 +161,33 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
 }
 
 std::ostream &
-operator <<(std::ostream &os, const std::pair<const DwarfInfo &, const DwarfCIE *> &dcie)
+operator <<(std::ostream &os, const std::pair<const DwarfInfo *, const DwarfCIE *> &dcie)
 {
     os
         << "{ \"version\": " << int(dcie.second->version)
-        << ", \"augmentation\": " << dcie.second->augmentation
+        << ", \"augmentation\": \"" << dcie.second->augmentation << "\""
         << ", \"codeAlign\":" << dcie.second->codeAlign
         << ", \"dataAlign\": " << dcie.second->dataAlign
         << ", \"return address reg\": " << dcie.second->rar
         << ", \"augsize\": " <<  dcie.second->augSize
         << ", \"instrlen\": " << dcie.second->end - dcie.second->instructions
         << ", \"instructions\": ";
-    DWARFReader r(dcie.first, dcie.second->instructions, dcie.second->end - dcie.second->instructions);
+    DWARFReader r(*dcie.first, dcie.second->instructions, dcie.second->end - dcie.second->instructions);
     dwarfDumpCFAInsns(os, r);
     return os
         << " }";
 }
 
 std::ostream &
-operator << (std::ostream &os, const std::pair<const DwarfInfo &, const DwarfFDE *> &dfde )
+operator << (std::ostream &os, const std::pair<const DwarfInfo *, const DwarfFDE *> &dfde )
 {
     os
-        << "{ \"cie\": " << dfde.second->cie
+        << "{ \"cie\": " << intptr_t(dfde.second->cie)
         << ", \"loc\": " << dfde.second->iloc
-        << ", \"range: " << dfde.second->irange
+        << ", \"range\": " << dfde.second->irange
         << ", \"auglen\": " << dfde.second->aug.size()
         << ", \"instructions\": ";
-    DWARFReader r(dfde.first, dfde.second->instructions, dfde.second->end - dfde.second->instructions);
+    DWARFReader r(*dfde.first, dfde.second->instructions, dfde.second->end - dfde.second->instructions);
     dwarfDumpCFAInsns(os, r);
     return os << "}";
 }
@@ -199,7 +199,7 @@ operator << (std::ostream &os, const DwarfFrameInfo &info)
     os << "{ \"cielist\": [";
     const char *sep = "";
     for (auto cie : info.cies) {
-        const std::pair<const DwarfInfo &, const DwarfCIE *> pair = std::make_pair(*info.dwarf, cie.second);
+        const std::pair<const DwarfInfo *, const DwarfCIE *> pair = std::make_pair(info.dwarf, cie.second);
         os << sep << pair;
         sep = ", ";
     }
@@ -207,11 +207,11 @@ operator << (std::ostream &os, const DwarfFrameInfo &info)
 
     sep = "";
     for (auto fde : info.fdeList) {
-        const std::pair<const DwarfInfo &, const DwarfFDE *> p = std::make_pair(*info.dwarf, fde);
+        const std::pair<const DwarfInfo *, const DwarfFDE *> p = std::make_pair(info.dwarf, fde);
         os << sep << p;
         sep = ", ";
     }
-    return os << " }";
+    return os << " ] }";
 }
 
 std::ostream &
@@ -250,7 +250,7 @@ dwarfDumpCFAInsn(std::ostream &os, DWARFReader &r)
             case 0x1: os << "\"DW_CFA_set_loc\""
                     << ", \"arg\":"
                     << r.getuint(r.version >= 3 ? r.addrLen : 4); break;
-            case 0x2: os << "\"DW_CFA_advance_loc1\"" << ", \"arg\":" << r.getu8(); break;
+            case 0x2: os << "\"DW_CFA_advance_loc1\"" << ", \"arg\":" << int(r.getu8()); break;
             case 0x3: os << "\"DW_CFA_advance_loc2\"" << ", \"arg\":" <<  r.getu16(); break;
             case 0x4: os << "\"DW_CFA_advance_loc4\"" << ", \"arg\":" << r.getu32(); break;
             case 0x5: os << "\"DW_CFA_offset_extended\"" << ", \"reg\":" << r.getuleb128() << ", \"arg\":" << r.getuleb128(); break;
@@ -288,8 +288,8 @@ dwarfDumpCFAInsns(std::ostream &os, DWARFReader &r)
     os << "[ ";
     std::string sep = "";
     while (!r.empty()) {
-        dwarfDumpCFAInsn(os, r);
         os << sep;
+        dwarfDumpCFAInsn(os, r);
         sep = ", ";
     } 
     os << "]";
