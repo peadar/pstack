@@ -139,7 +139,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     const DwarfValue &value = attr.value;
     os
         << "{ \"name\": \"" << type->name << "\""
-        << ", \"form\": " << type->form
+        << ", \"form\": \"" << type->form << "\""
         << ", \"value\": ";
     switch (type->form) {
     case DW_FORM_addr: os << value.addr; break;
@@ -211,7 +211,7 @@ operator << (std::ostream &os, const DwarfFrameInfo &info)
         os << sep << p;
         sep = ", ";
     }
-    return os;
+    return os << " }";
 }
 
 std::ostream &
@@ -241,21 +241,19 @@ dwarfDumpCFAInsn(std::ostream &os, DWARFReader &r)
     uint8_t op = r.getu8();
     switch (op >> 6) {
     case 1: os << "\"DW_CFA_advance_loc\"" << ", \"delta\":" << (op & 0x3f); break;
-    case 2: os << "\"DW_CFA_offset\"" << ", \"register\": " << (op & 0x3f); break;
+    case 2: os << "\"DW_CFA_offset\"" << ", \"register\": " << (op & 0x3f) << r.getuleb128(); break;
     case 3: os << "\"DW_CFA_restore\"" << ", \"register\": " << (op & 0x3f); break;
 
     case 0:
         switch (op & 0x3f) {
             case 0x0: os << "\"DW_CFA_nop\""; break;
-            case 0x1:
-                os
-                    << "\"DW_CFA_set_loc\""
-                    << ", \"offset\":"
+            case 0x1: os << "\"DW_CFA_set_loc\""
+                    << ", \"arg\":"
                     << r.getuint(r.version >= 3 ? r.addrLen : 4); break;
-            case 0x2: os << "\"DW_CFA_advance_loc1\"" << ", \"offset\":" << r.getu8(); break;
-            case 0x3: os << "\"DW_CFA_advance_loc2\"" << ", \"offset\":" <<  r.getu16(); break;
-            case 0x4: os << "\"DW_CFA_advance_loc4\"" << ", \"offset\":" << r.getu32(); break;
-            case 0x5: os << "\"DW_CFA_offset_extended\"" << ", \"reg\":" << r.getuleb128() << ", \"offset\":" << r.getuleb128(); break;
+            case 0x2: os << "\"DW_CFA_advance_loc1\"" << ", \"arg\":" << r.getu8(); break;
+            case 0x3: os << "\"DW_CFA_advance_loc2\"" << ", \"arg\":" <<  r.getu16(); break;
+            case 0x4: os << "\"DW_CFA_advance_loc4\"" << ", \"arg\":" << r.getu32(); break;
+            case 0x5: os << "\"DW_CFA_offset_extended\"" << ", \"reg\":" << r.getuleb128() << ", \"arg\":" << r.getuleb128(); break;
             case 0x6: os << "\"DW_CFA_restore_extended\"" << ", \"reg\":" << r.getuleb128(); break;
             case 0x7: os << "\"DW_CFA_undefined\"" << ", \"reg\":" << r.getuleb128(); break;
             case 0x8: os << "\"DW_CFA_same_value\"" << ", \"reg\":" << r.getuleb128(); break;

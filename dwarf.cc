@@ -914,7 +914,6 @@ DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off end)
 
     version = r.version = r.getu8();
     augmentation = r.getstring();
-    std::clog << "augmentation: " << augmentation << std::endl;
     codeAlign = r.getuleb128();
     dataAlign = r.getsleb128();
     rar = r.getu8();
@@ -960,12 +959,15 @@ DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off end)
                         break;
                 }
             }
-            r.setOffset(endaugdata);
+            if (r.getOffset() != endaugdata) {
+                std::clog << "warning: " << endaugdata - r.getOffset()
+                    << " bytes of augmentation ignored" << std::endl;
+                r.setOffset(endaugdata);
+            }
         } else {
             fprintf(stderr, "augmentation without length delimiter: '%s'\n", augmentation.c_str());
         }
     }
-
     instructions = r.getOffset();
     r.setOffset(end);
 }
@@ -997,11 +999,10 @@ DwarfFrameInfo::decodeCIEFDEHdr(int version, DWARFReader &r, Elf_Addr &id, enum 
         return 0;
 
     Elf_Off idoff = r.getOffset();
-    Elf_Off next = idoff + length;
     id = r.getuint(version >= 3 ? ELF_BITS/8 : 4);
     if (!isCIE(id) && ciep)
         *ciep = cies[type == FI_EH_FRAME ? idoff - id : id];
-    return next;
+    return idoff + length;
 }
 
 bool
@@ -1024,10 +1025,8 @@ DwarfFrameInfo::DwarfFrameInfo(int version, DWARFReader &reader, enum FIType typ
         nextoff = decodeCIEFDEHdr(version, reader, cieid, type, 0);
         if (nextoff == 0)
             break;
-        if (isCIE(cieid)) {
-            auto cie = new DwarfCIE(reader, nextoff);
-            cies[cieoff] = cie;
-        }
+        if (isCIE(cieid))
+            cies[cieoff] = new DwarfCIE(reader, nextoff);
     }
     reader.setOffset(start);
     for (reader.setOffset(start); !reader.empty(); reader.setOffset(nextoff)) {
