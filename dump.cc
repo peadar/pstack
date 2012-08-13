@@ -358,11 +358,14 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
     }
     if (obj.interpreterName != "")
         os << ", \"interpreter\": \"" << obj.interpreterName << "\"";
-    os << "}";
+
+    if (obj.dwarf)
+        os << ", \"dwarf\": " << *obj.dwarf;
+
 #ifdef NOTYET
     elfGetNotes(obj, noteprinter, f);
 #endif
-    return os;
+    return os << "}";
 }
 
 std::ostream &

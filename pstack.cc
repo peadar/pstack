@@ -98,12 +98,6 @@ int gVerbose = 0;
 static int usage(void);
 
 
-static void
-dwarf(struct ElfObject *obj)
-{
-    std::cout << DwarfInfo(obj);
-}
-
 void
 Process::pstack()
 {
@@ -174,18 +168,15 @@ main(int argc, char **argv)
             gFrameArgs = atoi(optarg);
             break;
 
-        case 'D': {
-            FileReader r(optarg);
-            ElfObject dumpObj(r);
-            dwarf(&dumpObj);
-            break;
-        }
-
+        case 'D':
         case 'd': {
             /* Undocumented option to dump image contents */
             FileReader r(optarg);
             ElfObject dumpobj(r);
+            if (c == 'D')
+                dumpobj.dwarf = new DwarfInfo(&dumpobj);
             std::cout << dumpobj;
+
             return 0;
         }
 
