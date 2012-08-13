@@ -275,8 +275,19 @@ DwarfUnit::DwarfUnit(DWARFReader &r)
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
         abbreviations[code] = new DwarfAbbreviation(abbR, code);
+
+    DWARFReader entriesR(r.dwarf, r.getOffset(), nextoff - r.getOffset());
+    assert(nextoff <= r.getLimit());
+#if 1
+    dwarfDecodeEntries(entriesR, this, entries);
+    std::clog << "unread data: " << nextoff - entriesR.getOffset() << std::endl;
+#else
     dwarfDecodeEntries(r, this, entries);
+    std::clog << "unread data: " << nextoff - r.getOffset() << std::endl;
+#endif
+
     r.setOffset(nextoff);
+    std::clog << "got unit" << std::endl;
 }
 
 DwarfAbbreviation::DwarfAbbreviation(DWARFReader &r, intmax_t code_)
@@ -463,8 +474,6 @@ DwarfFileEntry::DwarfFileEntry(DWARFReader &r, DwarfLineInfo *info)
 {
 }
 
-
-
 DwarfAttribute::DwarfAttribute(DWARFReader &r, DwarfUnit *unit, DwarfAttributeSpec *spec_)
     : spec(spec_)
 {
@@ -499,7 +508,6 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, DwarfUnit *unit, DwarfAttributeSp
 
     case DW_FORM_strp:
         value.string = r.dwarf.debugStrings + r.getint(r.version >= 3 ?  ELF_BITS/8 : 4);
-        std::clog << "got string " << value.string << std::endl;
         break;
 
     case DW_FORM_ref2:
@@ -508,6 +516,10 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, DwarfUnit *unit, DwarfAttributeSp
 
     case DW_FORM_ref4:
         value.ref4 = r.getu32();
+        break;
+
+    case DW_FORM_ref_addr:
+        value.ref4 = r.getuint(r.version >= 3 ? ELF_BITS / 8 : 4);
         break;
 
     case DW_FORM_ref8:
@@ -561,6 +573,7 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
         attributes[spec->name] = new DwarfAttribute(r, unit, spec);
 
     size_t size;
+    std::clog << *this << std::endl;
     switch (type->tag) {
     case DW_TAG_compile_unit: {
         size = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
@@ -580,8 +593,10 @@ dwarfDecodeEntries(DWARFReader &r, DwarfUnit *unit, std::list<DwarfEntry *> &lis
 {
     while (!r.empty()) {
         intmax_t code = r.getuleb128();
-        if (code)
-            list.push_back(new DwarfEntry(r, code, unit));
+        if (code == 0)
+            return;
+        DwarfEntry *e = new DwarfEntry(r, code, unit);
+        list.push_back(e);
     }
 }
 DwarfCallFrame::DwarfCallFrame()

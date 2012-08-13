@@ -371,6 +371,7 @@ public:
     intmax_t getsleb128();
     std::string getstring();
     Elf_Off getOffset() { return off; }
+    Elf_Off getLimit() { return end; }
     void setOffset(Elf_Off off_) { off = off_; }
     bool empty() { return off == end; }
     Elf_Off getlength();

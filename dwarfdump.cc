@@ -24,10 +24,14 @@ std::ostream &operator << (std::ostream &os, const DwarfLineInfo &lines) {
 }
 
 std::ostream & operator << (std::ostream &os, const DwarfEntry &entry) {
-    return os
+    os
         << "{ \"type\": \"" << entry.type->tag << "\""
-        << ", \"attributes\": " << entry.attributes
-        << ", \"children\": " << entry.children
+        << ", \"attributes\": " << entry.attributes;
+
+    if (entry.type->hasChildren)
+        os << ", \"children\": " << entry.children;
+
+    return os
         << " }";
 }
 
