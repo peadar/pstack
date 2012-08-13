@@ -32,6 +32,7 @@
 #ifndef elfinfo_h_guard
 #define elfinfo_h_guard
 
+#include <tuple>
 #include <string>
 #include <list>
 #include <vector>

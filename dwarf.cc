@@ -15,7 +15,7 @@
 #include "procinfo.h"
 #include "elfinfo.h"
 #include "dwarf.h"
-#include "dwarfdump.h"
+#include "dump.h"
 
 extern int gVerbose;
 static void dwarfDecodeEntries(DWARFReader &r, DwarfUnit *unit, std::list<DwarfEntry *> &list);
@@ -601,17 +601,6 @@ DwarfCallFrame::DwarfCallFrame()
 
 #define STACK_MAX 1024
 typedef std::stack<Elf_Addr> DwarfExpressionStack;
-
-static const char *
-opname(DwarfExpressionOp op)
-{
-#define DWARF_OP(name, value, args) case name: return #name;
-    switch (op) {
-#include "dwarf/ops.h"
-        default: return "(unknown operation)";
-    }
-#undef DWARF_OP
-}
 
 static Elf_Addr
 dwarfEvalExpr(const Process &proc, DWARFReader r, const DwarfRegisters *frame, DwarfExpressionStack *stack)

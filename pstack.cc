@@ -50,7 +50,8 @@
 #include <unistd.h>
 #include <iostream>
 #include <set>
-#include "dwarfdump.h"
+#include "dwarf.h"
+#include "dump.h"
 
 extern "C" {
 #include <thread_db.h>

@@ -115,7 +115,6 @@ Process::dumpStack(FILE *file, int indent, const ThreadStack &thread, bool verbo
     const char *padding;
     std::string symName;
 
-    padding = pad(indent);
     for (auto frame : thread.stack) {
         symName = fileName = "????????";
         Elf_Addr objIp;
@@ -128,7 +127,7 @@ Process::dumpStack(FILE *file, int indent, const ThreadStack &thread, bool verbo
         } else {
             objIp = 0;
         }
-        fprintf(file, "%s%p ", padding - 1, (void *)(intptr_t)frame->ip);
+        fprintf(file, "%p ", (void *)(intptr_t)frame->ip);
 
         if (verbose) { /* Show ebp for verbose */
 #ifdef i386
