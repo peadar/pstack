@@ -1133,7 +1133,7 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr addr)
     }
 
     DWARFReader r(*dwarf, fde->instructions, fde->end - fde->instructions);
-    DwarfCallFrame frame = fde->cie->execInsns(r, fde->iloc, addr);
+    DwarfCallFrame frame = fde->cie->execInsns(r, fde->iloc, addr - 3);
 
     // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
     uintmax_t cfa = dwarf->getCFA(p, &frame, regs);
