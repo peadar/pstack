@@ -140,10 +140,11 @@ public:
             throw 999;
         return sectionHeaders[idx];
     }
-    int	getNotes(enum NoteIter (*callback)(void *cookie, const char *name, uint32_t type, const void *datap, size_t len), void *cookie) const;
+    template <typename Callable> void getNotes(const Callable &callback) const;
     std::string getImageFromCore();
     const Elf_Phdr *findHeaderForAddress(Elf_Addr pa) const;
 };
+
 
 class ElfSymHash {
     ElfObject *obj;
@@ -238,13 +239,6 @@ enum StabType {
 	N_NBLCS = 0xf8
 };
 
-struct MappedPage {
-	unsigned char *data;
-	Elf_Addr address; /* Valid only if data != NULL */
-	int lastAccess;
-};
-
-
 int elfGetImageFromCore(struct ElfObject *obj, const char **name);
 
 void elfDumpSymbol(FILE *f, const Elf_Sym *sym, const char *strings, int indent);
@@ -263,5 +257,41 @@ std::ostream& operator<< (std::ostream &os, const Elf_Phdr &h);
 std::ostream& operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr &, const Elf_Sym &> &t);
 std::ostream& operator<< (std::ostream &os, const Elf_Dyn &d);
 std::ostream& operator<< (std::ostream &os, const ElfObject &obj);
+
+template <typename Callable> void
+ElfObject::getNotes(const Callable &callback) const
+{
+    for (auto phdr : programHeaders) {
+        if (phdr->p_type == PT_NOTE) {
+            Elf_Note note;
+            off_t off = phdr->p_offset;
+            off_t e = off + phdr->p_filesz;
+            while (off < e) {
+                io.readObj(off, &note);
+                off += sizeof note;
+                char *name = new char[note.n_namesz + 1];
+                io.readObj(off, name, note.n_namesz);
+                name[note.n_namesz] = 0;
+                off += note.n_namesz;
+                off = roundup2(off, 4);
+                char *data = new char[note.n_descsz];
+                io.readObj(off, data, note.n_descsz);
+                off += note.n_descsz;
+                off = roundup2(off, 4);
+                NoteIter iter = callback(name, note.n_type, data, note.n_descsz);
+                delete[] data;
+                delete[] name;
+                switch (iter) {
+                case NOTE_DONE:
+                case NOTE_ERROR:
+                    return;
+                case NOTE_CONTIN:
+                    break;
+                }
+            }
+        }
+    }
+}
+
 
 #endif /* Guard. */

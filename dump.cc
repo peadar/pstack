@@ -333,7 +333,7 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
         os << brand;
 
     os << ", \"sections\": [";
-    std::string sep = "";
+    const char *sep = "";
     for (auto i : obj.sectionHeaders) {
         os << sep << std::make_pair<const ElfObject *, const Elf_Shdr *> (&obj, i);
         sep = ", ";
@@ -359,10 +359,98 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
     if (obj.interpreterName != "")
         os << ", \"interpreter\": \"" << obj.interpreterName << "\"";
     os << "}";
-#ifdef NOTYET
-    elfGetNotes(obj, noteprinter, f);
-#endif
+
+
+    sep = "";
+    os << ", \"notes\": [";
+    obj.getNotes([&obj, &os, &sep] (const char *name, u_int32_t type, const void *datap, size_t len) -> NoteIter {
+        os << sep;
+        sep = ", ";
+
+        os
+            << "{ \"name\": \"" << name << "\""
+            << ", \"type\": \"" << type << "\"";
+
+
+        switch (type) {
+            case NT_PRSTATUS: {
+                const prstatus_t *prstatus = (const prstatus_t *)datap;
+                os << ", \"prstatus\": " << *prstatus;
+            }
+            break;
+            case NT_AUXV: {
+                const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
+                const Elf_auxv_t *eaux = aux + len / sizeof *aux;
+                const char *sep = "";
+                os << ", \"auxv\": [";
+                while (aux < eaux) {
+                    os << sep;
+                    sep = ", ";
+                    os << *aux;
+                    aux++;
+                }
+                os << "]";
+            }
+            break;
+        }
+        return NOTE_CONTIN;
+    });
     return os;
+}
+
+std::ostream &
+operator <<(std::ostream &os, const elf_siginfo &prinfo)
+{
+    return os
+        << "{ \"si_signo\": " << prinfo.si_signo
+        << ", \"si_code\": " << prinfo.si_code
+        << ", \"si_errno\": " << prinfo.si_errno
+        << " }";
+}
+
+std::ostream &
+operator <<(std::ostream &os, const timeval &tv)
+{
+    return os
+        << "{ \"tv_sec\": " << tv.tv_sec
+        << ", \"tv_usec\": " << tv.tv_usec
+        << "}";
+}
+
+std::ostream &
+operator <<(std::ostream &os, const Elf_auxv_t &a)
+{
+    os
+        << "{ \"a_type\": " << a.a_type;
+    switch (a.a_type) {
+#define AUX_TYPE(name, value) case value: os << #name; break;
+#include "elf/aux.h"
+#undef AUX_TYPE
+    }
+    return os
+        << ", \"a_val\": " << a.a_un.a_val
+        << "}";
+}
+
+std::ostream &
+operator <<(std::ostream &os, const prstatus_t &prstat)
+{
+    return os
+        << "{ \"pr_info\": " << prstat.pr_info
+        << ", \"pr_cursig\": " << prstat.pr_cursig
+        << ", \"pr_sigpend\": " << prstat.pr_sigpend
+        << ", \"pr_sighold\": " << prstat.pr_sighold
+        << ", \"pr_pid\": " << prstat.pr_pid
+        << ", \"pr_ppid\": " << prstat.pr_ppid
+        << ", \"pr_pgrp\": " << prstat.pr_pgrp
+        << ", \"pr_sid\": " << prstat.pr_sid
+        << ", \"pr_utime\": " << prstat.pr_utime
+        << ", \"pr_stime\": " << prstat.pr_stime
+        << ", \"pr_cutime\": " << prstat.pr_cutime
+        << ", \"pr_cstime\": " << prstat.pr_cstime
+        << ", \"pr_reg\": " << prstat.pr_reg
+        << ", \"pr_fpvalid\": " << prstat.pr_fpvalid
+        << "}";
 }
 
 std::ostream &
@@ -599,4 +687,37 @@ operator<< (std::ostream &os, DwarfExpressionOp op)
     }
 #undef DWARF_OP
 }
+
+#ifdef NOTYET
+
+static const char *
+auxTypeName(int t)
+{
+#define T(name) case name: return #name;
+    switch (t) {
+         T(AT_IGNORE)
+         T(AT_EXECFD)
+         T(AT_PHDR)
+         T(AT_PHENT)
+         T(AT_PHNUM)
+         T(AT_PAGESZ)
+         T(AT_BASE)
+         T(AT_FLAGS)
+         T(AT_ENTRY)
+         T(AT_NOTELF)
+         T(AT_UID)
+         T(AT_EUID)
+         T(AT_GID)
+         T(AT_EGID)
+         T(AT_CLKTCK)
+         T(AT_SYSINFO)
+         T(AT_SYSINFO_EHDR)
+         default: return "unknown";
+    }
+#undef T
+}
+
+
+#endif
+
 

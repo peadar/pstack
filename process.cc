@@ -112,7 +112,6 @@ Process::dumpStack(FILE *file, int indent, const ThreadStack &thread, bool verbo
     int lineNo;
     Elf_Sym sym;
     std::string fileName;
-    const char *padding;
     std::string symName;
 
     for (auto frame : thread.stack) {
