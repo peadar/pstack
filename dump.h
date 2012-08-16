@@ -90,3 +90,7 @@ std::ostream &operator << (std::ostream &os, DwarfAttrName code);
 std::ostream &operator << (std::ostream &os, DwarfForm code);
 std::ostream &operator << (std::ostream &os, DwarfLineEOpcode code);
 std::ostream &operator << (std::ostream &os, DwarfTag tag);
+std::ostream &operator << (std::ostream &os, const prstatus_t &prstat);
+
+std::ostream &operator << (std::ostream &os, const prstatus_t &);
+std::ostream &operator << (std::ostream &os, const Elf_auxv_t &);
