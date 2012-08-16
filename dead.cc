@@ -45,7 +45,7 @@ CoreProcess::read(off_t remoteAddr, size_t size, char *ptr) const
         if (hdr == 0)
             throw 999;
         Elf_Addr addr = obj->addrProc2Obj(remoteAddr);
-        size_t fragSize = std::min(hdr->p_vaddr + hdr->p_memsz - remoteAddr, size);
+        Elf_Off fragSize = std::min(Elf_Off(hdr->p_vaddr + hdr->p_memsz - remoteAddr), Elf_Off(size));
         obj->io.readObj(hdr->p_offset + addr - hdr->p_vaddr, ptr, fragSize);
         size -= fragSize;
         readLen += fragSize;

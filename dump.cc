@@ -358,7 +358,6 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
     }
     if (obj.interpreterName != "")
         os << ", \"interpreter\": \"" << obj.interpreterName << "\"";
-    os << "}";
 
 
     sep = "";
@@ -395,7 +394,11 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
         }
         return NOTE_CONTIN;
     });
-    return os;
+
+    if (obj.dwarf)
+        os << ", \"dwarf\": " << *obj.dwarf;
+
+    return os << "}";
 }
 
 std::ostream &
