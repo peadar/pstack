@@ -66,20 +66,36 @@ LiveProcess::getRegs(lwpid_t pid, CoreRegisters *reg) const
 
 
 void
-LiveProcess::resume(pid_t pid) const
+LiveProcess::resume(lwpid_t pid)
 {
+
+    auto &tcb = lwps[pid];
+    if (tcb.state == running)
+        return;
+
     if (ptrace(PT_DETACH, pid, (caddr_t)1, 0) != 0)
         warn("failed to detach from process %d", pid);
 }
 
 void
-LiveProcess::stop(lwpid_t pid) const
+LiveProcess::stop(lwpid_t pid)
 {
     int status;
-    std::clog << "attach to " << pid << std::endl;
-    if (ptrace(PT_ATTACH, pid, 0, 0) == 0 && waitpid(pid, &status, 0) == 0)
+
+    auto &tcb = lwps[pid];
+    if (tcb.state == stopped)
         return;
-    warn("can't wait for child: all bets " "are off");
+
+    std::clog << "attach to " << pid << "... ";
+    if (ptrace(PT_ATTACH, pid, 0, 0) == 0) {
+        pid_t waitedpid = waitpid(pid, &status, pid == this->pid ? 0 : __WCLONE);
+        if (waitedpid != -1) {
+            tcb.state = stopped;
+            std::clog << "success" << std::endl;
+            return;
+        }
+        std::clog << "wait failed: " << strerror(errno) << std::endl;
+        return;
+    }
+    std::clog << "ptrace failed: " << strerror(errno) << std::endl;
 }
-
-

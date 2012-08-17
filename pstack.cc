@@ -104,6 +104,8 @@ Process::pstack()
     load();
     std::set<pid_t> lwps;
 
+    ps_pstop(this);
+
     // suspend everything quickly.
     listThreads(
         [&lwps] (const td_thrhandle_t *thr) -> void {

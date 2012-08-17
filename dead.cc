@@ -68,13 +68,13 @@ CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg) const
 }
     
 void
-CoreProcess::resume(pid_t) const
+CoreProcess::resume(pid_t)
 {
     // can't resume post-mortem debugger.
 }
 
 void
-CoreProcess::stop(lwpid_t pid) const
+CoreProcess::stop(lwpid_t pid)
 {
     // can't stop a dead process.
 }
