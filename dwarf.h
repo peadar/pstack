@@ -2,12 +2,7 @@
 #define DWARF_H
 
 #include "elfinfo.h"
-#include <sys/procfs.h>
 #include <sys/ucontext.h>
-#include <sys/ptrace.h>
-#include <asm/ptrace.h>
-#include <stdint.h>
-
 #include <map>
 #include <list>
 #include <vector>

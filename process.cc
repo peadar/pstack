@@ -1,8 +1,40 @@
+#include <set>
 #include <limits.h>
 #include <iostream>
 #include <link.h>
+extern "C" {
+#include "proc_service.h"
+}
 #include "procinfo.h"
 #include "dwarf.h"
+
+typedef struct regs ptrace_regs;
+
+#ifdef __FreeBSD__
+#ifdef __i386__
+#define REG(regs, reg) (regs.r_e##reg)
+#endif
+
+#ifdef __amd64__
+#define REG(regs, reg) (regs.r_r##reg)
+#endif
+#endif
+
+
+#ifdef __linux__
+typedef struct user_regs_struct  elf_regs;
+#ifdef __i386__
+#define REG(regs, reg) ((regs).e##reg)
+#else
+#define REG(regs, reg) ((regs).r##reg)
+#endif
+#else
+#error "not linux?"
+#endif
+
+static int gFrameArgs = 6;		/* number of arguments to print */
+static size_t gMaxFrames = 1024;		/* max number of frames to read */
+
 
 static std::string auxv_name(Elf_Word val)
 {
@@ -105,8 +137,8 @@ Process::processAUXV(const void *datap, size_t len)
     }
 }
 
-void
-Process::dumpStack(FILE *file, int indent, const ThreadStack &thread, bool verbose)
+std::ostream &
+Process::dumpStack(std::ostream &os, const ThreadStack &thread)
 {
     struct ElfObject *obj;
     int lineNo;
@@ -114,8 +146,13 @@ Process::dumpStack(FILE *file, int indent, const ThreadStack &thread, bool verbo
     std::string fileName;
     std::string symName;
 
+
+    os << "{ \"ti_tid\": " << thread.info.ti_tid
+        << ", \"ti_type\": " << thread.info.ti_type
+        << ", \"stack\": [ ";
+
+    const char *frameSep = "";
     for (auto frame : thread.stack) {
-        symName = fileName = "????????";
         Elf_Addr objIp;
         obj = findObject(frame->ip);
 
@@ -126,32 +163,38 @@ Process::dumpStack(FILE *file, int indent, const ThreadStack &thread, bool verbo
         } else {
             objIp = 0;
         }
-        fprintf(file, "%p ", (void *)(intptr_t)frame->ip);
 
-        if (verbose) { /* Show ebp for verbose */
+        os
+            << frameSep << "{ \"ip\": " << intptr_t(frame->ip)
 #ifdef i386
-            fprintf(file, "%p ", (void *)frame->bp);
+            << ", \"bp\": " << intptr_t(frame->bp)
 #endif
-            fprintf(file, "%s ", frame->unwindBy);
-        }
+            << ", \"unwind\": \"" << frame->unwindBy << "\"";
 
-        fprintf(file, "%s (", symName.c_str());
-        if (frame->args.size()) {
-            auto i = frame->args.begin();
-            for (; i != frame->args.end(); ++i)
-                fprintf(file, "%x, ", *i);
-            fprintf(file, "%x", *i);
+        frameSep = ", ";
+
+        if (symName != "")
+            os << ", \"function\": \"" << symName << "\"";
+
+        os << ", \"args:\": [ ";
+        const char *sep = "";
+        for (auto &i : frame->args) {
+            os << sep << i;
+            sep = ", ";
         }
-        fprintf(file, ")");
+        os << " ]";
         if (obj != 0) {
-            printf(" + %p", (void *)((intptr_t)objIp - sym.st_value));
-            printf(" in %s", fileName.c_str());
+            os << ", \"off\": " << intptr_t(objIp) - sym.st_value;
+            os << ", \"file\": " << "\"" << fileName << "\"";
             if (obj->dwarf && obj->dwarf->sourceFromAddr(objIp - 1, fileName, lineNo))
-                printf(" (source %s:%d)", fileName.c_str(), lineNo);
+                os
+                    << ", \"source\": \"" << fileName << "\""
+                    << ", \"line\": " << lineNo;
         }
-        printf("\n");
+        os << " }";
+        frameSep = ", ";
     }
-    fprintf(file, "\n");
+    return os << " ] }";
 }
 
 void
@@ -274,8 +317,122 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
     throw 999;
 }
 
+std::ostream &
+Process::pstack(std::ostream &os)
+{
+    load();
+    std::set<pid_t> lwps;
+
+    ps_pstop(this);
+
+    // suspend everything quickly.
+    listThreads(
+        [&lwps] (const td_thrhandle_t *thr) -> void {
+            if (td_thr_dbsuspend(thr) == TD_NOCAPAB) {
+                td_thrinfo_t info;
+                td_thr_get_info(thr, &info);
+                lwps.insert(info.ti_lid);
+            }});
+
+    for (auto lwp : lwps)
+        stop(lwp);
+
+    std::list<ThreadStack> threadStacks;
+
+    // get its back trace.
+
+    listThreads(
+        [&threadStacks, this](const td_thrhandle_t *thr) {
+            CoreRegisters regs;
+            td_err_e the;
+#ifdef __linux__
+            the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
+#else
+            the = td_thr_getgregs(thr, &regs);
+#endif
+            if (the == TD_OK) {
+                threadStacks.push_back(ThreadStack());
+                td_thr_get_info(thr, &threadStacks.back().info);
+                threadStacks.back().unwind(*this, regs);
+            }
+    });
+
+    if (threadStacks.empty()) {
+        // get the register for the process itself, and use those.
+        CoreRegisters regs;
+        getRegs(ps_getpid(this),  &regs);
+        threadStacks.push_back(ThreadStack());
+        threadStacks.back().unwind(*this, regs);
+    }
+
+    const char *sep = "";
+    os << "[";
+    for (auto s : threadStacks) {
+        os << sep;
+        dumpStack(os, s);
+        sep = ", ";
+    }
+    os << "]";
+
+    listThreads([](const td_thrhandle_t *thr) { td_thr_dbresume(thr); }); 
+    // resume each lwp
+    for (auto lwp : lwps)
+        resume(lwp);
+
+    return os;
+}
+
+
 Process::~Process()
 {
     delall(objectList);
     delete[] vdso;
+}
+
+void
+ThreadStack::unwind(Process &p, CoreRegisters &regs)
+{
+    stack.clear();
+    /* Put a bound on the number of iterations. */
+    for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++) {
+        Elf_Addr ip;
+        StackFrame *frame = new StackFrame(ip = REG(regs, ip), REG(regs, bp));
+        stack.push_back(frame);
+
+        DwarfRegisters dr;
+        dwarfPtToDwarf(&dr, &regs);
+
+        // try dwarf first...
+        if ((ip = dwarfUnwind(p, &dr, ip)) != 0) {
+            frame->unwindBy = "dwarf";
+            dwarfDwarfToPt(&regs, &dr);
+        } else {
+            try {
+                for (int i = 0; i < gFrameArgs; i++) {
+                    Elf_Word arg;
+                    p.readObj(REG(regs, bp) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word), &arg);
+                    frame->args.push_back(arg);
+                }
+            }
+            catch (...) {
+                // not fatal if we can't read all the args.
+            }
+            frame->unwindBy = "END  ";
+            /* Read the next frame */
+            try {
+                p.readObj(REG(regs, bp) + sizeof(REG(regs, bp)), &ip);
+                REG(regs, ip) = ip;
+                if (ip == 0) // XXX: if no return instruction, break out.
+                        break;
+                // Read new frame pointer from stack.
+                p.readObj(REG(regs, bp), &REG(regs, bp));
+                if ((uintmax_t)REG(regs, bp) <= frame->bp)
+                    break;
+            }
+            catch (...) {
+                break;
+            }
+            frame->unwindBy = "stdc  ";
+        }
+    }
 }

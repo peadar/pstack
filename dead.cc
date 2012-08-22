@@ -33,8 +33,12 @@ CoreProcess::read(off_t remoteAddr, size_t size, char *ptr) const
     /* Locate "remoteAddr" in the core file */
     while (size) {
         auto obj = &coreImage;
+
+        // Check the corefile first.
         auto hdr = obj->findHeaderForAddress(remoteAddr);
         if (hdr == 0)
+            // Not in the corefile - but loaded libs may contain unmodified data
+            // not copied into the core - check through those.
             for (auto o : objectList) {
                 hdr = o->findHeaderForAddress(remoteAddr);
                 if (hdr) {
@@ -78,7 +82,6 @@ CoreProcess::stop(lwpid_t pid)
 {
     // can't stop a dead process.
 }
-
 
 pid_t
 CoreProcess::getPID() const

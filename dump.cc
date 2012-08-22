@@ -720,6 +720,40 @@ auxTypeName(int t)
 #undef T
 }
 
+#define T(a) case a: return #a;
+static const char *
+DW_EH_PE_typeStr(unsigned char c)
+{
+    switch (c & 0xf) {
+        T(DW_EH_PE_absptr)
+        T(DW_EH_PE_uleb128)
+        T(DW_EH_PE_udata2)
+        T(DW_EH_PE_udata4)
+        T(DW_EH_PE_udata8)
+        T(DW_EH_PE_sleb128)
+        T(DW_EH_PE_sdata2)
+        T(DW_EH_PE_sdata4)
+        T(DW_EH_PE_sdata8)
+        default: return "(unknown)";
+    }
+}
+
+static const char *
+DW_EH_PE_relStr(unsigned char c)
+{
+    switch (c & 0xf0) {
+    T(DW_EH_PE_pcrel)
+    T(DW_EH_PE_textrel)
+    T(DW_EH_PE_datarel)
+    T(DW_EH_PE_funcrel)
+    T(DW_EH_PE_aligned)
+    default: return "(unknown)";
+    }
+
+}
+#undef T
+
+
 
 #endif
 

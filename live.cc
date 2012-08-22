@@ -1,10 +1,9 @@
 #include "procinfo.h"
+
 #include <iostream>
 #include <limits.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <sys/ptrace.h>
-#include <err.h>
+#include <fcntl.h>
 #include <wait.h>
 
 void
@@ -73,8 +72,9 @@ LiveProcess::resume(lwpid_t pid)
     if (tcb.state == running)
         return;
 
+    kill(pid, SIGCONT);
     if (ptrace(PT_DETACH, pid, (caddr_t)1, 0) != 0)
-        warn("failed to detach from process %d", pid);
+        std::clog << "failed to detach from process " << pid << ": " << strerror(errno);
 }
 
 void

@@ -16,6 +16,7 @@ struct StackFrame {
 };
 
 struct ThreadStack {
+    td_thrinfo_t info;
     std::list<StackFrame *> stack;
     ThreadStack() {}
     void unwind(Process &, CoreRegisters &regs);
@@ -42,9 +43,9 @@ public:
     virtual void stopProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
     virtual pid_t getPID() const = 0;
-    void dumpStack(FILE *file, int indent, const ThreadStack &, bool verbose);
+    std::ostream &dumpStack(std::ostream &, const ThreadStack &);
     template <typename T> void listThreads(const T &);
-    void pstack();
+    std::ostream &pstack(std::ostream &);
     Elf_Addr findNamedSymbol(const char *objectName, const char *symbolName) const;
     ~Process();
 };

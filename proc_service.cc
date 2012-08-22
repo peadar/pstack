@@ -1,7 +1,4 @@
-#include <stdlib.h>
 #include <stdarg.h>
-#include <string.h>
-#include "elfinfo.h"
 #include "procinfo.h"
 
 extern "C" {
