@@ -1,7 +1,4 @@
-#include <stdlib.h>
 #include <stdarg.h>
-#include <string.h>
-#include "elfinfo.h"
 #include "procinfo.h"
 
 extern "C" {
@@ -16,7 +13,7 @@ ps_err_e ps_pcontinue(const struct ps_prochandle *p)
 ps_err_e
 ps_lcontinue(const struct ps_prochandle *ph, lwpid_t pid)
 {
-    const Process *p = static_cast<const Process *>(ph);
+    Process *p = const_cast<Process *>(static_cast<const Process *>(ph));
     try {
         p->resume(pid);
         return PS_OK;
@@ -69,9 +66,10 @@ ps_pread(struct ps_prochandle *ph, psaddr_t addr, void *buf, size_t len)
 }
 
 ps_err_e
-ps_pstop(const struct ps_prochandle *p)
+ps_pstop(const struct ps_prochandle *ph)
 {
-    abort();
+    auto *p = const_cast<Process *>(static_cast<const Process *>(ph));
+    p->stopProcess();
     return (PS_ERR);
 }
 
@@ -163,7 +161,7 @@ ps_err_e ps_lsetregs(struct ps_prochandle *p, lwpid_t pid, const prgregset_t reg
 
 ps_err_e ps_lstop(const struct ps_prochandle *ph, lwpid_t lwpid)
 {
-    const Process *p = static_cast<const Process *>(ph);
+    Process *p = const_cast<Process *>(static_cast<const Process *>(ph));
     try {
         p->stop(lwpid);
         return PS_OK;

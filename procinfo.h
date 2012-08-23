@@ -1,4 +1,5 @@
 #include "elfinfo.h"
+#include <map>
 #include <sstream>
 #include <functional>
 
@@ -15,6 +16,7 @@ struct StackFrame {
 };
 
 struct ThreadStack {
+    td_thrinfo_t info;
     std::list<StackFrame *> stack;
     ThreadStack() {}
     void unwind(Process &, CoreRegisters &regs);
@@ -37,12 +39,13 @@ public:
     void addElfObject(struct ElfObject *obj, Elf_Addr load);
     ElfObject *findObject(Elf_Addr addr) const;
     Process(Reader &ex);
-    virtual void stop(pid_t lwpid) const = 0;
-    virtual void resume(pid_t lwpid) const = 0;
+    virtual void stop(pid_t lwpid) = 0;
+    virtual void stopProcess() = 0;
+    virtual void resume(pid_t lwpid) = 0;
     virtual pid_t getPID() const = 0;
-    void dumpStack(FILE *file, int indent, const ThreadStack &, bool verbose);
+    std::ostream &dumpStack(std::ostream &, const ThreadStack &);
     template <typename T> void listThreads(const T &);
-    void pstack();
+    std::ostream &pstack(std::ostream &);
     Elf_Addr findNamedSymbol(const char *objectName, const char *symbolName) const;
     ~Process();
 };
@@ -55,16 +58,27 @@ Process::listThreads(const T &callback)
             (void *)&callback, TD_THR_ANY_STATE, TD_THR_LOWEST_PRIORITY, TD_SIGNO_MASK, TD_THR_ANY_USER_FLAGS);
 }
 
+enum ThreadState {
+    stopped,
+    running
+};
+
+struct ThreadInfo {
+    ThreadState state;
+    ThreadInfo() : state(running) {}
+};
+
 struct LiveProcess : public Process {
     pid_t pid;
     FILE *procMem;
+    std::map<pid_t, ThreadInfo> lwps;
 protected:
     virtual void read(off_t offset, size_t count, char *ptr) const;
 public:
     LiveProcess(Reader &ex, pid_t pid);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
-    virtual void stop(pid_t lwpid) const;
-    virtual void resume(pid_t lwpid) const;
+    virtual void stop(pid_t lwpid);
+    virtual void resume(pid_t lwpid);
     virtual void load();
     virtual pid_t getPID()  const{ return pid; }
 
@@ -73,6 +87,7 @@ public:
         os << "process pid " << pid;
         return os.str();
     }
+    void stopProcess() { stop(pid); }
 };
 
 struct CoreProcess : public Process {
@@ -83,12 +98,13 @@ public:
     CoreProcess(Reader &ex, Reader &core);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
     virtual void load();
-    virtual void stop(lwpid_t) const;
-    virtual void resume(lwpid_t) const;
+    virtual void stop(lwpid_t);
+    virtual void resume(lwpid_t);
     virtual pid_t getPID() const;
     virtual std::string describe() const {
         std::ostringstream os;
         os << "process loaded from core " << coreImage.io;
         return os.str();
     }
+    void stopProcess() { }
 };

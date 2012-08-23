@@ -2,7 +2,9 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <err.h>
+#ifndef NOTHREADS
 #include <pthread.h>
+#endif
 
 static const size_t THREADCOUNT=3;
 static int crash = 0;
@@ -50,7 +52,7 @@ main(int argc, char *argv[])
                 break;
         }
     }
-
+#ifndef NOTHREADS
     pthread_t threads[THREADCOUNT];
     for (size_t i = 0; i < THREADCOUNT; ++i) {
         int rc = pthread_create(&threads[i], 0, threadent, 0);
@@ -61,6 +63,9 @@ main(int argc, char *argv[])
         void *rv;
         pthread_join(threads[i], &rv);
     }
+#else
+    threadent(0);
+#endif
 
 
     return f();

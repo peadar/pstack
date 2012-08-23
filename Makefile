@@ -21,13 +21,20 @@ CXXFLAGS += -std=c++0x $(COMPILEFLAGS)
 
 LIBS += -lthread_db
 
-all: $(PROG) t
+all: $(PROG) t n
 
 $(PROG): $(OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
 
 t: t.o
 	$(CXX) $(LDFLAGS) -o $@ t.o -lpthread
+
+n: n.o
+	$(CXX) $(LDFLAGS) -o $@ n.o
+
+n.o: t.cc
+	$(CXX) -c $(CXXFLAGS) -DNOTHREADS -o $@ t.cc
+
 
 clean:
 	rm -f $(OBJS) $(PROG) t t.o

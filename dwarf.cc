@@ -357,7 +357,7 @@ DwarfLineInfo::DwarfLineInfo(DWARFReader &r, const DwarfUnit *unit)
         directories.push_back(s);
     }
 
-    files.push_back(new DwarfFileEntry("unknown", "unknown", 0, 0));
+    files.push_back(new DwarfFileEntry("unknown", "unknown", 0, 0)); // index 0 is special
     for (count = 1;; count++) {
         char c;
         r.io.readObj(r.getOffset(), &c);
@@ -367,8 +367,13 @@ DwarfLineInfo::DwarfLineInfo(DWARFReader &r, const DwarfUnit *unit)
         }
         files.push_back(new DwarfFileEntry(r, this));
     }
+
     if (r.getOffset() != expectedEnd)
-        std::clog << "warning: left " << expectedEnd - r.getOffset() << " bytes\n";
+        std::clog << "warning: left "
+            << expectedEnd - r.getOffset()
+            << " bytes in line info table of "
+            << r.dwarf.elf->io
+            << std::endl;
 
     DwarfLineState state(this);
     while (r.getOffset() < end) {
@@ -870,40 +875,6 @@ DwarfFDE::DwarfFDE(DWARFReader &reader, DwarfCIE *cie_, Elf_Off end_)
     instructions = reader.getOffset();
     end = end_;
 }
-
-#define T(a) case a: return #a;
-static const char *
-DW_EH_PE_typeStr(unsigned char c)
-{
-    switch (c & 0xf) {
-        T(DW_EH_PE_absptr)
-        T(DW_EH_PE_uleb128)
-        T(DW_EH_PE_udata2)
-        T(DW_EH_PE_udata4)
-        T(DW_EH_PE_udata8)
-        T(DW_EH_PE_sleb128)
-        T(DW_EH_PE_sdata2)
-        T(DW_EH_PE_sdata4)
-        T(DW_EH_PE_sdata8)
-        default: return "(unknown)";
-    }
-}
-
-static const char *
-DW_EH_PE_relStr(unsigned char c)
-{
-    switch (c & 0xf0) {
-    T(DW_EH_PE_pcrel)
-    T(DW_EH_PE_textrel)
-    T(DW_EH_PE_datarel)
-    T(DW_EH_PE_funcrel)
-    T(DW_EH_PE_aligned)
-    default: return "(unknown)";
-    }
-
-}
-#undef T
-
 DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off end)
 {
     this->end = end;
@@ -962,7 +933,7 @@ DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off end)
                 r.setOffset(endaugdata);
             }
         } else {
-            fprintf(stderr, "augmentation without length delimiter: '%s'\n", augmentation.c_str());
+            std::clog << "augmentation without length delimiter: " << augmentation << std::endl;
         }
     }
     instructions = r.getOffset();
@@ -977,7 +948,6 @@ DWARFReader::getlength()
     if (length >= 0xfffffff0) {
         switch (length) {
             case 0xffffffff:
-                fprintf(stderr, "extended lengh field\n");
                 length = getuint(8);
                 break;
             default:

@@ -1,0 +1,6 @@
+*.o
+pstack
+t
+n
+tags
+.sw*
