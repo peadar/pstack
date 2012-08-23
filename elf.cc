@@ -91,7 +91,6 @@ FileReader::FileReader(std::string name_, FILE *file_)
 ElfObject::ElfObject(Reader &io_)
     : io(io_)
     , mem(&firstChunk)
-
 {
     Elf_Ehdr *eHdr;
 
@@ -111,6 +110,7 @@ ElfObject::ElfObject(Reader &io_)
     for (off = eHdr->e_phoff, i = 0; i < eHdr->e_phnum; i++) {
         Elf_Phdr *phdr = new Elf_Phdr();
         io.readObj(off, phdr);
+
         switch (phdr->p_type) {
         case PT_INTERP:
                 interpreterName = readString(phdr->p_offset);
@@ -122,6 +122,7 @@ ElfObject::ElfObject(Reader &io_)
         programHeaders.push_back(phdr);
         off += eHdr->e_phentsize;
     }
+
     for (off = eHdr->e_shoff, i = 0; i < eHdr->e_shnum; i++) {
         Elf_Shdr *shdr = new Elf_Shdr();
         io.readObj(off, shdr);
