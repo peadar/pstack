@@ -477,7 +477,7 @@ operator <<(std::ostream &os, const std::pair<const ElfObject *, const Elf_Shdr 
     const ElfObject *o = p.first;
     const Elf_Shdr *h = p.second;
 
-    os << "{ \"name\": \"" << o->readString(o->sectionStrings + h->sh_name) << "\"" << ", \"type\": ";
+    os << "{ \"name\": \"" << o->io.readString(o->sectionStrings + h->sh_name) << "\"" << ", \"type\": ";
             
     if (h->sh_type <= SHT_DYNSYM)
         os << "\"" << sectionTypeNames[h->sh_type] << "\"";
@@ -628,7 +628,7 @@ operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr *, co
     const Elf_Sym *s = std::get<2>(t);
 
     off_t symStrings = o->sectionHeaders[h->sh_link]->sh_offset;
-    return os << "{ \"name\": \"" << o->readString(symStrings + s->st_name) << "\""
+    return os << "{ \"name\": \"" << o->io.readString(symStrings + s->st_name) << "\""
        << ", \"value\": " << s->st_value
        << ", \"size\": " << s->st_size
        << ", \"info\": " << (int)s->st_info

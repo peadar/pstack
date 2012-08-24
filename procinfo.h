@@ -28,12 +28,12 @@ class Process : public Reader, public ps_prochandle {
     char *vdso;
 protected:
     td_thragent_t *agent;
-    std::list<ElfObject *> objectList;
     ElfObject *execImage;
     std::string abiPrefix;
     std::list<Reader *> readers; // readers allocated for objects.
     void processAUXV(const void *data, size_t len);
 public:
+    std::list<ElfObject *> objectList;
     virtual void load(); // loads shared objects, gets stack traces.
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const = 0;
     void addElfObject(struct ElfObject *obj, Elf_Addr load);

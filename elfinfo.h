@@ -122,7 +122,6 @@ struct ElfObject {
     struct ElfMemChunk firstChunk;
     char buf[MEMBUF];
     struct ElfMemChunk *mem;
-    std::string readString(off_t offset) const;
     bool linearSymSearch(const Elf_Shdr *hdr, std::string name, Elf_Sym &);
     void init(FILE *);
     ElfSymHash *hash;
@@ -145,6 +144,29 @@ public:
     const Elf_Phdr *findHeaderForAddress(Elf_Addr pa) const;
 };
 
+// Helpful for iterating over symbol sections.
+struct SymbolIterator {
+    Reader &io;
+    off_t off;
+    off_t stroff;
+    SymbolIterator(Reader &io_, off_t off_, off_t stroff_) : io(io_), off(off_), stroff(stroff_) {}
+    bool operator != (const SymbolIterator &rhs) { return rhs.off != off; }
+    SymbolIterator &operator++ () { off += sizeof (Elf_Sym); return *this; }
+    std::pair<const Elf_Sym, const std::string> operator *();
+};
+
+struct SymbolSection {
+    Reader &io;
+    const Elf_Shdr *section;
+    off_t stroff;
+    SymbolIterator begin() { return SymbolIterator(io, section ?  section->sh_offset : 0, stroff); }
+    SymbolIterator end() { return SymbolIterator(io, section ?  section->sh_offset + section->sh_size : 0, stroff); }
+    SymbolSection(ElfObject *obj, const Elf_Shdr *section_)
+        : io(obj->io)
+        , section(section_)
+        , stroff(obj->sectionHeaders[section->sh_link]->sh_offset)
+    {}
+};
 
 class ElfSymHash {
     ElfObject *obj;

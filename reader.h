@@ -11,6 +11,20 @@ public:
             read(offset, count * sizeof *object, (char *)object);
     }
     virtual std::string describe() const = 0;
+
+    std::string
+    readString(off_t offset) const
+    {
+        char c;
+        std::string res;
+        for (;;) {
+            readObj(offset++, &c);
+            if (c == 0)
+                break;
+            res += c;
+        }
+        return res;
+    }
 };
 
 class FileReader : public Reader {

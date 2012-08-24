@@ -6,20 +6,6 @@ static uint32_t elf_hash(std::string);
  * Parse out an ELF file into an ElfObject structure.
  */
 
-std::string
-ElfObject::readString(off_t offset) const
-{
-    char c;
-    std::string res;
-    for (;;) {
-        io.readObj(offset++, &c);
-        if (c == 0)
-            break;
-        res += c;
-    }
-    return res;
-}
-
 const Elf_Phdr *
 ElfObject::findHeaderForAddress(Elf_Addr pa) const
 {
@@ -64,7 +50,7 @@ ElfObject::ElfObject(Reader &io_)
 
         switch (phdr->p_type) {
         case PT_INTERP:
-                interpreterName = readString(phdr->p_offset);
+                interpreterName = io.readString(phdr->p_offset);
                 break;
         case PT_DYNAMIC:
                 dynamic = phdr;
@@ -99,11 +85,19 @@ ElfObject::findSectionByName(std::string name)
 {
     for (size_t i = 0; i < elfHeader.e_shnum; ++i) {
         Elf_Shdr *hdr = sectionHeaders[i];
-        if (name == readString(sectionStrings + hdr->sh_name)) {
+        if (name == io.readString(sectionStrings + hdr->sh_name)) {
             return hdr;
         }
     }
     return 0;
+}
+std::pair<const Elf_Sym, const std::string>
+SymbolIterator::operator *()
+{
+        Elf_Sym sym;
+        io.readObj(off, &sym);
+        std::string name = io.readString(sym.st_name + stroff);
+        return std::make_pair(sym, name);
 }
 
 /*
@@ -118,6 +112,7 @@ ElfObject::findSectionByName(std::string name)
 bool
 ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, std::string &name)
 {
+
     /* Try to find symbols in these sections */
     static const char *sectionNames[] = {
         ".dynsym", ".symtab", 0
@@ -129,18 +124,12 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, std::strin
         Elf_Shdr *symSection = findSectionByName(sectionNames[i]);
         if (symSection == 0)
             continue;
-        /*
-         * Found the section in question: get the associated
-         * string section's data, and a pointer to the start
-         * and end of the table
-         */
-        off_t symoff = symSection->sh_offset;
-        off_t symend = symoff + symSection->sh_size;
-        off_t stringoff = sectionHeaders[symSection->sh_link]->sh_offset;
 
-        Elf_Sym candidate;
-        for (; symoff < symend && !exact; symoff += sizeof sym) {
-            io.readObj(symoff, &candidate);
+        SymbolSection syms(this, symSection);
+        for (auto syminfo : syms) {
+
+            const Elf_Sym &candidate = syminfo.first;
+
             if (candidate.st_shndx >= sectionHeaders.size())
                 continue;
             Elf_Shdr *shdr = sectionHeaders[candidate.st_shndx];
@@ -156,12 +145,12 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, std::strin
                 if (candidate.st_size + candidate.st_value > addr) {
                     // yep: return this one.
                     sym = candidate;
-                    name = readString(candidate.st_name + stringoff);
+                    name = syminfo.second;
                     return true;
                 }
             } else if (lowest < candidate.st_value) {
                 sym = candidate;
-                name = readString(candidate.st_name + stringoff);
+                name = syminfo.second;
                 lowest = candidate.st_value;
             }
         }
@@ -172,15 +161,10 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, std::strin
 bool
 ElfObject::linearSymSearch(const Elf_Shdr *hdr, std::string name, Elf_Sym &sym)
 {
-    off_t symStrings = sectionHeaders[hdr->sh_link]->sh_offset;
-    off_t off = hdr->sh_offset;
-    off_t end = off + hdr->sh_size;
-
-    for (; off < end; off += sizeof sym) {
-        Elf_Sym candidate;
-        io.readObj(off, &candidate);
-        if (name == readString(symStrings + candidate.st_name)) {
-            sym = candidate;
+    SymbolSection sec(this, hdr);
+    for (auto info : sec) {
+        if (name == info.second) {
+            sym = info.first;
             return true;
         }
     }
@@ -212,7 +196,7 @@ ElfSymHash::findSymbol(Elf_Sym &sym, std::string &name)
     for (Elf_Word i = buckets[bucket]; i != STN_UNDEF; i = chains[i]) {
         Elf_Sym candidate;
         obj->io.readObj(syms->sh_offset + i * sizeof candidate, &candidate);
-        std::string candidateName = obj->readString(strings + candidate.st_name);
+        std::string candidateName = obj->io.readString(strings + candidate.st_name);
         if (candidateName == name) {
             sym = candidate;
             name = candidateName;
