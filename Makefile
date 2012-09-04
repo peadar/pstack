@@ -37,7 +37,7 @@ n.o: t.cc
 
 
 clean:
-	rm -f $(OBJS) $(PROG) t t.o
+	rm -f $(OBJS) $(PROG) t t.o n n.o 
 
 ctags:
 	ctags --recurse *.c *.cc *.h
