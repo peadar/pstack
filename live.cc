@@ -25,25 +25,30 @@ LiveProcess::load()
     Process::load();
 }
 
-LiveProcess::LiveProcess(Reader &ex, pid_t pid_)
-    : Process(ex)
-    , pid(pid_)
+
+LiveReader::LiveReader(pid_t pid)
 {
     char buf[PATH_MAX];
     snprintf(buf, sizeof buf, "/proc/%d/mem", pid);
-    procMem = fopen(buf, "r");
-    if (procMem == 0)
+    mem = fopen(buf, "r");
+    if (mem == 0)
         throw 999;
 }
 
-void
-LiveProcess::read(off_t remoteAddr, size_t size, char *ptr) const
+LiveProcess::LiveProcess(Reader &ex, pid_t pid_)
+    : Process(ex, liveIO)
+    , pid(pid_)
+    , liveIO(pid_)
 {
-    if (fseek(procMem, remoteAddr, SEEK_SET) == -1)
-        throw 999;
-    if (fread(ptr, size, 1, procMem) != 1)
-        throw 999;
+}
 
+void
+LiveReader::read(off_t remoteAddr, size_t size, char *ptr) const
+{
+    if (fseek(mem, remoteAddr, SEEK_SET) == -1)
+        throw 999;
+    if (fread(ptr, size, 1, mem) != 1)
+        throw 999;
 }
 
 bool

@@ -22,10 +22,11 @@ struct ThreadStack {
     void unwind(Process &, CoreRegisters &regs);
 };
 
-class Process : public Reader, public ps_prochandle {
+class Process : public ps_prochandle {
     Elf_Addr findRDebugAddr();
     void loadSharedObjects();
     char *vdso;
+    Reader &procio;
 protected:
     td_thragent_t *agent;
     ElfObject *execImage;
@@ -33,12 +34,13 @@ protected:
     std::list<Reader *> readers; // readers allocated for objects.
     void processAUXV(const void *data, size_t len);
 public:
+    Reader &io() const;
     std::list<ElfObject *> objectList;
     virtual void load(); // loads shared objects, gets stack traces.
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const = 0;
     void addElfObject(struct ElfObject *obj, Elf_Addr load);
     ElfObject *findObject(Elf_Addr addr) const;
-    Process(Reader &ex);
+    Process(Reader &ex, Reader &mem);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
@@ -68,12 +70,25 @@ struct ThreadInfo {
     ThreadInfo() : state(running) {}
 };
 
-struct LiveProcess : public Process {
+class LiveReader : public Reader {
     pid_t pid;
-    FILE *procMem;
-    std::map<pid_t, ThreadInfo> lwps;
+    FILE *mem;
 protected:
     virtual void read(off_t offset, size_t count, char *ptr) const;
+public:
+    virtual std::string describe() const {
+        std::ostringstream os;
+        os << "process pid " << pid;
+        return os.str();
+    }
+    LiveReader(pid_t pid);
+};
+
+class LiveProcess : public Process {
+    pid_t pid;
+    std::map<pid_t, ThreadInfo> lwps;
+    friend class LiveReader;
+    LiveReader liveIO;
 public:
     LiveProcess(Reader &ex, pid_t pid);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
@@ -81,19 +96,25 @@ public:
     virtual void resume(pid_t lwpid);
     virtual void load();
     virtual pid_t getPID()  const{ return pid; }
-
-    virtual std::string describe() const {
-        std::ostringstream os;
-        os << "process pid " << pid;
-        return os.str();
-    }
     void stopProcess() { stop(pid); }
+};
+
+
+class CoreProcess;
+class CoreReader : public Reader {
+    CoreProcess *p;
+protected:
+    virtual void read(off_t offset, size_t count, char *ptr) const;
+public:
+    CoreReader (CoreProcess *p);
+    std::string describe() const;
 };
 
 struct CoreProcess : public Process {
     pid_t pid;
     ElfObject coreImage;
-    virtual void read(off_t offset, size_t count, char *ptr) const;
+    CoreReader coreIO;
+    friend class CoreReader;
 public:
     CoreProcess(Reader &ex, Reader &core);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
@@ -101,10 +122,5 @@ public:
     virtual void stop(lwpid_t);
     virtual void resume(lwpid_t);
     virtual pid_t getPID() const;
-    virtual std::string describe() const {
-        std::ostringstream os;
-        os << "process loaded from core " << coreImage.io;
-        return os.str();
-    }
     void stopProcess() { }
 };

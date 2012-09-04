@@ -85,8 +85,15 @@ delall(T &container)
         delete i;
 }
 
-Process::Process(Reader &exeData)
-    : execImage(new ElfObject(exeData))
+Reader &
+Process::io() const
+{
+    return procio;
+}
+
+Process::Process(Reader &exeData, Reader &procio_)
+    : procio(procio_)
+    , execImage(new ElfObject(exeData))
 {
     abiPrefix = execImage->getABIPrefix();
     addElfObject(execImage, 0);
@@ -115,7 +122,7 @@ Process::processAUXV(const void *datap, size_t len)
         switch (aux->a_type) {
             case AT_SYSINFO_EHDR: {
                 vdso = new char[getpagesize()];
-                readObj(hdr, vdso, getpagesize());
+                io().readObj(hdr, vdso, getpagesize());
                 MemReader *r = new MemReader(vdso, getpagesize());
                 readers.push_back(r);
                 addElfObject(new ElfObject(*r), hdr);
@@ -126,7 +133,7 @@ Process::processAUXV(const void *datap, size_t len)
                 std::ostringstream os;
                 for (;;) {
                     char c;
-                    readObj(hdr++, &c, 1);
+                    io().readObj(hdr++, &c, 1);
                     if (c == 0)
                         break;
                     os << c;
@@ -229,7 +236,7 @@ Process::loadSharedObjects()
         return;
 
     struct r_debug rDebug;
-    readObj(r_debug_addr, &rDebug);
+    io().readObj(r_debug_addr, &rDebug);
     if (abiPrefix != "") {
         path = prefixedPath + snprintf(prefixedPath, sizeof(prefixedPath), "%s", abiPrefix.c_str());
         maxpath = PATH_MAX - strlen(abiPrefix.c_str());
@@ -241,7 +248,7 @@ Process::loadSharedObjects()
     /* Iterate over the r_debug structure's entries, loading libraries */
     struct link_map map;
     for (Elf_Addr mapAddr = (Elf_Addr)rDebug.r_map; mapAddr; mapAddr = (Elf_Addr)map.l_next) {
-        readObj(mapAddr, &map);
+        io().readObj(mapAddr, &map);
 
         /* Read the path to the file */
         if (map.l_name == 0)
@@ -249,7 +256,7 @@ Process::loadSharedObjects()
         path[0] = '?';
         path[1] = '\0';
         try {
-            readObj((off_t)map.l_name, path, maxpath);
+            io().readObj((off_t)map.l_name, path, maxpath);
             if (abiPrefix != "" && access(prefixedPath, R_OK) == 0)
                 path = prefixedPath;
             FileReader *f = new FileReader(path);
@@ -276,7 +283,7 @@ Process::findRDebugAddr()
         Elf_Dyn dyn;
         execImage->io.readObj(execImage->dynamic->p_offset + dynOff, &dyn);
         if (dyn.d_tag == DT_DEBUG) {
-            readObj(execImage->dynamic->p_vaddr + dynOff, &dyn);
+            io().readObj(execImage->dynamic->p_vaddr + dynOff, &dyn);
             return dyn.d_un.d_ptr;
         }
     }
@@ -410,7 +417,7 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
             try {
                 for (int i = 0; i < gFrameArgs; i++) {
                     Elf_Word arg;
-                    p.readObj(REG(regs, bp) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word), &arg);
+                    p.io().readObj(REG(regs, bp) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word), &arg);
                     frame->args.push_back(arg);
                 }
             }
@@ -420,12 +427,12 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
             frame->unwindBy = "END  ";
             /* Read the next frame */
             try {
-                p.readObj(REG(regs, bp) + sizeof(REG(regs, bp)), &ip);
+                p.io().readObj(REG(regs, bp) + sizeof(REG(regs, bp)), &ip);
                 REG(regs, ip) = ip;
                 if (ip == 0) // XXX: if no return instruction, break out.
                         break;
                 // Read new frame pointer from stack.
-                p.readObj(REG(regs, bp), &REG(regs, bp));
+                p.io().readObj(REG(regs, bp), &REG(regs, bp));
                 if ((uintmax_t)REG(regs, bp) <= frame->bp)
                     break;
             }

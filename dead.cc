@@ -4,8 +4,9 @@
 #include "procinfo.h"
 
 CoreProcess::CoreProcess(Reader &exe, Reader &coreFile)
-    : Process(exe)
+    : Process(exe, coreIO)
     , coreImage(coreFile)
+    , coreIO(this)
 {
 }
 
@@ -26,20 +27,28 @@ CoreProcess::load()
     Process::load();
 }
 
+
+std::string CoreReader::describe() const
+{
+    std::ostringstream os;
+    os << "process loaded from core " << p->coreImage.io;
+    return os.str();
+}
+
 void
-CoreProcess::read(off_t remoteAddr, size_t size, char *ptr) const
+CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 {
     size_t readLen = 0;
     /* Locate "remoteAddr" in the core file */
     while (size) {
-        auto obj = &coreImage;
+        auto obj = &p->coreImage;
 
         // Check the corefile first.
         auto hdr = obj->findHeaderForAddress(remoteAddr);
         if (hdr == 0)
             // Not in the corefile - but loaded libs may contain unmodified data
             // not copied into the core - check through those.
-            for (auto o : objectList) {
+            for (auto o : p->objectList) {
                 hdr = o->findHeaderForAddress(remoteAddr);
                 if (hdr) {
                     obj = o;
@@ -55,6 +64,8 @@ CoreProcess::read(off_t remoteAddr, size_t size, char *ptr) const
         readLen += fragSize;
     }
 }
+
+CoreReader::CoreReader(CoreProcess *p_) : p(p_) { }
 
 bool
 CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg) const

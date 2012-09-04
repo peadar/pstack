@@ -616,7 +616,7 @@ dwarfEvalExpr(const Process &proc, DWARFReader r, const DwarfRegisters *frame, D
             case DW_OP_deref: {
                 intmax_t addr = stack->top(); stack->pop();
                 Elf_Addr value;
-                proc.readObj(addr, &value);
+                proc.io().readObj(addr, &value);
                 stack->push((intmax_t)(intptr_t)value);
                 break;
             }
@@ -1120,7 +1120,7 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr addr)
                 break;
             case OFFSET: {
                 Elf_Addr reg; // XXX: assume addrLen = sizeof Elf_Addr
-                p.readObj(cfa + unwind->u.offset, &reg);
+                p.io().readObj(cfa + unwind->u.offset, &reg);
                 dwarfSetReg(&newRegs, i, reg);
                 break;
             }
