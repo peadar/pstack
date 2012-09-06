@@ -118,7 +118,7 @@ Process::processAUXV(const void *datap, size_t len)
     const Elf_auxv_t *eaux = aux + len / sizeof *aux;
     for (; aux < eaux; aux += sizeof *aux) {
         Elf_Addr hdr = aux->a_un.a_val;
-        std::cerr << "auxv: " << auxv_name(aux->a_type) << "= " << (void *)hdr << "\n";
+        std::clog << "auxv: " << auxv_name(aux->a_type) << "= " << (void *)hdr << "\n";
         switch (aux->a_type) {
             case AT_SYSINFO_EHDR: {
                 vdso = new char[getpagesize()];
@@ -138,7 +138,7 @@ Process::processAUXV(const void *datap, size_t len)
                         break;
                     os << c;
                 }
-                std::cerr << "filename: " << os.str() << "\n";
+                std::clog << "filename: " << os.str() << "\n";
                 break;
         }
     }
@@ -216,9 +216,9 @@ Process::addElfObject(struct ElfObject *obj, Elf_Addr load)
     objectList.push_back(obj);
     obj->dwarf = new DwarfInfo(obj);
 
-    std::cerr << "object " << obj->io.describe() << " loaded at address " << std::hex << obj->load << ", base=" << obj->base;
+    std::clog << "object " << obj->io.describe() << " loaded at address " << std::hex << obj->load << ", base=" << obj->base;
     auto di = obj->dwarf;
-    std::cerr << ", unwind info:  " << (di->ehFrame ? di->debugFrame ? "BOTH" : "EH" : di->debugFrame ? "DEBUG" : "NONE") << "\n";
+    std::clog << ", unwind info:  " << (di->ehFrame ? di->debugFrame ? "BOTH" : "EH" : di->debugFrame ? "DEBUG" : "NONE") << "\n";
 
 }
 /*

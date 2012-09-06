@@ -87,11 +87,11 @@ LiveProcess::stop(lwpid_t pid)
         pid_t waitedpid = waitpid(pid, &status, pid == this->pid ? 0 : __WCLONE);
         if (waitedpid != -1) {
             tcb.state = stopped;
-            std::clog << "success" << std::endl;
+            std::clog << "success\n";
             return;
         }
-        std::clog << "wait failed: " << strerror(errno) << std::endl;
+        std::clog << "wait failed: " << strerror(errno) << "\n";
         return;
     }
-    std::clog << "ptrace failed: " << strerror(errno) << std::endl;
+    std::clog << "ptrace failed: " << strerror(errno) << "\n";
 }
