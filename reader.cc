@@ -19,7 +19,7 @@ MemReader::MemReader(char *data_, size_t len_)
 size_t
 MemReader::read(off_t off, size_t count, char *ptr) const
 {
-    size_t rc = std::min(count, len - off);
+    size_t rc = std::min(count, len - size_t(off));
     memcpy(ptr, data + off, rc);
     return rc;
 }
@@ -105,7 +105,7 @@ CacheReader::read(off_t absoff, size_t count, char *ptr) const
     for (;;) {
         if (count == 0)
             break;
-        off_t offsetOfDataInPage = absoff % PAGESIZE;
+        size_t offsetOfDataInPage = absoff % PAGESIZE;
         off_t offsetOfPageInFile = absoff - offsetOfDataInPage;
         Page *page = getPage(offsetOfPageInFile);
         if (page == 0)

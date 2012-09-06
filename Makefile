@@ -1,6 +1,12 @@
-# $FreeBSD$
-
 ELF_BITS ?= 64
+ARCH ?= $(shell uname -m)
+ifeq ("$(ARCH)","x86_64")
+ifeq ("$(ELF_BITS)","32")
+COMPILEFLAGS += -m32
+LDFLAGS += -m32
+endif
+endif
+
 
 PROG=pstack
 OBJS += elf.o dwarf.o pstack.o proc_service.o process.o dead.o live.o dump.o reader.o
