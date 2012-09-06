@@ -1,4 +1,5 @@
 #include "procinfo.h"
+#include <err.h>
 
 #include <iostream>
 #include <limits.h>
@@ -26,13 +27,12 @@ LiveProcess::load()
 }
 
 
-LiveReader::LiveReader(pid_t pid)
+std::string
+LiveReader::memname(pid_t pid)
 {
-    char buf[PATH_MAX];
-    snprintf(buf, sizeof buf, "/proc/%d/mem", pid);
-    mem = fopen(buf, "r");
-    if (mem == 0)
-        throw 999;
+    std::ostringstream ss;
+    ss << "/proc/" << pid << "/mem";
+    return ss.str();
 }
 
 LiveProcess::LiveProcess(Reader &ex, pid_t pid_)
@@ -40,15 +40,6 @@ LiveProcess::LiveProcess(Reader &ex, pid_t pid_)
     , pid(pid_)
     , liveIO(pid_)
 {
-}
-
-void
-LiveReader::read(off_t remoteAddr, size_t size, char *ptr) const
-{
-    if (fseek(mem, remoteAddr, SEEK_SET) == -1)
-        throw 999;
-    if (fread(ptr, size, 1, mem) != 1)
-        throw 999;
 }
 
 bool

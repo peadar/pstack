@@ -85,7 +85,7 @@ delall(T &container)
         delete i;
 }
 
-Reader &
+const Reader &
 Process::io() const
 {
     return procio;

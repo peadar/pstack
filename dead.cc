@@ -35,7 +35,7 @@ std::string CoreReader::describe() const
     return os.str();
 }
 
-void
+size_t
 CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 {
     size_t readLen = 0;
@@ -45,7 +45,7 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 
         // Check the corefile first.
         auto hdr = obj->findHeaderForAddress(remoteAddr);
-        if (hdr == 0)
+        if (hdr == 0) {
             // Not in the corefile - but loaded libs may contain unmodified data
             // not copied into the core - check through those.
             for (auto o : p->objectList) {
@@ -55,14 +55,18 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
                     break;
                 }
             }
+        }
         if (hdr == 0)
             throw 999;
         Elf_Addr addr = obj->addrProc2Obj(remoteAddr);
         Elf_Off fragSize = std::min(Elf_Off(hdr->p_vaddr + hdr->p_memsz - remoteAddr), Elf_Off(size));
-        obj->io.readObj(hdr->p_offset + addr - hdr->p_vaddr, ptr, fragSize);
-        size -= fragSize;
-        readLen += fragSize;
+        size_t rv = obj->io.read(hdr->p_offset + addr - hdr->p_vaddr, fragSize, ptr);
+        if (rv == 0)
+            break;
+        size -= rv;
+        readLen += rv;
     }
+    return readLen;
 }
 
 CoreReader::CoreReader(CoreProcess *p_) : p(p_) { }

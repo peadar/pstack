@@ -110,7 +110,7 @@ enum NoteIter {
 struct ElfObject {
     Elf_Addr base; /* For loaded objects */
     Elf_Addr load;
-    Reader &io;
+    CacheReader io;
     size_t fileSize;
     Elf_Ehdr elfHeader;
     std::vector<Elf_Phdr *> programHeaders;

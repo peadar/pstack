@@ -1,54 +1,57 @@
 #include <string.h>
+#include <list>
+#include <string>
 #include <stdio.h>
 
 class Reader {
-protected:
-    virtual void read(off_t off, size_t count, char *ptr) const = 0;
 public:
     template <typename Obj> void
     readObj(off_t offset, Obj *object, size_t count = 1) const {
-        if (count != 0)
-            read(offset, count * sizeof *object, (char *)object);
-    }
-    virtual std::string describe() const = 0;
-
-    std::string
-    readString(off_t offset) const
-    {
-        char c;
-        std::string res;
-        for (;;) {
-            readObj(offset++, &c);
-            if (c == 0)
-                break;
-            res += c;
+        if (count != 0) {
+            size_t rc = read(offset, count * sizeof *object, (char *)object);
+            if (rc != count * sizeof *object)
+                throw 999;
         }
-        return res;
     }
+    virtual size_t read(off_t off, size_t count, char *ptr) const = 0;
+    virtual std::string describe() const = 0;
+    std::string readString(off_t offset) const;
 };
 
 class FileReader : public Reader {
     std::string name;
-    FILE *file;
+    int file;
 public:
-    virtual void read(off_t off, size_t count, char *ptr) const {
-        if (fseek(file, off, SEEK_SET) != 0)
-            throw 999;
-        if (fread(ptr, count, 1, file) != 1)
-            throw 999;
-    }
-    FileReader(std::string name, FILE * = 0);
+    virtual size_t read(off_t off, size_t count, char *ptr) const;
+    FileReader(std::string name, int fd = -1);
     std::string describe() const { return name; }
+};
+
+class CacheReader : public Reader {
+    Reader &upstream;
+    static const size_t PAGESIZE = 4096;
+    static const size_t MAXPAGES = 64;
+    struct Page {
+        off_t offset;
+        size_t len;
+        char data[PAGESIZE];
+        Page(Reader &r, off_t offset);
+    };
+    mutable std::list<Page *> pages;
+    size_t pagecount;
+    Page *getPage(off_t offset) const;
+public:
+    virtual size_t read(off_t off, size_t count, char *ptr) const;
+    virtual std::string describe() const { return upstream.describe(); }
+    CacheReader(Reader &upstream);
+    ~CacheReader();
 };
 
 class MemReader : public Reader {
     char *data;
     size_t len;
 public:
-    virtual void read(off_t off, size_t count, char *ptr) const
-        { memcpy(ptr, data + off, count); }
-    MemReader(char *data_, size_t len_)
-        : data(data_), len(len_)
-        {}
-    std::string describe() const { return "from memory image"; }
+    virtual size_t read(off_t off, size_t count, char *ptr) const;
+    MemReader(char *, size_t);
+    std::string describe() const;
 };

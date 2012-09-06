@@ -16,15 +16,6 @@ ElfObject::findHeaderForAddress(Elf_Addr pa) const
     return 0;
 }
 
-
-FileReader::FileReader(std::string name_, FILE *file_)
-    : name(name_)
-    , file(file_)
-{
-    if (file == 0 && (file = fopen(name.c_str(), "r")) == 0)
-        throw 999;
-}
-
 ElfObject::ElfObject(Reader &io_)
     : io(io_)
     , mem(&firstChunk)

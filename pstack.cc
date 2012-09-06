@@ -49,7 +49,7 @@ main(int argc, char **argv)
         case 'D':
         case 'd': {
             /* Undocumented option to dump image contents */
-            FileReader r(optarg);
+            FileReader r(optarg, -1);
             ElfObject dumpobj(r);
             if (c == 'D')
                 dumpobj.dwarf = new DwarfInfo(&dumpobj);
@@ -75,7 +75,7 @@ main(int argc, char **argv)
 
     for (error = 0, i = optind; i < argc; i++) {
         pid = atoi(argv[i]);
-        FileReader execData(execFile);
+        FileReader execData(execFile, -1);
         if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
             FileReader coreFile(argv[i]);
             CoreProcess proc(execData, coreFile);

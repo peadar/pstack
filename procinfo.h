@@ -26,7 +26,7 @@ class Process : public ps_prochandle {
     Elf_Addr findRDebugAddr();
     void loadSharedObjects();
     char *vdso;
-    Reader &procio;
+    CacheReader procio;
 protected:
     td_thragent_t *agent;
     ElfObject *execImage;
@@ -34,7 +34,7 @@ protected:
     std::list<Reader *> readers; // readers allocated for objects.
     void processAUXV(const void *data, size_t len);
 public:
-    Reader &io() const;
+    const Reader &io() const;
     std::list<ElfObject *> objectList;
     virtual void load(); // loads shared objects, gets stack traces.
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const = 0;
@@ -70,18 +70,16 @@ struct ThreadInfo {
     ThreadInfo() : state(running) {}
 };
 
-class LiveReader : public Reader {
+class LiveReader : public FileReader {
     pid_t pid;
-    FILE *mem;
-protected:
-    virtual void read(off_t offset, size_t count, char *ptr) const;
+    static std::string memname(pid_t);
 public:
     virtual std::string describe() const {
         std::ostringstream os;
         os << "process pid " << pid;
         return os.str();
     }
-    LiveReader(pid_t pid);
+    LiveReader(pid_t pid) : FileReader(memname(pid)) {}
 };
 
 class LiveProcess : public Process {
@@ -104,7 +102,7 @@ class CoreProcess;
 class CoreReader : public Reader {
     CoreProcess *p;
 protected:
-    virtual void read(off_t offset, size_t count, char *ptr) const;
+    virtual size_t read(off_t offset, size_t count, char *ptr) const;
 public:
     CoreReader (CoreProcess *p);
     std::string describe() const;
