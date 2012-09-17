@@ -1,4 +1,4 @@
-ELF_BITS ?= 32
+ELF_BITS ?= 64
 ARCH ?= $(shell uname -m)
 ifeq ("$(ARCH)","x86_64")
 ifeq ("$(ELF_BITS)","32")

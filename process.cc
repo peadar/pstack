@@ -215,9 +215,6 @@ Process::addElfObject(struct ElfObject *obj, Elf_Addr load)
     obj->load = load;
     obj->base = (Elf_Addr)0;
 
-    for (auto hdr : obj->programHeaders)
-        if (hdr->p_type == PT_LOAD && (Elf_Off)hdr->p_vaddr <= obj->base)
-            obj->base = hdr->p_vaddr;
     objectList.push_back(obj);
     obj->dwarf = new DwarfInfo(obj);
 
@@ -256,8 +253,10 @@ Process::loadSharedObjects()
         io().readObj(mapAddr, &map);
 
         /* Read the path to the file */
-        if (map.l_name == 0)
+        if (map.l_name == 0) {
+            std::clog << "no name for object loaded at " << std::hex << map.l_addr << "\n";
             continue;
+        }
         path[0] = '?';
         path[1] = '\0';
         try {
