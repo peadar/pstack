@@ -1,4 +1,4 @@
-ELF_BITS ?= 64
+ELF_BITS ?= 32
 ARCH ?= $(shell uname -m)
 ifeq ("$(ARCH)","x86_64")
 ifeq ("$(ELF_BITS)","32")
@@ -40,6 +40,9 @@ n: n.o
 
 n.o: t.cc
 	$(CXX) -c $(CXXFLAGS) -DNOTHREADS -o $@ t.cc
+
+q: q.o elf.o reader.o
+	$(CXX) $(LDFLAGS) -o $@ q.o elf.o reader.o
 
 
 clean:

@@ -57,7 +57,7 @@ ps_pread(struct ps_prochandle *ph, psaddr_t addr, void *buf, size_t len)
 {
     const Process *p = static_cast<const Process *>(ph);
     try {
-        p->io().readObj((intptr_t)addr, (char *)buf, len);
+        p->io().readObj(Elf_Off(addr), (char *)buf, len);
         return PS_OK;
     } 
     catch (...) {
@@ -90,7 +90,7 @@ ps_err_e
 ps_pdread(struct ps_prochandle *p, psaddr_t addr, void *d, size_t l)
 {
     try {
-        static_cast<Process *>(p)->io().readObj((intptr_t)addr, (char *)d, l);
+        static_cast<Process *>(p)->io().readObj(Elf_Off(addr), (char *)d, l);
         return PS_OK;
     }
     catch (...) {

@@ -18,24 +18,16 @@ ElfObject::findHeaderForAddress(Elf_Addr pa) const
 
 ElfObject::ElfObject(Reader &io_)
     : io(io_)
-    , mem(&firstChunk)
 {
-    Elf_Ehdr *eHdr;
-
     int i;
     size_t off;
-
-    firstChunk.size = MEMBUF;
-    firstChunk.used = 0;
     io.readObj(0, &elfHeader);
 
     /* Validate the ELF header */
     if (!IS_ELF(elfHeader) || elfHeader.e_ident[EI_VERSION] != EV_CURRENT)
         throw "not an ELF image";
 
-    eHdr = &elfHeader;
-
-    for (off = eHdr->e_phoff, i = 0; i < eHdr->e_phnum; i++) {
+    for (off = elfHeader.e_phoff, i = 0; i < elfHeader.e_phnum; i++) {
         Elf_Phdr *phdr = new Elf_Phdr();
         io.readObj(off, phdr);
 
@@ -48,18 +40,18 @@ ElfObject::ElfObject(Reader &io_)
                 break;
         }
         programHeaders.push_back(phdr);
-        off += eHdr->e_phentsize;
+        off += elfHeader.e_phentsize;
     }
 
-    for (off = eHdr->e_shoff, i = 0; i < eHdr->e_shnum; i++) {
+    for (off = elfHeader.e_shoff, i = 0; i < elfHeader.e_shnum; i++) {
         Elf_Shdr *shdr = new Elf_Shdr();
         io.readObj(off, shdr);
         sectionHeaders.push_back(shdr);
-        off += eHdr->e_shentsize;
+        off += elfHeader.e_shentsize;
     }
 
-    if (eHdr->e_shstrndx != SHN_UNDEF) {
-        Elf_Shdr *sshdr = sectionHeaders[eHdr->e_shstrndx];
+    if (elfHeader.e_shstrndx != SHN_UNDEF) {
+        Elf_Shdr *sshdr = sectionHeaders[elfHeader.e_shstrndx];
         sectionStrings = sshdr->sh_offset;
     } else {
         sectionStrings = 0;
@@ -299,11 +291,6 @@ ElfObject::getABIPrefix()
 
 ElfObject::~ElfObject()
 {
-    struct ElfMemChunk *next, *chunk;
-    for (chunk = mem; chunk != &firstChunk; chunk = next) {
-        next = chunk->next;
-        free(chunk);
-    }
 }
 
 /*
@@ -320,42 +307,4 @@ elf_hash(std::string name)
         h &= ~g;
     }
     return (h);
-}
-
-void *
-elfAlloc(struct ElfObject *obj, size_t size)
-{
-
-    size = (size + ELF_WORDSIZE - 1);
-    size -= size % ELF_WORDSIZE;
-    char *p;
-    size_t chunksize;
-    struct ElfMemChunk *chunk;
-    for (chunk = obj->mem; chunk; chunk = chunk->next) {
-        if (chunk->size - chunk->used >= size) {
-            p = chunk->data + chunk->used;
-            chunk->used += size;
-            return p;
-        }
-    }
-    /* No memory in any existing chunk, create a new one. */
-    if (size > MEMBUF / 2) {
-        chunksize = MEMBUF / 2 + size;
-    } else {
-        chunksize = MEMBUF;
-    }
-    chunk = (ElfMemChunk *)malloc(sizeof *chunk + chunksize - sizeof chunk->data);
-    chunk->next = obj->mem;
-    chunk->size = chunksize;
-    chunk->used = size;
-    obj->mem = chunk;
-    return chunk->data;
-}
-
-char *
-elfStrdup(struct ElfObject *elf, const char *old)
-{
-    char *newstr = (char *)elfAlloc(elf, strlen(old) + 1);
-    strcpy(newstr, old);
-    return newstr;
 }

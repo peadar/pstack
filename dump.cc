@@ -392,8 +392,10 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
             }
             break;
         }
+         os << " }";
         return NOTE_CONTIN;
     });
+    os << "]";
 
     if (obj.dwarf)
         os << ", \"dwarf\": " << *obj.dwarf;
@@ -424,10 +426,11 @@ std::ostream &
 operator <<(std::ostream &os, const Elf_auxv_t &a)
 {
     os
-        << "{ \"a_type\": " << a.a_type;
+        << "{ \"a_type\": ";
     switch (a.a_type) {
-#define AUX_TYPE(name, value) case value: os << #name; break;
+#define AUX_TYPE(name, value) case value: os << "\"" << #name << "\""; break;
 #include "elf/aux.h"
+    default: os << a.a_type; break;
 #undef AUX_TYPE
     }
     return os
@@ -451,7 +454,7 @@ operator <<(std::ostream &os, const prstatus_t &prstat)
         << ", \"pr_stime\": " << prstat.pr_stime
         << ", \"pr_cutime\": " << prstat.pr_cutime
         << ", \"pr_cstime\": " << prstat.pr_cstime
-        << ", \"pr_reg\": " << prstat.pr_reg
+        << ", \"pr_reg\": " << intptr_t(prstat.pr_reg)
         << ", \"pr_fpvalid\": " << prstat.pr_fpvalid
         << "}";
 }

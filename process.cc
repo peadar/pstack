@@ -120,6 +120,10 @@ Process::processAUXV(const void *datap, size_t len)
         Elf_Addr hdr = aux->a_un.a_val;
         std::clog << "auxv: " << auxv_name(aux->a_type) << "= " << (void *)hdr << "\n";
         switch (aux->a_type) {
+            case AT_SYSINFO: {
+                sysent = aux->a_un.a_val;
+                break;
+            }
             case AT_SYSINFO_EHDR: {
                 vdso = new char[getpagesize()];
                 io().readObj(hdr, vdso, getpagesize());
@@ -147,11 +151,6 @@ Process::processAUXV(const void *datap, size_t len)
 std::ostream &
 Process::dumpStack(std::ostream &os, const ThreadStack &thread)
 {
-    struct ElfObject *obj;
-    int lineNo;
-    Elf_Sym sym;
-    std::string fileName;
-    std::string symName;
 
 
     os << "{ \"ti_tid\": " << thread.info.ti_tid
@@ -160,15 +159,21 @@ Process::dumpStack(std::ostream &os, const ThreadStack &thread)
 
     const char *frameSep = "";
     for (auto frame : thread.stack) {
-        Elf_Addr objIp;
-        obj = findObject(frame->ip);
-
-        if (obj != 0) {
-            fileName = obj->io.describe();
-            obj->findSymbolByAddress(obj->addrProc2Obj(frame->ip), STT_FUNC, sym, symName);
-            objIp = obj->addrProc2Obj(frame->ip);
+        Elf_Addr objIp = 0;
+        struct ElfObject *obj = 0;
+        int lineNo;
+        Elf_Sym sym;
+        std::string fileName;
+        std::string symName;
+        if (frame->ip == sysent) {
+            symName = "(syscall)";
         } else {
-            objIp = 0;
+            obj = findObject(frame->ip);
+            if (obj != 0) {
+                fileName = obj->io.describe();
+                obj->findSymbolByAddress(obj->addrProc2Obj(frame->ip), STT_FUNC, sym, symName);
+                objIp = obj->addrProc2Obj(frame->ip);
+            }
         }
 
         os
@@ -256,7 +261,7 @@ Process::loadSharedObjects()
         path[0] = '?';
         path[1] = '\0';
         try {
-            io().readObj((off_t)map.l_name, path, maxpath);
+            io().readObj(Elf_Off(map.l_name), path, maxpath);
             if (abiPrefix != "" && access(prefixedPath, R_OK) == 0)
                 path = prefixedPath;
             FileReader *f = new FileReader(path);
@@ -417,7 +422,7 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
             try {
                 for (int i = 0; i < gFrameArgs; i++) {
                     Elf_Word arg;
-                    p.io().readObj(REG(regs, bp) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word), &arg);
+                    p.io().readObj(Elf_Addr(REG(regs, bp)) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word), &arg);
                     frame->args.push_back(arg);
                 }
             }
@@ -427,13 +432,14 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
             frame->unwindBy = "END  ";
             /* Read the next frame */
             try {
-                p.io().readObj(REG(regs, bp) + sizeof(REG(regs, bp)), &ip);
+                // Call site's instruction pointer is just above the frame pointer
+                p.io().readObj(Elf_Addr(REG(regs, bp)) + sizeof(REG(regs, bp)), &ip);
                 REG(regs, ip) = ip;
                 if (ip == 0) // XXX: if no return instruction, break out.
                         break;
                 // Read new frame pointer from stack.
-                p.io().readObj(REG(regs, bp), &REG(regs, bp));
-                if ((uintmax_t)REG(regs, bp) <= frame->bp)
+                p.io().readObj(Elf_Addr(REG(regs, bp)), &REG(regs, bp));
+                if (Elf_Addr(REG(regs, bp)) <= frame->bp)
                     break;
             }
             catch (...) {

@@ -27,6 +27,7 @@ class Process : public ps_prochandle {
     void loadSharedObjects();
     char *vdso;
     CacheReader procio;
+    Elf_Addr sysent; // for AT_SYSINFO
 protected:
     td_thragent_t *agent;
     ElfObject *execImage;
