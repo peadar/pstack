@@ -1,3 +1,4 @@
+#include <limits>
 #include "dwarf.h"
 
 static uint32_t elf_hash(std::string);
@@ -27,16 +28,21 @@ ElfObject::ElfObject(Reader &io_)
     if (!IS_ELF(elfHeader) || elfHeader.e_ident[EI_VERSION] != EV_CURRENT)
         throw "not an ELF image";
 
+    base = std::numeric_limits<Elf_Off>::max();
     for (off = elfHeader.e_phoff, i = 0; i < elfHeader.e_phnum; i++) {
         Elf_Phdr *phdr = new Elf_Phdr();
         io.readObj(off, phdr);
 
         switch (phdr->p_type) {
-        case PT_INTERP:
+            case PT_INTERP:
                 interpreterName = io.readString(phdr->p_offset);
                 break;
-        case PT_DYNAMIC:
+            case PT_DYNAMIC:
                 dynamic = phdr;
+                break;
+            case PT_LOAD:
+                if (Elf_Off(phdr->p_vaddr) <= base)
+                    base = Elf_Off(phdr->p_vaddr);
                 break;
         }
         programHeaders.push_back(phdr);

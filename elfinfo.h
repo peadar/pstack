@@ -101,8 +101,8 @@ enum NoteIter {
 };
 
 struct ElfObject {
-    Elf_Addr base; /* For loaded objects */
-    Elf_Addr load;
+    Elf_Off base; /* For loaded objects */
+    Elf_Off load;
     CacheReader io;
     size_t fileSize;
     Elf_Ehdr elfHeader;

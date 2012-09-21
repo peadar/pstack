@@ -1,4 +1,5 @@
 #include <set>
+#include <limits>
 #include <limits.h>
 #include <iostream>
 #include <link.h>
@@ -213,7 +214,6 @@ void
 Process::addElfObject(struct ElfObject *obj, Elf_Addr load)
 {
     obj->load = load;
-    obj->base = (Elf_Addr)0;
 
     objectList.push_back(obj);
     obj->dwarf = new DwarfInfo(obj);
@@ -269,7 +269,7 @@ Process::loadSharedObjects()
             addElfObject(new ElfObject(*f), lAddr);
         }
         catch (...) {
-            std::clog << "warning: can't load text for " << path << " at " << (void *)mapAddr << "/" << (void *)mapAddr << "\n";
+            std::clog << "warning: can't load text for " << path << " at " << (void *)mapAddr << "/" << (void *)map.l_addr << "\n";
             continue;
         }
 
