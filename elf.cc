@@ -18,6 +18,7 @@ ElfObject::findHeaderForAddress(Elf_Off a) const
 
 ElfObject::ElfObject(Reader &io_)
     : io(io_)
+    , dynamic(0)
 {
     int i;
     size_t off;
