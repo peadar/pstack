@@ -27,7 +27,7 @@ DWARFReader::getuint(int len)
     int i;
     uint8_t bytes[16];
     if (len > 16)
-        throw 999;
+        throw Exception() << "can't deal with ints of size " << len;
     io.readObj(off, bytes, len);
     off += len;
     uint8_t *p = bytes + len;
@@ -43,7 +43,7 @@ DWARFReader::getint(int len)
     int i;
     uint8_t bytes[16];
     if (len > 16)
-        throw 999;
+        throw Exception() << "can't deal with ints of size " << len;
     io.readObj(off, bytes, len);
     off += len;
     uint8_t *p = bytes + len;
@@ -1082,17 +1082,9 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr addr)
     int i;
     DwarfRegisters newRegs;
     DwarfRegisterUnwind *unwind;
+    std::pair<Elf_Off, ElfObject *> o = p.findObject(addr);
 
-    ElfObject *obj = p.findObject(addr);
-    if (obj == 0)
-        return 0;
-
-    DwarfInfo *dwarf = obj->dwarf;
-
-    addr = obj->addrProc2Obj(addr);
-    if (addr == 0)
-        return 0;
-
+    DwarfInfo *dwarf = o.second->dwarf;
     const DwarfFDE *fde = dwarf->debugFrame ? dwarf->debugFrame->findFDE(addr) : 0;
     if (fde == 0) {
         if (dwarf->ehFrame == 0)

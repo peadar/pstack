@@ -3,6 +3,7 @@
 #include <string>
 #include <stdio.h>
 
+#include "ex.h"
 class Reader {
 public:
     template <typename Obj> void
@@ -10,7 +11,7 @@ public:
         if (count != 0) {
             size_t rc = read(offset, count * sizeof *object, (char *)object);
             if (rc != count * sizeof *object)
-                throw 999;
+                throw Exception() << "incomplete object read from " << describe();
         }
     }
     virtual size_t read(off_t off, size_t count, char *ptr) const = 0;

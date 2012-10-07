@@ -1,48 +1,18 @@
-#include <sys/param.h>
-#include <sys/wait.h>
-#include <sys/time.h>
-#include <assert.h>
-#include <stdint.h>
-#include <limits.h>
-#include <sys/ptrace.h>
-
-#include <err.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sysexits.h>
-#include <unistd.h>
 #include <iostream>
-#include <set>
-#include "dwarf.h"
-#include "dump.h"
 
-extern "C" {
-#include <thread_db.h>
-#include "proc_service.h"
-}
+#include "dwarf.h"
 #include "elfinfo.h"
 #include "procinfo.h"
-#include "dwarf.h"
 
-/*
- * Command-line flags
- */
-
-/* Prototypes */
 static int usage(void);
 
 int
-main(int argc, char **argv)
+emain(int argc, char **argv)
 {
     int error, i, c;
     pid_t pid;
     std::string execFile, coreFile;
-
 
     while ((c = getopt(argc, argv, "a:d:D:e:f:hloOv")) != -1) {
         switch (c) {
@@ -57,19 +27,17 @@ main(int argc, char **argv)
 
             return 0;
         }
-
         case 'e':
             execFile = optarg;
             break;
-
         case 'h':
             usage();
             return (0);
-
         default:
             return (usage());
         }
     }
+
     if (optind == argc)
         return (usage());
 
@@ -88,10 +56,22 @@ main(int argc, char **argv)
     return (error);
 }
 
+int
+main(int argc, char **argv)
+{
+    try {
+        emain(argc, argv);
+    }
+    catch (std::exception &ex) {
+        std::clog << "error: " << ex.what() << std::endl;
+    }
+}
+
 static int
 usage(void)
 {
-    fprintf(stderr, "usage: pstack\n\t"
+    std::clog <<
+        "usage: pstack\n\t"
         "[-hoOt] "
         "[-a arg count] "
         "[-e executable] "
@@ -99,7 +79,7 @@ usage(void)
         "[-l]"
         "pid|core ...\n"
         "\tor\n"
-        "\t<-d ELF-file> [-s snaplen]\n");
+        "\t<-d ELF-file> [-s snaplen]\n";
     return (EX_USAGE);
 }
 

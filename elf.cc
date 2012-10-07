@@ -8,11 +8,10 @@ static uint32_t elf_hash(std::string);
  */
 
 const Elf_Phdr *
-ElfObject::findHeaderForAddress(Elf_Addr pa) const
+ElfObject::findHeaderForAddress(Elf_Off a) const
 {
-    Elf_Addr va = addrProc2Obj(pa);
     for (auto hdr : programHeaders)
-        if (hdr->p_vaddr <= va && hdr->p_vaddr + hdr->p_filesz > va && hdr->p_type == PT_LOAD)
+        if (hdr->p_vaddr <= a && hdr->p_vaddr + hdr->p_filesz > a && hdr->p_type == PT_LOAD)
             return hdr;
     return 0;
 }
@@ -26,7 +25,7 @@ ElfObject::ElfObject(Reader &io_)
 
     /* Validate the ELF header */
     if (!IS_ELF(elfHeader) || elfHeader.e_ident[EI_VERSION] != EV_CURRENT)
-        throw "not an ELF image";
+        throw Exception() << io.describe() << ": content is not an ELF image";
 
     base = std::numeric_limits<Elf_Off>::max();
     for (off = elfHeader.e_phoff, i = 0; i < elfHeader.e_phnum; i++) {

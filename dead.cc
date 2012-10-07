@@ -42,25 +42,29 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
     /* Locate "remoteAddr" in the core file */
     while (size) {
         auto obj = &p->coreImage;
+        Elf_Off reloc = 0;
 
         // Check the corefile first.
         auto hdr = obj->findHeaderForAddress(remoteAddr);
+
         if (hdr == 0) {
             // Not in the corefile - but loaded libs may contain unmodified data
             // not copied into the core - check through those.
-            for (auto o : p->objectList) {
-                hdr = o->findHeaderForAddress(remoteAddr);
+            for (auto &i : p->objects) {
+                reloc = i.first;
+                hdr = i.second->findHeaderForAddress(remoteAddr - reloc);
                 if (hdr) {
-                    obj = o;
+                    obj = i.second;
                     break;
                 }
             }
+            if (hdr == 0)
+                throw Exception() << "no mapping for address " << std::hex <<
+                remoteAddr << " after " << readLen;
         }
-        if (hdr == 0)
-            throw 999;
-        Elf_Addr addr = obj->addrProc2Obj(remoteAddr);
-        Elf_Off fragSize = std::min(Elf_Off(hdr->p_vaddr + hdr->p_memsz - remoteAddr), Elf_Off(size));
-        size_t rv = obj->io.read(hdr->p_offset + addr - hdr->p_vaddr, fragSize, ptr);
+        Elf_Addr objAddr = remoteAddr - reloc;
+        Elf_Off fragSize = std::min(Elf_Off(hdr->p_vaddr + hdr->p_memsz - objAddr), Elf_Off(size));
+        size_t rv = obj->io.read(hdr->p_offset + objAddr - hdr->p_vaddr, fragSize, ptr);
         if (rv == 0)
             break;
         size -= rv;

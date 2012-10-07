@@ -8,7 +8,7 @@ FileReader::FileReader(std::string name_, int file_)
     , file(file_)
 {
     if (file == -1 && (file = open(name.c_str(), O_RDONLY)) == -1)
-        throw 999;
+        throw Exception() << "cannot open file " << name;
 }
 
 MemReader::MemReader(char *data_, size_t len_)
@@ -47,10 +47,10 @@ size_t
 FileReader::read(off_t off, size_t count, char *ptr) const
 {
     if (lseek(file, off, SEEK_SET) == -1)
-        throw 999;
+        throw Exception() << "seek to " << off << " on " << describe() << "failed";
     ssize_t rc = ::read(file, ptr, count);
     if (rc == -1)
-        throw 999;
+        throw Exception() << "read " << count << " on " << describe() << "failed";
     return rc;
 }
 
@@ -59,8 +59,6 @@ CacheReader::Page::Page(Reader &r, off_t offset_)
     , len(r.read(offset_, PAGESIZE, data))
 {
     assert(offset_ % PAGESIZE == 0);
-    if (len == 0)
-        throw 999;
 }
 
 CacheReader::CacheReader(Reader &upstream_)

@@ -36,11 +36,11 @@ protected:
     void processAUXV(const void *data, size_t len);
 public:
     const Reader &io() const;
-    std::list<ElfObject *> objectList;
+    std::map<Elf_Addr, ElfObject *> objects; // key=load address.
     virtual void load(); // loads shared objects, gets stack traces.
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const = 0;
     void addElfObject(struct ElfObject *obj, Elf_Addr load);
-    ElfObject *findObject(Elf_Addr addr) const;
+    std::pair<Elf_Off, ElfObject *> findObject(Elf_Addr addr) const;
     Process(Reader &ex, Reader &mem);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;

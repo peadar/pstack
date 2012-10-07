@@ -15,12 +15,12 @@ LiveProcess::load()
     snprintf(path, sizeof path, "/proc/%d/auxv", pid);
     int fd = open(path, O_RDONLY);
     if (fd == -1)
-        throw 999;
+        throw Exception() << "failed to open " << path;
     char buf[4096];
     ssize_t rc = ::read(fd, buf, sizeof buf);
     close(fd);
     if (rc == -1)
-        throw 999;
+        throw Exception() << "failed to read 4k from " << path;
     processAUXV(buf, rc);
 #endif
     Process::load();

@@ -155,7 +155,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_ref8: os << "\"@" << value.ref8 << "\""; break;
     case DW_FORM_block1: case DW_FORM_block2: case DW_FORM_block4: case DW_FORM_block: os << value.block; break;
     case DW_FORM_flag: os << (value.flag ? "true" : "false"); break;
-    default: throw type->form;
+    default: throw Exception() << "unknown DWARF attribute " << type->form;
     }
     return os;
 }
@@ -275,7 +275,7 @@ dwarfDumpCFAInsn(std::ostream &os, DWARFReader &r)
             case 0x2e: os << "\"DW_CFA_GNU_args_size\"" << ", \"offset\":" << r.getuleb128(); break;
             case 0x2d: os << "\"DW_CFA_GNU_window_size\""; break;
             case 0x2f: os << "\"DW_CFA_GNU_negative_offset_extended\""; break;
-            default: throw "unknown CFA op";
+            default: throw Exception() << "unknown CFA op " << std::hex << op;
             break;
         }
     }

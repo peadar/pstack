@@ -101,8 +101,7 @@ enum NoteIter {
 };
 
 struct ElfObject {
-    Elf_Off base; /* For loaded objects */
-    Elf_Off load;
+    Elf_Off base; /* Lowest address of a PT_LOAD section */
     CacheReader io;
     size_t fileSize;
     Elf_Ehdr elfHeader;
@@ -122,8 +121,6 @@ public:
     std::string getABIPrefix();
     ElfObject(Reader &);
     ~ElfObject();
-    inline Elf_Addr addrProc2Obj(Elf_Addr va) const { return va - load + base; }
-    inline Elf_Addr addrObj2Proc(Elf_Addr va) const { return va - base + load; }
     Elf_Shdr *getSection(size_t idx) const {
         if (idx >= sectionHeaders.size())
             throw 999;
@@ -131,7 +128,7 @@ public:
     }
     template <typename Callable> void getNotes(const Callable &callback) const;
     std::string getImageFromCore();
-    const Elf_Phdr *findHeaderForAddress(Elf_Addr pa) const;
+    const Elf_Phdr *findHeaderForAddress(Elf_Off) const;
 };
 
 // Helpful for iterating over symbol sections.

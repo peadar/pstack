@@ -97,8 +97,6 @@ Process::Process(Reader &exeData, Reader &procio_)
     , execImage(new ElfObject(exeData))
 {
     abiPrefix = execImage->getABIPrefix();
-    addElfObject(execImage, 0);
-    execImage->load = execImage->base; // An executable is loaded at its own base address
 }
 
 void
@@ -169,11 +167,12 @@ Process::dumpStack(std::ostream &os, const ThreadStack &thread)
         if (frame->ip == sysent) {
             symName = "(syscall)";
         } else {
-            obj = findObject(frame->ip);
-            if (obj != 0) {
-                fileName = obj->io.describe();
-                obj->findSymbolByAddress(obj->addrProc2Obj(frame->ip), STT_FUNC, sym, symName);
-                objIp = obj->addrProc2Obj(frame->ip);
+            try {
+                std::pair<Elf_Off, ElfObject *> i = findObject(frame->ip);
+                fileName = i.second->io.describe();
+                obj->findSymbolByAddress(frame->ip, STT_FUNC, sym, symName); // XXX reloc
+                //XXX: set objip
+            } catch (...) {
             }
         }
 
@@ -213,16 +212,17 @@ Process::dumpStack(std::ostream &os, const ThreadStack &thread)
 void
 Process::addElfObject(struct ElfObject *obj, Elf_Addr load)
 {
-    obj->load = load;
-
-    objectList.push_back(obj);
+    objects[load] = obj;
     obj->dwarf = new DwarfInfo(obj);
 
-    std::clog << "object " << obj->io.describe() << " loaded at address " << std::hex << obj->load << ", base=" << obj->base;
+    std::clog
+        << "object " << obj->io.describe()
+        << " loaded at address " << std::hex << load
+        << ", base=" << obj->base;
     auto di = obj->dwarf;
     std::clog << ", unwind info:  " << (di->ehFrame ? di->debugFrame ? "BOTH" : "EH" : di->debugFrame ? "DEBUG" : "NONE") << "\n";
-
 }
+
 /*
  * Grovel through the rtld's internals to find any shared libraries.
  */
@@ -252,6 +252,11 @@ Process::loadSharedObjects()
     for (Elf_Addr mapAddr = (Elf_Addr)rDebug.r_map; mapAddr; mapAddr = (Elf_Addr)map.l_next) {
         io().readObj(mapAddr, &map);
 
+        // first one's the executable itself.
+        if (mapAddr == Elf_Addr(rDebug.r_map)) {
+            addElfObject(execImage, Elf_Addr(map.l_addr));
+            continue;
+        }
         /* Read the path to the file */
         if (map.l_name == 0) {
             std::clog << "no name for object loaded at " << std::hex << map.l_addr << "\n";
@@ -265,11 +270,11 @@ Process::loadSharedObjects()
                 path = prefixedPath;
             FileReader *f = new FileReader(path);
             readers.push_back(f);
-            Elf_Addr lAddr = (Elf_Addr)map.l_addr;
-            addElfObject(new ElfObject(*f), lAddr);
+            addElfObject(new ElfObject(*f), Elf_Addr(map.l_addr));
         }
-        catch (...) {
-            std::clog << "warning: can't load text for " << path << " at " << (void *)mapAddr << "/" << (void *)map.l_addr << "\n";
+        catch (const std::exception &e) {
+            std::clog << "warning: can't load text for " << path << " at " <<
+            (void *)mapAddr << "/" << (void *)map.l_addr << ": " << e.what() << "\n";
             continue;
         }
 
@@ -295,22 +300,21 @@ Process::findRDebugAddr()
 }
 
 
-ElfObject *
+std::pair<Elf_Off, ElfObject *>
 Process::findObject(Elf_Addr addr) const
 {
-    for (auto obj : objectList) {
-        Elf_Addr va = obj->addrProc2Obj(addr);
-        for (auto phdr : obj->programHeaders)
-            if (va >= phdr->p_vaddr && va < phdr->p_vaddr + phdr->p_memsz)
-                return obj;
-    }
-    return 0;
+    for (auto &i : objects)
+        for (auto phdr : i.second->programHeaders)
+            if (addr >= phdr->p_vaddr && addr < phdr->p_vaddr + phdr->p_memsz)
+                return i;
+    throw Exception() << "no loaded object at address 0x" << std::hex << addr;
 }
 
 Elf_Addr
 Process::findNamedSymbol(const char *objectName, const char *symbolName) const
 {
-    for (auto obj : objectList) {
+    for (auto &i : objects) {
+        ElfObject *obj = i.second;
         if (objectName != 0) {
             auto objname = obj->io.describe();
             auto p = objname.rfind('/');
@@ -321,11 +325,15 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
         }
         Elf_Sym sym;
         if (obj->findSymbolByName(symbolName, sym))
-            return obj->addrObj2Proc(sym.st_value);
+            return sym.st_value; // XXX: convert to process-relative
         if (objectName)
-            throw 999;
+            break;
     }
-    throw 999;
+    Exception e;
+    e << "symbol " << symbolName << " not found";
+    if (objectName)
+        e << " in " << objectName;
+    throw e;
 }
 
 std::ostream &
@@ -396,7 +404,8 @@ Process::pstack(std::ostream &os)
 
 Process::~Process()
 {
-    delall(objectList);
+    for (auto i : objects)
+        delete i.second;
     delete[] vdso;
 }
 
