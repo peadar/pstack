@@ -1077,25 +1077,26 @@ DwarfInfo::getCFA(const Process &proc, const DwarfCallFrame *frame, const DwarfR
 }
 
 Elf_Addr
-dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr addr)
+dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
 {
     int i;
     DwarfRegisters newRegs;
     DwarfRegisterUnwind *unwind;
-    std::pair<Elf_Off, ElfObject *> o = p.findObject(addr);
+    std::pair<Elf_Off, ElfObject *> o = p.findObject(procaddr);
+    Elf_Off objaddr = procaddr - o.first; // relocate process address to object address
 
     DwarfInfo *dwarf = o.second->dwarf;
-    const DwarfFDE *fde = dwarf->debugFrame ? dwarf->debugFrame->findFDE(addr) : 0;
+    const DwarfFDE *fde = dwarf->debugFrame ? dwarf->debugFrame->findFDE(objaddr) : 0;
     if (fde == 0) {
         if (dwarf->ehFrame == 0)
             return 0;
-        fde = dwarf->ehFrame->findFDE(addr);
+        fde = dwarf->ehFrame->findFDE(objaddr);
         if (fde == 0)
             return 0;
     }
 
     DWARFReader r(*dwarf, fde->instructions, fde->end - fde->instructions);
-    DwarfCallFrame frame = fde->cie->execInsns(r, fde->iloc, addr - 1);
+    DwarfCallFrame frame = fde->cie->execInsns(r, fde->iloc, objaddr - 1);
 
     // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
     uintmax_t cfa = dwarf->getCFA(p, &frame, regs);

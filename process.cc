@@ -8,6 +8,7 @@ extern "C" {
 }
 #include "procinfo.h"
 #include "dwarf.h"
+#include "dump.h"
 
 typedef struct regs ptrace_regs;
 
@@ -99,6 +100,7 @@ Process::Process(Reader &exeData, Reader &procio_)
     abiPrefix = execImage->getABIPrefix();
 }
 
+
 void
 Process::load()
 {
@@ -106,8 +108,11 @@ Process::load()
     /* Attach any dynamically-linked libraries */
     loadSharedObjects();
     the = td_ta_new(this, &agent);
-    if (the != TD_OK)
+    if (the != TD_OK) {
         agent = 0;
+        std::clog << "failed to load thread agent: " << the << std::endl;
+    }
+
 }
 
 void
@@ -163,15 +168,16 @@ Process::dumpStack(std::ostream &os, const ThreadStack &thread)
         int lineNo;
         Elf_Sym sym;
         std::string fileName;
-        std::string symName;
+        std::string symName = "unknown";
         if (frame->ip == sysent) {
             symName = "(syscall)";
         } else {
             try {
                 std::pair<Elf_Off, ElfObject *> i = findObject(frame->ip);
                 fileName = i.second->io.describe();
-                obj->findSymbolByAddress(frame->ip, STT_FUNC, sym, symName); // XXX reloc
-                //XXX: set objip
+                objIp = frame->ip - i.first;
+                obj = i.second;
+                obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
             } catch (...) {
             }
         }
@@ -229,9 +235,6 @@ Process::addElfObject(struct ElfObject *obj, Elf_Addr load)
 void
 Process::loadSharedObjects()
 {
-    int maxpath;
-    char prefixedPath[PATH_MAX + 1], *path;
-
     /* Does this process look like it has shared libraries loaded? */
     Elf_Addr r_debug_addr = findRDebugAddr();
     if (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1)
@@ -239,13 +242,6 @@ Process::loadSharedObjects()
 
     struct r_debug rDebug;
     io().readObj(r_debug_addr, &rDebug);
-    if (abiPrefix != "") {
-        path = prefixedPath + snprintf(prefixedPath, sizeof(prefixedPath), "%s", abiPrefix.c_str());
-        maxpath = PATH_MAX - strlen(abiPrefix.c_str());
-    } else {
-        path = prefixedPath;
-        maxpath = PATH_MAX;
-    }
 
     /* Iterate over the r_debug structure's entries, loading libraries */
     struct link_map map;
@@ -262,12 +258,8 @@ Process::loadSharedObjects()
             std::clog << "no name for object loaded at " << std::hex << map.l_addr << "\n";
             continue;
         }
-        path[0] = '?';
-        path[1] = '\0';
+        std::string path = io().readString(Elf_Off(map.l_name));
         try {
-            io().readObj(Elf_Off(map.l_name), path, maxpath);
-            if (abiPrefix != "" && access(prefixedPath, R_OK) == 0)
-                path = prefixedPath;
             FileReader *f = new FileReader(path);
             readers.push_back(f);
             addElfObject(new ElfObject(*f), Elf_Addr(map.l_addr));
@@ -304,9 +296,11 @@ std::pair<Elf_Off, ElfObject *>
 Process::findObject(Elf_Addr addr) const
 {
     for (auto &i : objects)
-        for (auto phdr : i.second->programHeaders)
-            if (addr >= phdr->p_vaddr && addr < phdr->p_vaddr + phdr->p_memsz)
+        for (auto phdr : i.second->programHeaders) {
+            Elf_Off reloc = addr - i.first;
+            if (reloc >= phdr->p_vaddr && reloc < phdr->p_vaddr + phdr->p_memsz)
                 return i;
+        }
     throw Exception() << "no loaded object at address 0x" << std::hex << addr;
 }
 
@@ -325,7 +319,7 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
         }
         Elf_Sym sym;
         if (obj->findSymbolByName(symbolName, sym))
-            return sym.st_value; // XXX: convert to process-relative
+            return sym.st_value + i.first;
         if (objectName)
             break;
     }

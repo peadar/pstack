@@ -30,15 +30,13 @@ CoreProcess::load()
 
 std::string CoreReader::describe() const
 {
-    std::ostringstream os;
-    os << "process loaded from core " << p->coreImage.io;
-    return os.str();
+    return p->coreImage.io.describe();
 }
 
 size_t
 CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 {
-    off_t cur = remoteAddr;
+    Elf_Off cur = remoteAddr;
     /* Locate "remoteAddr" in the core file */
     while (size) {
         auto obj = &p->coreImage;
@@ -47,7 +45,7 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
         // Check the corefile first.
         auto hdr = obj->findHeaderForAddress(cur);
 
-        if (hdr == 0) {
+        if (hdr == 0 || hdr->p_filesz == 0) {
             // Not in the corefile - but loaded libs may contain unmodified data
             // not copied into the core - check through those.
             for (auto &i : p->objects) {
@@ -64,13 +62,32 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
                 break;
             }
         }
-        Elf_Addr objAddr = cur - reloc;
-        Elf_Off fragSize = std::min(Elf_Off(hdr->p_vaddr + hdr->p_memsz - objAddr), Elf_Off(size));
-        size_t rv = obj->io.read(hdr->p_offset + objAddr - hdr->p_vaddr, fragSize, ptr);
+        Elf_Off hdrOff = cur - reloc - hdr->p_vaddr; // offset in header of our ptr.
+        
+        size_t rv = 0;
+        if (hdrOff < hdr->p_filesz) {
+            // some of the data is in the file: read min of what we need and // that.
+            Elf_Off fileSize = std::min(hdr->p_filesz - hdrOff, size);
+            size_t rv = obj->io.read(hdr->p_offset + hdrOff, fileSize, ptr);
+            if (rv != fileSize)
+                throw Exception() << "unexpected short read in core file";
+            hdrOff += rv;
+            cur += rv;
+            size -= rv;
+            ptr += rv;
+        }
+        if (hdrOff < hdr->p_memsz) {
+            Elf_Off padSize = std::min(hdr->p_memsz - hdrOff, size);
+            memset(ptr, 0, padSize);
+            hdrOff += padSize;
+            cur += padSize;
+            size -= padSize;
+            rv += padSize;
+        }
+        // Copy all from hdrOff + fileszie
+        // image is not in file, but header indicates it was in process... pad with 0s
         if (rv == 0)
             break;
-        size -= rv;
-        cur += rv;
     }
     return cur - remoteAddr;
 }

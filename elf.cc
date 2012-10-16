@@ -11,7 +11,7 @@ const Elf_Phdr *
 ElfObject::findHeaderForAddress(Elf_Off a) const
 {
     for (auto hdr : programHeaders)
-        if (hdr->p_vaddr <= a && hdr->p_vaddr + hdr->p_filesz > a && hdr->p_type == PT_LOAD)
+        if (hdr->p_vaddr <= a && hdr->p_vaddr + hdr->p_memsz > a && hdr->p_type == PT_LOAD)
             return hdr;
     return 0;
 }
