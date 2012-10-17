@@ -33,63 +33,86 @@ std::string CoreReader::describe() const
     return p->coreImage.io.describe();
 }
 
+static size_t
+readFromHdr(ElfObject *obj, const Elf_Phdr *hdr, Elf_Off addr, Elf_Off reloc, char *ptr, size_t size, size_t *toClear)
+{
+    Elf_Off off = addr - reloc - hdr->p_vaddr; // offset in header of our ptr.
+    size_t rv;
+    if (off < hdr->p_filesz) {
+        // some of the data is in the file: read min of what we need and // that.
+        Elf_Off fileSize = std::min(hdr->p_filesz - off, size);
+        rv = obj->io.read(hdr->p_offset + off, fileSize, ptr);
+        if (rv != fileSize)
+            throw Exception() << "unexpected short read in core file";
+        off += rv;
+        size -= rv;
+    } else {
+        rv = 0;
+    }
+    if (toClear)
+        *toClear = std::max(
+            *toClear > rv
+                ? *toClear - rv
+                : 0,
+            size != 0 && off < hdr->p_memsz
+                ?  std::min(size, hdr->p_memsz - off)
+                : 0);
+    return rv;
+}
+
 size_t
 CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 {
-    Elf_Off cur = remoteAddr;
-    /* Locate "remoteAddr" in the core file */
+    Elf_Off start = remoteAddr;
     while (size) {
         auto obj = &p->coreImage;
-        Elf_Off reloc = 0;
 
-        // Check the corefile first.
-        auto hdr = obj->findHeaderForAddress(cur);
+        size_t zeroes = 0;
+        // Locate "remoteAddr" in the core file
+        auto hdr = obj->findHeaderForAddress(remoteAddr);
+        if (hdr) {
+            // The start address appears in the core (or is defaulted from it)
+            size_t rc = readFromHdr(obj, hdr, remoteAddr, 0, ptr, size, &zeroes);
+            remoteAddr += rc;
+            ptr += rc;
+            size -= rc;
+            if (rc && zeroes == 0) // we got some data from the header, and there's nothing to default
+                continue;
+        }
 
-        if (hdr == 0 || hdr->p_filesz == 0) {
-            // Not in the corefile - but loaded libs may contain unmodified data
-            // not copied into the core - check through those.
-            for (auto &i : p->objects) {
+        // Either no data in core, or it was incomplete to this point: search loaded objects.
+        hdr = 0;
+        obj = 0;
+        Elf_Off reloc;
+        for (auto &i : p->objects) {
+            reloc = i.first;
+            hdr = i.second->findHeaderForAddress(remoteAddr - reloc);
+            if (hdr) {
+                obj = i.second;
                 reloc = i.first;
-                hdr = i.second->findHeaderForAddress(cur - reloc);
-                if (hdr) {
-                    obj = i.second;
-                    break;
-                }
-            }
-            if (hdr == 0) {
-                if (cur == remoteAddr)
-                    throw Exception() << "no mapping for address " << std::hex << cur << " after " << (cur - remoteAddr);
                 break;
             }
         }
-        Elf_Off hdrOff = cur - reloc - hdr->p_vaddr; // offset in header of our ptr.
+
+        if (hdr) {
+            // header in an object - try reading from here.
+            size_t rc = readFromHdr(obj, hdr, remoteAddr, reloc, ptr, size, &zeroes);
+            remoteAddr += rc;
+            ptr += rc;
+            size -= rc;
+        }
+
+        // At this point, we have copied any real data, and "zeroes" reflects
+        // the amount we can default to zero.
+        memset(ptr, 0, zeroes);
+        size -= zeroes;
+        remoteAddr += zeroes;
+        ptr += zeroes;
         
-        size_t rv = 0;
-        if (hdrOff < hdr->p_filesz) {
-            // some of the data is in the file: read min of what we need and // that.
-            Elf_Off fileSize = std::min(hdr->p_filesz - hdrOff, size);
-            size_t rv = obj->io.read(hdr->p_offset + hdrOff, fileSize, ptr);
-            if (rv != fileSize)
-                throw Exception() << "unexpected short read in core file";
-            hdrOff += rv;
-            cur += rv;
-            size -= rv;
-            ptr += rv;
-        }
-        if (hdrOff < hdr->p_memsz) {
-            Elf_Off padSize = std::min(hdr->p_memsz - hdrOff, size);
-            memset(ptr, 0, padSize);
-            hdrOff += padSize;
-            cur += padSize;
-            size -= padSize;
-            rv += padSize;
-        }
-        // Copy all from hdrOff + fileszie
-        // image is not in file, but header indicates it was in process... pad with 0s
-        if (rv == 0)
+        if (hdr == 0 && zeroes == 0) // Nothing from core, objects, or defaulted. We're stuck.
             break;
     }
-    return cur - remoteAddr;
+    return remoteAddr - start;
 }
 
 CoreReader::CoreReader(CoreProcess *p_) : p(p_) { }
