@@ -94,7 +94,8 @@ Process::io() const
 }
 
 Process::Process(Reader &exeData, Reader &procio_)
-    : procio(procio_)
+    : vdso(0)
+    , procio(procio_)
     , execImage(new ElfObject(exeData))
 {
     abiPrefix = execImage->getABIPrefix();
