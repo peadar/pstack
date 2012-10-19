@@ -13,10 +13,6 @@ endif(NOT ELF_BITS)
 
 if(CMAKE_COMPILER_IS_GNUCXX)
     add_definitions("-std=c++0x")
-    if(${ELF_BITS} EQUAL 32)
-        add_definitions("-m32")
-        target_link_libraries(pstack "-m32")
-    endif(${ELF_BITS} EQUAL 32)
 endif(CMAKE_COMPILER_IS_GNUCXX)
 
 add_definitions("-DELF_BITS=${ELF_BITS}")
