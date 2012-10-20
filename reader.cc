@@ -47,10 +47,17 @@ size_t
 FileReader::read(off_t off, size_t count, char *ptr) const
 {
     if (lseek(file, off, SEEK_SET) == -1)
-        throw Exception() << "seek to " << off << " on " << describe() << "failed";
+        throw Exception()
+            << "seek to " << off
+            << " on " << describe()
+            << " failed: " << strerror(errno);
     ssize_t rc = ::read(file, ptr, count);
     if (rc == -1)
-        throw Exception() << "read " << count << " on " << describe() << "failed";
+        throw Exception()
+            << "read " << count
+            << " at " << off
+            << " on " << describe()
+            << " failed: " << strerror(errno);
     return rc;
 }
 
