@@ -83,7 +83,6 @@ CacheReader::Page *
 CacheReader::getPage(off_t pageoff) const
 {
     Page *p;
-
     for (auto i = pages.begin(); i != pages.end(); ++i) {
         p = *i;
         if (p->offset == pageoff) {
@@ -95,7 +94,6 @@ CacheReader::getPage(off_t pageoff) const
     }
     p = new Page(upstream, pageoff);
     if (pages.size() == MAXPAGES) {
-        std::clog << "page cache full\n";
         delete pages.back();
         pages.pop_back();
     }
