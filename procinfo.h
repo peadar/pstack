@@ -27,8 +27,10 @@ class Process : public ps_prochandle {
     Elf_Off entry; // entrypoint of process.
     void loadSharedObjects();
     char *vdso;
+    std::ostream *debug;
     CacheReader procio;
     Elf_Addr sysent; // for AT_SYSINFO
+
 protected:
     td_thragent_t *agent;
     ElfObject *execImage;
@@ -42,7 +44,7 @@ public:
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const = 0;
     void addElfObject(struct ElfObject *obj, Elf_Addr load);
     std::pair<Elf_Off, ElfObject *> findObject(Elf_Addr addr) const;
-    Process(Reader &ex, Reader &mem);
+    Process(ElfObject *obj, Reader &mem, std::ostream *debug);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
@@ -90,7 +92,7 @@ class LiveProcess : public Process {
     friend class LiveReader;
     LiveReader liveIO;
 public:
-    LiveProcess(Reader &ex, pid_t pid);
+    LiveProcess(ElfObject *ex, pid_t pid, std::ostream *);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
     virtual void stop(pid_t lwpid);
     virtual void resume(pid_t lwpid);
@@ -116,7 +118,7 @@ struct CoreProcess : public Process {
     CoreReader coreIO;
     friend class CoreReader;
 public:
-    CoreProcess(Reader &ex, Reader &core);
+    CoreProcess(ElfObject *exec, Reader &core, std::ostream *);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
     virtual void load();
     virtual void stop(lwpid_t);

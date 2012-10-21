@@ -94,15 +94,15 @@ Process::io() const
     return procio;
 }
 
-Process::Process(Reader &exeData, Reader &procio_)
+Process::Process(ElfObject *exec, Reader &procio_, std::ostream *debug_)
     : vdso(0)
     , procio(procio_)
-    , execImage(new ElfObject(exeData))
+    , execImage(exec)
     , entry(0)
+    , debug(debug_)
 {
     abiPrefix = execImage->getABIPrefix();
 }
-
 
 void
 Process::load()
@@ -113,7 +113,8 @@ Process::load()
     the = td_ta_new(this, &agent);
     if (the != TD_OK) {
         agent = 0;
-        std::clog << "failed to load thread agent: " << the << std::endl;
+        if (debug)
+            *debug << "failed to load thread agent: " << the << std::endl;
     }
 
 }
@@ -125,7 +126,8 @@ Process::processAUXV(const void *datap, size_t len)
     const Elf_auxv_t *eaux = aux + len / sizeof *aux;
     for (; aux < eaux; aux++) {
         Elf_Addr hdr = aux->a_un.a_val;
-        std::clog << "auxv: " << auxv_name(aux->a_type) << "= " << (void *)hdr << "\n";
+        if (debug)
+            *debug << "auxv: " << auxv_name(aux->a_type) << "= " << (void *)hdr << "\n";
         switch (aux->a_type) {
             case AT_ENTRY: {
                 // this provides a reference for relocating the executable when
@@ -147,15 +149,13 @@ Process::processAUXV(const void *datap, size_t len)
             }
 
             case AT_EXECFN:
-                std::ostringstream os;
-                for (;;) {
-                    char c;
-                    io().readObj(hdr++, &c, 1);
-                    if (c == 0)
-                        break;
-                    os << c;
+                auto exeName = io().readString(hdr);
+                if (debug)
+                    *debug << "filename: " << exeName << "\n";
+                if (execImage == 0) {
+                    FileReader *file = new FileReader(exeName);
+                    execImage = new ElfObject(*file);
                 }
-                std::clog << "filename: " << os.str() << "\n";
                 break;
         }
     }
@@ -228,14 +228,16 @@ void
 Process::addElfObject(struct ElfObject *obj, Elf_Addr load)
 {
     objects[load] = obj;
-    obj->dwarf = new DwarfInfo(obj);
+    auto di = obj->dwarf = new DwarfInfo(obj);
 
-    std::clog
-        << "object " << obj->io.describe()
-        << " loaded at address " << std::hex << load
-        << ", base=" << obj->base;
-    auto di = obj->dwarf;
-    std::clog << ", unwind info:  " << (di->ehFrame ? di->debugFrame ? "BOTH" : "EH" : di->debugFrame ? "DEBUG" : "NONE") << "\n";
+    if (debug)
+        *debug
+            << "object " << obj->io.describe()
+            << " loaded at address " << std::hex << load
+            << ", base=" << obj->base;
+    if (di && debug)
+        *debug << ", unwind info: "
+            << (di->ehFrame ? di->debugFrame ? "BOTH" : "EH" : di->debugFrame ? "DEBUG" : "NONE") << "\n";
 }
 
 /*
@@ -256,7 +258,6 @@ Process::loadSharedObjects()
     struct link_map map;
     for (Elf_Addr mapAddr = (Elf_Addr)rDebug.r_map; mapAddr; mapAddr = (Elf_Addr)map.l_next) {
         io().readObj(mapAddr, &map);
-
         // first one's the executable itself.
         if (mapAddr == Elf_Addr(rDebug.r_map)) {
             assert(map.l_addr == entry - execImage->elfHeader.e_entry);
@@ -265,7 +266,7 @@ Process::loadSharedObjects()
         }
         /* Read the path to the file */
         if (map.l_name == 0) {
-            std::clog << "no name for object loaded at " << std::hex << map.l_addr << "\n";
+            std::clog << "warning: no name for object loaded at " << std::hex << map.l_addr << "\n";
             continue;
         }
         std::string path = io().readString(Elf_Off(map.l_name));
@@ -279,7 +280,6 @@ Process::loadSharedObjects()
             (void *)mapAddr << "/" << (void *)map.l_addr << ": " << e.what() << "\n";
             continue;
         }
-
     }
 }
 
@@ -416,7 +416,8 @@ Process::pstack(std::ostream &os)
 Process::~Process()
 {
     for (auto i : objects)
-        delete i.second;
+        if (i.second != execImage)
+            delete i.second;
     delete[] vdso;
 }
 

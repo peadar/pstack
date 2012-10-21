@@ -12,7 +12,9 @@ emain(int argc, char **argv)
 {
     int error, i, c;
     pid_t pid;
-    std::string execFile, coreFile;
+    std::string execFile;
+    ElfObject *exec = 0;
+    std::ostream *verbose = 0;
 
     while ((c = getopt(argc, argv, "a:d:D:e:f:hloOv")) != -1) {
         switch (c) {
@@ -27,29 +29,41 @@ emain(int argc, char **argv)
 
             return 0;
         }
-        case 'e':
+        case 'e': {
             execFile = optarg;
+            exec = new ElfObject(*new FileReader(optarg));
             break;
+        }
         case 'h':
             usage();
             return (0);
+        case 'v':
+            verbose = &std::clog;
+            break;
         default:
-            return (usage());
+            return usage();
         }
     }
 
     if (optind == argc)
-        return (usage());
+        return usage();
 
     for (error = 0, i = optind; i < argc; i++) {
         pid = atoi(argv[i]);
-        FileReader execData(execFile, -1);
         if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
-            FileReader coreFile(argv[i]);
-            CoreProcess proc(execData, coreFile);
-            proc.pstack(std::cout);
+            // It's a file:
+            FileReader *file = new FileReader(argv[i]);
+            ElfObject *obj = new ElfObject(*file);
+            if (obj->elfHeader.e_type == ET_CORE) {
+                CoreProcess proc(exec, *file, verbose);
+                proc.pstack(std::cout);
+                delete obj;
+            } else {
+                delete exec;
+                exec = obj;
+            }
         } else {
-            LiveProcess proc(execData, pid);
+            LiveProcess proc(exec, pid, verbose);
             proc.pstack(std::cout);
         }
     }

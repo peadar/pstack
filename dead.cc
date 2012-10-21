@@ -3,8 +3,8 @@
 #include "dwarf.h"
 #include "procinfo.h"
 
-CoreProcess::CoreProcess(Reader &exe, Reader &coreFile)
-    : Process(exe, coreIO)
+CoreProcess::CoreProcess(ElfObject *exe, Reader &coreFile, std::ostream *debug)
+    : Process(exe, coreIO, debug)
     , coreImage(coreFile)
     , coreIO(this)
 {

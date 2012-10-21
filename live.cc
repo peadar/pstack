@@ -35,8 +35,8 @@ LiveReader::memname(pid_t pid)
     return ss.str();
 }
 
-LiveProcess::LiveProcess(Reader &ex, pid_t pid_)
-    : Process(ex, liveIO)
+LiveProcess::LiveProcess(ElfObject *ex, pid_t pid_, std::ostream *debug)
+    : Process(ex, liveIO, debug)
     , pid(pid_)
     , liveIO(pid_)
 {
