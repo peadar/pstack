@@ -643,45 +643,98 @@ operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr *, co
 
 }
 
+struct DynTag {
+    long long tag;
+    DynTag(long long tag_) : tag(tag_) {}
+};
+std::ostream &
+operator << (std::ostream &os, DynTag tag)
+{
+#define T(a) case a: return os << #a;
+    switch (tag.tag) {
+    T(DT_NULL)
+    T(DT_NEEDED)
+    T(DT_PLTRELSZ)
+    T(DT_PLTGOT)
+    T(DT_HASH)
+    T(DT_STRTAB)
+    T(DT_SYMTAB)
+    T(DT_RELA)
+    T(DT_RELASZ)
+    T(DT_RELAENT)
+    T(DT_STRSZ)
+    T(DT_SYMENT)
+    T(DT_INIT)
+    T(DT_FINI)
+    T(DT_SONAME)
+    T(DT_RPATH)
+    T(DT_SYMBOLIC)
+    T(DT_REL)
+    T(DT_RELSZ)
+    T(DT_RELENT)
+    T(DT_PLTREL)
+    T(DT_DEBUG)
+    T(DT_TEXTREL)
+    T(DT_JMPREL)
+    T(DT_BIND_NOW)
+    T(DT_INIT_ARRAY)
+    T(DT_FINI_ARRAY)
+    T(DT_INIT_ARRAYSZ)
+    T(DT_FINI_ARRAYSZ)
+    T(DT_RUNPATH)
+    T(DT_FLAGS)
+    T(DT_PREINIT_ARRAY)
+    T(DT_PREINIT_ARRAYSZ)
+    T(DT_NUM)
+    T(DT_LOOS)
+    T(DT_HIOS)
+    T(DT_LOPROC)
+    T(DT_HIPROC)
+    T(DT_PROCNUM)
+    T(DT_VALRNGLO)
+    T(DT_GNU_PRELINKED)
+    T(DT_GNU_CONFLICTSZ)
+    T(DT_GNU_LIBLISTSZ)
+    T(DT_CHECKSUM)
+    T(DT_PLTPADSZ)
+    T(DT_MOVEENT)
+    T(DT_MOVESZ)
+    T(DT_FEATURE_1)
+    T(DT_POSFLAG_1)
+    T(DT_SYMINSZ)
+    T(DT_VALRNGHI)
+    T(DT_ADDRRNGLO)
+    T(DT_GNU_HASH)
+    T(DT_TLSDESC_PLT)
+    T(DT_TLSDESC_GOT)
+    T(DT_GNU_CONFLICT)
+    T(DT_GNU_LIBLIST)
+    T(DT_CONFIG)
+    T(DT_DEPAUDIT)
+    T(DT_AUDIT)
+    T(DT_PLTPAD)
+    T(DT_MOVETAB)
+    T(DT_SYMINFO)
+    T(DT_VERSYM)
+    T(DT_RELACOUNT)
+    T(DT_RELCOUNT)
+    T(DT_FLAGS_1)
+    T(DT_VERDEF)
+    T(DT_VERDEFNUM)
+    T(DT_VERNEED)
+    T(DT_VERNEEDNUM)
+    T(DT_AUXILIARY)
+    default: return os << "unknown " << tag;
+    }
+#undef T
+}
+
 std::ostream &
 operator<< (std::ostream &os, const Elf_Dyn &d)
 {
-    static const char *tagNames[] = {
-        "DT_NULL",
-        "DT_NEEDED",
-        "DT_PLTRELSZ",
-        "DT_PLTGOT",
-        "DT_HASH",
-        "DT_STRTAB",
-        "DT_SYMTAB",
-        "DT_RELA",
-        "DT_RELASZ",
-        "DT_RELAENT",
-        "DT_STRSZ",
-        "DT_SYMENT",
-        "DT_INIT",
-        "DT_FINI",
-        "DT_SONAME",
-        "DT_RPATH",
-        "DT_SYMBOLIC",
-        "DT_REL",
-        "DT_RELSZ",
-        "DT_RELENT",
-        "DT_PLTREL",
-        "DT_DEBUG",
-        "DT_TEXTREL",
-        "DT_JMPREL",
-        "DT_BIND_NOW"
-    };
-    os
-        << "{ \"tag\": ";
-    if (d.d_tag >= 0 && d.d_tag <= DT_BIND_NOW)
-        os << "\"" << tagNames[d.d_tag] << "\"";
-    else
-        os << d.d_tag;
+    os << "{ \"tag\": \"" << DynTag(d.d_tag) << "\"";
     return os << ", \"word\": " << d.d_un.d_val << " }";
 }
-
 
 std::ostream &
 operator<< (std::ostream &os, DwarfExpressionOp op)
