@@ -1,4 +1,5 @@
 #include <set>
+#include <cassert>
 #include <limits>
 #include <limits.h>
 #include <iostream>
@@ -97,6 +98,7 @@ Process::Process(Reader &exeData, Reader &procio_)
     : vdso(0)
     , procio(procio_)
     , execImage(new ElfObject(exeData))
+    , entry(0)
 {
     abiPrefix = execImage->getABIPrefix();
 }
@@ -121,10 +123,16 @@ Process::processAUXV(const void *datap, size_t len)
 {
     const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
     const Elf_auxv_t *eaux = aux + len / sizeof *aux;
-    for (; aux < eaux; aux += sizeof *aux) {
+    for (; aux < eaux; aux++) {
         Elf_Addr hdr = aux->a_un.a_val;
         std::clog << "auxv: " << auxv_name(aux->a_type) << "= " << (void *)hdr << "\n";
         switch (aux->a_type) {
+            case AT_ENTRY: {
+                // this provides a reference for relocating the executable when
+                // compared to the entrypoint there.
+                entry = hdr;
+                break;
+            }
             case AT_SYSINFO: {
                 sysent = aux->a_un.a_val;
                 break;
@@ -251,7 +259,8 @@ Process::loadSharedObjects()
 
         // first one's the executable itself.
         if (mapAddr == Elf_Addr(rDebug.r_map)) {
-            addElfObject(execImage, Elf_Addr(map.l_addr));
+            assert(map.l_addr == entry - execImage->elfHeader.e_entry);
+            addElfObject(execImage, map.l_addr);
             continue;
         }
         /* Read the path to the file */
@@ -278,14 +287,21 @@ Elf_Addr
 Process::findRDebugAddr()
 {
     // Find DT_DEBUG in the process's dynamic section.
-    if (execImage->dynamic == 0)
+    auto dynamic = execImage->dynamic;
+    if (dynamic == 0)
         return 0;
 
-    for (Elf_Addr dynOff = 0; dynOff < execImage->dynamic->p_filesz; dynOff += sizeof(Elf_Dyn)) {
+    Elf_Off reloc = entry - execImage->elfHeader.e_entry;
+
+    // the dynamic section is in the executable, but the process A/S contains
+    // the modified version.
+    for (Elf_Addr dynOff = 0; dynOff < dynamic->p_filesz; dynOff += sizeof(Elf_Dyn)) {
         Elf_Dyn dyn;
-        execImage->io.readObj(execImage->dynamic->p_offset + dynOff, &dyn);
+        execImage->io.readObj(dynamic->p_offset + dynOff, &dyn);
         if (dyn.d_tag == DT_DEBUG) {
-            io().readObj(execImage->dynamic->p_vaddr + dynOff, &dyn);
+            // Now, we read this from the _process_ AS, not the executable - the
+            // in-memory one is changed by the linker.
+            io().readObj(dynamic->p_vaddr + dynOff + reloc, &dyn);
             return dyn.d_un.d_ptr;
         }
     }

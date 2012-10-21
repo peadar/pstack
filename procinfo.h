@@ -24,6 +24,7 @@ struct ThreadStack {
 
 class Process : public ps_prochandle {
     Elf_Addr findRDebugAddr();
+    Elf_Off entry; // entrypoint of process.
     void loadSharedObjects();
     char *vdso;
     CacheReader procio;
