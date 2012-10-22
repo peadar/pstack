@@ -171,7 +171,7 @@ Process::processAUXV(const void *datap, size_t len)
 }
 
 std::ostream &
-Process::dumpStack(std::ostream &os, const ThreadStack &thread)
+Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
 {
 
 
@@ -231,6 +231,58 @@ Process::dumpStack(std::ostream &os, const ThreadStack &thread)
         frameSep = ", ";
     }
     return os << " ] }";
+}
+
+std::ostream &
+Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
+{
+    os << "---- thread: " << thread.info.ti_tid << ", type: " << thread.info.ti_type << "\n";
+    for (auto frame : thread.stack) {
+        Elf_Addr objIp = 0;
+        struct ElfObject *obj = 0;
+        int lineNo;
+        Elf_Sym sym;
+        std::string fileName = "unknown file";
+        std::string symName = "unknown";
+        if (frame->ip == sysent) {
+            symName = "(syscall)";
+        } else {
+            try {
+                std::pair<Elf_Off, ElfObject *> i = findObject(frame->ip);
+                fileName = i.second->io.describe();
+                objIp = frame->ip - i.first;
+                obj = i.second;
+                obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+            } catch (...) {
+            }
+        }
+
+
+        os << symName << "(";
+        const char *sep = "";
+        for (auto &i : frame->args) {
+            os << sep << i;
+            sep = ", ";
+        }
+        os << ")";
+
+        if (obj != 0) {
+            os << " in " << fileName;
+            if (obj->dwarf && obj->dwarf->sourceFromAddr(objIp - 1, fileName, lineNo))
+                os << fileName << ":" << lineNo;
+        }
+
+        os
+            << "\t(ip=0x" << std::hex << intptr_t(frame->ip)
+            << ", off=0x" << intptr_t(objIp) - sym.st_value
+#ifdef i386
+            << ", bp=0x" << std::hex << intptr_t(frame->bp)
+#endif
+            ;
+        if (frame->unwindBy != "END")
+            os << ", unwind by: " << frame->unwindBy << ")";
+        os << "\n";
+    }
 }
 
 void
@@ -403,13 +455,20 @@ Process::pstack(std::ostream &os)
     }
 
     const char *sep = "";
+#if 0
     os << "[";
     for (auto s : threadStacks) {
         os << sep;
-        dumpStack(os, s);
+        dumpStackJSON(os, s);
         sep = ", ";
     }
     os << "]";
+#else
+    for (auto &s : threadStacks) {
+        dumpStackText(os, s);
+        sep = ", ";
+    }
+ #endif
 
     listThreads([](const td_thrhandle_t *thr) { td_thr_dbresume(thr); }); 
     // resume each lwp

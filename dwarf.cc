@@ -371,9 +371,7 @@ DwarfLineInfo::DwarfLineInfo(DWARFReader &r, const DwarfUnit *unit)
     if (r.getOffset() != expectedEnd)
         std::clog << "warning: left "
             << expectedEnd - r.getOffset()
-            << " bytes in line info table of "
-            << r.dwarf.elf->io
-            << std::endl;
+            << " bytes in line info table of " << r.dwarf.elf->io.describe() << std::endl;
 
     DwarfLineState state(this);
     while (r.getOffset() < end) {

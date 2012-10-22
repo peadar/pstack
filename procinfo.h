@@ -50,7 +50,8 @@ public:
     virtual void stopProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
     virtual pid_t getPID() const = 0;
-    std::ostream &dumpStack(std::ostream &, const ThreadStack &);
+    std::ostream &dumpStackText(std::ostream &, const ThreadStack &);
+    std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &);
     template <typename T> void listThreads(const T &);
     std::ostream &pstack(std::ostream &);
     Elf_Addr findNamedSymbol(const char *objectName, const char *symbolName) const;
