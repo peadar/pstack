@@ -248,8 +248,11 @@ Process::loadSharedObjects()
 {
     /* Does this process look like it has shared libraries loaded? */
     Elf_Addr r_debug_addr = findRDebugAddr();
-    if (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1)
+    if (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1) {
+        // Static process - just add the executable to the loadmap
+        addElfObject(execImage, 0);
         return;
+    }
 
     struct r_debug rDebug;
     io().readObj(r_debug_addr, &rDebug);
