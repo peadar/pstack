@@ -17,7 +17,7 @@ struct StackFrame {
 
 struct ThreadStack {
     td_thrinfo_t info;
-    std::list<StackFrame *> stack;
+    std::vector<StackFrame *> stack;
     ThreadStack() {}
     void unwind(Process &, CoreRegisters &regs);
 };
@@ -25,7 +25,7 @@ struct ThreadStack {
 class Process : public ps_prochandle {
     Elf_Addr findRDebugAddr();
     Elf_Off entry; // entrypoint of process.
-    void loadSharedObjects();
+    void loadSharedObjects(Elf_Addr);
     char *vdso;
     std::ostream *debug;
     CacheReader procio;

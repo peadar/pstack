@@ -1022,16 +1022,16 @@ DwarfInfo::sourceFromAddr(uintmax_t addr, std::string &file, int &line)
 {
     // XXX: Use "arange" table
     for (auto u : units) {
-        auto i = u->lines->matrix.begin();
-        auto next = ++i;
-        while (next != u->lines->matrix.end()) {
-            if (!i->end_sequence && i->addr <= addr && next->addr > addr) {
+        if (u->lines->matrix.empty())
+            continue;
+        for (auto i = u->lines->matrix.begin(); !i->end_sequence;) {
+            auto next = i + 1;
+            if (i->addr <= addr && next->addr > addr) {
                 file = i->file->name;
                 line = i->line;
                 return true;
             }
             i = next;
-            ++next;
         }
     }
     return 0;

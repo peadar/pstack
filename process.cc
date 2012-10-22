@@ -109,7 +109,13 @@ Process::load()
 {
     td_err_e the;
     /* Attach any dynamically-linked libraries */
-    loadSharedObjects();
+
+    /* Does this process look like it has shared libraries loaded? */
+    Elf_Addr r_debug_addr = findRDebugAddr();
+    if (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1)
+        addElfObject(execImage, 0);
+    else
+        loadSharedObjects(r_debug_addr);
     the = td_ta_new(this, &agent);
     if (the != TD_OK) {
         agent = 0;
@@ -244,15 +250,11 @@ Process::addElfObject(struct ElfObject *obj, Elf_Addr load)
  * Grovel through the rtld's internals to find any shared libraries.
  */
 void
-Process::loadSharedObjects()
+Process::loadSharedObjects(Elf_Addr rdebugAddr)
 {
-    /* Does this process look like it has shared libraries loaded? */
-    Elf_Addr r_debug_addr = findRDebugAddr();
-    if (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1)
-        return;
 
     struct r_debug rDebug;
-    io().readObj(r_debug_addr, &rDebug);
+    io().readObj(rdebugAddr, &rDebug);
 
     /* Iterate over the r_debug structure's entries, loading libraries */
     struct link_map map;
