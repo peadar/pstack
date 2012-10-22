@@ -272,10 +272,17 @@ dwarfDumpCFAInsn(std::ostream &os, DWARFReader &r)
                 r.skip(len);
                 break;
 
+            case 0x12: os << "\"DW_CFA_def_cfa_sf\"" << ", \"register\": " << r.getuleb128() << ", \"offset\":" << r.getuleb128() ; break;
+            case 0x13: os << "\"DW_CFA_def_cfa_offset_sf\"" << ", \"offset\":" << r.getuleb128(); break;
+            case 0x16:
+                os << "\"DW_CFA_val_expression\"" << ", \"length\":" << (len = r.getuleb128()) << ", \"offset\":" << r.getOffset();
+                r.skip(len);
+                break;
+
             case 0x2e: os << "\"DW_CFA_GNU_args_size\"" << ", \"offset\":" << r.getuleb128(); break;
             case 0x2d: os << "\"DW_CFA_GNU_window_size\""; break;
             case 0x2f: os << "\"DW_CFA_GNU_negative_offset_extended\""; break;
-            default: throw Exception() << "unknown CFA op " << std::hex << op;
+            default: throw Exception() << "unknown CFA op " << std::hex << int(op);
             break;
         }
     }
