@@ -28,6 +28,7 @@ class Process : public ps_prochandle {
     void loadSharedObjects(Elf_Addr);
     char *vdso;
     std::ostream *debug;
+    bool isStatic;
     CacheReader procio;
     Elf_Addr sysent; // for AT_SYSINFO
 

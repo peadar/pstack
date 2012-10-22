@@ -100,6 +100,7 @@ Process::Process(ElfObject *exec, Reader &procio_, std::ostream *debug_)
     , execImage(exec)
     , entry(0)
     , debug(debug_)
+    , isStatic(false)
 {
     abiPrefix = execImage->getABIPrefix();
 }
@@ -112,7 +113,9 @@ Process::load()
 
     /* Does this process look like it has shared libraries loaded? */
     Elf_Addr r_debug_addr = findRDebugAddr();
-    if (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1)
+
+    isStatic = (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1);
+    if (isStatic)
         addElfObject(execImage, 0);
     else
         loadSharedObjects(r_debug_addr);
@@ -326,6 +329,8 @@ Process::findObject(Elf_Addr addr) const
 Elf_Addr
 Process::findNamedSymbol(const char *objectName, const char *symbolName) const
 {
+    if (isStatic) // static exe: ignore object name.
+        objectName = 0;
     for (auto &i : objects) {
         ElfObject *obj = i.second;
         if (objectName != 0) {
