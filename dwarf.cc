@@ -18,7 +18,6 @@
 #include "dump.h"
 
 extern int gVerbose;
-static void dwarfDecodeEntries(DWARFReader &r, DwarfUnit *unit, std::list<DwarfEntry *> &list);
 
 uintmax_t
 DWARFReader::getuint(int len)
@@ -209,14 +208,29 @@ DwarfInfo::DwarfInfo(struct ElfObject *obj)
 
     if (eh_frame) {
         DWARFReader reader(*this, eh_frame->sh_offset, eh_frame->sh_size);
-        ehFrame = new DwarfFrameInfo(version, reader, FI_EH_FRAME);
+        try {
+            ehFrame = new DwarfFrameInfo(version, reader, FI_EH_FRAME);
+        }
+        catch (const Exception &ex) {
+            ehFrame = 0;
+            std::clog << "can't decode .eh_frame for "
+                << obj->io.describe() << ": " << ex.what() << "\n";
+        }
     } else {
         ehFrame = 0;
     }
 
     if (debug_frame) {
         DWARFReader reader(*this, debug_frame->sh_offset, debug_frame->sh_size);
-        debugFrame = new DwarfFrameInfo(version, reader, FI_DEBUG_FRAME);
+        try {
+            debugFrame = new DwarfFrameInfo(version, reader, FI_DEBUG_FRAME);
+        }
+        catch (const Exception &ex) {
+            debugFrame = 0;
+            std::clog << "can't decode .debug_frame for "
+                << obj->io.describe() << ": " << ex.what() << "\n";
+        }
+
     } else {
         debugFrame = 0;
     }
@@ -278,8 +292,20 @@ DwarfUnit::DwarfUnit(DWARFReader &r)
 
     DWARFReader entriesR(r.dwarf, r.getOffset(), nextoff - r.getOffset());
     assert(nextoff <= r.getLimit());
-    dwarfDecodeEntries(entriesR, this, entries);
+    decodeEntries(entriesR, entries);
+    std::clog << "decoded entries for " << name() << "\n";
     r.setOffset(nextoff);
+}
+
+std::string
+DwarfUnit::name() const
+{
+    if (!entries.empty()) {
+        auto attr = (*entries.begin())->attributes[DW_AT_name];
+        if (attr)
+        return attr->value.string;
+    }
+    return "anonymous";
 }
 
 DwarfAbbreviation::DwarfAbbreviation(DWARFReader &r, intmax_t code_)
@@ -368,10 +394,13 @@ DwarfLineInfo::DwarfLineInfo(DWARFReader &r, const DwarfUnit *unit)
         files.push_back(new DwarfFileEntry(r, this));
     }
 
-    if (r.getOffset() != expectedEnd)
+    auto diff = expectedEnd - r.getOffset();
+    if (diff) {
         std::clog << "warning: left "
-            << expectedEnd - r.getOffset()
+            << diff
             << " bytes in line info table of " << r.dwarf.elf->io.describe() << std::endl;
+        r.skip(diff);
+    }
 
     DwarfLineState state(this);
     while (r.getOffset() < end) {
@@ -578,17 +607,17 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
         break;
     }
     if (type->hasChildren)
-        dwarfDecodeEntries(r, unit, children);
+        unit->decodeEntries(r, children);
 }
 
-static void
-dwarfDecodeEntries(DWARFReader &r, DwarfUnit *unit, std::list<DwarfEntry *> &entries)
+void
+DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries)
 {
     while (!r.empty()) {
         intmax_t code = r.getuleb128();
         if (code == 0)
             return;
-        entries.push_back(new DwarfEntry(r, code, unit));
+        entries.push_back(new DwarfEntry(r, code, this));
     }
 }
 
@@ -1000,6 +1029,8 @@ DwarfFrameInfo::DwarfFrameInfo(int version, DWARFReader &reader, enum FIType typ
         if (nextoff == 0)
             break;
         if (!isCIE(cieid)) {
+            if (cie == 0)
+                throw Exception() << "invalid frame information in " << reader.io.describe();
             auto fde = new DwarfFDE(reader, cie, nextoff);
             fdeList.push_back(fde);
         }
