@@ -19,6 +19,8 @@ class DWARFReader;
 class DwarfLineInfo;
 struct DwarfUnit;
 struct DwarfFrameInfo;
+struct DwarfEntry;
+typedef std::vector<DwarfEntry *> DwarfEntries;
 
 typedef struct {
     uintmax_t reg[DWARF_MAXREG];
@@ -132,7 +134,7 @@ struct DwarfAttribute {
 };
 
 struct DwarfEntry {
-    std::list<DwarfEntry *> children;
+    DwarfEntries children;
     const DwarfAbbreviation *type;
     std::map<DwarfAttrName, DwarfAttribute *> attributes;
     DwarfAttribute *attrForName(DwarfAttrName name) { return attributes[name]; }
@@ -145,6 +147,7 @@ enum FIType {
 };
 
 struct DwarfUnit {
+    void decodeEntries(DWARFReader &r, DwarfEntries &entries);
     DwarfUnit *next;
     uint32_t length;
     uint16_t version;
@@ -152,9 +155,10 @@ struct DwarfUnit {
     uint8_t addrlen;
     const unsigned char *entryPtr;
     const unsigned char *lineInfo;
-    std::list<DwarfEntry *> entries;
+    DwarfEntries entries;
     const DwarfLineInfo *lines;
     DwarfUnit(DWARFReader &);
+    std::string name() const;
 };
 
 struct DwarfFDE {

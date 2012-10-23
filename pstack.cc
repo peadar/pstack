@@ -16,7 +16,7 @@ emain(int argc, char **argv)
     ElfObject *exec = 0;
     std::ostream *verbose = 0;
 
-    while ((c = getopt(argc, argv, "a:d:D:e:f:hloOv")) != -1) {
+    while ((c = getopt(argc, argv, "d:D:hv")) != -1) {
         switch (c) {
         case 'D':
         case 'd': {
@@ -28,11 +28,6 @@ emain(int argc, char **argv)
             std::cout << dumpobj;
 
             return 0;
-        }
-        case 'e': {
-            execFile = optarg;
-            exec = new ElfObject(*new FileReader(optarg));
-            break;
         }
         case 'h':
             usage();
@@ -86,14 +81,16 @@ usage(void)
 {
     std::clog <<
         "usage: pstack\n\t"
-        "[-hoOt] "
-        "[-a arg count] "
-        "[-e executable] "
-        "[-f max frame count] "
-        "[-l]"
-        "pid|core ...\n"
-        "\tor\n"
-        "\t<-d ELF-file> [-s snaplen]\n";
+        "[-D <elf object>]           dump details of ELF object (including DWARF info)\n\t"
+        "[-d <elf object>]           dump details of ELF object\n"
+        "or\n\t"
+        "[-h]                        show this message\n"
+        "or\n\t"
+        "[-v]                        include verbose information to stderr\n\t"
+        "[<pid>|<core>|<executable>] list cores and pids to examine. An executable\n\t"
+        "                            will override use of in-core or in-process information\n\t"
+        "                            to predict location of the executable\n"
+        ;
     return (EX_USAGE);
 }
 

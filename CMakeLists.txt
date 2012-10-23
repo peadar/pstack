@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 2.6)
 project (pstack)
 add_executable(pstack dead.cc dump.cc dwarf.cc elf.cc live.cc process.cc proc_service.cc pstack.cc reader.cc )
+add_executable(t t.cc)
 
 if(NOT ELF_BITS)
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -19,4 +20,5 @@ add_definitions("-DELF_BITS=${ELF_BITS}")
 
 if("${CMAKE_SYSTEM}" MATCHES "Linux")
     target_link_libraries(pstack "-lthread_db")
+    target_link_libraries(t "-lpthread")
 endif("${CMAKE_SYSTEM}" MATCHES "Linux")

@@ -100,6 +100,7 @@ Process::Process(ElfObject *exec, Reader &procio_, std::ostream *debug_)
     , execImage(exec)
     , entry(0)
     , debug(debug_)
+    , isStatic(false)
 {
     abiPrefix = execImage->getABIPrefix();
 }
@@ -109,7 +110,15 @@ Process::load()
 {
     td_err_e the;
     /* Attach any dynamically-linked libraries */
-    loadSharedObjects();
+
+    /* Does this process look like it has shared libraries loaded? */
+    Elf_Addr r_debug_addr = findRDebugAddr();
+
+    isStatic = (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1);
+    if (isStatic)
+        addElfObject(execImage, 0);
+    else
+        loadSharedObjects(r_debug_addr);
     the = td_ta_new(this, &agent);
     if (the != TD_OK) {
         agent = 0;
@@ -162,7 +171,7 @@ Process::processAUXV(const void *datap, size_t len)
 }
 
 std::ostream &
-Process::dumpStack(std::ostream &os, const ThreadStack &thread)
+Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
 {
 
 
@@ -224,6 +233,58 @@ Process::dumpStack(std::ostream &os, const ThreadStack &thread)
     return os << " ] }";
 }
 
+std::ostream &
+Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
+{
+    os << "---- thread: " << thread.info.ti_tid << ", type: " << thread.info.ti_type << "\n";
+    for (auto frame : thread.stack) {
+        Elf_Addr objIp = 0;
+        struct ElfObject *obj = 0;
+        int lineNo;
+        Elf_Sym sym;
+        std::string fileName = "unknown file";
+        std::string symName = "unknown";
+        if (frame->ip == sysent) {
+            symName = "(syscall)";
+        } else {
+            try {
+                std::pair<Elf_Off, ElfObject *> i = findObject(frame->ip);
+                fileName = i.second->io.describe();
+                objIp = frame->ip - i.first;
+                obj = i.second;
+                obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+            } catch (...) {
+            }
+        }
+
+
+        os << symName << "(";
+        const char *sep = "";
+        for (auto &i : frame->args) {
+            os << sep << i;
+            sep = ", ";
+        }
+        os << ")";
+
+        if (obj != 0) {
+            os << " in " << fileName;
+            if (obj->dwarf && obj->dwarf->sourceFromAddr(objIp - 1, fileName, lineNo))
+                os << fileName << ":" << lineNo;
+        }
+
+        os
+            << "\t(ip=0x" << std::hex << intptr_t(frame->ip)
+            << ", off=0x" << intptr_t(objIp) - sym.st_value
+#ifdef i386
+            << ", bp=0x" << std::hex << intptr_t(frame->bp)
+#endif
+            ;
+        if (frame->unwindBy != "END")
+            os << ", unwind by: " << frame->unwindBy << ")";
+        os << "\n";
+    }
+}
+
 void
 Process::addElfObject(struct ElfObject *obj, Elf_Addr load)
 {
@@ -244,18 +305,11 @@ Process::addElfObject(struct ElfObject *obj, Elf_Addr load)
  * Grovel through the rtld's internals to find any shared libraries.
  */
 void
-Process::loadSharedObjects()
+Process::loadSharedObjects(Elf_Addr rdebugAddr)
 {
-    /* Does this process look like it has shared libraries loaded? */
-    Elf_Addr r_debug_addr = findRDebugAddr();
-    if (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1) {
-        // Static process - just add the executable to the loadmap
-        addElfObject(execImage, 0);
-        return;
-    }
 
     struct r_debug rDebug;
-    io().readObj(r_debug_addr, &rDebug);
+    io().readObj(rdebugAddr, &rDebug);
 
     /* Iterate over the r_debug structure's entries, loading libraries */
     struct link_map map;
@@ -327,6 +381,8 @@ Process::findObject(Elf_Addr addr) const
 Elf_Addr
 Process::findNamedSymbol(const char *objectName, const char *symbolName) const
 {
+    if (isStatic) // static exe: ignore object name.
+        objectName = 0;
     for (auto &i : objects) {
         ElfObject *obj = i.second;
         if (objectName != 0) {
@@ -399,13 +455,20 @@ Process::pstack(std::ostream &os)
     }
 
     const char *sep = "";
+#if 0
     os << "[";
     for (auto s : threadStacks) {
         os << sep;
-        dumpStack(os, s);
+        dumpStackJSON(os, s);
         sep = ", ";
     }
     os << "]";
+#else
+    for (auto &s : threadStacks) {
+        dumpStackText(os, s);
+        sep = ", ";
+    }
+ #endif
 
     listThreads([](const td_thrhandle_t *thr) { td_thr_dbresume(thr); }); 
     // resume each lwp

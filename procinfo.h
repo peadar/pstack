@@ -17,7 +17,7 @@ struct StackFrame {
 
 struct ThreadStack {
     td_thrinfo_t info;
-    std::list<StackFrame *> stack;
+    std::vector<StackFrame *> stack;
     ThreadStack() {}
     void unwind(Process &, CoreRegisters &regs);
 };
@@ -25,9 +25,10 @@ struct ThreadStack {
 class Process : public ps_prochandle {
     Elf_Addr findRDebugAddr();
     Elf_Off entry; // entrypoint of process.
-    void loadSharedObjects();
+    void loadSharedObjects(Elf_Addr);
     char *vdso;
     std::ostream *debug;
+    bool isStatic;
     CacheReader procio;
     Elf_Addr sysent; // for AT_SYSINFO
 
@@ -49,7 +50,8 @@ public:
     virtual void stopProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
     virtual pid_t getPID() const = 0;
-    std::ostream &dumpStack(std::ostream &, const ThreadStack &);
+    std::ostream &dumpStackText(std::ostream &, const ThreadStack &);
+    std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &);
     template <typename T> void listThreads(const T &);
     std::ostream &pstack(std::ostream &);
     Elf_Addr findNamedSymbol(const char *objectName, const char *symbolName) const;
