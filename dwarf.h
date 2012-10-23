@@ -203,14 +203,15 @@ struct DwarfCallFrame {
 };
 
 struct DwarfCIE {
+    uint8_t version;
     std::string augmentation;
     unsigned codeAlign;
     int dataAlign;
-    unsigned long augSize;
-    uintmax_t personality;
-    unsigned char lsdaEncoding;
     int rar;
-    uint8_t version;
+    bool isSignalHandler;
+    uintmax_t personality;
+    unsigned long augSize;
+    unsigned char lsdaEncoding;
     uint8_t addressEncoding;
     Elf_Off instructions;
     Elf_Off end;

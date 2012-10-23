@@ -28,3 +28,5 @@ inline const E &operator << (const E &stream, const Object &o) {
     stream.getStream() << o;
     return stream;
 }
+
+extern std::ostream *debug;

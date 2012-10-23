@@ -6,6 +6,7 @@
 #include "procinfo.h"
 
 static int usage(void);
+std::ostream *debug;
 
 int
 emain(int argc, char **argv)
@@ -14,7 +15,6 @@ emain(int argc, char **argv)
     pid_t pid;
     std::string execFile;
     ElfObject *exec = 0;
-    std::ostream *verbose = 0;
 
     while ((c = getopt(argc, argv, "d:D:hv")) != -1) {
         switch (c) {
@@ -33,7 +33,7 @@ emain(int argc, char **argv)
             usage();
             return (0);
         case 'v':
-            verbose = &std::clog;
+            debug = &std::clog;
             break;
         default:
             return usage();
@@ -50,7 +50,7 @@ emain(int argc, char **argv)
             FileReader *file = new FileReader(argv[i]);
             ElfObject *obj = new ElfObject(*file);
             if (obj->elfHeader.e_type == ET_CORE) {
-                CoreProcess proc(exec, *file, verbose);
+                CoreProcess proc(exec, *file);
                 proc.pstack(std::cout);
                 delete obj;
             } else {
@@ -58,7 +58,7 @@ emain(int argc, char **argv)
                 exec = obj;
             }
         } else {
-            LiveProcess proc(exec, pid, verbose);
+            LiveProcess proc(exec, pid);
             proc.pstack(std::cout);
         }
     }

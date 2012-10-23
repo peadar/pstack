@@ -3,8 +3,8 @@
 #include "dwarf.h"
 #include "procinfo.h"
 
-CoreProcess::CoreProcess(ElfObject *exe, Reader &coreFile, std::ostream *debug)
-    : Process(exe, coreIO, debug)
+CoreProcess::CoreProcess(ElfObject *exe, Reader &coreFile)
+    : Process(exe, coreIO)
     , coreImage(coreFile)
     , coreIO(this)
 {
@@ -155,7 +155,7 @@ CoreProcess::getPID() const
             return NOTE_DONE; }
         return NOTE_CONTIN;
     });
-    std::clog << "got pid: " << pid << std::endl;
+    if (debug) *debug << "got pid: " << pid << std::endl;
     return pid;
 }
 
