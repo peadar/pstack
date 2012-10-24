@@ -1055,8 +1055,10 @@ DwarfInfo::sourceFromAddr(uintmax_t addr, std::string &file, int &line)
     for (auto u : units) {
         if (u->lines->matrix.empty())
             continue;
-        for (auto i = u->lines->matrix.begin(); !i->end_sequence;) {
+        for (auto i = u->lines->matrix.begin();;) {
             auto next = i + 1;
+            if (next == u->lines->matrix.end())
+                break;
             if (i->addr <= addr && next->addr > addr) {
                 file = i->file->name;
                 line = i->line;
