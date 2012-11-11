@@ -26,7 +26,9 @@ typedef struct regs ptrace_regs;
 
 #ifdef __linux__
 typedef struct user_regs_struct  elf_regs;
-#ifdef __i386__
+#if defined(__PPC)
+#define REG(regs, reg) ((regs).n##reg)
+#elif defined(__i386__)
 #define REG(regs, reg) ((regs).e##reg)
 #else
 #define REG(regs, reg) ((regs).r##reg)
@@ -494,7 +496,13 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
     /* Put a bound on the number of iterations. */
     for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++) {
         Elf_Addr ip;
-        StackFrame *frame = new StackFrame(ip = REG(regs, ip), REG(regs, bp));
+        StackFrame *frame = new StackFrame(ip = REG(regs, ip),
+#ifdef __PPC
+                0
+#else
+                REG(regs, bp)
+#endif
+                );
         stack.push_back(frame);
 
         DwarfRegisters dr;
@@ -505,6 +513,7 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
             frame->unwindBy = "dwarf";
             dwarfDwarfToPt(&regs, &dr);
         } else {
+#ifndef __PPC
             try {
                 for (int i = 0; i < gFrameArgs; i++) {
                     Elf_Word arg;
@@ -515,7 +524,12 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
             catch (...) {
                 // not fatal if we can't read all the args.
             }
+#endif
             frame->unwindBy = "END  ";
+#ifdef __PPC
+            break;
+#else
+
             /* Read the next frame */
             try {
                 // Call site's instruction pointer is just above the frame pointer
@@ -532,6 +546,7 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
                 break;
             }
             frame->unwindBy = "stdc  ";
+#endif
         }
     }
 }

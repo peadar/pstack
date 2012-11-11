@@ -116,9 +116,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, std::strin
 
         SymbolSection syms(this, symSection);
         for (auto syminfo : syms) {
-
-            const Elf_Sym &candidate = syminfo.first;
-
+            auto &candidate = syminfo.first;
             if (candidate.st_shndx >= sectionHeaders.size())
                 continue;
             Elf_Shdr *shdr = sectionHeaders[candidate.st_shndx];
@@ -128,7 +126,6 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, std::strin
                 continue;
             if (candidate.st_value > addr)
                 continue;
-
             if (candidate.st_size) {
                 // symbol has a size: we can check if our address lies within it.
                 if (candidate.st_size + candidate.st_value > addr) {
@@ -138,6 +135,11 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, std::strin
                     return true;
                 }
             } else if (lowest < candidate.st_value) {
+		/*
+		 * No size, but hold on to it as a possibility. We'll return
+		 * the symbol with the highest value not aabove the required
+		 * value 
+		 */
                 sym = candidate;
                 name = syminfo.second;
                 lowest = candidate.st_value;
