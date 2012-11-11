@@ -35,8 +35,8 @@ LiveReader::memname(pid_t pid)
     return ss.str();
 }
 
-LiveProcess::LiveProcess(ElfObject *ex, pid_t pid_, std::ostream *debug)
-    : Process(ex, liveIO, debug)
+LiveProcess::LiveProcess(ElfObject *ex, pid_t pid_)
+    : Process(ex, liveIO)
     , pid(pid_)
     , liveIO(pid_)
 {
@@ -59,11 +59,9 @@ LiveProcess::getRegs(lwpid_t pid, CoreRegisters *reg) const
 #endif
 }
 
-
 void
 LiveProcess::resume(lwpid_t pid)
 {
-
     auto &tcb = lwps[pid];
     if (tcb.state == running)
         return;
@@ -76,22 +74,22 @@ LiveProcess::resume(lwpid_t pid)
 void
 LiveProcess::stop(lwpid_t pid)
 {
-    int status;
-
     auto &tcb = lwps[pid];
     if (tcb.state == stopped)
         return;
 
-    std::clog << "attach to " << pid << "... ";
+    if (debug)
+        *debug << "attach to " << pid << "... ";
     if (ptrace(PT_ATTACH, pid, 0, 0) == 0) {
+        int status;
         pid_t waitedpid = waitpid(pid, &status, pid == this->pid ? 0 : __WCLONE);
         if (waitedpid != -1) {
             tcb.state = stopped;
-            std::clog << "success\n";
+            if (debug) *debug << "success\n";
             return;
         }
-        std::clog << "wait failed: " << strerror(errno) << "\n";
+        if (debug) *debug << "wait failed: " << strerror(errno) << "\n";
         return;
     }
-    std::clog << "ptrace failed: " << strerror(errno) << "\n";
+    if (debug) *debug << "ptrace failed: " << strerror(errno) << "\n";
 }

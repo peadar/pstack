@@ -20,7 +20,13 @@ std::ostream &operator << (std::ostream &os, const DwarfLineState &ls) {
 }
 
 std::ostream &operator << (std::ostream &os, const DwarfLineInfo &lines) {
-    return os << lines.matrix;
+    return os
+
+        << "{ \"directories\": " << lines.directories
+        << ", \"files\": " << lines.files
+        << ", \"default_is_stmt\": " << lines.default_is_stmt
+        << ", \"matrix\": " << lines.matrix
+        << "}";
 }
 
 std::ostream & operator << (std::ostream &os, const DwarfEntry &entry) {

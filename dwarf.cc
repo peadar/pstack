@@ -293,7 +293,6 @@ DwarfUnit::DwarfUnit(DWARFReader &r)
     DWARFReader entriesR(r.dwarf, r.getOffset(), nextoff - r.getOffset());
     assert(nextoff <= r.getLimit());
     decodeEntries(entriesR, entries);
-    std::clog << "decoded entries for " << name() << "\n";
     r.setOffset(nextoff);
 }
 
@@ -396,9 +395,9 @@ DwarfLineInfo::DwarfLineInfo(DWARFReader &r, const DwarfUnit *unit)
 
     auto diff = expectedEnd - r.getOffset();
     if (diff) {
-        std::clog << "warning: left "
-            << diff
-            << " bytes in line info table of " << r.dwarf.elf->io.describe() << std::endl;
+        if (debug) *debug
+                << "warning: left " << diff
+                << " bytes in line info table of " << r.dwarf.elf->io.describe() << std::endl;
         r.skip(diff);
     }
 
@@ -902,10 +901,10 @@ DwarfFDE::DwarfFDE(DWARFReader &reader, DwarfCIE *cie_, Elf_Off end_)
     instructions = reader.getOffset();
     end = end_;
 }
-DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off end)
+DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off end_)
+    : isSignalHandler(false)
+    , end(end_)
 {
-    this->end = end;
-
     version = r.version = r.getu8();
     augmentation = r.getstring();
     codeAlign = r.getuleb128();
@@ -941,6 +940,9 @@ DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off end)
                         break;
                     case 'R':
                         addressEncoding = r.getu8();
+                        break;
+                    case 'S':
+                        isSignalHandler = true;
                         break;
                     case '\0':
                         break;
@@ -1042,7 +1044,7 @@ DwarfFrameInfo::findFDE(Elf_Addr addr) const
 {
     for (auto fde : fdeList)
         if (fde->iloc <= addr && fde->iloc + fde->irange > addr)
-        return fde;
+            return fde;
     return 0;
 }
 
@@ -1053,8 +1055,10 @@ DwarfInfo::sourceFromAddr(uintmax_t addr, std::string &file, int &line)
     for (auto u : units) {
         if (u->lines->matrix.empty())
             continue;
-        for (auto i = u->lines->matrix.begin(); !i->end_sequence;) {
+        for (auto i = u->lines->matrix.begin();;) {
             auto next = i + 1;
+            if (next == u->lines->matrix.end())
+                break;
             if (i->addr <= addr && next->addr > addr) {
                 file = i->file->name;
                 line = i->line;

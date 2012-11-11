@@ -96,12 +96,11 @@ Process::io() const
     return procio;
 }
 
-Process::Process(ElfObject *exec, Reader &procio_, std::ostream *debug_)
+Process::Process(ElfObject *exec, Reader &procio_)
     : vdso(0)
     , procio(procio_)
     , execImage(exec)
     , entry(0)
-    , debug(debug_)
     , isStatic(false)
 {
     abiPrefix = execImage->getABIPrefix();
@@ -238,7 +237,7 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
 std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
 {
-    os << "---- thread: " << thread.info.ti_tid << ", type: " << thread.info.ti_type << "\n";
+    os << "thread: " << std::hex << thread.info.ti_tid << ", type: " << thread.info.ti_type << "\n";
     for (auto frame : thread.stack) {
         Elf_Addr objIp = 0;
         struct ElfObject *obj = 0;
@@ -259,11 +258,10 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
             }
         }
 
-
-        os << symName << "(";
+        os << "    " << symName << "(";
         const char *sep = "";
         for (auto &i : frame->args) {
-            os << sep << i;
+            os << sep << "0x" << std::hex << i;
             sep = ", ";
         }
         os << ")";
@@ -271,18 +269,20 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
         if (obj != 0) {
             os << " in " << fileName;
             if (obj->dwarf && obj->dwarf->sourceFromAddr(objIp - 1, fileName, lineNo))
-                os << fileName << ":" << lineNo;
+                os << " at " << fileName << ":" << std::dec << lineNo;
         }
 
-        os
-            << "\t(ip=0x" << std::hex << intptr_t(frame->ip)
-            << ", off=0x" << intptr_t(objIp) - sym.st_value
+        if (debug) {
+            os
+                << "\t(ip=0x" << std::hex << intptr_t(frame->ip)
 #ifdef i386
-            << ", bp=0x" << std::hex << intptr_t(frame->bp)
+                << ", bp=0x" << std::hex << intptr_t(frame->bp)
 #endif
-            ;
-        if (frame->unwindBy != "END")
-            os << ", unwind by: " << frame->unwindBy << ")";
+                << ", off=0x" << intptr_t(objIp) - sym.st_value;
+            if (frame->unwindBy != "END")
+                os << ", unwind by: " << frame->unwindBy;
+            os << ")";
+        }
         os << "\n";
     }
 }
@@ -468,6 +468,7 @@ Process::pstack(std::ostream &os)
 #else
     for (auto &s : threadStacks) {
         dumpStackText(os, s);
+        os << "\n";
         sep = ", ";
     }
  #endif

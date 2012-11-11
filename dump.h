@@ -23,11 +23,33 @@ template <typename T> std::ostream &operator << (std::ostream &os, const std::li
     return os << " ]";
 }
 
+template <> inline
+std::ostream &operator << (std::ostream &os, const std::list<std::string> &entries) {
+    os << "[ ";
+    std::string sep = "";
+    for (auto &entry : entries) {
+        os << sep << "\"" << entry << "\"";
+        sep = ", ";
+    }
+    return os << " ]";
+}
+
 template <typename T> std::ostream &operator << (std::ostream &os, const std::vector<T> &entries) {
     os << "[ ";
     std::string sep = "";
     for (auto &entry : entries) {
         os << sep << entry;
+        sep = ", ";
+    }
+    return os << " ]";
+}
+
+template <> inline
+std::ostream &operator << (std::ostream &os, const std::vector<std::string> &entries) {
+    os << "[ ";
+    std::string sep = "";
+    for (auto &entry : entries) {
+        os << sep << "\"" << entry << "\"";
         sep = ", ";
     }
     return os << " ]";
