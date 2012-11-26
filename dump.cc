@@ -77,6 +77,7 @@ std::ostream & operator << (std::ostream &os, const DwarfARangeSet &ranges) {
     return os 
         << " { \"length\":" << ranges.length
         << " , \"version\":" << int(ranges.version)
+        << " , \"debug_info_offset\":" << int(ranges.debugInfoOffset)
         << " , \"addrlen\":" << int(ranges.addrlen)
         << " , \"descrlen\":" <<  int(ranges.segdesclen)
         << " , \"ranges\":" <<  ranges.ranges

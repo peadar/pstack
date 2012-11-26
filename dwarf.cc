@@ -173,7 +173,7 @@ DwarfInfo::DwarfInfo(struct ElfObject *obj)
     struct {
         const char *name;
         const Elf_Shdr **header;
-    } *loadsectsp, loadsects[] = {
+    } loadsects[] = {
         {".eh_frame", &eh_frame },
         {".debug_info", &info },
         {".debug_abbrev", &abbrev },
@@ -186,7 +186,7 @@ DwarfInfo::DwarfInfo(struct ElfObject *obj)
     };
 
     // Load all sections we're interested in.
-    for (loadsectsp = loadsects; loadsectsp->name; loadsectsp++)
+    for (auto loadsectsp = loadsects; loadsectsp->name; loadsectsp++)
         *loadsectsp->header = obj->findSectionByName(loadsectsp->name);
 
     // want these first: other sections refer into this.
@@ -230,7 +230,6 @@ DwarfInfo::DwarfInfo(struct ElfObject *obj)
             std::clog << "can't decode .debug_frame for "
                 << obj->io.describe() << ": " << ex.what() << "\n";
         }
-
     } else {
         debugFrame = 0;
     }
