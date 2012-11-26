@@ -34,10 +34,9 @@ std::string CoreReader::describe() const
 }
 
 static size_t
-readFromHdr(ElfObject *obj, const Elf_Phdr *hdr, Elf_Off addr, Elf_Off reloc, char *ptr, size_t size, size_t *toClear)
+readFromHdr(ElfObject *obj, const Elf_Phdr *hdr, Elf_Off addr, Elf_Off reloc, char *ptr, Elf_Off size, Elf_Off *toClear)
 {
-    Elf_Off off = addr - reloc - hdr->p_vaddr; // offset in header of our ptr.
-    size_t rv;
+    Elf_Off rv, off = addr - reloc - hdr->p_vaddr; // offset in header of our ptr.
     if (off < hdr->p_filesz) {
         // some of the data is in the file: read min of what we need and // that.
         Elf_Off fileSize = std::min(hdr->p_filesz - off, size);
@@ -67,7 +66,7 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
     while (size) {
         auto obj = &p->coreImage;
 
-        size_t zeroes = 0;
+        Elf_Off zeroes = 0;
         // Locate "remoteAddr" in the core file
         auto hdr = obj->findHeaderForAddress(remoteAddr);
         if (hdr) {

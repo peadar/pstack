@@ -172,7 +172,11 @@ public:
 
 void hexdump(FILE *f, int indent, const unsigned char *p, int len);
 const char *pad(size_t size);
+#ifdef __PPC
+typedef struct pt_regs CoreRegisters;
+#else
 typedef struct user_regs_struct CoreRegisters;
+#endif
 
 std::ostream& operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr &, const Elf_Sym &> &t);
 std::ostream& operator<< (std::ostream &os, const std::pair<const ElfObject *, const Elf_Shdr &> &p);
