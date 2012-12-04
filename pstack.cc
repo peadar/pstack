@@ -25,11 +25,11 @@ emain(int argc, char **argv)
             auto dumpobj = std::shared_ptr<ElfObject>(
                     new ElfObject(std::shared_ptr<Reader>(new FileReader(optarg, -1))));
             if (c == 'D')
-                std::cout << "{ elf: ";
-            std::cout << dumpobj;
+                std::cout << "{ \"elf\": ";
+            std::cout << *dumpobj;
             if (c == 'D') {
                 DwarfInfo dwarf(dumpobj);
-                std::cout << ", dwarf: " << dwarf << "}";
+                std::cout << ", \"dwarf\": " << dwarf << "}";
             }
             return 0;
         }

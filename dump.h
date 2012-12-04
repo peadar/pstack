@@ -79,7 +79,17 @@ template <typename T> std::ostream &operator << (std::ostream &os, const std::ve
     os << "[ ";
     const char *sep = "";
     for (auto &entry : entries) {
-        os << sep << entry.get();
+        os << sep << *entry;
+        sep = ", ";
+    }
+    return os << " ]";
+}
+
+template <typename T> std::ostream &operator << (std::ostream &os, const std::vector<std::shared_ptr<T>> &entries) {
+    os << "[ ";
+    const char *sep = "";
+    for (auto &entry : entries) {
+        os << sep << *entry;
         sep = ", ";
     }
     return os << " ]";
