@@ -166,13 +166,13 @@ struct DwarfUnit {
 };
 
 struct DwarfFDE {
-    std::shared_ptr<DwarfCIE> cie;
+    DwarfCIE *cie;
     uintmax_t iloc;
     uintmax_t irange;
     Elf_Off instructions;
     Elf_Off end;
     std::vector<unsigned char> aug;
-    DwarfFDE(DWARFReader &, std::shared_ptr<DwarfCIE> , Elf_Off end);
+    DwarfFDE(DWARFReader &, DwarfCIE * , Elf_Off end);
 };
 
 #define MAXREG 128
@@ -208,28 +208,29 @@ struct DwarfCallFrame {
 
 struct DwarfCIE {
     uint8_t version;
-    std::string augmentation;
+    uint8_t addressEncoding;
+    unsigned char lsdaEncoding;
+    bool isSignalHandler;
     unsigned codeAlign;
     int dataAlign;
     int rar;
-    bool isSignalHandler;
-    uintmax_t personality;
-    unsigned long augSize;
-    unsigned char lsdaEncoding;
-    uint8_t addressEncoding;
     Elf_Off instructions;
     Elf_Off end;
+    uintmax_t personality;
+    unsigned long augSize;
+    std::string augmentation;
     DwarfCIE(DWARFReader &, Elf_Off);
+    DwarfCIE() {}
     DwarfCallFrame execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr);
 };
 
 struct DwarfFrameInfo {
     const DwarfInfo *dwarf;
     FIType type;
-    std::map<Elf_Addr, std::shared_ptr<DwarfCIE>> cies;
+    std::map<Elf_Addr, DwarfCIE> cies;
     std::list<DwarfFDE> fdeList;
     DwarfFrameInfo(int version, DWARFReader &, FIType type);
-    Elf_Addr decodeCIEFDEHdr(int version, DWARFReader &, Elf_Addr &id, enum FIType, std::shared_ptr<DwarfCIE> *);
+    Elf_Addr decodeCIEFDEHdr(int version, DWARFReader &, Elf_Addr &id, enum FIType, DwarfCIE **);
     const DwarfFDE *findFDE(Elf_Addr) const;
     bool isCIE(Elf_Off id);
 };

@@ -903,7 +903,7 @@ decodeAddress(DWARFReader &f, int encoding)
     return base;
 }
 
-DwarfFDE::DwarfFDE(DWARFReader &reader, std::shared_ptr<DwarfCIE> cie_, Elf_Off end_)
+DwarfFDE::DwarfFDE(DWARFReader &reader, DwarfCIE *cie_, Elf_Off end_)
     : cie(cie_)
 {
     iloc = decodeAddress(reader, cie->addressEncoding);
@@ -916,6 +916,7 @@ DwarfFDE::DwarfFDE(DWARFReader &reader, std::shared_ptr<DwarfCIE> cie_, Elf_Off 
     instructions = reader.getOffset();
     end = end_;
 }
+
 DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off end_)
     : isSignalHandler(false)
     , end(end_)
@@ -1002,7 +1003,7 @@ DWARFReader::getlength()
 }
 
 Elf_Off
-DwarfFrameInfo::decodeCIEFDEHdr(int version, DWARFReader &r, Elf_Addr &id, enum FIType type, std::shared_ptr<DwarfCIE>  *ciep)
+DwarfFrameInfo::decodeCIEFDEHdr(int version, DWARFReader &r, Elf_Addr &id, enum FIType type, DwarfCIE **ciep)
 {
     Elf_Off length = r.getlength();
 
@@ -1011,8 +1012,10 @@ DwarfFrameInfo::decodeCIEFDEHdr(int version, DWARFReader &r, Elf_Addr &id, enum 
 
     Elf_Off idoff = r.getOffset();
     id = r.getuint(version >= 3 ? ELF_BITS/8 : 4);
-    if (!isCIE(id) && ciep)
-        *ciep = cies[type == FI_EH_FRAME ? idoff - id : id];
+    if (!isCIE(id) && ciep) {
+        auto ciei = cies.find(type == FI_EH_FRAME ? idoff - id : id);
+        *ciep = ciei != cies.end() ? &ciei->second : 0;
+    }
     return idoff + length;
 }
 
@@ -1037,11 +1040,11 @@ DwarfFrameInfo::DwarfFrameInfo(int version, DWARFReader &reader, enum FIType typ
         if (nextoff == 0)
             break;
         if (isCIE(cieid))
-            cies[cieoff] = std::shared_ptr<DwarfCIE>(new DwarfCIE(reader, nextoff));
+            cies[cieoff] = DwarfCIE(reader, nextoff);
     }
     reader.setOffset(start);
     for (reader.setOffset(start); !reader.empty(); reader.setOffset(nextoff)) {
-        std::shared_ptr<DwarfCIE> cie;
+        DwarfCIE *cie;
         nextoff = decodeCIEFDEHdr(version, reader, cieid, type, &cie);
         if (nextoff == 0)
             break;

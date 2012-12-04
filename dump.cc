@@ -190,7 +190,7 @@ std::ostream &
 operator << (std::ostream &os, const std::pair<const DwarfInfo *, const DwarfFDE *> &dfde )
 {
     os
-        << "{ \"cie\": " << intptr_t(dfde.second->cie.get())
+        << "{ \"cie\": " << intptr_t(dfde.second->cie)
         << ", \"loc\": " << dfde.second->iloc
         << ", \"range\": " << dfde.second->irange
         << ", \"auglen\": " << dfde.second->aug.size()
@@ -207,8 +207,8 @@ operator << (std::ostream &os, const DwarfFrameInfo &info)
     os << "{ \"cielist\": [";
     const char *sep = "";
     for (auto &cieent : info.cies) {
-        const DwarfCIE *cie  = cieent.second.get();
-        os << sep << std::make_pair(info.dwarf, cie);
+        const DwarfCIE &cie  = cieent.second;
+        os << sep << std::make_pair(info.dwarf, &cie);
         sep = ", ";
     }
     os << "], \"fdelist\": [";
