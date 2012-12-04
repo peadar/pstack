@@ -306,7 +306,7 @@ Process::addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load)
         *debug
             << "object " << obj->io->describe()
             << " loaded at address " << std::hex << load
-            << ", base=" << obj->base;
+            << ", base=" << obj->base << std::endl;
 }
 
 /*
@@ -448,26 +448,18 @@ Process::pstack(std::ostream &os)
         threadStacks.back().unwind(*this, regs);
     }
 
+
+    ps_pcontinue(this);
+    /*
+     * resume at this point - maybe a bit optimistic if a shared library gets
+     * unloaded while we print stuff out, but worth the risk, normally.
+     */
     const char *sep = "";
-#if 0
-    os << "[";
-    for (auto s : threadStacks) {
-        os << sep;
-        dumpStackJSON(os, s);
-        sep = ", ";
-    }
-    os << "]";
-#else
     for (auto &s : threadStacks) {
         dumpStackText(os, s);
         os << "\n";
         sep = ", ";
     }
- #endif
-
-
-
-    ps_pcontinue(this);
 
     return os;
 }

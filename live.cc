@@ -77,7 +77,7 @@ LiveProcess::resume(lwpid_t pid)
         long long secs = (tv.tv_sec - start.tv_sec) * 1000000;
         secs += tv.tv_usec;
         secs -= start.tv_usec;
-        std::clog << "child was stopped for " << secs << "us" << std::endl;
+        *debug << "child was stopped for " << std::dec << secs << " microseconds" << std::endl;
     }
 }
 
@@ -119,15 +119,16 @@ LiveProcess::stop(lwpid_t pid)
     if (tcb.state == stopped)
         return;
 
-    if (stopCount++ == 0 && debug)
+    if (stopCount++ == 0 && debug) {
+        *debug << "stopping child" << std::endl;
         gettimeofday(&start, 0);
+    }
 
     if (ptrace(PT_ATTACH, pid, 0, 0) == 0) {
         int status;
         pid_t waitedpid = waitpid(pid, &status, pid == this->pid ? 0 : __WCLONE);
         if (waitedpid != -1) {
             tcb.state = stopped;
-            if (debug) *debug << "success\n";
             return;
         }
         if (debug) *debug << "wait failed: " << strerror(errno) << "\n";
