@@ -63,7 +63,7 @@ std::ostream &operator << (std::ostream &os, const DwarfUnit &unit) {
         << " { \"length\":" <<  unit.length
         << " , \"version\":" <<  int(unit.version)
         << " , \"addrlen\":" <<  int(unit.addrlen)
-        << " , \"linenumbers\":" << *unit.lines
+        << " , \"linenumbers\":" << unit.lines
         << " , \"entries\":" <<  unit.entries
         << " }";
 }

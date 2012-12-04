@@ -73,6 +73,7 @@ struct DwarfAbbreviation {
     enum DwarfHasChildren hasChildren;
     std::list<DwarfAttributeSpec> specs;
     DwarfAbbreviation(DWARFReader &, intmax_t code);
+    DwarfAbbreviation() {}
 };
 
 struct DwarfPubname {
@@ -102,7 +103,7 @@ struct DwarfPubnameUnit {
     uint16_t version;
     uint32_t infoOffset;
     uint32_t infoLength;
-    std::list<std::shared_ptr<DwarfPubname>> pubnames;
+    std::list<DwarfPubname> pubnames;
     DwarfPubnameUnit(DWARFReader &r);
 };
 
@@ -142,7 +143,7 @@ struct DwarfAttribute {
 
 struct DwarfEntry {
     DwarfEntries children;
-    std::shared_ptr<DwarfAbbreviation> type;
+    const DwarfAbbreviation *type;
     std::map<DwarfAttrName, DwarfAttribute> attributes;
 
     const DwarfAttribute &attrForName(DwarfAttrName name) const {
@@ -160,17 +161,50 @@ enum FIType {
     FI_EH_FRAME
 };
 
+struct DwarfFileEntry {
+    std::string name;
+    std::string directory;
+    unsigned lastMod;
+    unsigned length;
+    DwarfFileEntry(std::string name_, std::string dir_, unsigned lastMod_, unsigned length_);
+    DwarfFileEntry(DWARFReader &r, DwarfLineInfo *info);
+    DwarfFileEntry() {}
+};
+
+struct DwarfLineState {
+    uintmax_t addr;
+    const DwarfFileEntry *file;
+    unsigned line;
+    unsigned column;
+    unsigned is_stmt:1;
+    unsigned basic_block:1;
+    unsigned end_sequence:1;
+    DwarfLineState(DwarfLineInfo *);
+    void reset(DwarfLineInfo *);
+};
+
+struct DwarfLineInfo {
+    int default_is_stmt;
+    uint8_t opcode_base;
+    std::vector<int> opcode_lengths;
+    std::vector<std::string> directories;
+    std::vector<DwarfFileEntry> files;
+    std::vector<DwarfLineState> matrix;
+    DwarfLineInfo() {}
+    void build(DWARFReader &, const DwarfUnit *);
+};
+
 struct DwarfUnit {
     void decodeEntries(DWARFReader &r, DwarfEntries &entries);
     DwarfUnit *next;
     uint32_t length;
     uint16_t version;
-    std::map<DwarfTag, std::shared_ptr<DwarfAbbreviation>> abbreviations;
+    std::map<DwarfTag, DwarfAbbreviation> abbreviations;
     uint8_t addrlen;
     const unsigned char *entryPtr;
     const unsigned char *lineInfo;
     DwarfEntries entries;
-    std::shared_ptr<DwarfLineInfo> lines;
+    DwarfLineInfo lines;
     DwarfUnit(DWARFReader &);
     std::string name() const;
 };
@@ -267,39 +301,6 @@ public:
     uintmax_t unwind(Process *proc, DwarfRegisters *regs, uintmax_t addr);
     Elf_Addr getCFA(const Process &proc, const DwarfCallFrame *frame, const DwarfRegisters *regs);
     ~DwarfInfo();
-};
-
-struct DwarfFileEntry {
-    std::string name;
-    std::string directory;
-    unsigned lastMod;
-    unsigned length;
-
-    DwarfFileEntry(std::string name_, std::string dir_, unsigned lastMod_, unsigned length_);
-    DwarfFileEntry(DWARFReader &r, DwarfLineInfo *info);
-};
-
-struct DwarfLineState {
-    uintmax_t addr;
-    std::shared_ptr<DwarfFileEntry> file;
-    unsigned line;
-    unsigned column;
-    unsigned is_stmt:1;
-    unsigned basic_block:1;
-    unsigned end_sequence:1;
-    DwarfLineState(DwarfLineInfo *);
-    void reset(DwarfLineInfo *);
-};
-
-struct DwarfLineInfo {
-    int default_is_stmt;
-    uint8_t opcode_base;
-    std::vector<int> opcode_lengths;
-
-    std::vector<std::string> directories;
-    std::vector<std::shared_ptr<DwarfFileEntry>> files;
-    std::vector<DwarfLineState> matrix;
-    DwarfLineInfo(DWARFReader &, const DwarfUnit *);
 };
 
 void dwarfDump(FILE *out, int, const DwarfInfo *info);

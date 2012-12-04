@@ -161,7 +161,7 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
         offset = r.getu32();
         if (offset == 0)
             break;
-        pubnames.push_back(std::shared_ptr<DwarfPubname>(new DwarfPubname(r, offset)));
+        pubnames.push_back(DwarfPubname(r, offset));
     }
 }
 
@@ -309,7 +309,7 @@ DwarfUnit::DwarfUnit(DWARFReader &r)
     r.addrLen = addrlen = r.getu8();
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
-        abbreviations[DwarfTag(code)] = std::shared_ptr<DwarfAbbreviation>(new DwarfAbbreviation(abbR, code));
+        abbreviations[DwarfTag(code)] = DwarfAbbreviation(abbR, code);
 
     DWARFReader entriesR(r.dwarf, r.getOffset(), nextoff - r.getOffset());
     assert(nextoff <= r.getLimit());
@@ -360,7 +360,7 @@ void
 DwarfLineState::reset(DwarfLineInfo *li)
 {
     addr = 0;
-    file = li->files[1];
+    file = &li->files[1];
     line = 1;
     column = 0;
     is_stmt = li->default_is_stmt;
@@ -374,7 +374,8 @@ dwarfStateAddRow(DwarfLineInfo *li, DwarfLineState &state)
     li->matrix.push_back(state);
 }
 
-DwarfLineInfo::DwarfLineInfo(DWARFReader &r, const DwarfUnit *unit)
+void
+DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
 {
     uint32_t total_length = r.getlength();
     Elf_Off end = r.getOffset() + total_length;
@@ -400,8 +401,7 @@ DwarfLineInfo::DwarfLineInfo(DWARFReader &r, const DwarfUnit *unit)
         directories.push_back(s);
     }
 
-    files.push_back(std::shared_ptr<DwarfFileEntry>(
-            new DwarfFileEntry("unknown", "unknown", 0, 0))); // index 0 is special
+    files.push_back(DwarfFileEntry("unknown", "unknown", 0, 0)); // index 0 is special
     for (count = 1;; count++) {
         char c;
         r.io->readObj(r.getOffset(), &c);
@@ -409,7 +409,7 @@ DwarfLineInfo::DwarfLineInfo(DWARFReader &r, const DwarfUnit *unit)
             r.getu8(); // skip terminator.
             break;
         }
-        files.push_back(std::shared_ptr<DwarfFileEntry>(new DwarfFileEntry(r, this)));
+        files.push_back(DwarfFileEntry(r, this));
     }
 
     auto diff = expectedEnd - r.getOffset();
@@ -472,7 +472,7 @@ DwarfLineInfo::DwarfLineInfo(DWARFReader &r, const DwarfUnit *unit)
                 state.line += r.getsleb128();
                 break;
             case DW_LNS_set_file:
-                state.file = files[r.getuleb128()];
+                state.file = &files[r.getuleb128()];
                 break;
             case DW_LNS_copy:
                 dwarfStateAddRow(this, state);
@@ -607,7 +607,7 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfUnit *unit, const Dwar
 }
 
 DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
-    : type(unit->abbreviations[DwarfTag(code)])
+    : type(&unit->abbreviations[DwarfTag(code)])
 {
 
     for (auto &spec : type->specs)
@@ -616,7 +616,7 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
     case DW_TAG_compile_unit: {
         size_t size = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
         DWARFReader r2(r.dwarf, r.dwarf.lineshdr->sh_offset + size, r.dwarf.lineshdr->sh_size - size);
-        unit->lines.reset(new DwarfLineInfo(r2, unit));
+        unit->lines.build(r2, unit);
         break;
     }
     default: // not otherwise interested for the mo.
@@ -1072,11 +1072,11 @@ DwarfInfo::sourceFromAddr(uintmax_t addr, std::string &file, int &line)
 {
     // XXX: Use "arange" table
     for (auto &u : units()) {
-        if (u.lines->matrix.empty())
+        if (u.lines.matrix.empty())
             continue;
-        for (auto i = u.lines->matrix.begin();;) {
+        for (auto i = u.lines.matrix.begin();;) {
             auto next = i + 1;
-            if (next == u.lines->matrix.end())
+            if (next == u.lines.matrix.end())
                 break;
             if (i->addr <= addr && next->addr > addr) {
                 file = i->file->name;
