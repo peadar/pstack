@@ -1037,7 +1037,7 @@ DwarfFrameInfo::DwarfFrameInfo(int version, DWARFReader &reader, enum FIType typ
         if (nextoff == 0)
             break;
         if (isCIE(cieid))
-            cies[cieoff] = std::move(std::shared_ptr<DwarfCIE>(new DwarfCIE(reader, nextoff)));
+            cies[cieoff] = std::shared_ptr<DwarfCIE>(new DwarfCIE(reader, nextoff));
     }
     reader.setOffset(start);
     for (reader.setOffset(start); !reader.empty(); reader.setOffset(nextoff)) {
@@ -1048,7 +1048,7 @@ DwarfFrameInfo::DwarfFrameInfo(int version, DWARFReader &reader, enum FIType typ
         if (!isCIE(cieid)) {
             if (cie == 0)
                 throw Exception() << "invalid frame information in " << reader.io->describe();
-            fdeList.push_back(std::unique_ptr<DwarfFDE>(new DwarfFDE(reader, cie, nextoff)));
+            fdeList.push_back(DwarfFDE(reader, cie, nextoff));
         }
     }
 }
@@ -1057,8 +1057,8 @@ const DwarfFDE *
 DwarfFrameInfo::findFDE(Elf_Addr addr) const
 {
     for (auto &fde : fdeList)
-        if (fde->iloc <= addr && fde->iloc + fde->irange > addr)
-            return fde.get();
+        if (fde.iloc <= addr && fde.iloc + fde.irange > addr)
+            return &fde;
     return 0;
 }
 

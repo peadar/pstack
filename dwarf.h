@@ -227,7 +227,7 @@ struct DwarfFrameInfo {
     const DwarfInfo *dwarf;
     FIType type;
     std::map<Elf_Addr, std::shared_ptr<DwarfCIE>> cies;
-    std::list<std::unique_ptr<DwarfFDE>> fdeList;
+    std::list<DwarfFDE> fdeList;
     DwarfFrameInfo(int version, DWARFReader &, FIType type);
     Elf_Addr decodeCIEFDEHdr(int version, DWARFReader &, Elf_Addr &id, enum FIType, std::shared_ptr<DwarfCIE> *);
     const DwarfFDE *findFDE(Elf_Addr) const;
