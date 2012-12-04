@@ -62,7 +62,6 @@ emain(int argc, char **argv)
         } else {
             LiveProcess proc(exec, pid);
             proc.pstack(std::cout);
-            abort();
         }
     }
     return (error);
