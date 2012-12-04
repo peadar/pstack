@@ -132,10 +132,12 @@ struct DwarfAttribute {
     DwarfValue value;
     DwarfAttribute(DWARFReader &, const DwarfUnit *, const DwarfAttributeSpec *spec);
     ~DwarfAttribute() {
-        if (spec->form == DW_FORM_string)
+        if (spec && spec->form == DW_FORM_string)
             free((void *)(const void *)value.string);
     }
-    DwarfAttribute() {}
+    DwarfAttribute() : spec(0)
+{
+}
 };
 
 struct DwarfEntry {
