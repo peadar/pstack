@@ -1,5 +1,5 @@
 #include <limits>
-#include "dwarf.h"
+#include "elfinfo.h"
 
 static uint32_t elf_hash(std::string);
 
@@ -7,35 +7,35 @@ static uint32_t elf_hash(std::string);
  * Parse out an ELF file into an ElfObject structure.
  */
 
-const Elf_Phdr *
+const std::shared_ptr<Elf_Phdr>
 ElfObject::findHeaderForAddress(Elf_Off a) const
 {
-    for (auto hdr : programHeaders)
+    for (auto &hdr : programHeaders)
         if (hdr->p_vaddr <= a && hdr->p_vaddr + hdr->p_memsz > a && hdr->p_type == PT_LOAD)
             return hdr;
     return 0;
 }
 
-ElfObject::ElfObject(Reader &io_)
-    : io(io_)
+ElfObject::ElfObject(std::shared_ptr<Reader> io_)
+    : io(std::shared_ptr<Reader>(new CacheReader(io_)))
     , dynamic(0)
 {
     int i;
     size_t off;
-    io.readObj(0, &elfHeader);
+    io->readObj(0, &elfHeader);
 
     /* Validate the ELF header */
     if (!IS_ELF(elfHeader) || elfHeader.e_ident[EI_VERSION] != EV_CURRENT)
-        throw Exception() << io.describe() << ": content is not an ELF image";
+        throw Exception() << io->describe() << ": content is not an ELF image";
 
     base = std::numeric_limits<Elf_Off>::max();
     for (off = elfHeader.e_phoff, i = 0; i < elfHeader.e_phnum; i++) {
         Elf_Phdr *phdr = new Elf_Phdr();
-        io.readObj(off, phdr);
+        io->readObj(off, phdr);
 
         switch (phdr->p_type) {
             case PT_INTERP:
-                interpreterName = io.readString(phdr->p_offset);
+                interpreterName = io->readString(phdr->p_offset);
                 break;
             case PT_DYNAMIC:
                 dynamic = phdr;
@@ -45,47 +45,35 @@ ElfObject::ElfObject(Reader &io_)
                     base = Elf_Off(phdr->p_vaddr);
                 break;
         }
-        programHeaders.push_back(phdr);
+        programHeaders.push_back(std::unique_ptr<Elf_Phdr>(phdr));
         off += elfHeader.e_phentsize;
     }
 
     for (off = elfHeader.e_shoff, i = 0; i < elfHeader.e_shnum; i++) {
         Elf_Shdr *shdr = new Elf_Shdr();
-        io.readObj(off, shdr);
-        sectionHeaders.push_back(shdr);
+        io->readObj(off, shdr);
+        sectionHeaders.push_back(std::unique_ptr<Elf_Shdr>(shdr));
         off += elfHeader.e_shentsize;
     }
 
     if (elfHeader.e_shstrndx != SHN_UNDEF) {
-        Elf_Shdr *sshdr = sectionHeaders[elfHeader.e_shstrndx];
-        sectionStrings = sshdr->sh_offset;
+        auto sshdr = sectionHeaders[elfHeader.e_shstrndx];
+        for (auto &h : sectionHeaders)
+            namedSection[io->readString(sshdr->sh_offset + h->sh_name)] = h.get();
+        auto tab = namedSection[".hash"];
+        if (tab)
+            hash.reset(new ElfSymHash(this, tab));
     } else {
-        sectionStrings = 0;
+        hash = 0;
     }
-    Elf_Shdr *tab = findSectionByName(".hash");
-    hash = tab ? new ElfSymHash(this, tab) : 0;
 }
 
-/*
- * Given an Elf object, find a particular section.
- */
-Elf_Shdr *
-ElfObject::findSectionByName(std::string name)
-{
-    for (size_t i = 0; i < elfHeader.e_shnum; ++i) {
-        Elf_Shdr *hdr = sectionHeaders[i];
-        if (name == io.readString(sectionStrings + hdr->sh_name)) {
-            return hdr;
-        }
-    }
-    return 0;
-}
 std::pair<const Elf_Sym, const std::string>
 SymbolIterator::operator *()
 {
         Elf_Sym sym;
-        io.readObj(off, &sym);
-        std::string name = io.readString(sym.st_name + stroff);
+        io->readObj(off, &sym);
+        std::string name = io->readString(sym.st_name + stroff);
         return std::make_pair(sym, name);
 }
 
@@ -110,7 +98,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, std::strin
     bool exact = false;
     Elf_Addr lowest = 0;
     for (size_t i = 0; sectionNames[i] && !exact; i++) {
-        Elf_Shdr *symSection = findSectionByName(sectionNames[i]);
+        const Elf_Shdr *symSection = namedSection[sectionNames[i]];
         if (symSection == 0)
             continue;
 
@@ -119,7 +107,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, std::strin
             auto &candidate = syminfo.first;
             if (candidate.st_shndx >= sectionHeaders.size())
                 continue;
-            Elf_Shdr *shdr = sectionHeaders[candidate.st_shndx];
+            Elf_Shdr *shdr = sectionHeaders[candidate.st_shndx].get();
             if (!(shdr->sh_flags & SHF_ALLOC))
                 continue;
             if (type != STT_NOTYPE && ELF_ST_TYPE(candidate.st_info) != type)
@@ -162,7 +150,7 @@ ElfObject::linearSymSearch(const Elf_Shdr *hdr, std::string name, Elf_Sym &sym)
     return false;
 }
 
-ElfSymHash::ElfSymHash(ElfObject *obj_, Elf_Shdr *hash_)
+ElfSymHash::ElfSymHash(ElfObject *obj_, const Elf_Shdr *hash_)
     : obj(obj_)
     , hash(hash_)
 {
@@ -170,12 +158,11 @@ ElfSymHash::ElfSymHash(ElfObject *obj_, Elf_Shdr *hash_)
 
     // read the hash table into local memory.
     size_t words = hash->sh_size / sizeof (Elf_Word);
-
-    data = new Elf_Word[words];
-    obj->io.readObj(hash->sh_offset, data, words);
+    data.resize(words);
+    obj->io->readObj(hash->sh_offset, &data[0], words);
     nbucket = data[0];
     nchain = data[1];
-    buckets = data + 2;
+    buckets = &data[0] + 2;
     chains = buckets + nbucket;
     strings = obj->sectionHeaders[syms->sh_link]->sh_offset;
 }
@@ -186,8 +173,8 @@ ElfSymHash::findSymbol(Elf_Sym &sym, std::string &name)
     uint32_t bucket = elf_hash(name) % nbucket;
     for (Elf_Word i = buckets[bucket]; i != STN_UNDEF; i = chains[i]) {
         Elf_Sym candidate;
-        obj->io.readObj(syms->sh_offset + i * sizeof candidate, &candidate);
-        std::string candidateName = obj->io.readString(strings + candidate.st_name);
+        obj->io->readObj(syms->sh_offset + i * sizeof candidate, &candidate);
+        std::string candidateName = obj->io->readString(strings + candidate.st_name);
         if (candidateName == name) {
             sym = candidate;
             name = candidateName;
@@ -205,10 +192,10 @@ ElfObject::findSymbolByName(std::string name, Elf_Sym &sym)
 {
     if (hash && hash->findSymbol(sym, name))
         return true;
-    Elf_Shdr *syms = findSectionByName(".dynsym");
+    const Elf_Shdr *syms = namedSection[".dynsym"];
     if (syms && linearSymSearch(syms, name, sym))
         return true;
-    syms = findSectionByName(".symtab");
+    syms = namedSection[".symtab"];
     if (syms && linearSymSearch(syms, name, sym))
         return true;
     return false;

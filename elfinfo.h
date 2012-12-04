@@ -36,7 +36,9 @@
 #include <string>
 #include <list>
 #include <vector>
+#include <map>
 #include <elf.h>
+#include <memory>
 extern "C" {
 #include <thread_db.h>
 }
@@ -89,7 +91,6 @@ static inline size_t roundup2(size_t val, size_t align)
 
 #endif
 
-struct DwarfInfo;
 class ElfSymHash;
 
 #define MEMBUF (1024 * 64)
@@ -102,48 +103,47 @@ enum NoteIter {
 
 struct ElfObject {
     Elf_Off base; /* Lowest address of a PT_LOAD section */
-    CacheReader io;
+    std::shared_ptr<Reader> io;
     size_t fileSize;
     Elf_Ehdr elfHeader;
-    std::vector<Elf_Phdr *> programHeaders;
-    std::vector<Elf_Shdr *> sectionHeaders;
+    std::vector<std::shared_ptr<Elf_Phdr>> programHeaders;
+    std::vector<std::shared_ptr<Elf_Shdr>> sectionHeaders;
     const Elf_Phdr *dynamic;
-    off_t sectionStrings;
     std::string interpreterName;
-    DwarfInfo *dwarf;
     bool linearSymSearch(const Elf_Shdr *hdr, std::string name, Elf_Sym &);
     void init(FILE *);
-    ElfSymHash *hash;
+    std::shared_ptr<ElfSymHash> hash;
 public:
+    std::map<std::string, const Elf_Shdr *> namedSection;
     Elf_Shdr *findSectionByName(std::string name);
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(std::string name, Elf_Sym &sym);
     std::string getABIPrefix();
-    ElfObject(Reader &);
+    ElfObject(std::shared_ptr<Reader>);
     ~ElfObject();
     Elf_Shdr *getSection(size_t idx) const {
         if (idx >= sectionHeaders.size())
             throw 999;
-        return sectionHeaders[idx];
+        return sectionHeaders[idx].get();
     }
     template <typename Callable> void getNotes(const Callable &callback) const;
     std::string getImageFromCore();
-    const Elf_Phdr *findHeaderForAddress(Elf_Off) const;
+    const std::shared_ptr<Elf_Phdr> findHeaderForAddress(Elf_Off) const;
 };
 
 // Helpful for iterating over symbol sections.
 struct SymbolIterator {
-    Reader &io;
+    std::shared_ptr<Reader> io;
     off_t off;
     off_t stroff;
-    SymbolIterator(Reader &io_, off_t off_, off_t stroff_) : io(io_), off(off_), stroff(stroff_) {}
+    SymbolIterator(std::shared_ptr<Reader> io_, off_t off_, off_t stroff_) : io(io_), off(off_), stroff(stroff_) {}
     bool operator != (const SymbolIterator &rhs) { return rhs.off != off; }
     SymbolIterator &operator++ () { off += sizeof (Elf_Sym); return *this; }
     std::pair<const Elf_Sym, const std::string> operator *();
 };
 
 struct SymbolSection {
-    Reader &io;
+    std::shared_ptr<Reader> io;
     const Elf_Shdr *section;
     off_t stroff;
     SymbolIterator begin() { return SymbolIterator(io, section ?  section->sh_offset : 0, stroff); }
@@ -162,11 +162,11 @@ class ElfSymHash {
     off_t strings;
     Elf_Word nbucket;
     Elf_Word nchain;
-    const Elf_Word *buckets;
+    std::vector<Elf_Word> data;
     const Elf_Word *chains;
-    const Elf_Word *data;
+    const Elf_Word *buckets;
 public:
-    ElfSymHash(ElfObject *object, Elf_Shdr *hash);
+    ElfSymHash(ElfObject *object, const Elf_Shdr *hash);
     bool findSymbol(Elf_Sym &sym, std::string &name);
 };
 
@@ -188,21 +188,21 @@ std::ostream& operator<< (std::ostream &os, const ElfObject &obj);
 template <typename Callable> void
 ElfObject::getNotes(const Callable &callback) const
 {
-    for (auto phdr : programHeaders) {
+    for (auto &phdr : programHeaders) {
         if (phdr->p_type == PT_NOTE) {
             Elf_Note note;
             off_t off = phdr->p_offset;
             off_t e = off + phdr->p_filesz;
             while (off < e) {
-                io.readObj(off, &note);
+                io->readObj(off, &note);
                 off += sizeof note;
                 char *name = new char[note.n_namesz + 1];
-                io.readObj(off, name, note.n_namesz);
+                io->readObj(off, name, note.n_namesz);
                 name[note.n_namesz] = 0;
                 off += note.n_namesz;
                 off = roundup2(off, 4);
                 char *data = new char[note.n_descsz];
-                io.readObj(off, data, note.n_descsz);
+                io->readObj(off, data, note.n_descsz);
                 off += note.n_descsz;
                 off = roundup2(off, 4);
                 NoteIter iter = callback(name, note.n_type, data, note.n_descsz);

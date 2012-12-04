@@ -2,6 +2,7 @@
 #include <list>
 #include <string>
 #include <stdio.h>
+#include <memory>
 
 #include "ex.h"
 class Reader {
@@ -29,7 +30,7 @@ public:
 };
 
 class CacheReader : public Reader {
-    Reader &upstream;
+    std::shared_ptr<Reader> upstream;
     static const size_t PAGESIZE = 4096;
     static const size_t MAXPAGES = 64;
     struct Page {
@@ -43,8 +44,8 @@ class CacheReader : public Reader {
     Page *getPage(off_t offset) const;
 public:
     virtual size_t read(off_t off, size_t count, char *ptr) const;
-    virtual std::string describe() const { return upstream.describe(); }
-    CacheReader(Reader &upstream);
+    virtual std::string describe() const { return upstream->describe(); }
+    CacheReader(std::shared_ptr<Reader> upstream);
     ~CacheReader();
 };
 

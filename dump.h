@@ -23,6 +23,16 @@ template <typename T> std::ostream &operator << (std::ostream &os, const std::li
     return os << " ]";
 }
 
+template <typename T> std::ostream &operator << (std::ostream &os, const std::list<std::unique_ptr<T>> &entries) {
+    os << "[ ";
+    std::string sep = "";
+    for (auto &entry : entries) {
+        os << sep << *entry;
+        sep = ", ";
+    }
+    return os << " ]";
+}
+
 template <> inline
 std::ostream &operator << (std::ostream &os, const std::list<std::string> &entries) {
     os << "[ ";
@@ -65,11 +75,32 @@ template <typename T> std::ostream &operator << (std::ostream &os, const std::ve
     return os << " ]";
 }
 
+template <typename T> std::ostream &operator << (std::ostream &os, const std::vector<std::unique_ptr<T>> &entries) {
+    os << "[ ";
+    const char *sep = "";
+    for (auto &entry : entries) {
+        os << sep << entry.get();
+        sep = ", ";
+    }
+    return os << " ]";
+}
+
 template <typename K, typename V> std::ostream &operator << (std::ostream &os, const std::map<K, V> &entries) {
     os << "{ ";
     std::string sep = "";
     for (auto &entry : entries) {
         os << sep << " \"" << entry.first << "\": " << entry.second;
+        sep = ", ";
+    }
+    return os << " }";
+}
+
+template <typename K, typename V> std::ostream &operator << (std::ostream &os,
+const std::map<K, std::unique_ptr<V>> &entries) {
+    os << "{ ";
+    std::string sep = "";
+    for (auto &entry : entries) {
+        os << sep << " \"" << entry.first << "\": " << *entry.second;
         sep = ", ";
     }
     return os << " }";
@@ -105,8 +136,8 @@ std::ostream &operator << (std::ostream &, const DwarfUnit &);
 std::ostream &operator << (std::ostream &, const Elf_auxv_t &);
 std::ostream &operator << (std::ostream &, const Elf_Phdr &);
 std::ostream &operator << (std::ostream &, const prstatus_t &);
-std::ostream &operator << (std::ostream &, const std::pair<const DwarfInfo &, const DwarfCIE &> &);
-std::ostream &operator << (std::ostream &, const std::pair<const DwarfInfo &, const DwarfFDE &> &);
+std::ostream &operator << (std::ostream &, const std::pair<const DwarfInfo *, const DwarfCIE *> &);
+std::ostream &operator << (std::ostream &, const std::pair<const DwarfInfo *, const DwarfFDE *> &);
 std::ostream &operator << (std::ostream &, const std::pair<const ElfObject *, const Elf_Shdr *> &);
 std::ostream &operator << (std::ostream &, DwarfAttrName);
 std::ostream &operator << (std::ostream &, DwarfForm);

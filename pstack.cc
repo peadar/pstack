@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include "dwarf.h"
+#include "dump.h"
 #include "elfinfo.h"
 #include "procinfo.h"
 
@@ -14,19 +15,22 @@ emain(int argc, char **argv)
     int error, i, c;
     pid_t pid;
     std::string execFile;
-    ElfObject *exec = 0;
+    std::shared_ptr<ElfObject> exec;
 
     while ((c = getopt(argc, argv, "d:D:hv")) != -1) {
         switch (c) {
         case 'D':
         case 'd': {
             /* Undocumented option to dump image contents */
-            FileReader r(optarg, -1);
-            ElfObject dumpobj(r);
+            auto dumpobj = std::shared_ptr<ElfObject>(
+                    new ElfObject(std::shared_ptr<Reader>(new FileReader(optarg, -1))));
             if (c == 'D')
-                dumpobj.dwarf = new DwarfInfo(&dumpobj);
+                std::cout << "{ elf: ";
             std::cout << dumpobj;
-
+            if (c == 'D') {
+                DwarfInfo dwarf(dumpobj);
+                std::cout << ", dwarf: " << dwarf << "}";
+            }
             return 0;
         }
         case 'h':
@@ -46,15 +50,13 @@ emain(int argc, char **argv)
     for (error = 0, i = optind; i < argc; i++) {
         pid = atoi(argv[i]);
         if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
+            auto file = std::shared_ptr<Reader>(new FileReader(argv[i]));
             // It's a file:
-            FileReader *file = new FileReader(argv[i]);
-            ElfObject *obj = new ElfObject(*file);
+            auto obj = std::shared_ptr<ElfObject>(new ElfObject(file));
             if (obj->elfHeader.e_type == ET_CORE) {
-                CoreProcess proc(exec, *file);
+                CoreProcess proc(exec, file);
                 proc.pstack(std::cout);
-                delete obj;
             } else {
-                delete exec;
                 exec = obj;
             }
         } else {

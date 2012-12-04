@@ -22,9 +22,11 @@ std::ostream &operator << (std::ostream &os, const DwarfLineState &ls) {
 std::ostream &operator << (std::ostream &os, const DwarfLineInfo &lines) {
     return os
 
-        << "{ \"directories\": " << lines.directories
+        << "{ \"default_is_stmt\": " << lines.default_is_stmt
+        << ", \"opcode_base\": " << int(lines.opcode_base)
+        << ", \"opcode_lengths\": " << lines.opcode_lengths
         << ", \"files\": " << lines.files
-        << ", \"default_is_stmt\": " << lines.default_is_stmt
+        << ", \"directories\": " << lines.directories
         << ", \"matrix\": " << lines.matrix
         << "}";
 }
@@ -146,9 +148,8 @@ operator << (std::ostream &os, const DwarfBlock &b)
 std::ostream &
 operator << (std::ostream &os, const DwarfAttribute &attr)
 {
-    const DwarfAttributeSpec *type = attr.spec;
     const DwarfValue &value = attr.value;
-    switch (type->form) {
+    switch (attr.spec->form) {
     case DW_FORM_addr: os << value.addr; break;
     case DW_FORM_data1: os << int(value.data1); break;
     case DW_FORM_data2: os << value.data2; break;
@@ -162,7 +163,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_ref8: os << "\"@" << value.ref8 << "\""; break;
     case DW_FORM_block1: case DW_FORM_block2: case DW_FORM_block4: case DW_FORM_block: os << value.block; break;
     case DW_FORM_flag: os << (value.flag ? "true" : "false"); break;
-    default: throw Exception() << "unknown DWARF attribute " << type->form;
+    default: throw Exception() << "unknown DWARF attribute " << attr.spec->form;
     }
     return os;
 }
@@ -205,16 +206,16 @@ operator << (std::ostream &os, const DwarfFrameInfo &info)
 
     os << "{ \"cielist\": [";
     const char *sep = "";
-    for (auto cie : info.cies) {
-        const std::pair<const DwarfInfo *, const DwarfCIE *> pair = std::make_pair(info.dwarf, cie.second);
-        os << sep << pair;
+    for (auto &cieent : info.cies) {
+        const DwarfCIE *cie  = cieent.second.get();
+        os << sep << std::make_pair(info.dwarf, cie);
         sep = ", ";
     }
     os << "], \"fdelist\": [";
 
     sep = "";
-    for (auto fde : info.fdeList) {
-        const std::pair<const DwarfInfo *, const DwarfFDE *> p = std::make_pair(info.dwarf, fde);
+    for (auto &fde : info.fdeList) {
+        const std::pair<const DwarfInfo *, const DwarfFDE *> p = std::make_pair(info.dwarf, fde.get());
         os << sep << p;
         sep = ", ";
     }
@@ -226,8 +227,8 @@ operator << (std::ostream &os, const DwarfInfo &dwarf)
 {
     os
         << "{ \"units\": " << dwarf.units
-        << ", \"pubnameUnits\": " << dwarf.pubnameUnits
-        << ", \"aranges\": " << dwarf.aranges;
+        << ", \"pubnameUnits\": " << dwarf.pubnames()
+        << ", \"aranges\": " << dwarf.ranges();
 
     if (dwarf.debugFrame)
         os << ", \"debugframe\": " << *dwarf.debugFrame;
@@ -348,8 +349,8 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
 
     os << ", \"sections\": [";
     const char *sep = "";
-    for (auto i : obj.sectionHeaders) {
-        os << sep << std::make_pair<const ElfObject *, const Elf_Shdr *> (&obj, i);
+    for (auto &i : obj.sectionHeaders) {
+        os << sep << std::make_pair<const ElfObject *, const Elf_Shdr *> (&obj, i.get());
         sep = ", ";
     }
     os << "]";
@@ -364,7 +365,7 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
         off_t edyn = dynoff + obj.dynamic->p_filesz;
         for (; dynoff < edyn; dynoff += sizeof (Elf_Dyn)) {
             Elf_Dyn dyn;
-            obj.io.readObj(dynoff, &dyn);
+            obj.io->readObj(dynoff, &dyn);
             os << sep << dyn;
             sep = ", ";
         }
@@ -410,10 +411,6 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
         return NOTE_CONTIN;
     });
     os << "]";
-
-    if (obj.dwarf)
-        os << ", \"dwarf\": " << *obj.dwarf;
-
     return os << "}";
 }
 
@@ -493,18 +490,24 @@ operator <<(std::ostream &os, const std::pair<const ElfObject *, const Elf_Shdr 
 
     const ElfObject *o = p.first;
     const Elf_Shdr *h = p.second;
+    const Elf_Shdr *strs = o->elfHeader.e_shstrndx == SHN_UNDEF ?
+        0 :
+        o->sectionHeaders[o->elfHeader.e_shstrndx].get();
 
-    os << "{ \"name\": \"" << o->io.readString(o->sectionStrings + h->sh_name) << "\"" << ", \"type\": ";
-            
+    os << "{ \"size\":" << h->sh_size;
+    if (strs)
+        os << ", \"name\": \"" << o->io->readString(strs->sh_offset + h->sh_name) << "\"";
+        
+    os << ", \"type\": ";
     if (h->sh_type <= SHT_DYNSYM)
         os << "\"" << sectionTypeNames[h->sh_type] << "\"";
     else
         os << h->sh_type;
 
-    os << ", \"flags\": " << "[";
    
     std::string sep = "";
 
+    os << ", \"flags\": " << "[";
     if (h->sh_flags & SHF_WRITE) {
         os << sep << "\"write\"";
         sep = ", ";
@@ -523,7 +526,6 @@ operator <<(std::ostream &os, const std::pair<const ElfObject *, const Elf_Shdr 
         << "]"
         << ", \"address\": " << h->sh_addr
         << ", \"offset\": " << h->sh_offset
-        << ", \"size\":" << h->sh_size
         << ", \"link\":" << h->sh_link
         << ", \"info\":" << h->sh_info;
 
@@ -536,7 +538,7 @@ operator <<(std::ostream &os, const std::pair<const ElfObject *, const Elf_Shdr 
         std::string sep = "";
         for (; symoff < esym; symoff += sizeof (Elf_Sym)) {
             Elf_Sym sym;
-            o->io.readObj(symoff, &sym);
+            o->io->readObj(symoff, &sym);
             std::tuple<const ElfObject *, const Elf_Shdr *, const Elf_Sym *> t = std::make_tuple(o, h, &sym);
             os << sep << t;
             sep = ", ";
@@ -645,7 +647,7 @@ operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr *, co
     const Elf_Sym *s = std::get<2>(t);
 
     off_t symStrings = o->sectionHeaders[h->sh_link]->sh_offset;
-    return os << "{ \"name\": \"" << o->io.readString(symStrings + s->st_name) << "\""
+    return os << "{ \"name\": \"" << o->io->readString(symStrings + s->st_name) << "\""
        << ", \"value\": " << s->st_value
        << ", \"size\": " << s->st_size
        << ", \"info\": " << (int)s->st_info

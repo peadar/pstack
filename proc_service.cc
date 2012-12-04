@@ -4,10 +4,17 @@
 extern "C" {
 #include "proc_service.h"
 
-ps_err_e ps_pcontinue(const struct ps_prochandle *p)
+ps_err_e
+ps_pcontinue(const struct ps_prochandle *ph)
 {
-    abort();
-    return (PS_ERR);
+    auto *p = const_cast<Process *>(static_cast<const Process *>(ph));
+    try {
+        p->resumeProcess();
+        return PS_OK;
+    }
+    catch (...) {
+        PS_ERR;
+    }
 }
 
 ps_err_e
@@ -57,7 +64,7 @@ ps_pread(struct ps_prochandle *ph, psaddr_t addr, void *buf, size_t len)
 {
     const Process *p = static_cast<const Process *>(ph);
     try {
-        p->io().readObj(Elf_Off(addr), (char *)buf, len);
+        p->io->readObj(Elf_Off(addr), (char *)buf, len);
         return PS_OK;
     } 
     catch (...) {
@@ -69,8 +76,11 @@ ps_err_e
 ps_pstop(const struct ps_prochandle *ph)
 {
     auto *p = const_cast<Process *>(static_cast<const Process *>(ph));
-    p->stopProcess();
-    return (PS_ERR);
+    try {
+        p->stopProcess();
+    } catch (...) {
+        return PS_ERR;
+    }
 }
 
 ps_err_e
@@ -90,7 +100,7 @@ ps_err_e
 ps_pdread(struct ps_prochandle *p, psaddr_t addr, void *d, size_t l)
 {
     try {
-        static_cast<Process *>(p)->io().readObj(Elf_Off(addr), (char *)d, l);
+        static_cast<Process *>(p)->io->readObj(Elf_Off(addr), (char *)d, l);
         return PS_OK;
     }
     catch (...) {

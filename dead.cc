@@ -3,10 +3,11 @@
 #include "dwarf.h"
 #include "procinfo.h"
 
-CoreProcess::CoreProcess(ElfObject *exe, Reader &coreFile)
-    : Process(exe, coreIO)
-    , coreImage(coreFile)
-    , coreIO(this)
+CoreProcess::CoreProcess(
+        std::shared_ptr<ElfObject> exe,
+        std::shared_ptr<Reader> coreFile)
+    : Process(exe, std::shared_ptr<Reader>(new CoreReader(this)))
+    , coreImage(std::shared_ptr<ElfObject>(new ElfObject(coreFile)))
 {
 }
 
@@ -15,7 +16,7 @@ CoreProcess::load()
 {
 #ifdef __linux__
     /* Find the linux-gate VDSO, and treat as an ELF file */
-    coreImage.getNotes(
+    coreImage->getNotes(
         [this] (const char *name, u_int32_t type, const void *datap, size_t len) {
             if (type == NT_AUXV) {
                 this->processAUXV(datap, len);
@@ -30,17 +31,17 @@ CoreProcess::load()
 
 std::string CoreReader::describe() const
 {
-    return p->coreImage.io.describe();
+    return p->coreImage->io->describe();
 }
 
 static size_t
-readFromHdr(ElfObject *obj, const Elf_Phdr *hdr, Elf_Off addr, Elf_Off reloc, char *ptr, Elf_Off size, Elf_Off *toClear)
+readFromHdr(std::shared_ptr<ElfObject> obj, const std::shared_ptr<Elf_Phdr> hdr, Elf_Off addr, Elf_Off reloc, char *ptr, Elf_Off size, Elf_Off *toClear)
 {
     Elf_Off rv, off = addr - reloc - hdr->p_vaddr; // offset in header of our ptr.
     if (off < hdr->p_filesz) {
         // some of the data is in the file: read min of what we need and // that.
         Elf_Off fileSize = std::min(hdr->p_filesz - off, size);
-        rv = obj->io.read(hdr->p_offset + off, fileSize, ptr);
+        rv = obj->io->read(hdr->p_offset + off, fileSize, ptr);
         if (rv != fileSize)
             throw Exception() << "unexpected short read in core file";
         off += rv;
@@ -64,7 +65,7 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 {
     Elf_Off start = remoteAddr;
     while (size) {
-        auto obj = &p->coreImage;
+        auto obj = p->coreImage;
 
         Elf_Off zeroes = 0;
         // Locate "remoteAddr" in the core file
@@ -119,7 +120,7 @@ CoreReader::CoreReader(CoreProcess *p_) : p(p_) { }
 bool
 CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg) const
 {
-    coreImage.getNotes(
+    coreImage->getNotes(
         [reg, pid] (const char *name, u_int32_t type, const void *data, size_t len) -> NoteIter {
             const prstatus_t *prstatus = (const prstatus_t *)data;
             if (type == NT_PRSTATUS && prstatus->pr_pid == pid) {
@@ -147,7 +148,7 @@ pid_t
 CoreProcess::getPID() const
 {
     pid_t pid;
-    coreImage.getNotes([this, &pid] (const char *name, u_int32_t type, const void *datap, size_t len) {
+    coreImage->getNotes([this, &pid] (const char *name, u_int32_t type, const void *datap, size_t len) {
         if (type == NT_PRSTATUS) {
             const prstatus_t *status = (const prstatus_t *)datap;
             pid = status->pr_pid;

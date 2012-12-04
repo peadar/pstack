@@ -68,7 +68,7 @@ CacheReader::Page::Page(Reader &r, off_t offset_)
     assert(offset_ % PAGESIZE == 0);
 }
 
-CacheReader::CacheReader(Reader &upstream_)
+CacheReader::CacheReader(std::shared_ptr<Reader> upstream_)
     : upstream(upstream_)
 {
 }
@@ -92,7 +92,7 @@ CacheReader::getPage(off_t pageoff) const
             return p;
         }
     }
-    p = new Page(upstream, pageoff);
+    p = new Page(*upstream, pageoff);
     if (pages.size() == MAXPAGES) {
         delete pages.back();
         pages.pop_back();

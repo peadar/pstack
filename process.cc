@@ -90,20 +90,25 @@ delall(T &container)
         delete i;
 }
 
-const Reader &
-Process::io() const
-{
-    return procio;
-}
-
-Process::Process(ElfObject *exec, Reader &procio_)
+Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_)
     : vdso(0)
-    , procio(procio_)
+    , io(std::shared_ptr<Reader>(new CacheReader(io_)))
     , execImage(exec)
     , entry(0)
     , isStatic(false)
+    , sysent(0)
+    , agent(0)
 {
     abiPrefix = execImage->getABIPrefix();
+}
+
+std::shared_ptr<DwarfInfo>
+Process::getDwarf(std::shared_ptr<ElfObject> elf)
+{
+    std::shared_ptr<DwarfInfo> &dwarf = this->dwarf[elf];
+    if (dwarf == 0)
+        dwarf.reset(new DwarfInfo(elf));
+    return dwarf;
 }
 
 void
@@ -121,6 +126,7 @@ Process::load()
     else
         loadSharedObjects(r_debug_addr);
     the = td_ta_new(this, &agent);
+
     if (the != TD_OK) {
         agent = 0;
         if (debug)
@@ -151,20 +157,22 @@ Process::processAUXV(const void *datap, size_t len)
             }
             case AT_SYSINFO_EHDR: {
                 vdso = new char[getpagesize()];
-                io().readObj(hdr, vdso, getpagesize());
-                MemReader *r = new MemReader(vdso, getpagesize());
-                readers.push_back(r);
-                addElfObject(new ElfObject(*r), hdr);
+                io->readObj(hdr, vdso, getpagesize());
+                addElfObject(
+                        std::shared_ptr<ElfObject>(new ElfObject(
+                            std::shared_ptr<Reader>(new MemReader(vdso, getpagesize())))),
+                            hdr);
                 break;
             }
 
             case AT_EXECFN:
-                auto exeName = io().readString(hdr);
+                auto exeName = io->readString(hdr);
                 if (debug)
                     *debug << "filename: " << exeName << "\n";
                 if (execImage == 0) {
                     FileReader *file = new FileReader(exeName);
-                    execImage = new ElfObject(*file);
+                    execImage = std::shared_ptr<ElfObject>(
+                            new ElfObject(std::shared_ptr<Reader>(file)));
                 }
                 break;
         }
@@ -183,7 +191,7 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
     const char *frameSep = "";
     for (auto frame : thread.stack) {
         Elf_Addr objIp = 0;
-        struct ElfObject *obj = 0;
+        std::shared_ptr<ElfObject> obj;
         int lineNo;
         Elf_Sym sym;
         std::string fileName;
@@ -192,8 +200,8 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
             symName = "(syscall)";
         } else {
             try {
-                std::pair<Elf_Off, ElfObject *> i = findObject(frame->ip);
-                fileName = i.second->io.describe();
+                auto i = findObject(frame->ip);
+                fileName = i.second->io->describe();
                 objIp = frame->ip - i.first;
                 obj = i.second;
                 obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
@@ -223,7 +231,8 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
         if (obj != 0) {
             os << ", \"off\": " << intptr_t(objIp) - sym.st_value;
             os << ", \"file\": " << "\"" << fileName << "\"";
-            if (obj->dwarf && obj->dwarf->sourceFromAddr(objIp - 1, fileName, lineNo))
+            auto di = getDwarf(obj);
+            if (di && di->sourceFromAddr(objIp - 1, fileName, lineNo))
                 os
                     << ", \"source\": \"" << fileName << "\""
                     << ", \"line\": " << lineNo;
@@ -240,7 +249,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
     os << "thread: " << std::hex << thread.info.ti_tid << ", type: " << thread.info.ti_type << "\n";
     for (auto frame : thread.stack) {
         Elf_Addr objIp = 0;
-        struct ElfObject *obj = 0;
+        std::shared_ptr<ElfObject> obj = 0;
         int lineNo;
         Elf_Sym sym;
         std::string fileName = "unknown file";
@@ -249,8 +258,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
             symName = "(syscall)";
         } else {
             try {
-                std::pair<Elf_Off, ElfObject *> i = findObject(frame->ip);
-                fileName = i.second->io.describe();
+                auto i = findObject(frame->ip);
+                fileName = i.second->io->describe();
                 objIp = frame->ip - i.first;
                 obj = i.second;
                 obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
@@ -268,7 +277,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
 
         if (obj != 0) {
             os << " in " << fileName;
-            if (obj->dwarf && obj->dwarf->sourceFromAddr(objIp - 1, fileName, lineNo))
+            auto di = getDwarf(obj);
+            if (di && di->sourceFromAddr(objIp - 1, fileName, lineNo))
                 os << " at " << fileName << ":" << std::dec << lineNo;
         }
 
@@ -288,19 +298,15 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
 }
 
 void
-Process::addElfObject(struct ElfObject *obj, Elf_Addr load)
+Process::addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load)
 {
     objects[load] = obj;
-    auto di = obj->dwarf = new DwarfInfo(obj);
 
     if (debug)
         *debug
-            << "object " << obj->io.describe()
+            << "object " << obj->io->describe()
             << " loaded at address " << std::hex << load
             << ", base=" << obj->base;
-    if (di && debug)
-        *debug << ", unwind info: "
-            << (di->ehFrame ? di->debugFrame ? "BOTH" : "EH" : di->debugFrame ? "DEBUG" : "NONE") << "\n";
 }
 
 /*
@@ -311,12 +317,12 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
 {
 
     struct r_debug rDebug;
-    io().readObj(rdebugAddr, &rDebug);
+    io->readObj(rdebugAddr, &rDebug);
 
     /* Iterate over the r_debug structure's entries, loading libraries */
     struct link_map map;
     for (Elf_Addr mapAddr = (Elf_Addr)rDebug.r_map; mapAddr; mapAddr = (Elf_Addr)map.l_next) {
-        io().readObj(mapAddr, &map);
+        io->readObj(mapAddr, &map);
         // first one's the executable itself.
         if (mapAddr == Elf_Addr(rDebug.r_map)) {
             assert(map.l_addr == entry - execImage->elfHeader.e_entry);
@@ -328,11 +334,10 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             std::clog << "warning: no name for object loaded at " << std::hex << map.l_addr << "\n";
             continue;
         }
-        std::string path = io().readString(Elf_Off(map.l_name));
+        std::string path = io->readString(Elf_Off(map.l_name));
         try {
-            FileReader *f = new FileReader(path);
-            readers.push_back(f);
-            addElfObject(new ElfObject(*f), Elf_Addr(map.l_addr));
+            addElfObject(std::shared_ptr<ElfObject>(new ElfObject(
+                std::shared_ptr<Reader>(new FileReader(path)))), Elf_Addr(map.l_addr));
         }
         catch (const std::exception &e) {
             std::clog << "warning: can't load text for " << path << " at " <<
@@ -356,11 +361,11 @@ Process::findRDebugAddr()
     // the modified version.
     for (Elf_Addr dynOff = 0; dynOff < dynamic->p_filesz; dynOff += sizeof(Elf_Dyn)) {
         Elf_Dyn dyn;
-        execImage->io.readObj(dynamic->p_offset + dynOff, &dyn);
+        execImage->io->readObj(dynamic->p_offset + dynOff, &dyn);
         if (dyn.d_tag == DT_DEBUG) {
             // Now, we read this from the _process_ AS, not the executable - the
             // in-memory one is changed by the linker.
-            io().readObj(dynamic->p_vaddr + dynOff + reloc, &dyn);
+            io->readObj(dynamic->p_vaddr + dynOff + reloc, &dyn);
             return dyn.d_un.d_ptr;
         }
     }
@@ -368,11 +373,11 @@ Process::findRDebugAddr()
 }
 
 
-std::pair<Elf_Off, ElfObject *>
+std::pair<Elf_Off, std::shared_ptr<ElfObject>>
 Process::findObject(Elf_Addr addr) const
 {
     for (auto &i : objects)
-        for (auto phdr : i.second->programHeaders) {
+        for (auto &phdr : i.second->programHeaders) {
             Elf_Off reloc = addr - i.first;
             if (reloc >= phdr->p_vaddr && reloc < phdr->p_vaddr + phdr->p_memsz)
                 return i;
@@ -386,9 +391,9 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
     if (isStatic) // static exe: ignore object name.
         objectName = 0;
     for (auto &i : objects) {
-        ElfObject *obj = i.second;
+        auto obj = i.second;
         if (objectName != 0) {
-            auto objname = obj->io.describe();
+            auto objname = obj->io->describe();
             auto p = objname.rfind('/');
             if (p != std::string::npos)
                 objname = objname.substr(p + 1, std::string::npos);
@@ -412,21 +417,8 @@ std::ostream &
 Process::pstack(std::ostream &os)
 {
     load();
-    std::set<pid_t> lwps;
 
     ps_pstop(this);
-
-    // suspend everything quickly.
-    listThreads(
-        [&lwps] (const td_thrhandle_t *thr) -> void {
-            if (td_thr_dbsuspend(thr) == TD_NOCAPAB) {
-                td_thrinfo_t info;
-                td_thr_get_info(thr, &info);
-                lwps.insert(info.ti_lid);
-            }});
-
-    for (auto lwp : lwps)
-        stop(lwp);
 
     std::list<ThreadStack> threadStacks;
 
@@ -473,10 +465,9 @@ Process::pstack(std::ostream &os)
     }
  #endif
 
-    listThreads([](const td_thrhandle_t *thr) { td_thr_dbresume(thr); }); 
-    // resume each lwp
-    for (auto lwp : lwps)
-        resume(lwp);
+
+
+    ps_pcontinue(this);
 
     return os;
 }
@@ -484,10 +475,8 @@ Process::pstack(std::ostream &os)
 
 Process::~Process()
 {
-    for (auto i : objects)
-        if (i.second != execImage)
-            delete i.second;
     delete[] vdso;
+    td_ta_delete(agent);
 }
 
 void
@@ -518,7 +507,7 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
             try {
                 for (int i = 0; i < gFrameArgs; i++) {
                     Elf_Word arg;
-                    p.io().readObj(Elf_Addr(REG(regs, bp)) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word), &arg);
+                    p.io->readObj(Elf_Addr(REG(regs, bp)) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word), &arg);
                     frame->args.push_back(arg);
                 }
             }
@@ -534,12 +523,12 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
             /* Read the next frame */
             try {
                 // Call site's instruction pointer is just above the frame pointer
-                p.io().readObj(Elf_Addr(REG(regs, bp)) + sizeof(REG(regs, bp)), &ip);
+                p.io->readObj(Elf_Addr(REG(regs, bp)) + sizeof(REG(regs, bp)), &ip);
                 REG(regs, ip) = ip;
                 if (ip == 0) // XXX: if no return instruction, break out.
                         break;
                 // Read new frame pointer from stack.
-                p.io().readObj(Elf_Addr(REG(regs, bp)), &REG(regs, bp));
+                p.io->readObj(Elf_Addr(REG(regs, bp)), &REG(regs, bp));
                 if (Elf_Addr(REG(regs, bp)) <= frame->bp)
                     break;
             }

@@ -1,5 +1,7 @@
 #include "elfinfo.h"
+#include "dwarf.h"
 #include <map>
+#include <set>
 #include <sstream>
 #include <functional>
 
@@ -19,6 +21,7 @@ struct ThreadStack {
     td_thrinfo_t info;
     std::vector<StackFrame *> stack;
     ThreadStack() {}
+    ~ThreadStack() { for (auto i : stack) delete i; }
     void unwind(Process &, CoreRegisters &regs);
 };
 
@@ -28,25 +31,27 @@ class Process : public ps_prochandle {
     void loadSharedObjects(Elf_Addr);
     char *vdso;
     bool isStatic;
-    CacheReader procio;
     Elf_Addr sysent; // for AT_SYSINFO
+    std::map<std::shared_ptr<ElfObject>, std::shared_ptr<DwarfInfo>> dwarf;
 
 protected:
     td_thragent_t *agent;
-    ElfObject *execImage;
+    std::shared_ptr<ElfObject> execImage;
     std::string abiPrefix;
-    std::list<Reader *> readers; // readers allocated for objects.
     void processAUXV(const void *data, size_t len);
 public:
-    const Reader &io() const;
-    std::map<Elf_Addr, ElfObject *> objects; // key=load address.
+    std::shared_ptr<Reader> io;
+    std::map<Elf_Addr, std::shared_ptr<ElfObject>> objects; // key=load address.
     virtual void load(); // loads shared objects, gets stack traces.
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const = 0;
-    void addElfObject(struct ElfObject *obj, Elf_Addr load);
-    std::pair<Elf_Off, ElfObject *> findObject(Elf_Addr addr) const;
-    Process(ElfObject *obj, Reader &mem);
+    void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
+    std::pair<Elf_Off, std::shared_ptr<ElfObject>> findObject(Elf_Addr addr) const;
+    std::shared_ptr<DwarfInfo> getDwarf(std::shared_ptr<ElfObject>);
+    Process(std::shared_ptr<ElfObject> obj, std::shared_ptr<Reader> mem);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
+
+    virtual void resumeProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
     virtual pid_t getPID() const = 0;
     std::ostream &dumpStackText(std::ostream &, const ThreadStack &);
@@ -84,22 +89,25 @@ public:
         os << "process pid " << pid;
         return os.str();
     }
-    LiveReader(pid_t pid) : FileReader(memname(pid)) {}
+    LiveReader(pid_t pid_) : FileReader(memname(pid_)), pid(pid_) {}
 };
 
 class LiveProcess : public Process {
     pid_t pid;
-    std::map<pid_t, ThreadInfo> lwps;
+    std::map<pid_t, ThreadInfo> stoppedLwps;
     friend class LiveReader;
-    LiveReader liveIO;
+    int stopCount;
+    timeval start;
+    std::set<pid_t> lwps; // lwps we could not suspend.
 public:
-    LiveProcess(ElfObject *ex, pid_t pid);
+    LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
     virtual void stop(pid_t lwpid);
     virtual void resume(pid_t lwpid);
     virtual void load();
     virtual pid_t getPID()  const{ return pid; }
-    void stopProcess() { stop(pid); }
+    void stopProcess();
+    void resumeProcess();
 };
 
 
@@ -115,15 +123,15 @@ public:
 
 struct CoreProcess : public Process {
     pid_t pid;
-    ElfObject coreImage;
-    CoreReader coreIO;
+    std::shared_ptr<ElfObject> coreImage;
     friend class CoreReader;
 public:
-    CoreProcess(ElfObject *exec, Reader &core);
+    CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> core);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
     virtual void load();
     virtual void stop(lwpid_t);
     virtual void resume(lwpid_t);
     virtual pid_t getPID() const;
     void stopProcess() { }
+    void resumeProcess() { }
 };
