@@ -197,15 +197,6 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
         debugStrings = 0;
     }
 
-    if (info) {
-        DWARFReader reader(*this, info->sh_offset, info->sh_size);
-        while (!reader.empty()) {
-            auto unit = new DwarfUnit(reader);
-            version = reader.version = unit->version;
-            units.push_back(std::unique_ptr<DwarfUnit>(unit));
-        }
-    }
-
     if (eh_frame) {
         DWARFReader reader(*this, eh_frame->sh_offset, eh_frame->sh_size);
         try {
@@ -236,26 +227,38 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
 
 }
 
-std::list<std::unique_ptr<DwarfPubnameUnit>> &
+std::list<DwarfPubnameUnit> &
 DwarfInfo::pubnames() const
 {
 
     if (pubnamesh) {
         DWARFReader r(*this, pubnamesh->sh_offset, pubnamesh->sh_size);
         while (!r.empty())
-            pubnameUnits.push_back(std::unique_ptr<DwarfPubnameUnit>(new DwarfPubnameUnit(r)));
+            pubnameUnits.push_back(DwarfPubnameUnit(r));
         pubnamesh = 0;
     }
     return pubnameUnits;
 }
 
-std::list<std::unique_ptr<DwarfARangeSet>> &
+std::list<DwarfUnit> &
+DwarfInfo::units() const
+{
+    if (info) {
+        DWARFReader reader(*this, info->sh_offset, info->sh_size);
+        while (!reader.empty())
+            unitsl.push_back(DwarfUnit(reader));
+        info = 0;
+    }
+    return unitsl;
+}
+
+std::list<DwarfARangeSet> &
 DwarfInfo::ranges() const
 {
     if (arangesh) {
         DWARFReader r(*this, arangesh->sh_offset, arangesh->sh_size);
         while (!r.empty())
-            aranges.push_back(std::unique_ptr<DwarfARangeSet>(new DwarfARangeSet(r)));
+            aranges.push_back(DwarfARangeSet(r));
         arangesh = 0;
     }
     return aranges;
@@ -317,9 +320,9 @@ DwarfUnit::DwarfUnit(DWARFReader &r)
 std::string
 DwarfUnit::name() const
 {
-    if (!entries.empty()) {
-        return (*entries.begin())->attributes[DW_AT_name]->value.string;
-    }
+    if (!entries.empty())
+        return entries.begin()->attrForName(DW_AT_name).value.string;
+    throw "no name for this entry";
 }
 
 DwarfAbbreviation::DwarfAbbreviation(DWARFReader &r, intmax_t code_)
@@ -333,8 +336,7 @@ DwarfAbbreviation::DwarfAbbreviation(DWARFReader &r, intmax_t code_)
         form = r.getuleb128();
         if (name == 0 && form == 0)
             break;
-        specs.push_back(std::unique_ptr<DwarfAttributeSpec>(
-                new DwarfAttributeSpec(DwarfAttrName(name), DwarfForm(form))));
+        specs.push_back(DwarfAttributeSpec(DwarfAttrName(name), DwarfForm(form)));
     }
 }
 
@@ -514,7 +516,7 @@ DwarfFileEntry::DwarfFileEntry(DWARFReader &r, DwarfLineInfo *info)
 {
 }
 
-DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfUnit *unit, std::shared_ptr<DwarfAttributeSpec> spec_)
+DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfUnit *unit, const DwarfAttributeSpec *spec_)
     : spec(spec_)
 {
     switch (spec->form) {
@@ -609,10 +611,10 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
 {
 
     for (auto &spec : type->specs)
-        attributes[spec->name] = std::unique_ptr<DwarfAttribute>(new DwarfAttribute(r, unit, spec));
+        attributes[spec.name] = DwarfAttribute(r, unit, &spec);
     switch (type->tag) {
     case DW_TAG_compile_unit: {
-        size_t size = dwarfAttr2Int(*attributes[DW_AT_stmt_list]);
+        size_t size = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
         DWARFReader r2(r.dwarf, r.dwarf.lineshdr->sh_offset + size, r.dwarf.lineshdr->sh_size - size);
         unit->lines.reset(new DwarfLineInfo(r2, unit));
         break;
@@ -631,7 +633,7 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries)
         intmax_t code = r.getuleb128();
         if (code == 0)
             return;
-        entries.push_back(std::shared_ptr<DwarfEntry>(new DwarfEntry(r, code, this)));
+        entries.push_back(DwarfEntry(r, code, this));
     }
 }
 
@@ -1069,12 +1071,12 @@ bool
 DwarfInfo::sourceFromAddr(uintmax_t addr, std::string &file, int &line)
 {
     // XXX: Use "arange" table
-    for (auto &u : units) {
-        if (u->lines->matrix.empty())
+    for (auto &u : units()) {
+        if (u.lines->matrix.empty())
             continue;
-        for (auto i = u->lines->matrix.begin();;) {
+        for (auto i = u.lines->matrix.begin();;) {
             auto next = i + 1;
-            if (next == u->lines->matrix.end())
+            if (next == u.lines->matrix.end())
                 break;
             if (i->addr <= addr && next->addr > addr) {
                 file = i->file->name;

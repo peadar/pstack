@@ -20,7 +20,7 @@ class DwarfLineInfo;
 struct DwarfUnit;
 struct DwarfFrameInfo;
 struct DwarfEntry;
-typedef std::vector<std::shared_ptr<DwarfEntry>> DwarfEntries;
+typedef std::vector<DwarfEntry> DwarfEntries;
 
 typedef struct {
     uintmax_t reg[DWARF_MAXREG];
@@ -71,7 +71,7 @@ struct DwarfAbbreviation {
     intmax_t code;
     DwarfTag tag;
     enum DwarfHasChildren hasChildren;
-    std::list<std::shared_ptr<DwarfAttributeSpec>> specs;
+    std::list<DwarfAttributeSpec> specs;
     DwarfAbbreviation(DWARFReader &, intmax_t code);
 };
 
@@ -128,20 +128,28 @@ union DwarfValue {
 };
 
 struct DwarfAttribute {
-    std::shared_ptr<DwarfAttributeSpec> spec; /* From abbrev table attached to type */
+    const DwarfAttributeSpec *spec; /* From abbrev table attached to type */
     DwarfValue value;
-    DwarfAttribute(DWARFReader &, const DwarfUnit *, std::shared_ptr<DwarfAttributeSpec> spec);
+    DwarfAttribute(DWARFReader &, const DwarfUnit *, const DwarfAttributeSpec *spec);
     ~DwarfAttribute() {
         if (spec->form == DW_FORM_string)
             free((void *)(const void *)value.string);
     }
+    DwarfAttribute() {}
 };
 
 struct DwarfEntry {
     DwarfEntries children;
     std::shared_ptr<DwarfAbbreviation> type;
-    std::map<DwarfAttrName, std::unique_ptr<DwarfAttribute>> attributes;
-    DwarfAttribute &attrForName(DwarfAttrName name) { return *attributes[name]; }
+    std::map<DwarfAttrName, DwarfAttribute> attributes;
+
+    const DwarfAttribute &attrForName(DwarfAttrName name) const {
+        auto attr = attributes.find(name);
+        if (attr != attributes.end())
+            return attr->second;
+        throw "no such attribute";
+    }
+
     DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit);
 };
 
@@ -236,17 +244,17 @@ struct DwarfFrameInfo {
 };
 
 class DwarfInfo {
-    mutable std::list<std::unique_ptr<DwarfPubnameUnit>> pubnameUnits;
-    mutable std::list<std::unique_ptr<DwarfARangeSet>> aranges;
+    mutable std::list<DwarfPubnameUnit> pubnameUnits;
+    mutable std::list<DwarfARangeSet> aranges;
+    mutable std::list<DwarfUnit> unitsl;
     const mutable Elf_Shdr *info, *debstr, *pubnamesh, *arangesh, *eh_frame, *debug_frame;
 public:
     const Elf_Shdr *abbrev, *lineshdr;
     // interesting shdrs from the exe.
     std::shared_ptr<ElfObject> elf;
-    std::list<std::unique_ptr<DwarfUnit>> units;
-    std::list<std::unique_ptr<DwarfARangeSet>> &ranges() const;
-    std::list<std::unique_ptr<DwarfPubnameUnit>> &pubnames() const;
-
+    std::list<DwarfARangeSet> &ranges() const;
+    std::list<DwarfPubnameUnit> &pubnames() const;
+    std::list<DwarfUnit> &units() const;
     char *debugStrings;
     off_t lines;
     int version;
