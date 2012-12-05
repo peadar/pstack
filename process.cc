@@ -168,7 +168,7 @@ Process::processAUXV(const void *datap, size_t len)
             case AT_EXECFN:
                 auto exeName = io->readString(hdr);
                 if (debug)
-                    *debug << "filename: " << exeName << "\n";
+                    *debug << "filename from auxv: " << exeName << "\n";
                 if (execImage == 0) {
                     FileReader *file = new FileReader(exeName);
                     execImage = std::shared_ptr<ElfObject>(
