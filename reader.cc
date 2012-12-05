@@ -8,7 +8,7 @@ FileReader::FileReader(std::string name_, int file_)
     , file(file_)
 {
     if (file == -1 && (file = open(name.c_str(), O_RDONLY)) == -1)
-        throw Exception() << "cannot open file '" << name << '"';
+        throw Exception() << "cannot open file '" << name << "': " << strerror(errno);
 }
 
 MemReader::MemReader(char *data_, size_t len_)
