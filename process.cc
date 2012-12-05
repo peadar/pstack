@@ -232,10 +232,11 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
             os << ", \"off\": " << intptr_t(objIp) - sym.st_value;
             os << ", \"file\": " << "\"" << fileName << "\"";
             auto di = getDwarf(obj);
-            if (di && di->sourceFromAddr(objIp - 1, fileName, lineNo))
-                os
-                    << ", \"source\": \"" << fileName << "\""
-                    << ", \"line\": " << lineNo;
+            if (di)
+                for (auto &ent : di->sourceFromAddr(objIp - 1))
+                    os
+                        << ", \"source\": \"" << ent.first << "\""
+                        << ", \"line\": " << ent.second;
         }
         os << " }";
         frameSep = ", ";
@@ -278,8 +279,9 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
         if (obj != 0) {
             os << " in " << fileName;
             auto di = getDwarf(obj);
-            if (di && di->sourceFromAddr(objIp - 1, fileName, lineNo))
-                os << " at " << fileName << ":" << std::dec << lineNo;
+            if (di)
+                for (auto &ent : di->sourceFromAddr(objIp - 1))
+                    os << " at " << ent.first << ":" << std::dec << ent.second;
         }
 
         if (debug) {

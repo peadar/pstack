@@ -210,7 +210,6 @@ struct DwarfLineInfo {
 
 struct DwarfUnit {
     void decodeEntries(DWARFReader &r, DwarfEntries &entries);
-    DwarfUnit *next;
     uint32_t length;
     uint16_t version;
     std::map<DwarfTag, DwarfAbbreviation> abbreviations;
@@ -221,6 +220,7 @@ struct DwarfUnit {
     DwarfLineInfo lines;
     DwarfUnit(DWARFReader &);
     std::string name() const;
+    DwarfUnit() {}
 };
 
 struct DwarfFDE {
@@ -296,7 +296,7 @@ struct DwarfFrameInfo {
 class DwarfInfo {
     mutable std::list<DwarfPubnameUnit> pubnameUnits;
     mutable std::list<DwarfARangeSet> aranges;
-    mutable std::list<DwarfUnit> unitsl;
+    mutable std::map<Elf_Off, DwarfUnit> unitsm;
     const mutable Elf_Shdr *info, *debstr, *pubnamesh, *arangesh, *eh_frame, *debug_frame;
 public:
     const Elf_Shdr *abbrev, *lineshdr;
@@ -304,14 +304,14 @@ public:
     std::shared_ptr<ElfObject> elf;
     std::list<DwarfARangeSet> &ranges() const;
     std::list<DwarfPubnameUnit> &pubnames() const;
-    std::list<DwarfUnit> &units() const;
+    std::map<Elf_Off, DwarfUnit> &units() const;
     char *debugStrings;
     off_t lines;
     int version;
     std::unique_ptr<DwarfFrameInfo> debugFrame;
     std::unique_ptr<DwarfFrameInfo> ehFrame;
     DwarfInfo(std::shared_ptr<ElfObject> object);
-    bool sourceFromAddr(uintmax_t addr, std::string &file, int &line);
+    std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
     uintmax_t unwind(Process *proc, DwarfRegisters *regs, uintmax_t addr);
     Elf_Addr getCFA(const Process &proc, const DwarfCallFrame *frame, const DwarfRegisters *regs);
     ~DwarfInfo();

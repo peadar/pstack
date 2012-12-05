@@ -168,27 +168,15 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
 DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
     : elf(obj)
     , version(2)
+    , eh_frame(obj->namedSection[".eh_frame"])
+    , info(obj->namedSection[".debug_info"])
+    , abbrev(obj->namedSection[".debug_abbrev"])
+    , debstr(obj->namedSection[".debug_str"])
+    , lineshdr(obj->namedSection[".debug_line"])
+    , debug_frame(obj->namedSection[".debug_frame"])
+    , pubnamesh(obj->namedSection[".debug_pubnames"])
+    , arangesh(obj->namedSection[".debug_aranges"])
 {
-
-    struct {
-        const char *name;
-        const Elf_Shdr **header;
-    } loadsects[] = {
-        {".eh_frame", &eh_frame },
-        {".debug_info", &info },
-        {".debug_abbrev", &abbrev },
-        {".debug_str", &debstr },
-        {".debug_line", &lineshdr },
-        {".debug_frame", &debug_frame },
-        {".debug_pubnames", &pubnamesh}, 
-        {".debug_aranges", &arangesh}, 
-        { 0, 0 }
-    };
-
-    // Load all sections we're interested in.
-    for (auto loadsectsp = loadsects; loadsectsp->name; loadsectsp++)
-        *loadsectsp->header = obj->namedSection[loadsectsp->name];
-
     // want these first: other sections refer into this.
     if (debstr) {
         debugStrings = new char[debstr->sh_size];
@@ -240,16 +228,18 @@ DwarfInfo::pubnames() const
     return pubnameUnits;
 }
 
-std::list<DwarfUnit> &
+std::map<Elf_Off, DwarfUnit> &
 DwarfInfo::units() const
 {
     if (info) {
         DWARFReader reader(*this, info->sh_offset, info->sh_size);
-        while (!reader.empty())
-            unitsl.push_back(DwarfUnit(reader));
+        while (!reader.empty()) {
+            auto off = reader.getOffset() - info->sh_offset;
+            unitsm[off] = DwarfUnit(reader);
+        }
         info = 0;
     }
-    return unitsl;
+    return unitsm;
 }
 
 std::list<DwarfARangeSet> &
@@ -488,6 +478,7 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
                 state.basic_block = 1;
                 break;
             default:
+                abort();
                 argCount = opcode_lengths[opcode - 1];
                 for (i = 0; i < argCount; i++)
                     r.getuleb128();
@@ -1071,26 +1062,40 @@ DwarfFrameInfo::findFDE(Elf_Addr addr) const
     return 0;
 }
 
-bool
-DwarfInfo::sourceFromAddr(uintmax_t addr, std::string &file, int &line)
+std::vector<std::pair<std::string, int>>
+DwarfInfo::sourceFromAddr(uintmax_t addr)
 {
-    // XXX: Use "arange" table
-    for (auto &u : units()) {
-        if (u.lines.matrix.empty())
-            continue;
-        for (auto i = u.lines.matrix.begin();;) {
-            auto next = i + 1;
-            if (next == u.lines.matrix.end())
-                break;
-            if (i->addr <= addr && next->addr > addr) {
-                file = i->file->name;
-                line = i->line;
-                return true;
+    std::vector<std::pair<std::string, int>> info;
+#if 0
+    for (auto &rs : ranges()) {
+        for (auto &r : rs.ranges) {
+            if (r.start <= addr && r.start + r.length > addr) {
+                const auto &unitI = unitsm.find(rs.debugInfoOffset);
+                if (unitI != unitsm.end()) {
+                    const auto &unit = unitI->second;
+                    std::clog << "found in arange: " << rs.debugInfoOffset << ": " << unit.name() << std::endl;
+                }
             }
-            i = next;
         }
     }
-    return 0;
+#endif
+    for (auto &ui : units()) {
+        auto &u = ui.second;
+        auto next = u.lines.matrix.end();
+        for (auto i = u.lines.matrix.begin(); i != u.lines.matrix.end(); i = next) {
+            next = i + 1;
+            if (i->end_sequence)
+                continue;
+            if (i->addr <= addr && next->addr > addr) {
+                std::ostringstream name;
+                name << i->file->name;
+                if (i->addr != addr)
+                    name << " (INEXACT: " << (addr - i->addr) << ")";
+                info.push_back(std::make_pair(name.str(), i->line));
+            }
+        }
+    }
+    return info;
 }
 
 static int
