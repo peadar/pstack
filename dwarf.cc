@@ -1062,36 +1062,25 @@ DwarfFrameInfo::findFDE(Elf_Addr addr) const
     return 0;
 }
 
-std::vector<std::pair<std::string, int>>
+std::vector<std::pair<const DwarfFileEntry *, int>>
 DwarfInfo::sourceFromAddr(uintmax_t addr)
 {
-    std::vector<std::pair<std::string, int>> info;
-#if 0
+    std::vector<std::pair<const DwarfFileEntry *, int>> info;
+    units();
     for (auto &rs : ranges()) {
         for (auto &r : rs.ranges) {
             if (r.start <= addr && r.start + r.length > addr) {
                 const auto &unitI = unitsm.find(rs.debugInfoOffset);
                 if (unitI != unitsm.end()) {
-                    const auto &unit = unitI->second;
-                    std::clog << "found in arange: " << rs.debugInfoOffset << ": " << unit.name() << std::endl;
+                    const auto &u = unitI->second;
+                    for (auto i = u.lines.matrix.begin(); i != u.lines.matrix.end(); ++i) {
+                        if (i->end_sequence)
+                            continue;
+                        auto next = i+1;
+                        if (i->addr <= addr && next->addr > addr)
+                            info.push_back(std::make_pair(i->file, i->line));
+                    }
                 }
-            }
-        }
-    }
-#endif
-    for (auto &ui : units()) {
-        auto &u = ui.second;
-        auto next = u.lines.matrix.end();
-        for (auto i = u.lines.matrix.begin(); i != u.lines.matrix.end(); i = next) {
-            next = i + 1;
-            if (i->end_sequence)
-                continue;
-            if (i->addr <= addr && next->addr > addr) {
-                std::ostringstream name;
-                name << i->file->name;
-                if (i->addr != addr)
-                    name << " (INEXACT: " << (addr - i->addr) << ")";
-                info.push_back(std::make_pair(name.str(), i->line));
             }
         }
     }

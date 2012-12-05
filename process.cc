@@ -279,9 +279,14 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
         if (obj != 0) {
             os << " in " << fileName;
             auto di = getDwarf(obj);
-            if (di)
-                for (auto &ent : di->sourceFromAddr(objIp - 1))
-                    os << " at " << ent.first << ":" << std::dec << ent.second;
+            if (di) {
+                for (auto &ent : di->sourceFromAddr(objIp - 1)) {
+                    os << " at ";
+                    if (debug)
+                        os << "[" << ent.first->directory << "] ";
+                    os << ent.first->name << ":" << std::dec << ent.second;
+                }
+            }
         }
 
         if (debug) {
@@ -342,7 +347,7 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
                 std::shared_ptr<Reader>(new FileReader(path)))), Elf_Addr(map.l_addr));
         }
         catch (const std::exception &e) {
-            std::clog << "warning: can't load text for " << path << " at " <<
+            std::clog << "warning: can't load text for '" << path << "' at " <<
             (void *)mapAddr << "/" << (void *)map.l_addr << ": " << e.what() << "\n";
             continue;
         }
