@@ -28,15 +28,15 @@ LiveProcess::load()
 
 
 std::string
-LiveReader::memname(pid_t pid)
+LiveReader::procname(pid_t pid, std::string base)
 {
     std::ostringstream ss;
-    ss << "/proc/" << pid << "/mem";
+    ss << "/proc/" << pid << "/" << base;
     return ss.str();
 }
 
 LiveProcess::LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid_)
-    : Process(ex, std::shared_ptr<Reader>(new LiveReader(pid_)))
+    : Process(ex ? ex : std::shared_ptr<ElfObject>(new ElfObject(std::shared_ptr<Reader>(new LiveReader(pid_, "exe")))) , std::shared_ptr<Reader>(new LiveReader(pid_, "mem")))
     , pid(pid_)
     , stopCount(0)
 {

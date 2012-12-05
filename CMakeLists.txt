@@ -12,6 +12,11 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
 endif(CMAKE_SIZEOF_VOID_P EQUAL 4)
 endif(NOT ELF_BITS)
 
+if (PROFILE)
+    add_definitions("-pg")
+    set_target_properties(pstack PROPERTIES LINK_FLAGS -pg)
+endif(PROFILE)
+
 if(CMAKE_COMPILER_IS_GNUCXX)
     add_definitions("-std=c++0x")
 endif(CMAKE_COMPILER_IS_GNUCXX)

@@ -82,14 +82,16 @@ struct ThreadInfo {
 
 class LiveReader : public FileReader {
     pid_t pid;
-    static std::string memname(pid_t);
+    std::string base;
+    static std::string procname(pid_t, std::string base);
 public:
+    static std::shared_ptr<Reader> procfile(pid_t, std::string base);
     virtual std::string describe() const {
         std::ostringstream os;
-        os << "process pid " << pid;
+        os << base << " for process pid " << pid;
         return os.str();
     }
-    LiveReader(pid_t pid_) : FileReader(memname(pid_)), pid(pid_) {}
+    LiveReader(pid_t pid_, std::string base_) : FileReader(procname(pid_, base_)), pid(pid_), base(base_) {}
 };
 
 class LiveProcess : public Process {
