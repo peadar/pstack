@@ -614,9 +614,13 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
         attributes[spec.name] = DwarfAttribute(r, unit, &spec);
     switch (type->tag) {
     case DW_TAG_compile_unit: {
-        size_t size = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
-        DWARFReader r2(r.dwarf, r.dwarf.lineshdr->sh_offset + size, r.dwarf.lineshdr->sh_size - size);
-        unit->lines.build(r2, unit);
+        if (r.dwarf.lineshdr) {
+            size_t size = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
+            DWARFReader r2(r.dwarf, r.dwarf.lineshdr->sh_offset + size, r.dwarf.lineshdr->sh_size - size);
+            unit->lines.build(r2, unit);
+        } else {
+            std::clog << "warning: no line number info found" << std::endl;
+        }
         break;
     }
     default: // not otherwise interested for the mo.

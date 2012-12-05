@@ -136,9 +136,23 @@ struct DwarfAttribute {
         if (spec && spec->form == DW_FORM_string)
             free((void *)(const void *)value.string);
     }
-    DwarfAttribute() : spec(0)
-{
-}
+    DwarfAttribute() : spec(0) {}
+    DwarfAttribute(const DwarfAttribute &rhs) : spec(rhs.spec) {
+        if (spec && spec->form == DW_FORM_string)
+            value.string = strdup(rhs.value.string);
+        else
+            value.udata = rhs.value.udata;
+    }
+    DwarfAttribute &operator = (const DwarfAttribute &rhs) {
+        if (spec && spec->form == DW_FORM_string)
+            value.string = strdup(rhs.value.string);
+        spec = rhs.spec;
+        if (spec && spec->form == DW_FORM_string)
+            value.string = strdup(rhs.value.string);
+        else
+            value.udata = rhs.value.udata;
+        return *this;
+    }
 };
 
 struct DwarfEntry {

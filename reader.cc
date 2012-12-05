@@ -65,6 +65,7 @@ CacheReader::Page::Page(Reader &r, off_t offset_)
     : offset(offset_)
     , len(r.read(offset_, PAGESIZE, data))
 {
+    magic = 0x600df00d;
     assert(offset_ % PAGESIZE == 0);
 }
 
@@ -85,6 +86,7 @@ CacheReader::getPage(off_t pageoff) const
     Page *p;
     for (auto i = pages.begin(); i != pages.end(); ++i) {
         p = *i;
+        assert(p->magic == 0x600df00d);
         if (p->offset == pageoff) {
             // move page to front.
             pages.erase(i);

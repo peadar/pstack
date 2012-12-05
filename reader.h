@@ -6,7 +6,9 @@
 
 #include "ex.h"
 class Reader {
+    Reader(const Reader &);
 public:
+    Reader() {}
     template <typename Obj> void
     readObj(off_t offset, Obj *object, size_t count = 1) const {
         if (count != 0) {
@@ -33,7 +35,12 @@ class CacheReader : public Reader {
     std::shared_ptr<Reader> upstream;
     static const size_t PAGESIZE = 4096;
     static const size_t MAXPAGES = 64;
-    struct Page {
+    class Page {
+        Page();
+        Page(const Page &);
+    public:
+        ~Page() { magic = 0; }
+        unsigned int magic;
         off_t offset;
         size_t len;
         char data[PAGESIZE];
