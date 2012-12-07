@@ -420,58 +420,6 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
     throw e;
 }
 
-std::ostream &
-Process::pstack(std::ostream &os)
-{
-    load();
-
-    ps_pstop(this);
-
-    std::list<ThreadStack> threadStacks;
-
-    // get its back trace.
-
-    listThreads(
-        [&threadStacks, this](const td_thrhandle_t *thr) {
-            CoreRegisters regs;
-            td_err_e the;
-#ifdef __linux__
-            the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
-#else
-            the = td_thr_getgregs(thr, &regs);
-#endif
-            if (the == TD_OK) {
-                threadStacks.push_back(ThreadStack());
-                td_thr_get_info(thr, &threadStacks.back().info);
-                threadStacks.back().unwind(*this, regs);
-            }
-    });
-
-    if (threadStacks.empty()) {
-        // get the register for the process itself, and use those.
-        CoreRegisters regs;
-        getRegs(ps_getpid(this),  &regs);
-        threadStacks.push_back(ThreadStack());
-        threadStacks.back().unwind(*this, regs);
-    }
-
-
-    ps_pcontinue(this);
-    /*
-     * resume at this point - maybe a bit optimistic if a shared library gets
-     * unloaded while we print stuff out, but worth the risk, normally.
-     */
-    const char *sep = "";
-    for (auto &s : threadStacks) {
-        dumpStackText(os, s);
-        os << "\n";
-        sep = ", ";
-    }
-
-    return os;
-}
-
-
 Process::~Process()
 {
     delete[] vdso;
