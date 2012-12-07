@@ -73,11 +73,15 @@ main(int argc, char *argv[])
     std::shared_ptr<ElfObject> core;
     std::shared_ptr<Process> process;
     int c;
+    int verbose = 0;
 
     debug = &std::clog;
 
-    while ((c = getopt(argc, argv, "h")) != -1) {
+    while ((c = getopt(argc, argv, "vh")) != -1) {
         switch (c) {
+            case 'v': 
+                verbose++;
+                break;
             case 'h': 
                 std::clog << "usage: canal [exec] <core>" << std::endl;
                 return 0;
@@ -124,7 +128,13 @@ main(int argc, char *argv[])
             continue;
         Elf_Off p;
         auto loc = hdr->p_vaddr;
+        auto end = loc + hdr->p_filesz;
+        if (verbose)
+            std::clog << "scan " << std::hex << loc <<  " to " << end;
+
         for (Elf_Off readCount = 0; loc  < hdr->p_vaddr + hdr->p_filesz; loc += sizeof p) {
+            if (verbose && (loc - hdr->p_vaddr) % (1024 * 1024) == 0)
+                std::clog << '.';
             process->io->readObj(loc, &p);
             auto found = std::lower_bound(listed.begin(), listed.end(), p);
             if (found != listed.end() && found->memaddr() <= p && found->memaddr() + found->sym.st_size > p) {
@@ -132,8 +142,10 @@ main(int argc, char *argv[])
                 found->count++;
             }
         }
-        for (auto &i : listed)
-            if (i.count)
-                std::cout << std::hex << i.count << " " << i.name << std::endl;
+        if (verbose)
+            std::clog << std::endl;
     }
+    for (auto &i : listed)
+        if (i.count)
+            std::cout << std::hex << i.count << " " << i.name << std::endl;
 }
