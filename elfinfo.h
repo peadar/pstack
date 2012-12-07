@@ -101,6 +101,8 @@ enum NoteIter {
     NOTE_DONE
 };
 
+struct SymbolSection;
+
 struct ElfObject {
     Elf_Off base; /* Lowest address of a PT_LOAD section */
     std::shared_ptr<Reader> io;
@@ -118,6 +120,7 @@ public:
     Elf_Shdr *findSectionByName(std::string name);
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(std::string name, Elf_Sym &sym);
+    SymbolSection getSymbols(size_t secno);
     std::string getABIPrefix();
     ElfObject(std::shared_ptr<Reader>);
     ~ElfObject();
