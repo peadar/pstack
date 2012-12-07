@@ -128,7 +128,7 @@ struct CoreProcess : public Process {
     std::shared_ptr<ElfObject> coreImage;
     friend class CoreReader;
 public:
-    CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> core);
+    CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<ElfObject> core);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
     virtual void load();
     virtual void stop(lwpid_t);

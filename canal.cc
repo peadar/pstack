@@ -37,20 +37,26 @@ globmatch(std::string pattern, std::string name)
 
 struct ListedSymbol {
     Elf_Sym sym;
-    Elf_Addr addr;
-    std::shared_ptr<const ElfObject> obj;
+    Elf_Off objbase;
+    size_t count;
     std::string name;
-    ListedSymbol(const Elf_Sym &sym_, Elf_Addr addr_, std::shared_ptr<const ElfObject> obj_, std::string name_)
+    ListedSymbol(const Elf_Sym &sym_, Elf_Off objbase_, std::string name_)
         : sym(sym_)
-        , addr(addr_)
-        , obj(obj_)
+        , objbase(objbase_)
         , name(name_)
+        , count(0)
+
     {
     }
+    Elf_Off memaddr() const { return  sym.st_value + objbase; }
 };
 
+const bool operator < (const ListedSymbol &sym, Elf_Off addr) {
+    return sym.memaddr() + sym.sym.st_size < addr;
+}
+
 struct Symcounter {
-    Elf_Addr addr;
+    Elf_Off addr;
     std::string name;
     unsigned count;
     struct ListedSymbol *sym;
@@ -90,8 +96,10 @@ main(int argc, char *argv[])
         pid_t pid = strtol(argv[optind], &eoa, 10);
         if (pid != 0 && *eoa == 0 && kill(pid, 0) != -1)
             process = std::shared_ptr<Process>(new LiveProcess(exec, pid));
-        else
-            process = std::shared_ptr<Process>(new CoreProcess(exec, std::shared_ptr<Reader>(new FileReader(argv[optind]))));
+        else {
+            core = std::shared_ptr<ElfObject>(new ElfObject(std::shared_ptr<Reader>(new FileReader(argv[optind]))));
+            process = std::shared_ptr<Process>(new CoreProcess(exec, core));
+        }
     }
     process->load();
     std::clog << "opened process " << process << std::endl;
@@ -101,19 +109,31 @@ main(int argc, char *argv[])
         std::cout << "found loaded object " << loaded.second->io->describe() << std::endl;
         SymbolSection syms = loaded.second->getSymbols(0);
         for (const auto &sym : syms)
-            if (globmatch(virtpattern, sym.second)) {
-                listed.push_back(ListedSymbol(sym.first, sym.first.st_value + loaded.first, loaded.second, sym.second));
-            }
+            if (globmatch(virtpattern, sym.second))
+                listed.push_back(ListedSymbol(sym.first, loaded.first, sym.second));
     }
     std::sort(listed.begin()
         , listed.end()
-        , [] (const ListedSymbol &l, const ListedSymbol &r) { return l.addr < r.addr; });
+        , [] (const ListedSymbol &l, const ListedSymbol &r) { return l.memaddr() < r.memaddr(); });
 
-    for (auto &i : listed) {
-        std::cout << std::hex << i.addr << " " << i.name << std::endl;
-    }
+    std::clog << "core at " << core << std::endl;
 
     // Now run through the corefile, searching for virtual objects.
-    for (auto &hdr : core->programHeaders) {
+    for (auto hdr : core->programHeaders) {
+        if (hdr->p_type != PT_LOAD)
+            continue;
+        Elf_Off p;
+        auto loc = hdr->p_vaddr;
+        for (Elf_Off readCount = 0; loc  < hdr->p_vaddr + hdr->p_filesz; loc += sizeof p) {
+            process->io->readObj(loc, &p);
+            auto found = std::lower_bound(listed.begin(), listed.end(), p);
+            if (found != listed.end() && found->memaddr() <= p && found->memaddr() + found->sym.st_size > p) {
+                std::cout << found->name << " " << loc << std::endl;
+                found->count++;
+            }
+        }
+        for (auto &i : listed)
+            if (i.count)
+                std::cout << std::hex << i.count << " " << i.name << std::endl;
     }
 }
