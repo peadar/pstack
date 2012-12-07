@@ -5,6 +5,11 @@
 #include "elfinfo.h"
 #include "dwarf.h"
 
+extern "C" {
+#include "proc_service.h"
+}
+
+
 static int
 globmatchR(const char *pattern, const char *name)
 {
@@ -38,13 +43,15 @@ globmatch(std::string pattern, std::string name)
 struct ListedSymbol {
     Elf_Sym sym;
     Elf_Off objbase;
+    std::string objname;
     size_t count;
     std::string name;
-    ListedSymbol(const Elf_Sym &sym_, Elf_Off objbase_, std::string name_)
+    ListedSymbol(const Elf_Sym &sym_, Elf_Off objbase_, std::string name_, std::string object)
         : sym(sym_)
         , objbase(objbase_)
         , name(name_)
         , count(0)
+        , objname(object)
 
     {
     }
@@ -75,16 +82,18 @@ main(int argc, char *argv[])
     int c;
     int verbose = 0;
 
-    debug = &std::clog;
 
     while ((c = getopt(argc, argv, "vh")) != -1) {
         switch (c) {
             case 'v': 
+                debug = &std::clog;
                 verbose++;
                 break;
             case 'h': 
                 std::clog << "usage: canal [exec] <core>" << std::endl;
                 return 0;
+            case 'X':
+                ps_lgetfpregs(0, 0, 0);
         }
     }
 
@@ -98,29 +107,28 @@ main(int argc, char *argv[])
     if (argc - optind >= 1) {
         char *eoa;
         pid_t pid = strtol(argv[optind], &eoa, 10);
-        if (pid != 0 && *eoa == 0 && kill(pid, 0) != -1)
-            process = std::shared_ptr<Process>(new LiveProcess(exec, pid));
-        else {
-            core = std::shared_ptr<ElfObject>(new ElfObject(std::shared_ptr<Reader>(new FileReader(argv[optind]))));
-            process = std::shared_ptr<Process>(new CoreProcess(exec, core));
-        }
+        core = std::shared_ptr<ElfObject>(new ElfObject(std::shared_ptr<Reader>(new FileReader(argv[optind]))));
+        process = std::shared_ptr<Process>(new CoreProcess(exec, core));
     }
     process->load();
     std::clog << "opened process " << process << std::endl;
 
     std::vector<ListedSymbol> listed;
     for (auto &loaded : process->objects) {
-        std::cout << "found loaded object " << loaded.second->io->describe() << std::endl;
         SymbolSection syms = loaded.second->getSymbols(0);
-        for (const auto &sym : syms)
-            if (globmatch(virtpattern, sym.second))
-                listed.push_back(ListedSymbol(sym.first, loaded.first, sym.second));
+        size_t count = 0;
+        for (const auto &sym : syms) {
+            if (globmatch(virtpattern, sym.second)) {
+                listed.push_back(ListedSymbol(sym.first, loaded.first, sym.second, loaded.second->io->describe()));
+                count++;
+            }
+        }
+        if (debug)
+            *debug << "found " << count << " symbols in " << loaded.second->io->describe() << std::endl;
     }
     std::sort(listed.begin()
         , listed.end()
         , [] (const ListedSymbol &l, const ListedSymbol &r) { return l.memaddr() < r.memaddr(); });
-
-    std::clog << "core at " << core << std::endl;
 
     // Now run through the corefile, searching for virtual objects.
     for (auto hdr : core->programHeaders) {
@@ -129,8 +137,8 @@ main(int argc, char *argv[])
         Elf_Off p;
         auto loc = hdr->p_vaddr;
         auto end = loc + hdr->p_filesz;
-        if (verbose)
-            std::clog << "scan " << std::hex << loc <<  " to " << end;
+        if (debug)
+            *debug << "scan " << std::hex << loc <<  " to " << end;
 
         for (Elf_Off readCount = 0; loc  < hdr->p_vaddr + hdr->p_filesz; loc += sizeof p) {
             if (verbose && (loc - hdr->p_vaddr) % (1024 * 1024) == 0)
@@ -138,14 +146,19 @@ main(int argc, char *argv[])
             process->io->readObj(loc, &p);
             auto found = std::lower_bound(listed.begin(), listed.end(), p);
             if (found != listed.end() && found->memaddr() <= p && found->memaddr() + found->sym.st_size > p) {
-                std::cout << found->name << " " << loc << std::endl;
+                // std::cout << found->name << " " << loc << std::endl;
                 found->count++;
             }
         }
-        if (verbose)
-            std::clog << std::endl;
+        if (debug)
+            *debug << std::endl;
     }
+
+    std::sort(listed.begin()
+        , listed.end()
+        , [] (const ListedSymbol &l, const ListedSymbol &r) { return l.count > r.count; });
+
     for (auto &i : listed)
         if (i.count)
-            std::cout << std::hex << i.count << " " << i.name << std::endl;
+            std::cout << std::dec << i.count << " " << i.name << " ( from " << i.objname << ")" << std::endl;
 }

@@ -100,6 +100,7 @@ Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_)
     , agent(0)
 {
     abiPrefix = execImage->getABIPrefix();
+
 }
 
 std::shared_ptr<DwarfInfo>
@@ -114,27 +115,13 @@ Process::getDwarf(std::shared_ptr<ElfObject> elf)
 void
 Process::load()
 {
-    td_err_e the;
-    /* Attach any dynamically-linked libraries */
-
-    /* Does this process look like it has shared libraries loaded? */
     Elf_Addr r_debug_addr = findRDebugAddr();
-
     isStatic = (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1);
     if (isStatic)
         addElfObject(execImage, 0);
     else
         loadSharedObjects(r_debug_addr);
-    the = td_ta_new(this, &agent);
-
-    if (the != TD_OK) {
-        agent = 0;
-        if (debug)
-            *debug << "failed to load thread agent: " << the << std::endl;
-    }
-
 }
-
 void
 Process::processAUXV(const void *datap, size_t len)
 {
@@ -423,7 +410,6 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
 Process::~Process()
 {
     delete[] vdso;
-    td_ta_delete(agent);
 }
 
 void

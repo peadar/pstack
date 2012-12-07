@@ -42,7 +42,9 @@ protected:
 public:
     std::shared_ptr<Reader> io;
     std::map<Elf_Addr, std::shared_ptr<ElfObject>> objects; // key=load address.
-    virtual void load(); // loads shared objects, gets stack traces.
+    virtual void load();
+    void threadattach();
+    void threaddetach();
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const = 0;
     void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
     std::pair<Elf_Off, std::shared_ptr<ElfObject>> findObject(Elf_Addr addr) const;

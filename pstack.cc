@@ -6,12 +6,39 @@
 #include "elfinfo.h"
 #include "procinfo.h"
 
+extern "C" {
+#include "proc_service.h"
+}
+
+
 static int usage(void);
+
+void
+Process::threadattach()
+{
+
+    td_err_e the;
+    the = td_ta_new(this, &agent);
+    if (the != TD_OK) {
+        agent = 0;
+        if (debug)
+            *debug << "failed to load thread agent: " << the << std::endl;
+    }
+
+}
+
+void
+Process::threaddetach()
+{
+    td_ta_delete(agent);
+}
+
 
 std::ostream &
 Process::pstack(std::ostream &os)
 {
     load();
+    threadattach();
 
     ps_pstop(this);
 
@@ -55,6 +82,8 @@ Process::pstack(std::ostream &os)
         os << "\n";
         sep = ", ";
     }
+
+    threaddetach();
 
     return os;
 }
