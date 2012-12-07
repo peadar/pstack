@@ -1,6 +1,7 @@
 #include <limits>
 #include "elfinfo.h"
 
+std::ostream *debug;
 static uint32_t elf_hash(std::string);
 
 /*
@@ -135,6 +136,12 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, std::strin
         }
     }
     return lowest != 0;
+}
+
+SymbolSection
+ElfObject::getSymbols(size_t section)
+{
+    return SymbolSection(this, namedSection[".dynsym"]);
 }
 
 bool

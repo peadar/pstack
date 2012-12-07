@@ -7,7 +7,6 @@
 #include "procinfo.h"
 
 static int usage(void);
-std::ostream *debug;
 
 int
 emain(int argc, char **argv)
@@ -16,9 +15,13 @@ emain(int argc, char **argv)
     pid_t pid;
     std::string execFile;
     std::shared_ptr<ElfObject> exec;
+    bool abortOnExit = false;
 
-    while ((c = getopt(argc, argv, "d:D:hv")) != -1) {
+    while ((c = getopt(argc, argv, "ad:D:hv")) != -1) {
         switch (c) {
+        case 'a':
+            abortOnExit = true;
+            break;
         case 'D':
         case 'd': {
             /* Undocumented option to dump image contents */
@@ -56,12 +59,16 @@ emain(int argc, char **argv)
             if (obj->elfHeader.e_type == ET_CORE) {
                 CoreProcess proc(exec, file);
                 proc.pstack(std::cout);
+                if (abortOnExit)
+                    abort();
             } else {
                 exec = obj;
             }
         } else {
             LiveProcess proc(exec, pid);
             proc.pstack(std::cout);
+            if (abortOnExit)
+                abort();
         }
     }
     return (error);
