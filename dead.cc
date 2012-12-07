@@ -5,9 +5,9 @@
 
 CoreProcess::CoreProcess(
         std::shared_ptr<ElfObject> exe,
-        std::shared_ptr<Reader> coreFile)
+        std::shared_ptr<ElfObject> core)
     : Process(exe, std::shared_ptr<Reader>(new CoreReader(this)))
-    , coreImage(std::shared_ptr<ElfObject>(new ElfObject(coreFile)))
+    , coreImage(core)
 {
 }
 

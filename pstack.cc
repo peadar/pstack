@@ -109,7 +109,7 @@ emain(int argc, char **argv)
             // It's a file:
             auto obj = std::shared_ptr<ElfObject>(new ElfObject(file));
             if (obj->elfHeader.e_type == ET_CORE) {
-                CoreProcess proc(exec, file);
+                CoreProcess proc(exec, obj);
                 proc.pstack(std::cout);
                 if (abortOnExit)
                     abort();

@@ -23,11 +23,17 @@ endif(PROFILE)
 
 if(CMAKE_COMPILER_IS_GNUCXX)
     add_definitions("-std=c++0x")
+    if (ELF_BITS EQUAL 32)
+        add_definitions("-m32")
+        set_target_properties(pstack PROPERTIES LINK_FLAGS -m32)
+        set_target_properties(t PROPERTIES LINK_FLAGS -m32)
+    endif()
 endif(CMAKE_COMPILER_IS_GNUCXX)
 
 add_definitions("-DELF_BITS=${ELF_BITS}")
 
 if("${CMAKE_SYSTEM}" MATCHES "Linux")
+    add_definitions("-D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
     target_link_libraries(pstack "-lthread_db")
     target_link_libraries(canal "-lthread_db")
     target_link_libraries(t "-lpthread")
