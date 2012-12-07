@@ -1,4 +1,5 @@
 #include <iostream>
+#include <algorithm>
 #include <memory>
 #include "procinfo.h"
 #include "elfinfo.h"
@@ -33,6 +34,31 @@ globmatch(std::string pattern, std::string name)
     return globmatchR(pattern.c_str(), name.c_str());
 }
 
+
+struct ListedSymbol {
+    Elf_Sym sym;
+    Elf_Addr addr;
+    std::shared_ptr<const ElfObject> obj;
+    std::string name;
+    ListedSymbol(const Elf_Sym &sym_, Elf_Addr addr_, std::shared_ptr<const ElfObject> obj_, std::string name_)
+        : sym(sym_)
+        , addr(addr_)
+        , obj(obj_)
+        , name(name_)
+    {
+    }
+};
+
+struct Symcounter {
+    Elf_Addr addr;
+    std::string name;
+    unsigned count;
+    struct ListedSymbol *sym;
+};
+
+std::vector<Symcounter> counters;
+
+static const char *virtpattern = "_ZTV*"; /* wildcard for all vtbls */
 
 int
 main(int argc, char *argv[])
@@ -69,12 +95,25 @@ main(int argc, char *argv[])
     }
     process->load();
     std::clog << "opened process " << process << std::endl;
+
+    std::vector<ListedSymbol> listed;
     for (auto &loaded : process->objects) {
-        std::cout << "\tfound loaded object " << loaded.second->io->describe() << std::endl;
+        std::cout << "found loaded object " << loaded.second->io->describe() << std::endl;
         SymbolSection syms = loaded.second->getSymbols(0);
         for (const auto &sym : syms)
-            std::cout << "\t\tfound symbol " << sym.second << std::endl;
+            if (globmatch(virtpattern, sym.second)) {
+                listed.push_back(ListedSymbol(sym.first, sym.first.st_value + loaded.first, loaded.second, sym.second));
+            }
+    }
+    std::sort(listed.begin()
+        , listed.end()
+        , [] (const ListedSymbol &l, const ListedSymbol &r) { return l.addr < r.addr; });
+
+    for (auto &i : listed) {
+        std::cout << std::hex << i.addr << " " << i.name << std::endl;
+    }
+
+    // Now run through the corefile, searching for virtual objects.
+    for (auto &hdr : core->programHeaders) {
     }
 }
-
-
