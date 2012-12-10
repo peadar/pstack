@@ -92,7 +92,7 @@ delall(T &container)
 
 Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_)
     : vdso(0)
-    , io(std::shared_ptr<Reader>(new CacheReader(io_)))
+    , io(std::make_shared<CacheReader>(io_))
     , execImage(exec)
     , entry(0)
     , isStatic(false)
@@ -100,6 +100,33 @@ Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_)
     , agent(0)
 {
     abiPrefix = execImage->getABIPrefix();
+}
+
+void
+Process::load()
+{
+
+    /*
+     * Attach the executable and any shared libs.
+     * The process is still running here, but unless its actively loading or
+     * unload a shared library, this relatively safe, and saves us a lot of
+     * work while the process is stopped.
+     */
+
+    Elf_Addr r_debug_addr = findRDebugAddr();
+    isStatic = (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1);
+    if (isStatic)
+        addElfObject(execImage, 0);
+    else
+        loadSharedObjects(r_debug_addr);
+
+    td_err_e the;
+    the = td_ta_new(this, &agent);
+    if (the != TD_OK) {
+        agent = 0;
+        if (debug)
+            *debug << "failed to load thread agent: " << the << std::endl;
+    }
 
 }
 
@@ -112,16 +139,6 @@ Process::getDwarf(std::shared_ptr<ElfObject> elf)
     return dwarf;
 }
 
-void
-Process::load()
-{
-    Elf_Addr r_debug_addr = findRDebugAddr();
-    isStatic = (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1);
-    if (isStatic)
-        addElfObject(execImage, 0);
-    else
-        loadSharedObjects(r_debug_addr);
-}
 void
 Process::processAUXV(const void *datap, size_t len)
 {
@@ -145,10 +162,8 @@ Process::processAUXV(const void *datap, size_t len)
             case AT_SYSINFO_EHDR: {
                 vdso = new char[getpagesize()];
                 io->readObj(hdr, vdso, getpagesize());
-                addElfObject(
-                        std::shared_ptr<ElfObject>(new ElfObject(
-                            std::shared_ptr<Reader>(new MemReader(vdso, getpagesize())))),
-                            hdr);
+                auto elf = std::make_shared<ElfObject>(std::make_shared<MemReader>(vdso, getpagesize()));
+                addElfObject(elf, hdr - elf->base);
                 break;
             }
 
@@ -156,11 +171,8 @@ Process::processAUXV(const void *datap, size_t len)
                 auto exeName = io->readString(hdr);
                 if (debug)
                     *debug << "filename from auxv: " << exeName << "\n";
-                if (execImage == 0) {
-                    FileReader *file = new FileReader(exeName);
-                    execImage = std::shared_ptr<ElfObject>(
-                            new ElfObject(std::shared_ptr<Reader>(file)));
-                }
+                if (execImage == 0)
+                    execImage = std::make_shared<ElfObject>(std::make_shared<FileReader>(exeName));
                 break;
         }
     }
@@ -294,7 +306,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
 void
 Process::addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load)
 {
-    objects[load] = obj;
+    objects.push_back(std::make_pair(load, obj));
 
     if (debug)
         *debug
@@ -330,8 +342,7 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
         }
         std::string path = io->readString(Elf_Off(map.l_name));
         try {
-            addElfObject(std::shared_ptr<ElfObject>(new ElfObject(
-                std::shared_ptr<Reader>(new FileReader(path)))), Elf_Addr(map.l_addr));
+            addElfObject(std::make_shared<ElfObject>(std::make_shared<FileReader>(path)), Elf_Addr(map.l_addr));
         }
         catch (const std::exception &e) {
             std::clog << "warning: can't load text for '" << path << "' at " <<
@@ -409,6 +420,7 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
 
 Process::~Process()
 {
+    td_ta_delete(agent);
     delete[] vdso;
 }
 

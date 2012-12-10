@@ -7,26 +7,6 @@
 #include <fcntl.h>
 #include <wait.h>
 
-void
-LiveProcess::load()
-{
-#ifdef __linux__
-    char path[PATH_MAX];
-    snprintf(path, sizeof path, "/proc/%d/auxv", pid);
-    int fd = open(path, O_RDONLY);
-    if (fd == -1)
-        throw Exception() << "failed to open " << path;
-    char buf[4096];
-    ssize_t rc = ::read(fd, buf, sizeof buf);
-    close(fd);
-    if (rc == -1)
-        throw Exception() << "failed to read 4k from " << path;
-    processAUXV(buf, rc);
-#endif
-    Process::load();
-}
-
-
 std::string
 LiveReader::procname(pid_t pid, std::string base)
 {
@@ -36,10 +16,29 @@ LiveReader::procname(pid_t pid, std::string base)
 }
 
 LiveProcess::LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid_)
-    : Process(ex ? ex : std::shared_ptr<ElfObject>(new ElfObject(std::shared_ptr<Reader>(new LiveReader(pid_, "exe")))) , std::shared_ptr<Reader>(new LiveReader(pid_, "mem")))
+    : Process(ex ? ex : std::make_shared<ElfObject>(std::make_shared<LiveReader>(pid_, "exe"))
+        , std::make_shared<LiveReader>(pid_, "mem"))
     , pid(pid_)
     , stopCount(0)
 {
+
+}
+
+void
+LiveProcess::load()
+{
+    char path[PATH_MAX];
+    snprintf(path, sizeof path, "/proc/%d/auxv", pid);
+    int fd = open(path, O_RDONLY);
+    if (fd == -1)
+        throw Exception() << "failed to open " << path << ": " << strerror(errno);
+    char buf[4096];
+    ssize_t rc = ::read(fd, buf, sizeof buf);
+    close(fd);
+    if (rc == -1)
+        throw Exception() << "failed to read 4k from " << path;
+    processAUXV(buf, rc);
+    Process::load();
 }
 
 bool

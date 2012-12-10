@@ -18,7 +18,7 @@ ElfObject::findHeaderForAddress(Elf_Off a) const
 }
 
 ElfObject::ElfObject(std::shared_ptr<Reader> io_)
-    : io(std::shared_ptr<Reader>(new CacheReader(io_)))
+    : io(std::make_shared<CacheReader>(io_))
     , dynamic(0)
 {
     int i;

@@ -41,10 +41,8 @@ protected:
     void processAUXV(const void *data, size_t len);
 public:
     std::shared_ptr<Reader> io;
-    std::map<Elf_Addr, std::shared_ptr<ElfObject>> objects; // key=load address.
-    virtual void load();
-    void threadattach();
-    void threaddetach();
+    typedef std::pair<Elf_Addr, std::shared_ptr<ElfObject> > LoadedObject;
+    std::vector<LoadedObject> objects;
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const = 0;
     void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
     std::pair<Elf_Off, std::shared_ptr<ElfObject>> findObject(Elf_Addr addr) const;
@@ -62,6 +60,7 @@ public:
     std::ostream &pstack(std::ostream &);
     Elf_Addr findNamedSymbol(const char *objectName, const char *symbolName) const;
     ~Process();
+    virtual void load();
 };
 
 template <typename T> void
@@ -108,10 +107,10 @@ public:
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
     virtual void stop(pid_t lwpid);
     virtual void resume(pid_t lwpid);
-    virtual void load();
     virtual pid_t getPID()  const{ return pid; }
     void stopProcess();
     void resumeProcess();
+    virtual void load();
 };
 
 
@@ -132,10 +131,10 @@ struct CoreProcess : public Process {
 public:
     CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<ElfObject> core);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
-    virtual void load();
     virtual void stop(lwpid_t);
     virtual void resume(lwpid_t);
     virtual pid_t getPID() const;
     void stopProcess() { }
     void resumeProcess() { }
+    virtual void load();
 };

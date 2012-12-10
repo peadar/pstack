@@ -9,7 +9,6 @@ extern "C" {
 #include "proc_service.h"
 }
 
-
 static int
 globmatchR(const char *pattern, const char *name)
 {
@@ -98,19 +97,18 @@ main(int argc, char *argv[])
     }
 
     if (argc - optind >= 2) {
-        auto file = std::shared_ptr<Reader>(new FileReader(argv[optind]));
+        auto file = std::make_shared<FileReader>(argv[optind]);
         // It's a file:
-        exec = std::shared_ptr<ElfObject>(new ElfObject(file));
+        exec = std::make_shared<ElfObject>(file);
         optind++;
     }
 
     if (argc - optind >= 1) {
         char *eoa;
         pid_t pid = strtol(argv[optind], &eoa, 10);
-        core = std::shared_ptr<ElfObject>(new ElfObject(std::shared_ptr<Reader>(new FileReader(argv[optind]))));
-        process = std::shared_ptr<Process>(new CoreProcess(exec, core));
+        core = std::make_shared<ElfObject>(std::make_shared<FileReader>(argv[optind]));
+        process = std::make_shared<CoreProcess>(exec, core);
     }
-    process->load();
     std::clog << "opened process " << process << std::endl;
 
     std::vector<ListedSymbol> listed;

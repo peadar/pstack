@@ -13,33 +13,10 @@ extern "C" {
 
 static int usage(void);
 
-void
-Process::threadattach()
-{
-
-    td_err_e the;
-    the = td_ta_new(this, &agent);
-    if (the != TD_OK) {
-        agent = 0;
-        if (debug)
-            *debug << "failed to load thread agent: " << the << std::endl;
-    }
-
-}
-
-void
-Process::threaddetach()
-{
-    td_ta_delete(agent);
-}
-
 
 std::ostream &
 Process::pstack(std::ostream &os)
 {
-    load();
-    threadattach();
-
     ps_pstop(this);
 
     std::list<ThreadStack> threadStacks;
@@ -82,9 +59,6 @@ Process::pstack(std::ostream &os)
         os << "\n";
         sep = ", ";
     }
-
-    threaddetach();
-
     return os;
 }
 
@@ -106,8 +80,7 @@ emain(int argc, char **argv)
         case 'D':
         case 'd': {
             /* Undocumented option to dump image contents */
-            auto dumpobj = std::shared_ptr<ElfObject>(
-                    new ElfObject(std::shared_ptr<Reader>(new FileReader(optarg, -1))));
+            auto dumpobj = std::make_shared<ElfObject>(std::make_shared<FileReader>(optarg, -1));
             if (c == 'D')
                 std::cout << "{ \"elf\": ";
             std::cout << *dumpobj;
@@ -134,22 +107,19 @@ emain(int argc, char **argv)
     for (error = 0, i = optind; i < argc; i++) {
         pid = atoi(argv[i]);
         if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
-            auto file = std::shared_ptr<Reader>(new FileReader(argv[i]));
-            // It's a file:
-            auto obj = std::shared_ptr<ElfObject>(new ElfObject(file));
+            // It's a file: should be ELF, treat core and exe differently
+            auto obj = std::make_shared<ElfObject>(std::make_shared<FileReader>(argv[i]));
             if (obj->elfHeader.e_type == ET_CORE) {
                 CoreProcess proc(exec, obj);
+                proc.load();
                 proc.pstack(std::cout);
-                if (abortOnExit)
-                    abort();
             } else {
                 exec = obj;
             }
         } else {
             LiveProcess proc(exec, pid);
+            proc.load();
             proc.pstack(std::cout);
-            if (abortOnExit)
-                abort();
         }
     }
     return (error);
