@@ -659,6 +659,39 @@ dwarfEvalExpr(const Process &proc, DWARFReader r, const DwarfRegisters *frame, D
                 break;
             }
 
+            case DW_OP_const2s: {
+                stack->push(int16_t(r.getu16()));
+                break;
+            }
+
+            case DW_OP_const4u: {
+                stack->push(r.getu32());
+                break;
+            }
+
+            case DW_OP_const4s: {
+                stack->push(int32_t(r.getu32()));
+                break;
+            }
+
+            case DW_OP_minus: {
+                Elf_Addr top = stack->top();
+                stack->pop();
+                Elf_Addr second = stack->top();
+                stack->pop();
+                stack->push(second - top);
+                break;
+            }
+
+            case DW_OP_plus: {
+                Elf_Addr top = stack->top();
+                stack->pop();
+                Elf_Addr second = stack->top();
+                stack->pop();
+                stack->push(second + top);
+                break;
+            }
+
             case DW_OP_breg0: case DW_OP_breg1: case DW_OP_breg2: case DW_OP_breg3:
             case DW_OP_breg4: case DW_OP_breg5: case DW_OP_breg6: case DW_OP_breg7:
             case DW_OP_breg8: case DW_OP_breg9: case DW_OP_breg10: case DW_OP_breg11:
@@ -1171,14 +1204,20 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
                 dwarfSetReg(&newRegs, i, dwarfGetReg(regs, unwind->u.reg));
                 break;
 
+            case VAL_EXPRESSION: 
             case EXPRESSION: {
                 DwarfExpressionStack stack;
                 stack.push(cfa);
                 DWARFReader reader(*dwarf, unwind->u.expression.offset, unwind->u.expression.length);
                 dwarfEvalExpr(p, reader, regs, &stack);
+                auto val = stack.top();
+                // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
+                if (unwind->type == EXPRESSION)
+                    p.io->readObj(val, &val);
                 dwarfSetReg(&newRegs, i, stack.top());
                 break;
             }
+
             default:
             case ARCH:
                 abort();
