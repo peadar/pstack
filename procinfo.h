@@ -14,7 +14,7 @@ struct StackFrame {
     Elf_Addr bp;
     std::vector<Elf_Word> args;
     const char *unwindBy;
-    StackFrame(Elf_Addr ip_, Elf_Addr bp_) : ip(ip_), bp(bp_), unwindBy(0) {}
+    StackFrame(Elf_Addr ip_, Elf_Addr bp_) : ip(ip_), bp(bp_), unwindBy("ERROR") {}
 };
 
 struct ThreadStack {

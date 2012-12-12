@@ -209,6 +209,7 @@ struct DwarfLineInfo {
 };
 
 struct DwarfUnit {
+    const DwarfInfo *info;
     void decodeEntries(DWARFReader &r, DwarfEntries &entries);
     uint32_t length;
     uint16_t version;
@@ -218,9 +219,9 @@ struct DwarfUnit {
     const unsigned char *lineInfo;
     DwarfEntries entries;
     DwarfLineInfo lines;
-    DwarfUnit(DWARFReader &);
+    DwarfUnit(const DwarfInfo *info, DWARFReader &);
     std::string name() const;
-    DwarfUnit() {}
+    DwarfUnit() : info(0) {}
 };
 
 struct DwarfFDE {
@@ -297,7 +298,7 @@ class DwarfInfo {
     mutable std::list<DwarfPubnameUnit> pubnameUnits;
     mutable std::list<DwarfARangeSet> aranges;
     mutable std::map<Elf_Off, DwarfUnit> unitsm;
-    const mutable Elf_Shdr *info, *debstr, *pubnamesh, *arangesh, *eh_frame, *debug_frame;
+    const mutable Elf_Shdr *info, *debstr, *pubnamesh, *arangesh, *debug_frame;
 public:
     const Elf_Shdr *abbrev, *lineshdr;
     // interesting shdrs from the exe.
@@ -387,19 +388,17 @@ public:
     std::shared_ptr<Reader> io;
     unsigned addrLen;
     int version;
-    const DwarfInfo &dwarf;
     std::shared_ptr<ElfObject> elf;
     
-    DWARFReader(const DwarfInfo &dwarf_, Elf_Off off_, Elf_Word size_)
+    DWARFReader(std::shared_ptr<Reader> io_, int version_, Elf_Off off_, Elf_Word size_)
         : off(off_)
         , end(off_ + size_)
-        , io(dwarf_.elf->io)
+        , io(io_)
         , addrLen(ELF_BITS / 8)
-        , version(dwarf_.version)
-        , dwarf(dwarf_)
-        , elf(dwarf.elf)
+        , version(version_)
     {
     }
+
     uint32_t getu32();
     uint16_t getu16();
     uint8_t getu8();

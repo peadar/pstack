@@ -23,6 +23,7 @@ g()
     std::cerr << "pausing" << std::endl;
     if (crash)
         abort();
+    dlopen("/tmp/pipe", RTLD_NOW);
     return pause();
 }
 

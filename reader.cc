@@ -7,7 +7,10 @@ FileReader::FileReader(std::string name_, int file_)
     : name(name_)
     , file(file_)
 {
-    if (file == -1 && (file = open(name.c_str(), O_RDONLY)) == -1)
+    static std::string pfx = "/usr/lib/debug/";
+    if (file == -1
+        && (file = open((pfx + name).c_str(), O_RDONLY)) == -1
+        && (file = open(name.c_str(), O_RDONLY)) == -1)
         throw Exception() << "cannot open file '" << name << "': " << strerror(errno);
 }
 

@@ -341,6 +341,10 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             continue;
         }
         std::string path = io->readString(Elf_Off(map.l_name));
+        if (path == "") {
+            // XXX: dunno why this is.
+            path = execImage->interpreterName;
+        }
         try {
             addElfObject(std::make_shared<ElfObject>(std::make_shared<FileReader>(path)), Elf_Addr(map.l_addr));
         }
@@ -428,60 +432,65 @@ void
 ThreadStack::unwind(Process &p, CoreRegisters &regs)
 {
     stack.clear();
-    /* Put a bound on the number of iterations. */
-    for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++) {
-        Elf_Addr ip;
-        StackFrame *frame = new StackFrame(ip = REG(regs, ip),
-#ifdef __PPC
-                0
-#else
-                REG(regs, bp)
-#endif
-                );
-        stack.push_back(frame);
+    try {
+        /* Put a bound on the number of iterations. */
+        for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++) {
+            Elf_Addr ip;
+            StackFrame *frame = new StackFrame(ip = REG(regs, ip),
+    #ifdef __PPC
+                    0
+    #else
+                    REG(regs, bp)
+    #endif
+                    );
+            stack.push_back(frame);
 
-        DwarfRegisters dr;
-        dwarfPtToDwarf(&dr, &regs);
+            DwarfRegisters dr;
+            dwarfPtToDwarf(&dr, &regs);
 
-        // try dwarf first...
-        if ((ip = dwarfUnwind(p, &dr, ip)) != 0) {
-            frame->unwindBy = "dwarf";
-            dwarfDwarfToPt(&regs, &dr);
-        } else {
-#ifndef __PPC
-            try {
-                for (int i = 0; i < gFrameArgs; i++) {
-                    Elf_Word arg;
-                    p.io->readObj(Elf_Addr(REG(regs, bp)) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word), &arg);
-                    frame->args.push_back(arg);
+            // try dwarf first...
+            if ((ip = dwarfUnwind(p, &dr, ip)) != 0) {
+                frame->unwindBy = "dwarf";
+                dwarfDwarfToPt(&regs, &dr);
+            } else {
+    #ifndef __PPC
+                try {
+                    for (int i = 0; i < gFrameArgs; i++) {
+                        Elf_Word arg;
+                        p.io->readObj(Elf_Addr(REG(regs, bp)) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word), &arg);
+                        frame->args.push_back(arg);
+                    }
                 }
-            }
-            catch (...) {
-                // not fatal if we can't read all the args.
-            }
-#endif
-            frame->unwindBy = "END  ";
-#ifdef __PPC
-            break;
-#else
-
-            /* Read the next frame */
-            try {
-                // Call site's instruction pointer is just above the frame pointer
-                p.io->readObj(Elf_Addr(REG(regs, bp)) + sizeof(REG(regs, bp)), &ip);
-                REG(regs, ip) = ip;
-                if (ip == 0) // XXX: if no return instruction, break out.
-                        break;
-                // Read new frame pointer from stack.
-                p.io->readObj(Elf_Addr(REG(regs, bp)), &REG(regs, bp));
-                if (Elf_Addr(REG(regs, bp)) <= frame->bp)
-                    break;
-            }
-            catch (...) {
+                catch (...) {
+                    // not fatal if we can't read all the args.
+                }
+    #endif
+                frame->unwindBy = "END  ";
+    #ifdef __PPC
                 break;
+    #else
+
+                /* Read the next frame */
+                try {
+                    // Call site's instruction pointer is just above the frame pointer
+                    p.io->readObj(Elf_Addr(REG(regs, bp)) + sizeof(REG(regs, bp)), &ip);
+                    REG(regs, ip) = ip;
+                    if (ip == 0) // XXX: if no return instruction, break out.
+                            break;
+                    // Read new frame pointer from stack.
+                    p.io->readObj(Elf_Addr(REG(regs, bp)), &REG(regs, bp));
+                    if (Elf_Addr(REG(regs, bp)) <= frame->bp)
+                        break;
+                }
+                catch (...) {
+                    break;
+                }
+                frame->unwindBy = "stdc  ";
+    #endif
             }
-            frame->unwindBy = "stdc  ";
-#endif
         }
+    }
+    catch (...) {
+        // live with what we can get.
     }
 }
