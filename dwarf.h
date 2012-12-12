@@ -209,7 +209,7 @@ struct DwarfLineInfo {
 };
 
 struct DwarfUnit {
-    const DwarfInfo *info;
+    const DwarfInfo *dwarf;
     void decodeEntries(DWARFReader &r, DwarfEntries &entries);
     uint32_t length;
     uint16_t version;
@@ -219,9 +219,9 @@ struct DwarfUnit {
     const unsigned char *lineInfo;
     DwarfEntries entries;
     DwarfLineInfo lines;
-    DwarfUnit(const DwarfInfo *info, DWARFReader &);
+    DwarfUnit(const DwarfInfo *, DWARFReader &);
     std::string name() const;
-    DwarfUnit() : info(0) {}
+    DwarfUnit() : dwarf(0) {}
 };
 
 struct DwarfFDE {
@@ -231,7 +231,7 @@ struct DwarfFDE {
     Elf_Off instructions;
     Elf_Off end;
     std::vector<unsigned char> aug;
-    DwarfFDE(DWARFReader &, DwarfCIE * , Elf_Off end);
+    DwarfFDE(DwarfInfo *, DWARFReader &, DwarfCIE * , Elf_Off end);
 };
 
 #define MAXREG 128
@@ -266,6 +266,7 @@ struct DwarfCallFrame {
 };
 
 struct DwarfCIE {
+    const DwarfInfo *info;
     uint8_t version;
     uint8_t addressEncoding;
     unsigned char lsdaEncoding;
@@ -278,9 +279,9 @@ struct DwarfCIE {
     uintmax_t personality;
     unsigned long augSize;
     std::string augmentation;
-    DwarfCIE(DWARFReader &, Elf_Off);
+    DwarfCIE(const DwarfInfo *, DWARFReader &, Elf_Off);
     DwarfCIE() {}
-    DwarfCallFrame execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr);
+    DwarfCallFrame execInsns(DWARFReader &r, int version, uintmax_t addr, uintmax_t wantAddr);
 };
 
 struct DwarfFrameInfo {
@@ -288,7 +289,7 @@ struct DwarfFrameInfo {
     FIType type;
     std::map<Elf_Addr, DwarfCIE> cies;
     std::list<DwarfFDE> fdeList;
-    DwarfFrameInfo(int version, DWARFReader &, FIType type);
+    DwarfFrameInfo(DwarfInfo *, DWARFReader &, FIType type);
     Elf_Addr decodeCIEFDEHdr(int version, DWARFReader &, Elf_Addr &id, enum FIType, DwarfCIE **);
     const DwarfFDE *findFDE(Elf_Addr) const;
     bool isCIE(Elf_Off id);
@@ -312,6 +313,7 @@ public:
     std::unique_ptr<DwarfFrameInfo> debugFrame;
     std::unique_ptr<DwarfFrameInfo> ehFrame;
     DwarfInfo(std::shared_ptr<ElfObject> object);
+    intmax_t decodeAddress(DWARFReader &, int encoding) const;
     std::vector<std::pair<const DwarfFileEntry *, int>> sourceFromAddr(uintmax_t addr);
     uintmax_t unwind(Process *proc, DwarfRegisters *regs, uintmax_t addr);
     Elf_Addr getCFA(const Process &proc, const DwarfCallFrame *frame, const DwarfRegisters *regs);
