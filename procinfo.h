@@ -41,7 +41,10 @@ protected:
     void processAUXV(const void *data, size_t len);
 public:
     std::shared_ptr<Reader> io;
-    typedef std::pair<Elf_Addr, std::shared_ptr<ElfObject> > LoadedObject;
+    struct LoadedObject {
+        Elf_Off reloc;
+        std::shared_ptr<ElfObject> object;
+    };
     std::vector<LoadedObject> objects;
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const = 0;
     void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);

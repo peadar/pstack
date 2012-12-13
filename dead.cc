@@ -36,9 +36,9 @@ std::string CoreReader::describe() const
 }
 
 static size_t
-readFromHdr(std::shared_ptr<ElfObject> obj, const std::shared_ptr<Elf_Phdr> hdr, Elf_Off addr, Elf_Off reloc, char *ptr, Elf_Off size, Elf_Off *toClear)
+readFromHdr(std::shared_ptr<ElfObject> obj, const std::shared_ptr<Elf_Phdr> hdr, Elf_Off addr, char *ptr, Elf_Off size, Elf_Off *toClear)
 {
-    Elf_Off rv, off = addr - reloc - hdr->p_vaddr; // offset in header of our ptr.
+    Elf_Off rv, off = addr - hdr->p_vaddr; // offset in header of our ptr.
     if (off < hdr->p_filesz) {
         // some of the data is in the file: read min of what we need and // that.
         Elf_Off fileSize = std::min(hdr->p_filesz - off, size);
@@ -73,7 +73,7 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
         auto hdr = obj->findHeaderForAddress(remoteAddr);
         if (hdr) {
             // The start address appears in the core (or is defaulted from it)
-            size_t rc = readFromHdr(obj, hdr, remoteAddr, 0, ptr, size, &zeroes);
+            size_t rc = readFromHdr(obj, hdr, remoteAddr, ptr, size, &zeroes);
             remoteAddr += rc;
             ptr += rc;
             size -= rc;
@@ -86,18 +86,17 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
         obj = 0;
         Elf_Off reloc;
         for (auto &i : p->objects) {
-            reloc = i.first;
-            hdr = i.second->findHeaderForAddress(remoteAddr - reloc);
+            hdr = i.object->findHeaderForAddress(remoteAddr - i.reloc);
             if (hdr) {
-                obj = i.second;
-                reloc = i.first;
+                obj = i.object;
+                reloc = i.reloc;
                 break;
             }
         }
 
         if (hdr) {
             // header in an object - try reading from here.
-            size_t rc = readFromHdr(obj, hdr, remoteAddr, reloc, ptr, size, &zeroes);
+            size_t rc = readFromHdr(obj, hdr, remoteAddr - reloc, ptr, size, &zeroes);
             remoteAddr += rc;
             ptr += rc;
             size -= rc;
