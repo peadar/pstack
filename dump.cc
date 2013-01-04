@@ -338,7 +338,7 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
         "OpenBSD"
     };
 
-    const Elf_Ehdr &ehdr = obj.elfHeader;
+    auto ehdr = obj.getElfHeader();
 
     size_t brand = ehdr.e_ident[EI_OSABI];
     os << "{ \"type\": \"" << typeNames[ehdr.e_type] << "\", \"entry\": " <<  ehdr.e_entry << ", \"abi\": ";
@@ -349,31 +349,35 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
 
     os << ", \"sections\": [";
     const char *sep = "";
-    for (auto &i : obj.sectionHeaders) {
-        os << sep << std::make_pair<const ElfObject *, const Elf_Shdr *> (&obj, i.get());
+    for (auto &i : obj.getSections()) {
+        os << sep << std::make_pair<const ElfObject *, const Elf_Shdr *> (&obj, &i);
         sep = ", ";
     }
     os << "]";
 
 
-    os << ", \"segments\": " << obj.programHeaders;
+    os << ", \"segments\": " << obj.getSegments();
 
-    if (obj.dynamic) {
-        os << ", \"dynamic\": [";
-        const char *sep = "";
-        off_t dynoff = obj.dynamic->p_offset;
-        off_t edyn = dynoff + obj.dynamic->p_filesz;
-        for (; dynoff < edyn; dynoff += sizeof (Elf_Dyn)) {
-            Elf_Dyn dyn;
-            obj.io->readObj(dynoff, &dyn);
-            os << sep << dyn;
-            sep = ", ";
+
+    for (auto seg : obj.getSegments()) {
+
+        if (seg.p_type == PT_DYNAMIC) {
+            os << ", \"dynamic\": [";
+            const char *sep = "";
+            off_t dynoff = seg.p_offset;
+            off_t edyn = dynoff + seg.p_filesz;
+            for (; dynoff < edyn; dynoff += sizeof (Elf_Dyn)) {
+                Elf_Dyn dyn;
+                obj.io->readObj(dynoff, &dyn);
+                os << sep << dyn;
+                sep = ", ";
+            }
+            os << "]";
+            break;
         }
-        os << "]";
     }
-    if (obj.interpreterName != "")
-        os << ", \"interpreter\": \"" << obj.interpreterName << "\"";
 
+    os << ", \"interpreter\": \"" << obj.getInterpreter() << "\"";
 
     sep = "";
     os << ", \"notes\": [";
@@ -490,9 +494,7 @@ operator <<(std::ostream &os, const std::pair<const ElfObject *, const Elf_Shdr 
 
     const ElfObject *o = p.first;
     const Elf_Shdr *h = p.second;
-    const Elf_Shdr *strs = o->elfHeader.e_shstrndx == SHN_UNDEF ?
-        0 :
-        o->sectionHeaders[o->elfHeader.e_shstrndx].get();
+    const Elf_Shdr *strs = o->getElfHeader().e_shstrndx == SHN_UNDEF ?  0 : o->getSection(o->getElfHeader().e_shstrndx);
 
     os << "{ \"size\":" << h->sh_size;
     if (strs)
@@ -646,7 +648,7 @@ operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr *, co
     const Elf_Shdr *h = std::get<1>(t);
     const Elf_Sym *s = std::get<2>(t);
 
-    off_t symStrings = o->sectionHeaders[h->sh_link]->sh_offset;
+    off_t symStrings = o->getSection(h->sh_link)->sh_offset;
     return os << "{ \"name\": \"" << o->io->readString(symStrings + s->st_name) << "\""
        << ", \"value\": " << s->st_value
        << ", \"size\": " << s->st_size

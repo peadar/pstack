@@ -85,8 +85,8 @@ emain(int argc, char **argv)
                 std::cout << "{ \"elf\": ";
             std::cout << *dumpobj;
             if (c == 'D') {
-                DwarfInfo dwarf(dumpobj);
-                std::cout << ", \"dwarf\": " << dwarf << "}";
+                auto dwarf = make_unique<DwarfInfo>(dumpobj);
+                std::cout << ", \"dwarf\": " << *dwarf << "}";
             }
             return 0;
         }
@@ -109,7 +109,7 @@ emain(int argc, char **argv)
         if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
             // It's a file: should be ELF, treat core and exe differently
             auto obj = std::make_shared<ElfObject>(std::make_shared<FileReader>(argv[i]));
-            if (obj->elfHeader.e_type == ET_CORE) {
+            if (obj->getElfHeader().e_type == ET_CORE) {
                 CoreProcess proc(exec, obj);
                 proc.load();
                 proc.pstack(std::cout);

@@ -168,13 +168,13 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
 DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
     : elf(obj)
     , version(2)
-    , info(obj->namedSection[".debug_info"])
-    , abbrev(obj->namedSection[".debug_abbrev"])
-    , debstr(obj->namedSection[".debug_str"])
-    , lineshdr(obj->namedSection[".debug_line"])
-    , debug_frame(obj->namedSection[".debug_frame"])
-    , pubnamesh(obj->namedSection[".debug_pubnames"])
-    , arangesh(obj->namedSection[".debug_aranges"])
+    , info(obj->getSection(".debug_info", SHT_PROGBITS))
+    , abbrev(obj->getSection(".debug_abbrev", SHT_PROGBITS))
+    , debstr(obj->getSection(".debug_str", SHT_PROGBITS))
+    , lineshdr(obj->getSection(".debug_line", SHT_PROGBITS))
+    , debug_frame(obj->getSection(".debug_frame", SHT_PROGBITS))
+    , pubnamesh(obj->getSection(".debug_pubnames", SHT_PROGBITS))
+    , arangesh(obj->getSection(".debug_aranges", SHT_PROGBITS))
 {
     // want these first: other sections refer into this.
     if (debstr) {
@@ -184,7 +184,7 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
         debugStrings = 0;
     }
 
-    auto eh_frame = obj->namedSection[".eh_frame"];
+    auto eh_frame = obj->getSection(".eh_frame", SHT_PROGBITS);
     if (eh_frame) {
         DWARFReader reader(obj->io, version, eh_frame->sh_offset, eh_frame->sh_size);
         try {
@@ -928,7 +928,7 @@ DwarfInfo::decodeAddress(DWARFReader &f, int encoding) const
     case 0:
         break;
     case DW_EH_PE_pcrel:
-        base += offset + elf->base;
+        base += offset + elf->getBase();
         break;
     }
     return base;
@@ -1169,9 +1169,9 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
     int i;
     DwarfRegisters newRegs;
     DwarfRegisterUnwind *unwind;
-    std::pair<Elf_Addr, std::shared_ptr<ElfObject>> elf = p.findObject(procaddr);
-    std::shared_ptr<DwarfInfo> dwarf = p.getDwarf(elf.second);
-    Elf_Off objaddr = procaddr - elf.first; // relocate process address to object address
+    auto elf = p.findObject(procaddr);
+    auto &dwarf = p.getDwarf(elf.object);
+    Elf_Off objaddr = procaddr - elf.reloc; // relocate process address to object address
 
     const DwarfFDE *fde = dwarf->debugFrame ? dwarf->debugFrame->findFDE(objaddr) : 0;
     if (fde == 0) {
@@ -1182,7 +1182,7 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
             return 0;
     }
 
-    DWARFReader r(elf.second->io, dwarf->version, fde->instructions, fde->end - fde->instructions);
+    DWARFReader r(elf.object->io, dwarf->version, fde->instructions, fde->end - fde->instructions);
     DwarfCallFrame frame = fde->cie->execInsns(r, dwarf->version, fde->iloc, objaddr - 1);
 
     // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
@@ -1212,7 +1212,7 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
             case EXPRESSION: {
                 DwarfExpressionStack stack;
                 stack.push(cfa);
-                DWARFReader reader(elf.second->io, dwarf->version, unwind->u.expression.offset, unwind->u.expression.length);
+                DWARFReader reader(elf.object->io, dwarf->version, unwind->u.expression.offset, unwind->u.expression.length);
                 dwarfEvalExpr(p, reader, regs, &stack);
                 auto val = stack.top();
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.

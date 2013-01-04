@@ -25,6 +25,7 @@ public:
 class FileReader : public Reader {
     std::string name;
     int file;
+    bool openfile(int &file, std::string name_);
 public:
     virtual size_t read(off_t off, size_t count, char *ptr) const;
     FileReader(std::string name, int fd = -1);
@@ -62,3 +63,4 @@ public:
     MemReader(char *, size_t);
     std::string describe() const;
 };
+std::string linkResolve(std::string name);

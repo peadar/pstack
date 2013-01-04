@@ -99,7 +99,6 @@ Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_)
     , sysent(0)
     , agent(0)
 {
-    abiPrefix = execImage->getABIPrefix();
 }
 
 void
@@ -130,13 +129,15 @@ Process::load()
 
 }
 
-std::shared_ptr<DwarfInfo>
+std::unique_ptr<DwarfInfo> &
 Process::getDwarf(std::shared_ptr<ElfObject> elf)
 {
-    std::shared_ptr<DwarfInfo> &dwarf = this->dwarf[elf];
-    if (dwarf == 0)
-        dwarf.reset(new DwarfInfo(elf));
-    return dwarf;
+    const auto &info = this->dwarf.find(elf);
+    if (info != this->dwarf.end())
+        return info->second;
+    auto newinfo = new DwarfInfo(elf);
+    dwarf[elf].reset(newinfo);
+    return dwarf[elf];
 }
 
 void
@@ -163,16 +164,15 @@ Process::processAUXV(const void *datap, size_t len)
                 vdso = new char[getpagesize()];
                 io->readObj(hdr, vdso, getpagesize());
                 auto elf = std::make_shared<ElfObject>(std::make_shared<MemReader>(vdso, getpagesize()));
-                addElfObject(elf, hdr - elf->base);
+                addElfObject(elf, hdr - elf->getBase());
                 break;
             }
-
             case AT_EXECFN:
                 auto exeName = io->readString(hdr);
                 if (debug)
                     *debug << "filename from auxv: " << exeName << "\n";
                 if (execImage == 0)
-                    execImage = std::make_shared<ElfObject>(std::make_shared<FileReader>(exeName));
+                    execImage = std::make_shared<ElfObject>(exeName);
                 break;
         }
     }
@@ -200,9 +200,9 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
         } else {
             try {
                 auto i = findObject(frame->ip);
-                fileName = i.second->io->describe();
-                objIp = frame->ip - i.first;
-                obj = i.second;
+                fileName = i.object->io->describe();
+                objIp = frame->ip - i.reloc;
+                obj = i.object;
                 obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
             } catch (...) {
             }
@@ -230,7 +230,7 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
         if (obj != 0) {
             os << ", \"off\": " << intptr_t(objIp) - sym.st_value;
             os << ", \"file\": " << "\"" << fileName << "\"";
-            auto di = getDwarf(obj);
+            auto &di = getDwarf(obj);
             if (di)
                 for (auto &ent : di->sourceFromAddr(objIp - 1))
                     os
@@ -259,9 +259,9 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
         } else {
             try {
                 auto i = findObject(frame->ip);
-                fileName = i.second->io->describe();
-                objIp = frame->ip - i.first;
-                obj = i.second;
+                fileName = i.object->io->describe();
+                objIp = frame->ip - i.reloc;
+                obj = i.object;
                 obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
             } catch (...) {
             }
@@ -277,7 +277,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
 
         if (obj != 0) {
             os << " in " << fileName;
-            auto di = getDwarf(obj);
+            auto &di = getDwarf(obj);
             if (di) {
                 for (auto &ent : di->sourceFromAddr(objIp - 1)) {
                     os << " at ";
@@ -294,7 +294,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
 #ifdef i386
                 << ", bp=0x" << std::hex << intptr_t(frame->bp)
 #endif
-                << ", off=0x" << intptr_t(objIp) - sym.st_value;
+                << ", symval=0x" << std::hex << sym.st_value
+                << ", off=0x" << std::hex << intptr_t(objIp) - sym.st_value;
             if (frame->unwindBy != "END")
                 os << ", unwind by: " << frame->unwindBy;
             os << ")";
@@ -306,13 +307,13 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
 void
 Process::addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load)
 {
-    objects.push_back(std::make_pair(load, obj));
+    objects.push_back(LoadedObject(load, obj));
 
     if (debug)
         *debug
             << "object " << obj->io->describe()
             << " loaded at address " << std::hex << load
-            << ", base=" << obj->base << std::endl;
+            << ", base=" << obj->getBase() << std::endl;
 }
 
 /*
@@ -331,7 +332,7 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
         io->readObj(mapAddr, &map);
         // first one's the executable itself.
         if (mapAddr == Elf_Addr(rDebug.r_map)) {
-            assert(map.l_addr == entry - execImage->elfHeader.e_entry);
+            assert(map.l_addr == entry - execImage->getElfHeader().e_entry);
             addElfObject(execImage, map.l_addr);
             continue;
         }
@@ -343,10 +344,10 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
         std::string path = io->readString(Elf_Off(map.l_name));
         if (path == "") {
             // XXX: dunno why this is.
-            path = execImage->interpreterName;
+            path = execImage->getInterpreter();
         }
         try {
-            addElfObject(std::make_shared<ElfObject>(std::make_shared<FileReader>(path)), Elf_Addr(map.l_addr));
+            addElfObject(std::make_shared<ElfObject>(path), Elf_Addr(map.l_addr));
         }
         catch (const std::exception &e) {
             std::clog << "warning: can't load text for '" << path << "' at " <<
@@ -360,35 +361,34 @@ Elf_Addr
 Process::findRDebugAddr()
 {
     // Find DT_DEBUG in the process's dynamic section.
-    auto dynamic = execImage->dynamic;
-    if (dynamic == 0)
-        return 0;
-
-    Elf_Off reloc = entry - execImage->elfHeader.e_entry;
-
-    // the dynamic section is in the executable, but the process A/S contains
-    // the modified version.
-    for (Elf_Addr dynOff = 0; dynOff < dynamic->p_filesz; dynOff += sizeof(Elf_Dyn)) {
-        Elf_Dyn dyn;
-        execImage->io->readObj(dynamic->p_offset + dynOff, &dyn);
-        if (dyn.d_tag == DT_DEBUG) {
-            // Now, we read this from the _process_ AS, not the executable - the
-            // in-memory one is changed by the linker.
-            io->readObj(dynamic->p_vaddr + dynOff + reloc, &dyn);
-            return dyn.d_un.d_ptr;
+    for (auto segment : execImage->getSegments()) {
+        if (segment.p_type != PT_DYNAMIC)
+            continue;
+        Elf_Off reloc = entry - execImage->getElfHeader().e_entry;
+        // the dynamic section is in the executable, but the process A/S contains
+        // the modified version.
+        for (Elf_Addr dynOff = 0; dynOff < segment.p_filesz; dynOff += sizeof(Elf_Dyn)) {
+            Elf_Dyn dyn;
+            execImage->io->readObj(segment.p_offset + dynOff, &dyn);
+            if (dyn.d_tag == DT_DEBUG) {
+                // Now, we read this from the _process_ AS, not the executable - the
+                // in-memory one is changed by the linker.
+                io->readObj(segment.p_vaddr + dynOff + reloc, &dyn);
+                return dyn.d_un.d_ptr;
+            }
         }
     }
     return 0;
 }
 
 
-std::pair<Elf_Off, std::shared_ptr<ElfObject>>
+Process::LoadedObject
 Process::findObject(Elf_Addr addr) const
 {
     for (auto &i : objects)
-        for (auto &phdr : i.second->programHeaders) {
-            Elf_Off reloc = addr - i.first;
-            if (reloc >= phdr->p_vaddr && reloc < phdr->p_vaddr + phdr->p_memsz)
+        for (auto &phdr : i.object->getSegments()) {
+            Elf_Off reloc = addr - i.reloc;
+            if (reloc >= phdr.p_vaddr && reloc < phdr.p_vaddr + phdr.p_memsz)
                 return i;
         }
     throw Exception() << "no loaded object at address 0x" << std::hex << addr;
@@ -400,9 +400,9 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
     if (isStatic) // static exe: ignore object name.
         objectName = 0;
     for (auto &i : objects) {
-        auto obj = i.second;
+        auto obj = i.object;
         if (objectName != 0) {
-            auto objname = obj->io->describe();
+            auto objname = obj->getName();
             auto p = objname.rfind('/');
             if (p != std::string::npos)
                 objname = objname.substr(p + 1, std::string::npos);
@@ -411,7 +411,7 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
         }
         Elf_Sym sym;
         if (obj->findSymbolByName(symbolName, sym))
-            return sym.st_value + i.first;
+            return sym.st_value + i.reloc;
         if (objectName)
             break;
     }
