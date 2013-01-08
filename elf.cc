@@ -86,7 +86,7 @@ ElfObject::init(const shared_ptr<Reader> &io_)
         }
         auto tab = getSection(".hash", SHT_HASH);
         if (tab)
-            hash.reset(new ElfSymHash(this, tab));
+            hash.reset(new ElfSymHash(tab));
     } else {
         hash = 0;
     }
@@ -122,11 +122,11 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
     bool exact = false;
     Elf_Addr lowest = 0;
     for (size_t i = 0; sectionNames[i] && !exact; i++) {
-        const Elf_Shdr *symSection = namedSection[sectionNames[i]];
+        const auto &symSection = getSection(sectionNames[i], SHT_NULL);
         if (symSection == 0 || symSection->sh_type == SHT_NOBITS)
             continue;
 
-        SymbolSection syms(this, symSection);
+        SymbolSection syms(symSection);
         for (auto syminfo : syms) {
             auto &candidate = syminfo.first;
             if (candidate.st_shndx >= sectionHeaders.size())
@@ -165,31 +165,23 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
     }
 }
 
-const Elf_Shdr *
-ElfObject::getSection(size_t idx) const
-{
-    if (idx >= sectionHeaders.size())
-        throw Exception() << "section index " << idx << " out of range (0-" << sectionHeaders.size() - 1;
-    return &sectionHeaders[idx];
-}
-
-const Elf_Shdr *
-ElfObject::getSection(std::string name, int type) const
+const ElfSection
+ElfObject::getSection(std::string name, int type)
 {
     auto s = namedSection.find(name);
-    return s != namedSection.end() && s->second->sh_type == type || type == SHT_NULL ? s->second : 0;
+    return ElfSection(*this, s != namedSection.end() && s->second->sh_type == type || type == SHT_NULL ? s->second : 0);
 }
 
 SymbolSection
-ElfObject::getSymbols(std::string table) const
+ElfObject::getSymbols(std::string table)
 {
-    return SymbolSection(this, getSection(table, SHT_NULL));
+    return SymbolSection(getSection(table, SHT_NULL));
 }
 
 bool
-ElfObject::linearSymSearch(const Elf_Shdr *hdr, string name, Elf_Sym &sym)
+linearSymSearch(ElfSection &section, string name, Elf_Sym &sym)
 {
-    SymbolSection sec(this, hdr);
+    SymbolSection sec(section);
     for (auto info : sec) {
         if (name == info.second) {
             sym = info.first;
@@ -199,21 +191,19 @@ ElfObject::linearSymSearch(const Elf_Shdr *hdr, string name, Elf_Sym &sym)
     return false;
 }
 
-ElfSymHash::ElfSymHash(ElfObject *obj_, const Elf_Shdr *hash_)
-    : obj(obj_)
-    , hash(hash_)
+ElfSymHash::ElfSymHash(ElfSection &hash_)
+    : hash(hash_)
+    , syms(hash.obj, hash.getLink())
 {
-    syms = obj->getSection(hash->sh_link);
-
     // read the hash table into local memory.
     size_t words = hash->sh_size / sizeof (Elf_Word);
     data.resize(words);
-    obj->io->readObj(hash->sh_offset, &data[0], words);
+    hash.obj.io->readObj(hash->sh_offset, &data[0], words);
     nbucket = data[0];
     nchain = data[1];
     buckets = &data[0] + 2;
     chains = buckets + nbucket;
-    strings = obj->getSection(syms->sh_link)->sh_offset;
+    strings = syms.getLink()->sh_offset;
 }
 
 bool
@@ -222,8 +212,8 @@ ElfSymHash::findSymbol(Elf_Sym &sym, string &name)
     uint32_t bucket = elf_hash(name) % nbucket;
     for (Elf_Word i = buckets[bucket]; i != STN_UNDEF; i = chains[i]) {
         Elf_Sym candidate;
-        obj->io->readObj(syms->sh_offset + i * sizeof candidate, &candidate);
-        string candidateName = obj->io->readString(strings + candidate.st_name);
+        syms.obj.io->readObj(syms->sh_offset + i * sizeof candidate, &candidate);
+        string candidateName = syms.obj.io->readString(strings + candidate.st_name);
         if (candidateName == name) {
             sym = candidate;
             name = candidateName;
@@ -241,11 +231,11 @@ ElfObject::findSymbolByName(string name, Elf_Sym &sym)
 {
     if (hash && hash->findSymbol(sym, name))
         return true;
-    const Elf_Shdr *syms = getSection(".dynsym", SHT_DYNSYM);
-    if (syms && linearSymSearch(syms, name, sym))
+    auto dyn = getSection(".dynsym", SHT_DYNSYM);
+    if (dyn && linearSymSearch(dyn, name, sym))
         return true;
-    syms = getSection(".symtab", SHT_SYMTAB);
-    if (syms && linearSymSearch(syms, name, sym))
+    auto symtab = getSection(".symtab", SHT_SYMTAB);
+    if (symtab && linearSymSearch(symtab, name, sym))
         return true;
     return false;
 }
@@ -327,4 +317,9 @@ elf_hash(string name)
         h &= ~g;
     }
     return (h);
+}
+
+const Elf_Shdr *ElfSection::getLink() const
+{
+    return &obj.sectionHeaders[shdr->sh_link];
 }

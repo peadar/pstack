@@ -169,12 +169,12 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
     : elf(obj)
     , version(2)
     , info(obj->getSection(".debug_info", SHT_PROGBITS))
-    , abbrev(obj->getSection(".debug_abbrev", SHT_PROGBITS))
     , debstr(obj->getSection(".debug_str", SHT_PROGBITS))
-    , lineshdr(obj->getSection(".debug_line", SHT_PROGBITS))
-    , debug_frame(obj->getSection(".debug_frame", SHT_PROGBITS))
     , pubnamesh(obj->getSection(".debug_pubnames", SHT_PROGBITS))
     , arangesh(obj->getSection(".debug_aranges", SHT_PROGBITS))
+    , debug_frame(obj->getSection(".debug_frame", SHT_PROGBITS))
+    , abbrev(obj->getSection(".debug_abbrev", SHT_PROGBITS))
+    , lineshdr(obj->getSection(".debug_line", SHT_PROGBITS))
 {
     // want these first: other sections refer into this.
     if (debstr) {

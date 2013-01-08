@@ -113,7 +113,7 @@ main(int argc, char *argv[])
     std::vector<ListedSymbol> listed;
     for (auto &loaded : process->objects) {
         size_t count = 0;
-        for (const auto &sym : loaded.object->getSymbols(".dynsym")) {
+        for (const auto sym : loaded.object->getSymbols(".dynsym")) {
             if (globmatch(virtpattern, sym.second)) {
                 listed.push_back(ListedSymbol(sym.first, loaded.reloc, sym.second, loaded.object->io->describe()));
                 count++;

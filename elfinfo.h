@@ -84,6 +84,8 @@ ElfType(Off)
 #define IS_ELF(a) 1
 #endif
 
+class ElfObject;
+
 static inline size_t
 roundup2(size_t val, size_t align)
 {
@@ -107,16 +109,26 @@ std::unique_ptr<T> make_unique(Args&&... args)
     return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
+struct ElfSection {
+    const ElfObject &obj;
+    const Elf_Shdr *shdr;
+    const Elf_Shdr *getLink() const;
+    operator bool() const { return shdr != 0; }
+    const Elf_Shdr *operator -> () const { return shdr; }
+    const Elf_Shdr *operator = (const Elf_Shdr *shdr_) { shdr = shdr_; return shdr; }
+    ElfSection(const ElfObject &obj_, const Elf_Shdr *shdr_) : obj(obj_), shdr(shdr_) {}
+};
+
+bool linearSymSearch(ElfSection &hdr, std::string name, Elf_Sym &);
 class ElfObject {
 public:
     typedef std::vector<Elf_Phdr> ProgramHeaders;
     typedef std::vector<Elf_Shdr> SectionHeaders;
 private:
+    friend class ElfSection;
     size_t fileSize;
     Elf_Ehdr elfHeader;
     ProgramHeaders programHeaders;
-    SectionHeaders sectionHeaders;
-    bool linearSymSearch(const Elf_Shdr *hdr, std::string name, Elf_Sym &);
     void init(FILE *);
     std::unique_ptr<ElfSymHash> hash;
     void init(const std::shared_ptr<Reader> &); // want constructor chaining
@@ -124,6 +136,9 @@ private:
     std::string name;
     std::shared_ptr<ElfObject> debug;
 public:
+    const ElfSection getSection(std::string name, int type);
+    SymbolSection getSymbols(std::string table);
+    SectionHeaders sectionHeaders;
     std::shared_ptr<ElfObject> getDebug();
     std::shared_ptr<Reader> io; // IO for the ELF image.
     Elf_Off getBase() const; // lowest address of a PT_LOAD segment.
@@ -131,12 +146,10 @@ public:
     std::string getName() const { return name; }
     const SectionHeaders &getSections() const { return sectionHeaders; }
     const ProgramHeaders &getSegments() const  { return programHeaders; }
-    const Elf_Shdr *getSection(std::string name, int type) const;
-    const Elf_Shdr *getSection(size_t idx) const;
+    const ElfSection getSection(std::string name, int type) const;
     const Elf_Ehdr &getElfHeader() const { return elfHeader; }
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(std::string name, Elf_Sym &sym);
-    SymbolSection getSymbols(std::string table) const;
     ElfObject(std::shared_ptr<Reader>);
     ElfObject(std::string name);
     ~ElfObject();
@@ -156,22 +169,19 @@ struct SymbolIterator {
 };
 
 struct SymbolSection {
-    std::shared_ptr<Reader> io;
-    const Elf_Shdr *section;
+    const ElfSection section;
     off_t stroff;
-    SymbolIterator begin() { return SymbolIterator(io, section ?  section->sh_offset : 0, stroff); }
-    SymbolIterator end() { return SymbolIterator(io, section ?  section->sh_offset + section->sh_size : 0, stroff); }
-    SymbolSection(const ElfObject *obj, const Elf_Shdr *section_)
-        : io(obj->io)
-        , section(section_)
-        , stroff(obj->getSection(section->sh_link)->sh_offset)
+    SymbolIterator begin() { return SymbolIterator(section ? section.obj.io : 0, section ? section->sh_offset : 0, stroff); }
+    SymbolIterator end() { return SymbolIterator(section ? section.obj.io : 0, section ? section->sh_offset + section->sh_size : 0, stroff); }
+    SymbolSection(const ElfSection &section_)
+        : section(section_)
+        , stroff(section.getLink()->sh_offset)
     {}
 };
 
 class ElfSymHash {
-    ElfObject *obj;
-    const Elf_Shdr *hash;
-    const Elf_Shdr *syms;
+    ElfSection hash;
+    ElfSection syms;
     off_t strings;
     Elf_Word nbucket;
     Elf_Word nchain;
@@ -179,7 +189,7 @@ class ElfSymHash {
     const Elf_Word *chains;
     const Elf_Word *buckets;
 public:
-    ElfSymHash(ElfObject *object, const Elf_Shdr *hash);
+    ElfSymHash(ElfSection &);
     bool findSymbol(Elf_Sym &sym, std::string &name);
 };
 

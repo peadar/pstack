@@ -299,9 +299,9 @@ class DwarfInfo {
     mutable std::list<DwarfPubnameUnit> pubnameUnits;
     mutable std::list<DwarfARangeSet> aranges;
     mutable std::map<Elf_Off, DwarfUnit> unitsm;
-    const mutable Elf_Shdr *info, *debstr, *pubnamesh, *arangesh, *debug_frame;
+    mutable ElfSection info, debstr, pubnamesh, arangesh, debug_frame;
 public:
-    const Elf_Shdr *abbrev, *lineshdr;
+    const ElfSection abbrev, lineshdr;
     // interesting shdrs from the exe.
     std::shared_ptr<ElfObject> elf;
     std::list<DwarfARangeSet> &ranges() const;
