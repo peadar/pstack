@@ -186,7 +186,7 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
 
     auto eh_frame = obj->getSection(".eh_frame", SHT_PROGBITS);
     if (eh_frame) {
-        DWARFReader reader(obj->io, version, eh_frame->sh_offset, eh_frame->sh_size);
+        DWARFReader reader(eh_frame, version);
         try {
             ehFrame = std::unique_ptr<DwarfFrameInfo>(new DwarfFrameInfo(this, reader, FI_EH_FRAME));
         }
@@ -200,7 +200,7 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
     }
 
     if (debug_frame) {
-        DWARFReader reader(obj->io, version, debug_frame->sh_offset, debug_frame->sh_size);
+        DWARFReader reader(debug_frame, version);
         try {
             debugFrame = std::unique_ptr<DwarfFrameInfo>(new DwarfFrameInfo(this, reader, FI_DEBUG_FRAME));
         }
@@ -220,7 +220,7 @@ DwarfInfo::pubnames() const
 {
 
     if (pubnamesh) {
-        DWARFReader r(elf->io, version, pubnamesh->sh_offset, pubnamesh->sh_size);
+        DWARFReader r(pubnamesh, version);
         while (!r.empty())
             pubnameUnits.push_back(DwarfPubnameUnit(r));
         pubnamesh = 0;
@@ -232,7 +232,7 @@ std::map<Elf_Off, DwarfUnit> &
 DwarfInfo::units() const
 {
     if (info) {
-        DWARFReader reader(elf->io, version, info->sh_offset, info->sh_size);
+        DWARFReader reader(info, version);
         while (!reader.empty()) {
             auto off = reader.getOffset() - info->sh_offset;
             unitsm[off] = DwarfUnit(this, reader);
@@ -246,7 +246,7 @@ std::list<DwarfARangeSet> &
 DwarfInfo::ranges() const
 {
     if (arangesh) {
-        DWARFReader r(elf->io, version, arangesh->sh_offset, arangesh->sh_size);
+        DWARFReader r(arangesh, version);
         while (!r.empty())
             aranges.push_back(DwarfARangeSet(r));
         arangesh = 0;
@@ -296,7 +296,7 @@ DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
     version = r.version = r.getu16();
 
     off_t off = version >= 3 ? r.getuint(ELF_BITS/8) : r.getu32();
-    DWARFReader abbR(r.io, di->version, di->abbrev->sh_offset + off, di->abbrev->sh_size);
+    DWARFReader abbR(di->abbrev, di->version, off);
     r.addrLen = addrlen = r.getu8();
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
@@ -607,8 +607,8 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
     switch (type->tag) {
     case DW_TAG_compile_unit: {
         if (unit->dwarf->lineshdr) {
-            size_t size = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
-            DWARFReader r2(r.io, unit->dwarf->version, unit->dwarf->lineshdr->sh_offset + size, unit->dwarf->lineshdr->sh_size - size);
+            size_t stmts = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
+            DWARFReader r2(unit->dwarf->lineshdr, unit->dwarf->version, stmts);
             unit->lines.build(r2, unit);
         } else {
             std::clog << "warning: no line number info found" << std::endl;

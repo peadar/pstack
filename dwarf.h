@@ -391,11 +391,20 @@ public:
     unsigned addrLen;
     int version;
     std::shared_ptr<ElfObject> elf;
-    
+
     DWARFReader(std::shared_ptr<Reader> io_, int version_, Elf_Off off_, Elf_Word size_)
         : off(off_)
         , end(off_ + size_)
         , io(io_)
+        , addrLen(ELF_BITS / 8)
+        , version(version_)
+    {
+    }
+
+    DWARFReader(const ElfSection &section, int version_, Elf_Off off_ = 0)
+        : off(off_ + section->sh_offset)
+        , end(section->sh_offset + section->sh_size)
+        , io(section.obj.io)
         , addrLen(ELF_BITS / 8)
         , version(version_)
     {
