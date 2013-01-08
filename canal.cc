@@ -108,6 +108,7 @@ main(int argc, char *argv[])
         core = std::make_shared<ElfObject>(std::make_shared<FileReader>(argv[optind]));
         process = std::make_shared<CoreProcess>(exec, core);
     }
+    process->load();
     std::clog << "opened process " << process << std::endl;
 
     std::vector<ListedSymbol> listed;
