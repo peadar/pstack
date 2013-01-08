@@ -122,7 +122,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
     bool exact = false;
     Elf_Addr lowest = 0;
     for (size_t i = 0; sectionNames[i] && !exact; i++) {
-        const auto &symSection = getSection(sectionNames[i], SHT_NULL);
+        const auto symSection = getSection(sectionNames[i], SHT_NULL);
         if (symSection == 0 || symSection->sh_type == SHT_NOBITS)
             continue;
 
@@ -169,7 +169,7 @@ const ElfSection
 ElfObject::getSection(std::string name, int type)
 {
     auto s = namedSection.find(name);
-    return ElfSection(*this, s != namedSection.end() && s->second->sh_type == type || type == SHT_NULL ? s->second : 0);
+    return ElfSection(*this, s != namedSection.end() && (s->second->sh_type == type || type == SHT_NULL) ? s->second : 0);
 }
 
 SymbolSection
