@@ -682,7 +682,8 @@ dwarfEvalExpr(const Process &proc, DWARFReader r, const DwarfRegisters *frame, D
                 stack->pop();
                 Elf_Addr second = stack->top();
                 stack->pop();
-                stack->push(second - top);
+                top = -top;
+                stack->push(second + top);
                 break;
             }
 
@@ -1156,10 +1157,7 @@ DwarfInfo::getCFA(const Process &proc, const DwarfCallFrame *frame, const DwarfR
             DWARFReader r(elf->io, version,
                     frame->cfaValue.u.expression.offset,
                     frame->cfaValue.u.expression.length);
-            dwarfEvalExpr(proc, r, regs, &stack);
-            Elf_Addr rv = stack.top();
-            stack.pop();
-            return rv;
+            return dwarfEvalExpr(proc, r, regs, &stack);
         }
     }
     return -1;
@@ -1215,12 +1213,11 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
                 DwarfExpressionStack stack;
                 stack.push(cfa);
                 DWARFReader reader(elf.object->io, dwarf->version, unwind->u.expression.offset, unwind->u.expression.length);
-                dwarfEvalExpr(p, reader, regs, &stack);
-                auto val = stack.top();
+                auto val = dwarfEvalExpr(p, reader, regs, &stack);
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                 if (unwind->type == EXPRESSION)
                     p.io->readObj(val, &val);
-                dwarfSetReg(&newRegs, i, stack.top());
+                dwarfSetReg(&newRegs, i, val);
                 break;
             }
 
