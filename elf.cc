@@ -57,6 +57,7 @@ ElfObject::getInterpreter() const
 void
 ElfObject::init(const shared_ptr<Reader> &io_)
 {
+    debugLoaded = false;
     io = io_;
     int i;
     size_t off;
@@ -113,19 +114,16 @@ SymbolIterator::operator *()
 bool
 ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &name)
 {
-
     /* Try to find symbols in these sections */
     static const char *sectionNames[] = {
-        ".dynsym", ".symtab", 0
+        ".symtab", ".dynsym", 0
     };
-
     bool exact = false;
     Elf_Addr lowest = 0;
     for (size_t i = 0; sectionNames[i] && !exact; i++) {
         const auto symSection = getSection(sectionNames[i], SHT_NULL);
         if (symSection == 0 || symSection->sh_type == SHT_NOBITS)
             continue;
-
         SymbolSection syms(symSection);
         for (auto syminfo : syms) {
             auto &candidate = syminfo.first;
@@ -158,16 +156,19 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
             }
         }
     }
-    if (lowest == 0) {
-        return getDebug() ? debug->findSymbolByAddress(addr, type, sym, name) : false;
-    } else {
-        return true;
-    }
+    return lowest != 0;
 }
 
 const ElfSection
 ElfObject::getSection(std::string name, int type)
 {
+    auto dbg = getDebug();
+    if (dbg) {
+        auto debugSection = dbg->getSection(name, type);
+        if (debugSection)
+            return debugSection;
+    }
+
     auto s = namedSection.find(name);
     return ElfSection(*this, s != namedSection.end() && (s->second->sh_type == type || type == SHT_NULL) ? s->second : 0);
 }
@@ -275,17 +276,22 @@ ElfObject::~ElfObject()
 
 std::shared_ptr<ElfObject> ElfObject::getDebug()
 {
-    if (debug == 0) {
-        auto hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
-        if (hdr == 0)
-            return 0;
+    if (!debugLoaded) {
+        debugLoaded = true;
 
-        std::vector<char> buf;
-        buf.resize(hdr->sh_size);
-        std::string link = io->readString(hdr->sh_offset);
         std::ostringstream stream;
         stream << io->describe();
         std::string oldname = stream.str();
+
+        auto hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
+        if (hdr == 0) {
+            std::clog << "no debug link for " << oldname << std::endl;
+            return 0;
+        }
+        std::vector<char> buf;
+        buf.resize(hdr->sh_size);
+        std::string link = io->readString(hdr->sh_offset);
+
         auto dir = dirname(oldname);
         auto name = "/usr/lib/debug" + dir + "/" + link;
 
@@ -294,11 +300,10 @@ std::shared_ptr<ElfObject> ElfObject::getDebug()
             debug = make_shared<ElfObject>(name);
             std::clog << "opened " << name << " for debug version of " << oldname << std::endl;
         }
-        catch (...) {
+        catch (const std::exception &ex) {
+            std::clog << "failed to open " << name << " for debug version of " << oldname << ": " << ex.what() << std::endl;
             return 0;
         }
-
-
     }
     return debug;
 }

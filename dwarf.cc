@@ -179,7 +179,7 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
     // want these first: other sections refer into this.
     if (debstr) {
         debugStrings = new char[debstr->sh_size];
-        elf->io->readObj(debstr->sh_offset, debugStrings, debstr->sh_size);
+        debstr.obj.io->readObj(debstr->sh_offset, debugStrings, debstr->sh_size);
     } else {
         debugStrings = 0;
     }
