@@ -218,12 +218,14 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
 std::list<DwarfPubnameUnit> &
 DwarfInfo::pubnames() const
 {
-
     if (pubnamesh) {
+        std::clog << "have pubnames" << std::endl;
         DWARFReader r(pubnamesh, version);
         while (!r.empty())
             pubnameUnits.push_back(DwarfPubnameUnit(r));
         pubnamesh = 0;
+    } else {
+        std::clog << "no pubnames" << std::endl;
     }
     return pubnameUnits;
 }
