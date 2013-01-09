@@ -284,10 +284,8 @@ std::shared_ptr<ElfObject> ElfObject::getDebug()
         std::string oldname = stream.str();
 
         auto hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
-        if (hdr == 0) {
-            std::clog << "no debug link for " << oldname << std::endl;
+        if (hdr == 0)
             return 0;
-        }
         std::vector<char> buf;
         buf.resize(hdr->sh_size);
         std::string link = io->readString(hdr->sh_offset);
@@ -298,10 +296,8 @@ std::shared_ptr<ElfObject> ElfObject::getDebug()
         // XXX: verify checksum.
         try {
             debug = make_shared<ElfObject>(name);
-            std::clog << "opened " << name << " for debug version of " << oldname << std::endl;
         }
         catch (const std::exception &ex) {
-            std::clog << "failed to open " << name << " for debug version of " << oldname << ": " << ex.what() << std::endl;
             return 0;
         }
     }
