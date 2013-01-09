@@ -145,11 +145,11 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
                     return true;
                 }
             } else if (lowest < candidate.st_value) {
-		/*
-		 * No size, but hold on to it as a possibility. We'll return
-		 * the symbol with the highest value not aabove the required
-		 * value 
-		 */
+                /*
+                 * No size, but hold on to it as a possibility. We'll return
+                 * the symbol with the highest value not aabove the required
+                 * value
+                 */
                 sym = candidate;
                 name = syminfo.second;
                 lowest = candidate.st_value;

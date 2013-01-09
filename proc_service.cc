@@ -66,7 +66,7 @@ ps_pread(struct ps_prochandle *ph, psaddr_t addr, void *buf, size_t len)
     try {
         p->io->readObj(Elf_Off(addr), (char *)buf, len);
         return PS_OK;
-    } 
+    }
     catch (...) {
         return PS_ERR;
     }

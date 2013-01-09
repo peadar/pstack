@@ -38,9 +38,8 @@ typedef struct user_regs_struct  elf_regs;
 #error "not linux?"
 #endif
 
-static int gFrameArgs = 6;		/* number of arguments to print */
-static size_t gMaxFrames = 1024;		/* max number of frames to read */
-
+static int gFrameArgs = 6; /* number of arguments to print */
+static size_t gMaxFrames = 1024; /* max number of frames to read */
 
 static std::string auxv_name(Elf_Word val)
 {

@@ -52,7 +52,7 @@ std::ostream &operator << (std::ostream &os, const DwarfAttributeSpec &spec) {
 
 std::ostream & operator << (std::ostream &os, const DwarfAbbreviation &abbr) {
     return os
-        << " { \"code\": " << abbr.code 
+        << " { \"code\": " << abbr.code
         << " , \"has_children\": " << (abbr.hasChildren ? "true" : "false")
         << " , \"specs\": " << abbr.specs
         << " }";
@@ -69,14 +69,14 @@ std::ostream &operator << (std::ostream &os, const DwarfUnit &unit) {
 }
 
 std::ostream & operator << (std::ostream &os, const DwarfARange &range) {
-    return os 
+    return os
         << " { \"start\":" << range.start
         << " , \"length\":" << range.length
         << " }";
 }
 
 std::ostream & operator << (std::ostream &os, const DwarfARangeSet &ranges) {
-    return os 
+    return os
         << " { \"length\":" << ranges.length
         << " , \"version\":" << int(ranges.version)
         << " , \"debug_info_offset\":" << ranges.debugInfoOffset
@@ -224,7 +224,7 @@ operator << (std::ostream &os, const DwarfFrameInfo &info)
 }
 
 std::ostream &
-operator << (std::ostream &os, const DwarfInfo &dwarf) 
+operator << (std::ostream &os, const DwarfInfo &dwarf)
 {
     os
         << "{ \"units\": " << dwarf.units()
@@ -307,7 +307,7 @@ dwarfDumpCFAInsns(std::ostream &os, DWARFReader &r)
         os << sep;
         dwarfDumpCFAInsn(os, r);
         sep = ", ";
-    } 
+    }
     os << "]";
 }
 
@@ -500,14 +500,13 @@ operator <<(std::ostream &os, const ElfSection &sec)
     os << "{ \"size\":" << h->sh_size;
     if (strs)
         os << ", \"name\": \"" << o.io->readString(strs->sh_offset + h->sh_name) << "\"";
-        
+
     os << ", \"type\": ";
     if (h->sh_type <= SHT_DYNSYM)
         os << "\"" << sectionTypeNames[h->sh_type] << "\"";
     else
         os << h->sh_type;
 
-   
     std::string sep = "";
 
     os << ", \"flags\": " << "[";

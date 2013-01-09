@@ -108,7 +108,7 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
         size -= zeroes;
         remoteAddr += zeroes;
         ptr += zeroes;
-        
+
         if (hdr == 0 && zeroes == 0) // Nothing from core, objects, or defaulted. We're stuck.
             break;
     }
@@ -131,7 +131,7 @@ CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg) const
         });
     return true;
 }
-    
+
 void
 CoreProcess::resume(pid_t)
 {

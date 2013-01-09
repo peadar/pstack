@@ -347,32 +347,32 @@ enum DwarfCFAInstruction {
     DW_CFA_advance_loc1         = 0x02, // (1-byte delta)
     DW_CFA_advance_loc2         = 0x03, // (2-byte delta)
     DW_CFA_advance_loc4         = 0x04, // (4-byte delta)
-    DW_CFA_offset_extended      = 0x05, // ULEB128 register ULEB128 offset  
-    DW_CFA_restore_extended     = 0x06, // ULEB128 register   
-    DW_CFA_undefined            = 0x07, // ULEB128 register   
-    DW_CFA_same_value           = 0x08, // ULEB128 register   
-    DW_CFA_register             = 0x09, // ULEB128 register ULEB128 register 
-    DW_CFA_remember_state       = 0x0a, //   
-    DW_CFA_restore_state        = 0x0b, //   
-    DW_CFA_def_cfa              = 0x0c, // ULEB128 register ULEB128 offset  
-    DW_CFA_def_cfa_register     = 0x0d, // ULEB128 register   
-    DW_CFA_def_cfa_offset       = 0x0e, // ULEB128 offset   
-    DW_CFA_def_cfa_expression   = 0x0f, // BLOCK  
+    DW_CFA_offset_extended      = 0x05, // ULEB128 register ULEB128 offset
+    DW_CFA_restore_extended     = 0x06, // ULEB128 register
+    DW_CFA_undefined            = 0x07, // ULEB128 register
+    DW_CFA_same_value           = 0x08, // ULEB128 register
+    DW_CFA_register             = 0x09, // ULEB128 register ULEB128 register
+    DW_CFA_remember_state       = 0x0a, //
+    DW_CFA_restore_state        = 0x0b, //
+    DW_CFA_def_cfa              = 0x0c, // ULEB128 register ULEB128 offset
+    DW_CFA_def_cfa_register     = 0x0d, // ULEB128 register
+    DW_CFA_def_cfa_offset       = 0x0e, // ULEB128 offset
+    DW_CFA_def_cfa_expression   = 0x0f, // BLOCK
 
     // DWARF 3 only {
-    DW_CFA_expression           = 0x10, // ULEB128 register BLOCK 
-    DW_CFA_offset_extended_sf   = 0x11, // ULEB128 register SLEB128 offset 
-    DW_CFA_def_cfa_sf           = 0x12, // ULEB128 register SLEB128 offset 
-    DW_CFA_def_cfa_offset_sf    = 0x13, // SLEB128 offset  
-    DW_CFA_val_offset           = 0x14, // ULEB128 ULEB128 
-    DW_CFA_val_offset_sf        = 0x15, // ULEB128 SLEB128 
-    DW_CFA_val_expression       = 0x16, // ULEB128 BLOCK 
+    DW_CFA_expression           = 0x10, // ULEB128 register BLOCK
+    DW_CFA_offset_extended_sf   = 0x11, // ULEB128 register SLEB128 offset
+    DW_CFA_def_cfa_sf           = 0x12, // ULEB128 register SLEB128 offset
+    DW_CFA_def_cfa_offset_sf    = 0x13, // SLEB128 offset
+    DW_CFA_val_offset           = 0x14, // ULEB128 ULEB128
+    DW_CFA_val_offset_sf        = 0x15, // ULEB128 SLEB128
+    DW_CFA_val_expression       = 0x16, // ULEB128 BLOCK
     // }
 
     DW_CFA_lo_user              = 0x1c,
-    DW_CFA_GNU_window_size      = 0x2d, 
+    DW_CFA_GNU_window_size      = 0x2d,
     DW_CFA_GNU_args_size        = 0x2e,
-    DW_CFA_GNU_negative_offset_extended = 0x2f, 
+    DW_CFA_GNU_negative_offset_extended = 0x2f,
     DW_CFA_hi_user              = 0x3f,
 
     /*

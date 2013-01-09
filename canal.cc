@@ -16,7 +16,7 @@ globmatchR(const char *pattern, const char *name)
     for (;; name++) {
         switch (*pattern) {
         case '*':
-            // if the rest of the name matches the bit of pattern after '*', 
+            // if the rest of the name matches the bit of pattern after '*',
             for (;;) {
                 ++name;
                 if (globmatchR(pattern + 1, name))
@@ -84,11 +84,11 @@ main(int argc, char *argv[])
 
     while ((c = getopt(argc, argv, "vh")) != -1) {
         switch (c) {
-            case 'v': 
+            case 'v':
                 debug = &std::clog;
                 verbose++;
                 break;
-            case 'h': 
+            case 'h':
                 std::clog << "usage: canal [exec] <core>" << std::endl;
                 return 0;
             case 'X':

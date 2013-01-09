@@ -90,7 +90,7 @@ LiveProcess::stopProcess()
     listThreads(
         [this] (const td_thrhandle_t *thr) -> void {
             if (td_thr_dbsuspend(thr) == TD_NOCAPAB) {
-                /* 
+                /*
                  * This doesn't actually work under linux: just add the LWP
                  * to the list of stopped lwps.
                  */
@@ -106,7 +106,7 @@ LiveProcess::stopProcess()
 void
 LiveProcess::resumeProcess()
 {
-    listThreads([](const td_thrhandle_t *thr) { td_thr_dbresume(thr); }); 
+    listThreads([](const td_thrhandle_t *thr) { td_thr_dbresume(thr); });
     for (auto lwp : lwps)
         resume(lwp);
     resume(pid);

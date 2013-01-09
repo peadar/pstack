@@ -10,7 +10,7 @@ main(int argc, char **argv)
     size_t len = strlen(str);
     char * buf = new char[len];
     ElfObject o(f);
-    
+   
     int phdr = 0;
     for (auto i : o.programHeaders) {
         bool keepGoing = true;

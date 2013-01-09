@@ -709,7 +709,7 @@ dwarfEvalExpr(const Process &proc, DWARFReader r, const DwarfRegisters *frame, D
                 break;
             }
 
-            default: 
+            default:
                 abort();
         }
     }
@@ -759,7 +759,7 @@ DwarfCIE::execInsns(DWARFReader &r, int version, uintmax_t addr, uintmax_t wantA
             switch (op) {
             case DW_CFA_nop:
                 break;
-                
+
             case DW_CFA_set_loc:
                 addr = r.getuint(r.addrLen);
                 break;
@@ -1210,7 +1210,7 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
                 dwarfSetReg(&newRegs, i, dwarfGetReg(regs, unwind->u.reg));
                 break;
 
-            case VAL_EXPRESSION: 
+            case VAL_EXPRESSION:
             case EXPRESSION: {
                 DwarfExpressionStack stack;
                 stack.push(cfa);
