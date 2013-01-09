@@ -1,4 +1,5 @@
 #include <sysexits.h>
+#include <unistd.h>
 #include <iostream>
 
 #include "dwarf.h"

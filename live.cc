@@ -2,6 +2,7 @@
 #include <err.h>
 
 #include <iostream>
+#include <unistd.h>
 #include <limits.h>
 #include <sys/ptrace.h>
 #include <fcntl.h>

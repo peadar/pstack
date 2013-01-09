@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <iostream>
 #include <link.h>
+#include <unistd.h>
 extern "C" {
 #include "proc_service.h"
 }
