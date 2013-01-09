@@ -922,6 +922,8 @@ DwarfInfo::decodeAddress(DWARFReader &f, int encoding) const
         base = f.getuleb128();
         break;
     case DW_EH_PE_absptr:
+        base = f.getint(sizeof (Elf_Word));
+        break;
     default:
         abort();
         break;
