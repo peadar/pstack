@@ -36,7 +36,7 @@ std::string CoreReader::describe() const
 }
 
 static size_t
-readFromHdr(std::shared_ptr<ElfObject> obj, const std::shared_ptr<Elf_Phdr> hdr, Elf_Off addr, char *ptr, Elf_Off size, Elf_Off *toClear)
+readFromHdr(std::shared_ptr<ElfObject> obj, const Elf_Phdr *hdr, Elf_Off addr, char *ptr, Elf_Off size, Elf_Off *toClear)
 {
     Elf_Off rv, off = addr - hdr->p_vaddr; // offset in header of our ptr.
     if (off < hdr->p_filesz) {

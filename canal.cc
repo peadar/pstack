@@ -81,7 +81,6 @@ main(int argc, char *argv[])
     int c;
     int verbose = 0;
 
-
     while ((c = getopt(argc, argv, "vh")) != -1) {
         switch (c) {
             case 'v': 
@@ -109,37 +108,37 @@ main(int argc, char *argv[])
         core = std::make_shared<ElfObject>(std::make_shared<FileReader>(argv[optind]));
         process = std::make_shared<CoreProcess>(exec, core);
     }
+    process->load();
     std::clog << "opened process " << process << std::endl;
 
     std::vector<ListedSymbol> listed;
     for (auto &loaded : process->objects) {
-        SymbolSection syms = loaded.second->getSymbols(0);
         size_t count = 0;
-        for (const auto &sym : syms) {
+        for (const auto sym : loaded.object->getSymbols(".dynsym")) {
             if (globmatch(virtpattern, sym.second)) {
-                listed.push_back(ListedSymbol(sym.first, loaded.first, sym.second, loaded.second->io->describe()));
+                listed.push_back(ListedSymbol(sym.first, loaded.reloc, sym.second, loaded.object->io->describe()));
                 count++;
             }
         }
         if (debug)
-            *debug << "found " << count << " symbols in " << loaded.second->io->describe() << std::endl;
+            *debug << "found " << count << " symbols in " << loaded.object->io->describe() << std::endl;
     }
     std::sort(listed.begin()
         , listed.end()
         , [] (const ListedSymbol &l, const ListedSymbol &r) { return l.memaddr() < r.memaddr(); });
 
     // Now run through the corefile, searching for virtual objects.
-    for (auto hdr : core->programHeaders) {
-        if (hdr->p_type != PT_LOAD)
+    for (auto hdr : core->getSegments()) {
+        if (hdr.p_type != PT_LOAD)
             continue;
         Elf_Off p;
-        auto loc = hdr->p_vaddr;
-        auto end = loc + hdr->p_filesz;
+        auto loc = hdr.p_vaddr;
+        auto end = loc + hdr.p_filesz;
         if (debug)
             *debug << "scan " << std::hex << loc <<  " to " << end;
 
-        for (Elf_Off readCount = 0; loc  < hdr->p_vaddr + hdr->p_filesz; loc += sizeof p) {
-            if (verbose && (loc - hdr->p_vaddr) % (1024 * 1024) == 0)
+        for (Elf_Off readCount = 0; loc  < hdr.p_vaddr + hdr.p_filesz; loc += sizeof p) {
+            if (verbose && (loc - hdr.p_vaddr) % (1024 * 1024) == 0)
                 std::clog << '.';
             process->io->readObj(loc, &p);
             auto found = std::lower_bound(listed.begin(), listed.end(), p);

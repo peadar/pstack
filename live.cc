@@ -87,7 +87,7 @@ LiveProcess::stopProcess()
     stop(pid);
     // suspend everything quickly.
     listThreads(
-        [&lwps] (const td_thrhandle_t *thr) -> void {
+        [this] (const td_thrhandle_t *thr) -> void {
             if (td_thr_dbsuspend(thr) == TD_NOCAPAB) {
                 /* 
                  * This doesn't actually work under linux: just add the LWP

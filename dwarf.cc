@@ -168,27 +168,27 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
 DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
     : elf(obj)
     , version(2)
-    , eh_frame(obj->namedSection[".eh_frame"])
-    , info(obj->namedSection[".debug_info"])
-    , abbrev(obj->namedSection[".debug_abbrev"])
-    , debstr(obj->namedSection[".debug_str"])
-    , lineshdr(obj->namedSection[".debug_line"])
-    , debug_frame(obj->namedSection[".debug_frame"])
-    , pubnamesh(obj->namedSection[".debug_pubnames"])
-    , arangesh(obj->namedSection[".debug_aranges"])
+    , info(obj->getSection(".debug_info", SHT_PROGBITS))
+    , debstr(obj->getSection(".debug_str", SHT_PROGBITS))
+    , pubnamesh(obj->getSection(".debug_pubnames", SHT_PROGBITS))
+    , arangesh(obj->getSection(".debug_aranges", SHT_PROGBITS))
+    , debug_frame(obj->getSection(".debug_frame", SHT_PROGBITS))
+    , abbrev(obj->getSection(".debug_abbrev", SHT_PROGBITS))
+    , lineshdr(obj->getSection(".debug_line", SHT_PROGBITS))
 {
     // want these first: other sections refer into this.
     if (debstr) {
         debugStrings = new char[debstr->sh_size];
-        elf->io->readObj(debstr->sh_offset, debugStrings, debstr->sh_size);
+        debstr.obj.io->readObj(debstr->sh_offset, debugStrings, debstr->sh_size);
     } else {
         debugStrings = 0;
     }
 
+    auto eh_frame = obj->getSection(".eh_frame", SHT_PROGBITS);
     if (eh_frame) {
-        DWARFReader reader(*this, eh_frame->sh_offset, eh_frame->sh_size);
+        DWARFReader reader(eh_frame, version);
         try {
-            ehFrame = std::unique_ptr<DwarfFrameInfo>(new DwarfFrameInfo(version, reader, FI_EH_FRAME));
+            ehFrame = std::unique_ptr<DwarfFrameInfo>(new DwarfFrameInfo(this, reader, FI_EH_FRAME));
         }
         catch (const Exception &ex) {
             ehFrame = 0;
@@ -200,9 +200,9 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
     }
 
     if (debug_frame) {
-        DWARFReader reader(*this, debug_frame->sh_offset, debug_frame->sh_size);
+        DWARFReader reader(debug_frame, version);
         try {
-            debugFrame = std::unique_ptr<DwarfFrameInfo>(new DwarfFrameInfo(version, reader, FI_DEBUG_FRAME));
+            debugFrame = std::unique_ptr<DwarfFrameInfo>(new DwarfFrameInfo(this, reader, FI_DEBUG_FRAME));
         }
         catch (const Exception &ex) {
             debugFrame = 0;
@@ -218,12 +218,14 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
 std::list<DwarfPubnameUnit> &
 DwarfInfo::pubnames() const
 {
-
     if (pubnamesh) {
-        DWARFReader r(*this, pubnamesh->sh_offset, pubnamesh->sh_size);
+        std::clog << "have pubnames" << std::endl;
+        DWARFReader r(pubnamesh, version);
         while (!r.empty())
             pubnameUnits.push_back(DwarfPubnameUnit(r));
         pubnamesh = 0;
+    } else {
+        std::clog << "no pubnames" << std::endl;
     }
     return pubnameUnits;
 }
@@ -232,10 +234,10 @@ std::map<Elf_Off, DwarfUnit> &
 DwarfInfo::units() const
 {
     if (info) {
-        DWARFReader reader(*this, info->sh_offset, info->sh_size);
+        DWARFReader reader(info, version);
         while (!reader.empty()) {
             auto off = reader.getOffset() - info->sh_offset;
-            unitsm[off] = DwarfUnit(reader);
+            unitsm[off] = DwarfUnit(this, reader);
         }
         info = 0;
     }
@@ -246,7 +248,7 @@ std::list<DwarfARangeSet> &
 DwarfInfo::ranges() const
 {
     if (arangesh) {
-        DWARFReader r(*this, arangesh->sh_offset, arangesh->sh_size);
+        DWARFReader r(arangesh, version);
         while (!r.empty())
             aranges.push_back(DwarfARangeSet(r));
         arangesh = 0;
@@ -288,20 +290,21 @@ DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
     }
 }
 
-DwarfUnit::DwarfUnit(DWARFReader &r)
+DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
+    : dwarf(di)
 {
     length = r.getlength();
     Elf_Off nextoff = r.getOffset() + length;
     version = r.version = r.getu16();
 
     off_t off = version >= 3 ? r.getuint(ELF_BITS/8) : r.getu32();
-    DWARFReader abbR(r.dwarf, r.dwarf.abbrev->sh_offset + off, r.dwarf.abbrev->sh_size);
+    DWARFReader abbR(di->abbrev, di->version, off);
     r.addrLen = addrlen = r.getu8();
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
         abbreviations[DwarfTag(code)] = DwarfAbbreviation(abbR, code);
 
-    DWARFReader entriesR(r.dwarf, r.getOffset(), nextoff - r.getOffset());
+    DWARFReader entriesR(r.io, di->version, r.getOffset(), nextoff - r.getOffset());
     assert(nextoff <= r.getLimit());
     decodeEntries(entriesR, entries);
     r.setOffset(nextoff);
@@ -406,7 +409,7 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
     if (diff) {
         if (debug) *debug
                 << "warning: left " << diff
-                << " bytes in line info table of " << r.dwarf.elf->io->describe() << std::endl;
+                << " bytes in line info table of " << r.io->describe() << std::endl;
         r.skip(diff);
     }
 
@@ -540,7 +543,7 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfUnit *unit, const Dwar
         break;
 
     case DW_FORM_strp:
-        value.string = r.dwarf.debugStrings + r.getint(r.version >= 3 ?  ELF_BITS/8 : 4);
+        value.string = unit->dwarf->debugStrings + r.getint(r.version >= 3 ?  ELF_BITS/8 : 4);
         break;
 
     case DW_FORM_ref2:
@@ -605,9 +608,9 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
         attributes[spec.name] = DwarfAttribute(r, unit, &spec);
     switch (type->tag) {
     case DW_TAG_compile_unit: {
-        if (r.dwarf.lineshdr) {
-            size_t size = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
-            DWARFReader r2(r.dwarf, r.dwarf.lineshdr->sh_offset + size, r.dwarf.lineshdr->sh_size - size);
+        if (unit->dwarf->lineshdr) {
+            size_t stmts = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
+            DWARFReader r2(unit->dwarf->lineshdr, unit->dwarf->version, stmts);
             unit->lines.build(r2, unit);
         } else {
             std::clog << "warning: no line number info found" << std::endl;
@@ -679,7 +682,8 @@ dwarfEvalExpr(const Process &proc, DWARFReader r, const DwarfRegisters *frame, D
                 stack->pop();
                 Elf_Addr second = stack->top();
                 stack->pop();
-                stack->push(second - top);
+                top = -top;
+                stack->push(second + top);
                 break;
             }
 
@@ -715,7 +719,7 @@ dwarfEvalExpr(const Process &proc, DWARFReader r, const DwarfRegisters *frame, D
 }
 
 DwarfCallFrame
-DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr)
+DwarfCIE::execInsns(DWARFReader &r, int version, uintmax_t addr, uintmax_t wantAddr)
 {
     std::stack<DwarfCallFrame> stack;
     DwarfCallFrame frame;
@@ -726,8 +730,8 @@ DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr)
     // default frame for this CIE.
     DwarfCallFrame dframe;
     if (addr || wantAddr) {
-        DWARFReader r2(r.dwarf, instructions, end - instructions);
-        dframe = execInsns(r2, 0, 0);
+        DWARFReader r2(r.io, version, instructions, end - instructions);
+        dframe = execInsns(r2, version, 0, 0);
         frame = dframe;
     }
     while (!r.empty() && addr <= wantAddr) {
@@ -888,7 +892,7 @@ done:
 }
 
 intmax_t
-decodeAddress(DWARFReader &f, int encoding)
+DwarfInfo::decodeAddress(DWARFReader &f, int encoding) const
 {
     intmax_t base;
     Elf_Off offset = f.getOffset();
@@ -927,17 +931,17 @@ decodeAddress(DWARFReader &f, int encoding)
     case 0:
         break;
     case DW_EH_PE_pcrel:
-        base += offset + f.dwarf.elf->base;
+        base += offset + elf->getBase();
         break;
     }
     return base;
 }
 
-DwarfFDE::DwarfFDE(DWARFReader &reader, DwarfCIE *cie_, Elf_Off end_)
+DwarfFDE::DwarfFDE(DwarfInfo*info, DWARFReader &reader, DwarfCIE *cie_, Elf_Off end_)
     : cie(cie_)
 {
-    iloc = decodeAddress(reader, cie->addressEncoding);
-    irange = decodeAddress(reader, cie->addressEncoding & 0xf);
+    iloc = info->decodeAddress(reader, cie->addressEncoding);
+    irange = info->decodeAddress(reader, cie->addressEncoding & 0xf);
     if (cie->augmentation.size() != 0 && cie->augmentation[0] == 'z') {
         size_t alen = reader.getuleb128();
         while (alen--)
@@ -947,8 +951,9 @@ DwarfFDE::DwarfFDE(DWARFReader &reader, DwarfCIE *cie_, Elf_Off end_)
     end = end_;
 }
 
-DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off end_)
-    : isSignalHandler(false)
+DwarfCIE::DwarfCIE(const DwarfInfo *info_, DWARFReader &r, Elf_Off end_)
+    : info(info_)
+    , isSignalHandler(false)
     , end(end_)
 {
     version = r.version = r.getu8();
@@ -978,7 +983,7 @@ DwarfCIE::DwarfCIE(DWARFReader &r, Elf_Off end_)
                 switch (*it) {
                     case 'P': {
                         unsigned char encoding = r.getu8();
-                        personality = decodeAddress(r, encoding);
+                        personality = info->decodeAddress(r, encoding);
                         break;
                     }
                     case 'L':
@@ -1055,8 +1060,8 @@ DwarfFrameInfo::isCIE(Elf_Addr cieid)
     return (type == FI_DEBUG_FRAME && cieid == 0xffffffff) || (type == FI_EH_FRAME && cieid == 0);
 }
 
-DwarfFrameInfo::DwarfFrameInfo(int version, DWARFReader &reader, enum FIType type_)
-    : dwarf(&reader.dwarf)
+DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, DWARFReader &reader, enum FIType type_)
+    : dwarf(info)
     , type(type_)
 {
     Elf_Addr cieid;
@@ -1066,22 +1071,22 @@ DwarfFrameInfo::DwarfFrameInfo(int version, DWARFReader &reader, enum FIType typ
     off_t nextoff;
     for (; !reader.empty();  reader.setOffset(nextoff)) {
         size_t cieoff = reader.getOffset();
-        nextoff = decodeCIEFDEHdr(version, reader, cieid, type, 0);
+        nextoff = decodeCIEFDEHdr(info->version, reader, cieid, type, 0);
         if (nextoff == 0)
             break;
         if (isCIE(cieid))
-            cies[cieoff] = DwarfCIE(reader, nextoff);
+            cies[cieoff] = DwarfCIE(dwarf, reader, nextoff);
     }
     reader.setOffset(start);
     for (reader.setOffset(start); !reader.empty(); reader.setOffset(nextoff)) {
         DwarfCIE *cie;
-        nextoff = decodeCIEFDEHdr(version, reader, cieid, type, &cie);
+        nextoff = decodeCIEFDEHdr(info->version, reader, cieid, type, &cie);
         if (nextoff == 0)
             break;
         if (!isCIE(cieid)) {
             if (cie == 0)
                 throw Exception() << "invalid frame information in " << reader.io->describe();
-            fdeList.push_back(DwarfFDE(reader, cie, nextoff));
+            fdeList.push_back(DwarfFDE(info, reader, cie, nextoff));
         }
     }
 }
@@ -1149,11 +1154,10 @@ DwarfInfo::getCFA(const Process &proc, const DwarfCallFrame *frame, const DwarfR
             return dwarfGetReg(regs, frame->cfaReg) + frame->cfaValue.u.offset;
         case EXPRESSION: {
             DwarfExpressionStack stack;
-            DWARFReader r(*this, frame->cfaValue.u.expression.offset, frame->cfaValue.u.expression.length);
-            dwarfEvalExpr(proc, r, regs, &stack);
-            Elf_Addr rv = stack.top();
-            stack.pop();
-            return rv;
+            DWARFReader r(elf->io, version,
+                    frame->cfaValue.u.expression.offset,
+                    frame->cfaValue.u.expression.length);
+            return dwarfEvalExpr(proc, r, regs, &stack);
         }
     }
     return -1;
@@ -1165,9 +1169,9 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
     int i;
     DwarfRegisters newRegs;
     DwarfRegisterUnwind *unwind;
-    std::pair<Elf_Addr, std::shared_ptr<ElfObject>> elf = p.findObject(procaddr);
-    std::shared_ptr<DwarfInfo> dwarf = p.getDwarf(elf.second);
-    Elf_Off objaddr = procaddr - elf.first; // relocate process address to object address
+    auto elf = p.findObject(procaddr);
+    auto &dwarf = p.getDwarf(elf.object);
+    Elf_Off objaddr = procaddr - elf.reloc; // relocate process address to object address
 
     const DwarfFDE *fde = dwarf->debugFrame ? dwarf->debugFrame->findFDE(objaddr) : 0;
     if (fde == 0) {
@@ -1178,8 +1182,8 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
             return 0;
     }
 
-    DWARFReader r(*dwarf, fde->instructions, fde->end - fde->instructions);
-    DwarfCallFrame frame = fde->cie->execInsns(r, fde->iloc, objaddr - 1);
+    DWARFReader r(elf.object->io, dwarf->version, fde->instructions, fde->end - fde->instructions);
+    DwarfCallFrame frame = fde->cie->execInsns(r, dwarf->version, fde->iloc, objaddr - 1);
 
     // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
     uintmax_t cfa = dwarf->getCFA(p, &frame, regs);
@@ -1208,13 +1212,12 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
             case EXPRESSION: {
                 DwarfExpressionStack stack;
                 stack.push(cfa);
-                DWARFReader reader(*dwarf, unwind->u.expression.offset, unwind->u.expression.length);
-                dwarfEvalExpr(p, reader, regs, &stack);
-                auto val = stack.top();
+                DWARFReader reader(elf.object->io, dwarf->version, unwind->u.expression.offset, unwind->u.expression.length);
+                auto val = dwarfEvalExpr(p, reader, regs, &stack);
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                 if (unwind->type == EXPRESSION)
                     p.io->readObj(val, &val);
-                dwarfSetReg(&newRegs, i, stack.top());
+                dwarfSetReg(&newRegs, i, val);
                 break;
             }
 

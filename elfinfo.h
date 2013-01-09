@@ -84,7 +84,10 @@ ElfType(Off)
 #define IS_ELF(a) 1
 #endif
 
-static inline size_t roundup2(size_t val, size_t align)
+class ElfObject;
+
+static inline size_t
+roundup2(size_t val, size_t align)
 {
     return val + (align - (val % align)) % align;
 }
@@ -92,8 +95,7 @@ static inline size_t roundup2(size_t val, size_t align)
 #endif
 
 class ElfSymHash;
-
-#define MEMBUF (1024 * 64)
+struct SymbolSection;
 
 enum NoteIter {
     NOTE_CONTIN,
@@ -101,37 +103,59 @@ enum NoteIter {
     NOTE_DONE
 };
 
-struct SymbolSection;
+template<typename T, typename... Args>
+std::unique_ptr<T> make_unique(Args&&... args)
+{
+    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
 
-struct ElfObject {
-    Elf_Off base; /* Lowest address of a PT_LOAD section */
-    std::shared_ptr<Reader> io;
+struct ElfSection {
+    const ElfObject &obj;
+    const Elf_Shdr *shdr;
+    const Elf_Shdr *getLink() const;
+    operator bool() const { return shdr != 0; }
+    const Elf_Shdr *operator -> () const { return shdr; }
+    const Elf_Shdr *operator = (const Elf_Shdr *shdr_) { shdr = shdr_; return shdr; }
+    ElfSection(const ElfObject &obj_, const Elf_Shdr *shdr_) : obj(obj_), shdr(shdr_) {}
+};
+
+bool linearSymSearch(ElfSection &hdr, std::string name, Elf_Sym &);
+class ElfObject {
+public:
+    typedef std::vector<Elf_Phdr> ProgramHeaders;
+    typedef std::vector<Elf_Shdr> SectionHeaders;
+private:
+    friend class ElfSection;
     size_t fileSize;
     Elf_Ehdr elfHeader;
-    std::vector<std::shared_ptr<Elf_Phdr>> programHeaders;
-    std::vector<std::shared_ptr<Elf_Shdr>> sectionHeaders;
-    const Elf_Phdr *dynamic;
-    std::string interpreterName;
-    bool linearSymSearch(const Elf_Shdr *hdr, std::string name, Elf_Sym &);
+    ProgramHeaders programHeaders;
     void init(FILE *);
-    std::shared_ptr<ElfSymHash> hash;
+    std::unique_ptr<ElfSymHash> hash;
+    void init(const std::shared_ptr<Reader> &); // want constructor chaining
+    std::map<std::string, Elf_Shdr *> namedSection;
+    std::string name;
+    bool debugLoaded;
+    std::shared_ptr<ElfObject> debug;
+    std::shared_ptr<ElfObject> getDebug();
 public:
-    std::map<std::string, const Elf_Shdr *> namedSection;
-    Elf_Shdr *findSectionByName(std::string name);
+    const ElfSection getSection(std::string name, int type);
+    SymbolSection getSymbols(std::string table);
+    SectionHeaders sectionHeaders;
+    std::shared_ptr<Reader> io; // IO for the ELF image.
+    Elf_Off getBase() const; // lowest address of a PT_LOAD segment.
+    std::string getInterpreter() const;
+    std::string getName() const { return name; }
+    const SectionHeaders &getSections() const { return sectionHeaders; }
+    const ProgramHeaders &getSegments() const  { return programHeaders; }
+    const ElfSection getSection(std::string name, int type) const;
+    const Elf_Ehdr &getElfHeader() const { return elfHeader; }
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(std::string name, Elf_Sym &sym);
-    SymbolSection getSymbols(size_t secno);
-    std::string getABIPrefix();
     ElfObject(std::shared_ptr<Reader>);
+    ElfObject(std::string name);
     ~ElfObject();
-    Elf_Shdr *getSection(size_t idx) const {
-        if (idx >= sectionHeaders.size())
-            throw 999;
-        return sectionHeaders[idx].get();
-    }
     template <typename Callable> void getNotes(const Callable &callback) const;
-    std::string getImageFromCore();
-    const std::shared_ptr<Elf_Phdr> findHeaderForAddress(Elf_Off) const;
+    const Elf_Phdr *findHeaderForAddress(Elf_Off) const;
 };
 
 // Helpful for iterating over symbol sections.
@@ -146,22 +170,19 @@ struct SymbolIterator {
 };
 
 struct SymbolSection {
-    std::shared_ptr<Reader> io;
-    const Elf_Shdr *section;
+    const ElfSection section;
     off_t stroff;
-    SymbolIterator begin() { return SymbolIterator(io, section ?  section->sh_offset : 0, stroff); }
-    SymbolIterator end() { return SymbolIterator(io, section ?  section->sh_offset + section->sh_size : 0, stroff); }
-    SymbolSection(ElfObject *obj, const Elf_Shdr *section_)
-        : io(obj->io)
-        , section(section_)
-        , stroff(obj->sectionHeaders[section->sh_link]->sh_offset)
+    SymbolIterator begin() { return SymbolIterator(section ? section.obj.io : 0, section ? section->sh_offset : 0, stroff); }
+    SymbolIterator end() { return SymbolIterator(section ? section.obj.io : 0, section ? section->sh_offset + section->sh_size : 0, stroff); }
+    SymbolSection(const ElfSection &section_)
+        : section(section_)
+        , stroff(section.getLink()->sh_offset)
     {}
 };
 
 class ElfSymHash {
-    ElfObject *obj;
-    const Elf_Shdr *hash;
-    const Elf_Shdr *syms;
+    ElfSection hash;
+    ElfSection syms;
     off_t strings;
     Elf_Word nbucket;
     Elf_Word nchain;
@@ -169,11 +190,10 @@ class ElfSymHash {
     const Elf_Word *chains;
     const Elf_Word *buckets;
 public:
-    ElfSymHash(ElfObject *object, const Elf_Shdr *hash);
+    ElfSymHash(ElfSection &);
     bool findSymbol(Elf_Sym &sym, std::string &name);
 };
 
-void hexdump(FILE *f, int indent, const unsigned char *p, int len);
 const char *pad(size_t size);
 #ifdef __PPC
 typedef struct pt_regs CoreRegisters;
@@ -191,11 +211,11 @@ std::ostream& operator<< (std::ostream &os, const ElfObject &obj);
 template <typename Callable> void
 ElfObject::getNotes(const Callable &callback) const
 {
-    for (auto &phdr : programHeaders) {
-        if (phdr->p_type == PT_NOTE) {
+    for (auto &hdr : programHeaders) {
+        if (hdr.p_type == PT_NOTE) {
             Elf_Note note;
-            off_t off = phdr->p_offset;
-            off_t e = off + phdr->p_filesz;
+            off_t off = hdr.p_offset;
+            off_t e = off + hdr.p_filesz;
             while (off < e) {
                 io->readObj(off, &note);
                 off += sizeof note;
