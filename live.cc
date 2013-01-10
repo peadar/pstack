@@ -17,8 +17,9 @@ LiveReader::procname(pid_t pid, std::string base)
 }
 
 LiveProcess::LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid_)
-    : Process(ex ? ex : std::make_shared<ElfObject>(std::make_shared<LiveReader>(pid_, "exe"))
-        , std::make_shared<LiveReader>(pid_, "mem"))
+    : Process(ex ? ex : std::make_shared<ElfObject>(
+            std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "exe"))),
+            std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")))
     , pid(pid_)
     , stopCount(0)
 {

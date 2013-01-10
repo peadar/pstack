@@ -114,6 +114,8 @@ emain(int argc, char **argv)
                 CoreProcess proc(exec, obj);
                 proc.load();
                 proc.pstack(std::cout);
+                if (abortOnExit)
+                    abort();
             } else {
                 exec = obj;
             }
@@ -121,6 +123,8 @@ emain(int argc, char **argv)
             LiveProcess proc(exec, pid);
             proc.load();
             proc.pstack(std::cout);
+            if (abortOnExit)
+                abort();
         }
     }
     return (error);
