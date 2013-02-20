@@ -1188,7 +1188,7 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
     DwarfCallFrame frame = fde->cie->execInsns(r, dwarf->version, fde->iloc, objaddr - 1);
 
     // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
-    uintmax_t cfa = dwarf->getCFA(p, &frame, regs);
+    uintmax_t cfa = dwarfGetReg(regs, frame.cfaReg);
 
     for (i = 0; i < MAXREG; i++) {
         if (!dwarfIsArchReg(i))
@@ -1229,12 +1229,6 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
                 break;
         }
     }
-    // XXX: Where is this codified?
-    // The CFA is the SP at the call site for this frame.
-#ifdef CFA_RESTORE_REGNO
-    if (frame.registers[CFA_RESTORE_REGNO].type == UNDEF)
-        dwarfSetReg(&newRegs, CFA_RESTORE_REGNO, cfa);
-#endif
     memcpy(regs, &newRegs, sizeof newRegs);
     return dwarfGetReg(&newRegs, fde->cie->rar);
 }

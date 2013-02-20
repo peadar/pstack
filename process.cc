@@ -181,8 +181,12 @@ Process::processAUXV(const void *datap, size_t len)
             case AT_SYSINFO_EHDR: {
                 vdso = new char[getpagesize()];
                 io->readObj(hdr, vdso, getpagesize());
-                auto elf = std::make_shared<ElfObject>(std::make_shared<MemReader>(vdso, getpagesize()));
-                addElfObject(elf, hdr - elf->getBase());
+                try {
+                    auto elf = std::make_shared<ElfObject>(std::make_shared<MemReader>(vdso, getpagesize()));
+                    addElfObject(elf, hdr - elf->getBase());
+                }
+                catch (...) {
+                }
                 break;
             }
             case AT_EXECFN:

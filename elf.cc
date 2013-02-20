@@ -26,7 +26,7 @@ ElfObject::findHeaderForAddress(Elf_Off a) const
 ElfObject::ElfObject(string name_)
 {
     name = name_;
-    init(make_shared<FileReader>(name));
+    init(make_shared<CacheReader>(make_shared<FileReader>(name)));
 }
 
 ElfObject::ElfObject(shared_ptr<Reader> io_)

@@ -56,6 +56,8 @@ MemReader::MemReader(char *data_, size_t len_)
 size_t
 MemReader::read(off_t off, size_t count, char *ptr) const
 {
+    if (off > count)
+        throw Exception() << "read past end of memory";
     size_t rc = std::min(count, len - size_t(off));
     memcpy(ptr, data + off, rc);
     return rc;
