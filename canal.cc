@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <iostream>
+#include <exception>
 #include <algorithm>
 #include <memory>
 #include "procinfo.h"
@@ -74,7 +75,7 @@ std::vector<Symcounter> counters;
 static const char *virtpattern = "_ZTV*"; /* wildcard for all vtbls */
 
 int
-main(int argc, char *argv[])
+mainExcept(int argc, char *argv[])
 {
     std::shared_ptr<ElfObject> exec;
     std::shared_ptr<ElfObject> core;
@@ -159,4 +160,15 @@ main(int argc, char *argv[])
     for (auto &i : listed)
         if (i.count)
             std::cout << std::dec << i.count << " " << i.name << " ( from " << i.objname << ")" << std::endl;
+}
+
+int
+main(int argc, char *argv[])
+{
+    try {
+        mainExcept(argc, argv);
+    }
+    catch (const exception &ex) {
+        cerr << "exception: " << ex.what() << endl;
+    }
 }

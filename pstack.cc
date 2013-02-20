@@ -13,10 +13,8 @@ extern "C" {
 
 
 static int usage(void);
-
-
 std::ostream &
-Process::pstack(std::ostream &os)
+Process::pstack(std::ostream &os, const PstackOptions &options)
 {
     ps_pstop(this);
 
@@ -56,7 +54,7 @@ Process::pstack(std::ostream &os)
      */
     const char *sep = "";
     for (auto &s : threadStacks) {
-        dumpStackText(os, s);
+        dumpStackText(os, s, options);
         os << "\n";
         sep = ", ";
     }
@@ -73,7 +71,9 @@ emain(int argc, char **argv)
     std::shared_ptr<ElfObject> exec;
     bool abortOnExit = false;
 
-    while ((c = getopt(argc, argv, "ad:D:hv")) != -1) {
+    PstackOptions options;
+
+    while ((c = getopt(argc, argv, "ad:D:hlv")) != -1) {
         switch (c) {
         case 'a':
             abortOnExit = true;
@@ -94,6 +94,9 @@ emain(int argc, char **argv)
         case 'h':
             usage();
             return (0);
+        case 'l':
+            options += PstackOptions::nosrc;
+            break;
         case 'v':
             debug = &std::clog;
             break;
@@ -113,14 +116,14 @@ emain(int argc, char **argv)
             if (obj->getElfHeader().e_type == ET_CORE) {
                 CoreProcess proc(exec, obj);
                 proc.load();
-                proc.pstack(std::cout);
+                proc.pstack(std::cout, options);
             } else {
                 exec = obj;
             }
         } else {
             LiveProcess proc(exec, pid);
             proc.load();
-            proc.pstack(std::cout);
+            proc.pstack(std::cout, options);
         }
     }
     return (error);

@@ -41,6 +41,24 @@ typedef struct user_regs_struct  elf_regs;
 static int gFrameArgs = 6; /* number of arguments to print */
 static size_t gMaxFrames = 1024; /* max number of frames to read */
 
+void
+PstackOptions::operator += (PstackOption opt)
+{
+    values.set(opt);
+}
+
+void
+PstackOptions::operator -= (PstackOption opt)
+{
+    values.reset(opt);
+}
+
+bool
+PstackOptions::operator () (PstackOption opt) const
+{
+    return values[opt];
+}
+
 static std::string auxv_name(Elf_Word val)
 {
 #define AUXV(n) case n : return #n;
@@ -244,7 +262,7 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
 }
 
 std::ostream &
-Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
+Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options)
 {
     os << "thread: " << std::hex << thread.info.ti_tid << ", type: " << thread.info.ti_type << "\n";
     for (auto frame : thread.stack) {
@@ -277,13 +295,15 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
 
         if (obj != 0) {
             os << " in " << fileName;
-            auto &di = getDwarf(obj);
-            if (di) {
-                for (auto &ent : di->sourceFromAddr(objIp - 1)) {
-                    os << " at ";
-                    if (debug)
-                        os << "[" << ent.first->directory << "] ";
-                    os << ent.first->name << ":" << std::dec << ent.second;
+            if (!options(PstackOptions::nosrc)) {
+                auto &di = getDwarf(obj);
+                if (di) {
+                    for (auto &ent : di->sourceFromAddr(objIp - 1)) {
+                        os << " at ";
+                        if (debug)
+                            os << "[" << ent.first->directory << "] ";
+                        os << ent.first->name << ":" << std::dec << ent.second;
+                    }
                 }
             }
         }

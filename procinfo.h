@@ -4,6 +4,7 @@
 #include <set>
 #include <sstream>
 #include <functional>
+#include <bitset>
 
 struct ps_prochandle {};
 
@@ -23,6 +24,19 @@ struct ThreadStack {
     ThreadStack() {}
     ~ThreadStack() { for (auto i : stack) delete i; }
     void unwind(Process &, CoreRegisters &regs);
+};
+
+
+class PstackOptions {
+public:
+    enum PstackOption {
+        nosrc = 1 << 0,
+        maxopt = 1 << 1
+    };
+    void operator += (PstackOption);
+    void operator -= (PstackOption);
+    bool operator() (PstackOption) const;
+    std::bitset<maxopt> values;
 };
 
 class Process : public ps_prochandle {
@@ -58,10 +72,10 @@ public:
     virtual void resumeProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
     virtual pid_t getPID() const = 0;
-    std::ostream &dumpStackText(std::ostream &, const ThreadStack &);
+    std::ostream &dumpStackText(std::ostream &, const ThreadStack &, const PstackOptions &);
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &);
     template <typename T> void listThreads(const T &);
-    std::ostream &pstack(std::ostream &);
+    std::ostream &pstack(std::ostream &, const PstackOptions &options);
     Elf_Addr findNamedSymbol(const char *objectName, const char *symbolName) const;
     ~Process();
     virtual void load();
