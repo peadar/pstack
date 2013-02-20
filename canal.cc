@@ -6,6 +6,8 @@
 #include "elfinfo.h"
 #include "dwarf.h"
 
+using namespace std;
+
 extern "C" {
 #include "proc_service.h"
 }
@@ -34,7 +36,7 @@ globmatchR(const char *pattern, const char *name)
 }
 
 static int
-globmatch(std::string pattern, std::string name)
+globmatch(string pattern, string name)
 {
     return globmatchR(pattern.c_str(), name.c_str());
 }
@@ -43,10 +45,10 @@ globmatch(std::string pattern, std::string name)
 struct ListedSymbol {
     Elf_Sym sym;
     Elf_Off objbase;
-    std::string objname;
+    string objname;
     size_t count;
-    std::string name;
-    ListedSymbol(const Elf_Sym &sym_, Elf_Off objbase_, std::string name_, std::string object)
+    string name;
+    ListedSymbol(const Elf_Sym &sym_, Elf_Off objbase_, string name_, string object)
         : sym(sym_)
         , objbase(objbase_)
         , name(name_)
@@ -64,55 +66,80 @@ const bool operator < (const ListedSymbol &sym, Elf_Off addr) {
 
 struct Symcounter {
     Elf_Off addr;
-    std::string name;
+    string name;
     unsigned count;
     struct ListedSymbol *sym;
 };
 
-std::vector<Symcounter> counters;
+vector<Symcounter> counters;
 
 static const char *virtpattern = "_ZTV*"; /* wildcard for all vtbls */
 
 int
 main(int argc, char *argv[])
 {
-    std::shared_ptr<ElfObject> exec;
-    std::shared_ptr<ElfObject> core;
-    std::shared_ptr<Process> process;
+    bool findRef = false; 
+    shared_ptr<ElfObject> exec;
+    shared_ptr<ElfObject> core;
+    shared_ptr<Process> process;
     int c;
     int verbose = 0;
+    bool showaddrs = false;
 
-    while ((c = getopt(argc, argv, "vh")) != -1) {
+    Elf_Off minval, maxval;
+
+    while ((c = getopt(argc, argv, "vhsp:f:e:")) != -1) {
         switch (c) {
+            case 'p':
+                virtpattern = optarg;
+                break;
+            case 's':
+                showaddrs = true;
+                break;
             case 'v':
-                debug = &std::clog;
+                debug = &clog;
                 verbose++;
                 break;
             case 'h':
-                std::clog << "usage: canal [exec] <core>" << std::endl;
+                clog << "usage: canal [exec] <core>" << endl;
                 return 0;
+
+            case 'f':
+                findRef = true;
+                maxval = minval = strtoll(optarg, 0, 0);
+                break;
+
+            case 'e':
+                if (!findRef)
+                    abort();
+                maxval = strtoll(optarg, 0, 0);
+                break;
+
             case 'X':
                 ps_lgetfpregs(0, 0, 0);
         }
     }
 
     if (argc - optind >= 2) {
-        auto file = std::make_shared<FileReader>(argv[optind]);
+        auto file = make_shared<FileReader>(argv[optind]);
         // It's a file:
-        exec = std::make_shared<ElfObject>(file);
+        exec = make_shared<ElfObject>(file);
         optind++;
     }
 
     if (argc - optind >= 1) {
         char *eoa;
         pid_t pid = strtol(argv[optind], &eoa, 10);
-        core = std::make_shared<ElfObject>(std::make_shared<FileReader>(argv[optind]));
-        process = std::make_shared<CoreProcess>(exec, core);
+        core = make_shared<ElfObject>(make_shared<FileReader>(argv[optind]));
+        process = make_shared<CoreProcess>(exec, core);
     }
     process->load();
-    std::clog << "opened process " << process << std::endl;
+    if (findRef) {
+        std::clog << "finding references to addresses from " << hex << minval << " to " << maxval << "\n";
+    }
+    clog << "opened process " << process << endl;
 
-    std::vector<ListedSymbol> listed;
+    vector<ListedSymbol> listed;
     for (auto &loaded : process->objects) {
         size_t count = 0;
         for (const auto sym : loaded.object->getSymbols(".dynsym")) {
@@ -122,41 +149,56 @@ main(int argc, char *argv[])
             }
         }
         if (debug)
-            *debug << "found " << count << " symbols in " << loaded.object->io->describe() << std::endl;
+            *debug << "found " << count << " symbols in " << loaded.object->io->describe() << endl;
     }
-    std::sort(listed.begin()
+    sort(listed.begin()
         , listed.end()
         , [] (const ListedSymbol &l, const ListedSymbol &r) { return l.memaddr() < r.memaddr(); });
 
     // Now run through the corefile, searching for virtual objects.
+    off_t filesize = 0;
+    off_t memsize = 0;
     for (auto hdr : core->getSegments()) {
         if (hdr.p_type != PT_LOAD)
             continue;
         Elf_Off p;
         auto loc = hdr.p_vaddr;
         auto end = loc + hdr.p_filesz;
-        if (debug)
-            *debug << "scan " << std::hex << loc <<  " to " << end;
+        auto endmem = loc + hdr.p_memsz;
+        filesize += hdr.p_filesz;
+        memsize += hdr.p_memsz;
+        if (debug) {
+            *debug << "scan " << hex << loc <<  " to " << endmem << " ";
+            *debug << "(filesiz = " << hdr.p_filesz  << ", memsiz=" << hdr.p_memsz << ") ";
+        }
 
         for (Elf_Off readCount = 0; loc  < hdr.p_vaddr + hdr.p_filesz; loc += sizeof p) {
             if (verbose && (loc - hdr.p_vaddr) % (1024 * 1024) == 0)
-                std::clog << '.';
+                clog << '.';
             process->io->readObj(loc, &p);
-            auto found = std::lower_bound(listed.begin(), listed.end(), p);
-            if (found != listed.end() && found->memaddr() <= p && found->memaddr() + found->sym.st_size > p) {
-                // std::cout << found->name << " " << loc << std::endl;
-                found->count++;
+            if (findRef) { 
+                if (p >= minval && p < maxval && (p % 4 == 0))
+                    cout << "0x" << hex << loc << "\n";
+            } else {
+                auto found = lower_bound(listed.begin(), listed.end(), p);
+                if (found != listed.end() && found->memaddr() <= p && found->memaddr() + found->sym.st_size > p) {
+                    if (showaddrs)
+                        cout << found->name << " " << loc << endl;
+                    found->count++;
+                }
             }
         }
         if (debug)
-            *debug << std::endl;
+            *debug << endl;
     }
+    if (debug)
+        *debug << "core file contains " << filesize << " out of " << memsize << " bytes of memory\n";
 
-    std::sort(listed.begin()
+    sort(listed.begin()
         , listed.end()
         , [] (const ListedSymbol &l, const ListedSymbol &r) { return l.count > r.count; });
 
     for (auto &i : listed)
         if (i.count)
-            std::cout << std::dec << i.count << " " << i.name << " ( from " << i.objname << ")" << std::endl;
+            cout << dec << i.count << " " << i.name << " ( from " << i.objname << ")" << endl;
 }
