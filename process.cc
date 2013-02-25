@@ -130,6 +130,9 @@ Process::load()
      * work while the process is stopped.
      */
 
+    if (execImage == 0)
+        throw Exception() << "no executable image located for process";
+
     Elf_Addr r_debug_addr = findRDebugAddr();
     isStatic = (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1);
     if (isStatic)

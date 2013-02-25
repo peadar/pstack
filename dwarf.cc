@@ -645,7 +645,6 @@ DwarfCallFrame::DwarfCallFrame()
 }
 
 
-#define STACK_MAX 1024
 typedef std::stack<Elf_Addr> DwarfExpressionStack;
 
 static Elf_Addr
