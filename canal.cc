@@ -202,15 +202,17 @@ mainExcept(int argc, char *argv[])
     for (auto &i : listed)
         if (i.count)
             cout << dec << i.count << " " << i.name << " ( from " << i.objname << ")" << endl;
+    return 0;
 }
 
 int
 main(int argc, char *argv[])
 {
     try {
-        mainExcept(argc, argv);
+        return mainExcept(argc, argv);
     }
     catch (const exception &ex) {
         cerr << "exception: " << ex.what() << endl;
+        return -1;
     }
 }

@@ -13,7 +13,7 @@ ps_pcontinue(const struct ps_prochandle *ph)
         return PS_OK;
     }
     catch (...) {
-        PS_ERR;
+        return PS_ERR;
     }
 }
 
@@ -78,6 +78,7 @@ ps_pstop(const struct ps_prochandle *ph)
     auto *p = const_cast<Process *>(static_cast<const Process *>(ph));
     try {
         p->stopProcess();
+        return PS_OK;
     } catch (...) {
         return PS_ERR;
     }

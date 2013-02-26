@@ -340,8 +340,7 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
     };
 
     auto ehdr = obj.getElfHeader();
-
-    size_t brand = ehdr.e_ident[EI_OSABI];
+    auto brand = ehdr.e_ident[EI_OSABI];
     os << "{ \"type\": \"" << typeNames[ehdr.e_type] << "\", \"entry\": " <<  ehdr.e_entry << ", \"abi\": ";
     if (brand >= 0 && brand < sizeof abiNames / sizeof abiNames[0])
         os << "\"" << abiNames[brand] << "\"";

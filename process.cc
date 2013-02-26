@@ -320,12 +320,13 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 #endif
                 << ", symval=0x" << std::hex << sym.st_value
                 << ", off=0x" << std::hex << intptr_t(objIp) - sym.st_value;
-            if (frame->unwindBy != "END")
+            if (strcmp(frame->unwindBy, "END") != 0)
                 os << ", unwind by: " << frame->unwindBy;
             os << ")";
         }
         os << "\n";
     }
+    return os;
 }
 
 void
