@@ -645,7 +645,6 @@ DwarfCallFrame::DwarfCallFrame()
 }
 
 
-#define STACK_MAX 1024
 typedef std::stack<Elf_Addr> DwarfExpressionStack;
 
 static Elf_Addr
@@ -1165,8 +1164,8 @@ DwarfInfo::getCFA(const Process &proc, const DwarfCallFrame *frame, const DwarfR
     return -1;
 }
 
-Elf_Addr
-dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
+bool
+dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr &procaddr, Elf_Addr &cfa)
 {
     int i;
     DwarfRegisters newRegs;
@@ -1181,14 +1180,14 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
             return 0;
         fde = dwarf->ehFrame->findFDE(objaddr);
         if (fde == 0)
-            return 0;
+            return false;
     }
 
     DWARFReader r(elf.object->io, dwarf->version, fde->instructions, fde->end - fde->instructions);
     DwarfCallFrame frame = fde->cie->execInsns(r, dwarf->version, fde->iloc, objaddr - 1);
 
     // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
-    uintmax_t cfa = dwarfGetReg(regs, frame.cfaReg);
+    cfa = dwarf->getCFA(p, &frame, regs);
 
     for (i = 0; i < MAXREG; i++) {
         if (!dwarfIsArchReg(i))
@@ -1230,7 +1229,8 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr procaddr)
         }
     }
     memcpy(regs, &newRegs, sizeof newRegs);
-    return dwarfGetReg(&newRegs, fde->cie->rar);
+    procaddr = dwarfGetReg(&newRegs, fde->cie->rar);
+    return true;
 }
 
 void

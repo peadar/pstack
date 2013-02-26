@@ -130,6 +130,9 @@ Process::load()
      * work while the process is stopped.
      */
 
+    if (execImage == 0)
+        throw Exception() << "no executable image located for process";
+
     Elf_Addr r_debug_addr = findRDebugAddr();
     isStatic = (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1);
     if (isStatic)
@@ -459,6 +462,7 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
     stack.clear();
     try {
         /* Put a bound on the number of iterations. */
+        Elf_Addr cfa = 0;
         for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++) {
             Elf_Addr ip;
             StackFrame *frame = new StackFrame(ip = REG(regs, ip),
@@ -474,8 +478,12 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
             dwarfPtToDwarf(&dr, &regs);
 
             // try dwarf first...
-            if ((ip = dwarfUnwind(p, &dr, ip)) != 0) {
+            if (dwarfUnwind(p, &dr, ip, cfa) != 0) {
                 frame->unwindBy = "dwarf";
+#ifdef __amd64__
+                // The CFA is defined to be the stack pointer in the calling frame.
+                dwarfSetReg(&dr, 7, cfa);
+#endif
                 dwarfDwarfToPt(&regs, &dr);
             } else {
     #ifndef __PPC
