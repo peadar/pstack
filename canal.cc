@@ -130,16 +130,14 @@ mainExcept(int argc, char *argv[])
     }
 
     if (argc - optind >= 2) {
-        auto file = make_shared<FileReader>(argv[optind]);
-        // It's a file:
-        exec = make_shared<ElfObject>(file);
+        exec = make_shared<ElfObject>(argv[optind]);
         optind++;
     }
 
     if (argc - optind >= 1) {
         char *eoa;
         pid_t pid = strtol(argv[optind], &eoa, 10);
-        core = make_shared<ElfObject>(make_shared<FileReader>(argv[optind]));
+        core = make_shared<ElfObject>(argv[optind]);
         process = make_shared<CoreProcess>(exec, core);
     }
     process->load();
