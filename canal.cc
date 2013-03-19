@@ -88,8 +88,11 @@ mainExcept(int argc, char *argv[])
     bool showaddrs = false;
 
     Elf_Off minval, maxval;
+    char *strbuf = 0;
+    char *findstr = 0;
+    size_t findstrlen;
 
-    while ((c = getopt(argc, argv, "vhsp:f:e:")) != -1) {
+    while ((c = getopt(argc, argv, "vhsp:f:e:S:")) != -1) {
         switch (c) {
             case 'p':
                 virtpattern = optarg;
@@ -104,6 +107,11 @@ mainExcept(int argc, char *argv[])
             case 'h':
                 clog << "usage: canal [exec] <core>" << endl;
                 return 0;
+            case 'S':
+                findstr = optarg;
+                findstrlen = strlen(findstr);
+                strbuf = new char[findstrlen];
+                break;
 
             case 'f':
                 findRef = true;
@@ -163,34 +171,42 @@ mainExcept(int argc, char *argv[])
         if (hdr.p_type != PT_LOAD)
             continue;
         Elf_Off p;
-        auto loc = hdr.p_vaddr;
-        auto end = loc + hdr.p_filesz;
-        auto endmem = loc + hdr.p_memsz;
         filesize += hdr.p_filesz;
         memsize += hdr.p_memsz;
         if (debug) {
-            *debug << "scan " << hex << loc <<  " to " << endmem << " ";
+            *debug << "scan " << hex << hdr.p_vaddr <<  " to " << hdr.p_vaddr + hdr.p_memsz << " ";
             *debug << "(filesiz = " << hdr.p_filesz  << ", memsiz=" << hdr.p_memsz << ") ";
         }
 
-        for (Elf_Off readCount = 0; loc  < hdr.p_vaddr + hdr.p_filesz; loc += sizeof p) {
-            if (verbose && (loc - hdr.p_vaddr) % (1024 * 1024) == 0)
-                clog << '.';
-            process->io->readObj(loc, &p);
-            if (findRef) { 
-                if (p >= minval && p < maxval && (p % 4 == 0))
-                    cout << "0x" << hex << loc << "\n";
-            } else {
-                auto found = lower_bound(listed.begin(), listed.end(), p);
-                if (found != listed.end() && found->memaddr() <= p && found->memaddr() + found->sym.st_size > p) {
-                    if (showaddrs)
-                        cout << found->name << " " << loc << endl;
-                    found->count++;
+        if (findstr) {
+            for (auto loc = hdr.p_vaddr; loc < hdr.p_vaddr + hdr.p_filesz - findstrlen; loc++) {
+                size_t rc = process->io->read(loc, findstrlen, strbuf);
+                if (memcmp(strbuf, findstr, findstrlen) == 0)
+                    std::cout << "0x" << hex << loc << "\n";
+            }
+        } else {
+
+            for (auto loc = hdr.p_vaddr; loc < hdr.p_vaddr + hdr.p_filesz; loc += sizeof p) {
+                if (verbose && (loc - hdr.p_vaddr) % (1024 * 1024) == 0)
+                    clog << '.';
+                process->io->readObj(loc, &p);
+                if (findRef) { 
+                    if (p >= minval && p < maxval && (p % 4 == 0))
+                        cout << "0x" << hex << loc << "\n";
+                } else {
+                    auto found = lower_bound(listed.begin(), listed.end(), p);
+                    if (found != listed.end() && found->memaddr() <= p && found->memaddr() + found->sym.st_size > p) {
+                        if (showaddrs)
+                            cout << found->name << " " << loc << endl;
+                        found->count++;
+                    }
                 }
             }
         }
+
         if (debug)
             *debug << endl;
+
     }
     if (debug)
         *debug << "core file contains " << filesize << " out of " << memsize << " bytes of memory\n";
