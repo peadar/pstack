@@ -69,15 +69,11 @@ emain(int argc, char **argv)
     pid_t pid;
     std::string execFile;
     std::shared_ptr<ElfObject> exec;
-    bool abortOnExit = false;
 
     PstackOptions options;
 
-    while ((c = getopt(argc, argv, "ad:D:hlv")) != -1) {
+    while ((c = getopt(argc, argv, "d:D:hsv")) != -1) {
         switch (c) {
-        case 'a':
-            abortOnExit = true;
-            break;
         case 'D':
         case 'd': {
             /* Undocumented option to dump image contents */
@@ -94,7 +90,7 @@ emain(int argc, char **argv)
         case 'h':
             usage();
             return (0);
-        case 'l':
+        case 's':
             options += PstackOptions::nosrc;
             break;
         case 'v':
@@ -117,8 +113,6 @@ emain(int argc, char **argv)
                 CoreProcess proc(exec, obj);
                 proc.load();
                 proc.pstack(std::cout, options);
-                if (abortOnExit)
-                    abort();
             } else {
                 exec = obj;
             }
@@ -126,8 +120,6 @@ emain(int argc, char **argv)
             LiveProcess proc(exec, pid);
             proc.load();
             proc.pstack(std::cout, options);
-            if (abortOnExit)
-                abort();
         }
     }
     return (error);
@@ -149,16 +141,16 @@ usage(void)
 {
     std::clog <<
         "usage: pstack\n\t"
-        "[-D <elf object>]           dump details of ELF object (including DWARF info)\n\t"
-        "[-d <elf object>]           dump details of ELF object\n"
+        "[-<D|d> <elf object>]        dump details of ELF object (D => show DWARF info\n"
+        "[-D <elf object>]            dump details of ELF object (including DWARF info)\n\t"
         "or\n\t"
-        "[-h]                        show this message\n"
+        "[-h]                         show this message\n"
         "or\n\t"
-        "[-v]                        include verbose information to stderr\n\t"
-        "[<pid>|<core>|<executable>] list cores and pids to examine. An executable\n\t"
-        "                            will override use of in-core or in-process information\n\t"
-        "                            to predict location of the executable\n"
+        "[-v]                         include verbose information to stderr\n\t"
+        "[-s]                         don't include source-level details\n\t"
+        "[<pid>|<core>|<executable>]* list cores and pids to examine. An executable\n\t"
+        "                             will override use of in-core or in-process information\n\t"
+        "                             to predict location of the executable\n"
         ;
     return (EX_USAGE);
 }
-
