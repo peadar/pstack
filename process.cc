@@ -182,11 +182,16 @@ Process::processAUXV(const void *datap, size_t len)
                 break;
             }
             case AT_SYSINFO_EHDR: {
-                vdso = new char[getpagesize()];
-                io->readObj(hdr, vdso, getpagesize());
+                size_t dsosize = getpagesize() * 2; // XXXX: page size is not enough. What is?
+                vdso = new char[dsosize];
+                // read as much of the header as we can.
+                dsosize = io->read(hdr, dsosize, vdso);
                 try {
-                    auto elf = std::make_shared<ElfObject>(std::make_shared<MemReader>(vdso, getpagesize()));
+                    auto elf = std::make_shared<ElfObject>(std::make_shared<MemReader>(vdso, dsosize));
                     addElfObject(elf, hdr - elf->getBase());
+                    if (debug)
+                        *debug << "VDSO " << dsosize << " bytes loaded at " << elf.get() << "\n";
+
                 }
                 catch (...) {
                 }
