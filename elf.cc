@@ -162,13 +162,11 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
 const ElfSection
 ElfObject::getSection(std::string name, int type)
 {
-    if (false) {
     auto dbg = getDebug();
     if (dbg) {
         auto debugSection = dbg->getSection(name, type);
         if (debugSection)
             return debugSection;
-    }
     }
 
     auto s = namedSection.find(name);
@@ -278,6 +276,7 @@ ElfObject::~ElfObject()
 
 std::shared_ptr<ElfObject> ElfObject::getDebug()
 {
+    return 0;
     if (!debugLoaded) {
         debugLoaded = true;
 
