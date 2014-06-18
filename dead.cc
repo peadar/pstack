@@ -5,11 +5,11 @@
 
 CoreProcess::CoreProcess(
         std::shared_ptr<ElfObject> exe,
-        std::shared_ptr<ElfObject> core)
-    : Process(exe, std::make_shared<CoreReader>(this))
+        std::shared_ptr<ElfObject> core,
+        const PathReplacementList &pathReplacements_)
+    : Process(exe, std::make_shared<CoreReader>(this), pathReplacements_)
     , coreImage(core)
 {
-
 }
 
 void

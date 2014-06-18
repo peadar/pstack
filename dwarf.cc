@@ -733,7 +733,12 @@ DwarfCIE::execInsns(DWARFReader &r, int version, uintmax_t addr, uintmax_t wantA
         dframe = execInsns(r2, version, 0, 0);
         frame = dframe;
     }
-    while (!r.empty() && addr <= wantAddr) {
+    while (addr <= wantAddr) {
+        if (r.empty()) {
+            if (addr)
+                std::clog << "warning, wanted: " << wantAddr << ", got " << addr << " short by " << wantAddr - addr << "\n";
+            return frame;
+        }
         uint8_t rawOp = r.getu8();
         reg = rawOp &0x3f;
         DwarfCFAInstruction op = (DwarfCFAInstruction)(rawOp & ~0x3f);
@@ -875,18 +880,15 @@ DwarfCIE::execInsns(DWARFReader &r, int version, uintmax_t addr, uintmax_t wantA
             case DW_CFA_GNU_negative_offset_extended:
             default:
                 abort();
-                goto done;
             }
             break;
 
         default:
             abort();
-            goto done;
             break;
         }
     }
-
-done:
+    std::clog << "exact match " << addr << "\n";
     return frame;
 }
 
@@ -1184,7 +1186,7 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr &procaddr, Elf_Addr &cfa)
     }
 
     DWARFReader r(elf.object->io, dwarf->version, fde->instructions, fde->end - fde->instructions);
-    DwarfCallFrame frame = fde->cie->execInsns(r, dwarf->version, fde->iloc, objaddr - 1);
+    DwarfCallFrame frame = fde->cie->execInsns(r, dwarf->version, fde->iloc, objaddr);
 
     // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
     cfa = dwarf->getCFA(p, &frame, regs);
