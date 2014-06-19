@@ -81,6 +81,7 @@ static const char *virtpattern = "_ZTV*"; /* wildcard for all vtbls */
 int
 mainExcept(int argc, char *argv[])
 {
+    std::vector<std::string> patterns;
     shared_ptr<ElfObject> exec;
     shared_ptr<ElfObject> core;
     shared_ptr<Process> process;
@@ -90,11 +91,12 @@ mainExcept(int argc, char *argv[])
     int rate = 1;
 
     std::vector<std::pair<Elf_Off, Elf_Off>> searchaddrs;
+    std::vector<std::pair<std::string, std::string>> pathReplacements;
     char *strbuf = 0;
     char *findstr = 0;
     size_t findstrlen;
 
-    while ((c = getopt(argc, argv, "vhsp:f:e:S:R:K:")) != -1) {
+    while ((c = getopt(argc, argv, "vhr:sp:f:e:S:R:K:y:")) != -1) {
         switch (c) {
             case 'p':
                 virtpattern = optarg;
@@ -109,6 +111,22 @@ mainExcept(int argc, char *argv[])
             case 'h':
                 clog << "usage: canal [exec] <core>" << endl;
                 return 0;
+
+            case 'y':
+                patterns.push_back(optarg);
+                virtpattern = 0;
+                break;
+
+            case 'r': {
+                char *from = strdup(optarg);
+                char *to  = strchr(from, '=');
+                if (to == 0)
+                    throw "must specify <to>=<from> for '-r'";
+                *to++ = 0;
+                pathReplacements.push_back(std::make_pair(from, to));
+                break;
+            }
+
             case 'S':
                 findstr = optarg;
                 findstrlen = strlen(findstr);
@@ -165,11 +183,12 @@ mainExcept(int argc, char *argv[])
         optind++;
     }
 
+
     if (argc - optind >= 1) {
         char *eoa;
         pid_t pid = strtol(argv[optind], &eoa, 10);
         core = make_shared<ElfObject>(argv[optind]);
-        process = make_shared<CoreProcess>(exec, core);
+        process = make_shared<CoreProcess>(exec, core, pathReplacements);
     }
     process->load();
     if (searchaddrs.size()) {
@@ -180,13 +199,17 @@ mainExcept(int argc, char *argv[])
     }
     clog << "opened process " << process << endl;
 
+    if (virtpattern)
+        patterns.push_back(virtpattern);
     vector<ListedSymbol> listed;
     for (auto &loaded : process->objects) {
         size_t count = 0;
         for (const auto sym : loaded.object->getSymbols(".dynsym")) {
-            if (globmatch(virtpattern, sym.second)) {
-                listed.push_back(ListedSymbol(sym.first, loaded.reloc, sym.second, loaded.object->io->describe()));
-                count++;
+            for (auto &pattern : patterns) {
+                if (globmatch(pattern, sym.second)) {
+                    listed.push_back(ListedSymbol(sym.first, loaded.reloc, sym.second, loaded.object->io->describe()));
+                    count++;
+                }
             }
         }
         if (debug)
@@ -232,7 +255,9 @@ mainExcept(int argc, char *argv[])
                     auto found = lower_bound(listed.begin(), listed.end(), p);
                     if (found != listed.end() && found->memaddr() <= p && found->memaddr() + found->sym.st_size > p) {
                         if (showaddrs)
-                            cout << found->name << " " << loc << endl;
+                            cout << found->name << " 0x" << std::hex << loc <<
+                            std::dec <<  " ... size=" << found->sym.st_size <<
+                            ", diff=" << p - found->memaddr() << endl;
                         found->count++;
                     }
                 }

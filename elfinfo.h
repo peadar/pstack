@@ -172,11 +172,11 @@ struct SymbolIterator {
 struct SymbolSection {
     const ElfSection section;
     off_t stroff;
-    SymbolIterator begin() { return SymbolIterator(section ? section.obj.io : 0, section ? section->sh_offset : 0, stroff); }
-    SymbolIterator end() { return SymbolIterator(section ? section.obj.io : 0, section ? section->sh_offset + section->sh_size : 0, stroff); }
+    SymbolIterator begin() { return SymbolIterator(section && section.shdr ? section.obj.io : 0, section ? section->sh_offset : 0, stroff); }
+    SymbolIterator end() { return SymbolIterator(section && section.shdr ? section.obj.io : 0, section ? section->sh_offset + section->sh_size : 0, stroff); }
     SymbolSection(const ElfSection &section_)
         : section(section_)
-        , stroff(section.getLink()->sh_offset)
+        , stroff(section.shdr ? section_.getLink()->sh_offset : -1)
     {}
 };
 

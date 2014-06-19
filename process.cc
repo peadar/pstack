@@ -108,9 +108,10 @@ delall(T &container)
         delete i;
 }
 
-Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_)
+Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_, const PathReplacementList &prl)
     : vdso(0)
     , io(std::make_shared<CacheReader>(io_))
+    , pathReplacements(prl)
     , execImage(exec)
     , entry(0)
     , isStatic(false)
@@ -379,6 +380,16 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             // XXX: dunno why this is.
             path = execImage->getInterpreter();
         }
+
+        std::string startPath = path;
+        for (auto &it : pathReplacements) {
+            size_t found = path.find(it.first);
+            if (found != std::string::npos)
+                path.replace(found, it.first.size(), it.second);
+        }
+        if (debug && path != startPath)
+            *debug << "replaced " << startPath << " with " << path << std::endl;
+
         try {
             addElfObject(std::make_shared<ElfObject>(path), Elf_Addr(map.l_addr));
         }

@@ -39,6 +39,7 @@ public:
     std::bitset<maxopt> values;
 };
 
+typedef std::vector<std::pair<std::string, std::string>> PathReplacementList;
 class Process : public ps_prochandle {
     Elf_Addr findRDebugAddr();
     Elf_Off entry; // entrypoint of process.
@@ -53,6 +54,7 @@ protected:
     std::shared_ptr<ElfObject> execImage;
     std::string abiPrefix;
     void processAUXV(const void *data, size_t len);
+    PathReplacementList pathReplacements;
 public:
     std::shared_ptr<Reader> io;
     struct LoadedObject {
@@ -65,7 +67,7 @@ public:
     void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
     LoadedObject findObject(Elf_Addr addr) const;
     std::unique_ptr<DwarfInfo> &getDwarf(std::shared_ptr<ElfObject>);
-    Process(std::shared_ptr<ElfObject> obj, std::shared_ptr<Reader> mem);
+    Process(std::shared_ptr<ElfObject> obj, std::shared_ptr<Reader> mem, const PathReplacementList &prl);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
 
@@ -147,7 +149,8 @@ struct CoreProcess : public Process {
     std::shared_ptr<ElfObject> coreImage;
     friend class CoreReader;
 public:
-    CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<ElfObject> core);
+    CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<ElfObject> core,
+            const std::vector<std::pair<std::string, std::string>> &);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
     virtual void stop(lwpid_t);
     virtual void resume(lwpid_t);
