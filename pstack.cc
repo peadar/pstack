@@ -82,8 +82,8 @@ emain(int argc, char **argv)
                 std::cout << "{ \"elf\": ";
             std::cout << *dumpobj;
             if (c == 'D') {
-                auto dwarf = make_unique<DwarfInfo>(dumpobj);
-                std::cout << ", \"dwarf\": " << *dwarf << "}";
+                DwarfInfo dwarf(dumpobj);
+                std::cout << ", \"dwarf\": " << dwarf << "}";
             }
             return 0;
         }

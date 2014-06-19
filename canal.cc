@@ -1,4 +1,6 @@
 #include <unistd.h>
+#include <fstream>
+#include <assert.h>
 #include <iostream>
 #include <exception>
 #include <algorithm>
@@ -79,20 +81,20 @@ static const char *virtpattern = "_ZTV*"; /* wildcard for all vtbls */
 int
 mainExcept(int argc, char *argv[])
 {
-    bool findRef = false; 
     shared_ptr<ElfObject> exec;
     shared_ptr<ElfObject> core;
     shared_ptr<Process> process;
     int c;
     int verbose = 0;
     bool showaddrs = false;
+    int rate = 1;
 
-    Elf_Off minval, maxval;
+    std::vector<std::pair<Elf_Off, Elf_Off>> searchaddrs;
     char *strbuf = 0;
     char *findstr = 0;
     size_t findstrlen;
 
-    while ((c = getopt(argc, argv, "vhsp:f:e:S:")) != -1) {
+    while ((c = getopt(argc, argv, "vhsp:f:e:S:R:K:")) != -1) {
         switch (c) {
             case 'p':
                 virtpattern = optarg;
@@ -113,15 +115,44 @@ mainExcept(int argc, char *argv[])
                 strbuf = new char[findstrlen];
                 break;
 
-            case 'f':
-                findRef = true;
-                maxval = minval = strtoll(optarg, 0, 0);
+            case 'f': {
+                Elf_Off start = strtoll(optarg, 0, 0);
+                searchaddrs.push_back(make_pair(start, start + 1));
                 break;
+            }
+
+            case 'K':
+                rate = atoi(optarg);
+                break;
+            case 'R': {
+                std::ifstream in;
+                in.open(optarg);
+                if (!in.good())
+                    abort();
+                Elf_Off i;
+                char buf[1024];
+                int count = 0;
+                while (in.good()) {
+                    in.getline(buf, sizeof buf);
+                    if (in.eof())
+                        break;
+                    if (++count % rate != 0)
+                        continue;
+                    char *p = buf;
+                    while (isspace(*p))
+                        p++;
+                    Elf_Off start = strtoll(p, &p, 0);
+                    while (*p && isspace(*p))
+                        p++;
+                    Elf_Off end = *p ? strtoll(p, &p, 0) : start + 1;
+                    searchaddrs.push_back(make_pair(start, end));
+                    std::clog << "push " << hex << start << ", " << end  << " (" << int(*p) << ")" << std::endl;
+                }
+                break;
+            }
 
             case 'e':
-                if (!findRef)
-                    abort();
-                maxval = strtoll(optarg, 0, 0);
+                searchaddrs.back().second = strtoll(optarg, 0, 0);
                 break;
 
             case 'X':
@@ -141,8 +172,11 @@ mainExcept(int argc, char *argv[])
         process = make_shared<CoreProcess>(exec, core);
     }
     process->load();
-    if (findRef) {
-        std::clog << "finding references to addresses from " << hex << minval << " to " << maxval << "\n";
+    if (searchaddrs.size()) {
+        std::clog << "finding references to " << dec << searchaddrs.size() << " addresses\n";
+        for (auto &iter : searchaddrs) {
+            std::clog << "\t" << iter.first <<" - " << iter.second << "\n";
+        }
     }
     clog << "opened process " << process << endl;
 
@@ -179,6 +213,7 @@ mainExcept(int argc, char *argv[])
         if (findstr) {
             for (auto loc = hdr.p_vaddr; loc < hdr.p_vaddr + hdr.p_filesz - findstrlen; loc++) {
                 size_t rc = process->io->read(loc, findstrlen, strbuf);
+                assert(rc == findstrlen);
                 if (memcmp(strbuf, findstr, findstrlen) == 0)
                     std::cout << "0x" << hex << loc << "\n";
             }
@@ -188,9 +223,11 @@ mainExcept(int argc, char *argv[])
                 if (verbose && (loc - hdr.p_vaddr) % (1024 * 1024) == 0)
                     clog << '.';
                 process->io->readObj(loc, &p);
-                if (findRef) { 
-                    if (p >= minval && p < maxval && (p % 4 == 0))
+                if (searchaddrs.size()) {
+                    for (auto &range : searchaddrs) {
+                        if (p >= range.first && p < range.second && (p % 4 == 0))
                         cout << "0x" << hex << loc << "\n";
+                    }
                 } else {
                     auto found = lower_bound(listed.begin(), listed.end(), p);
                     if (found != listed.end() && found->memaddr() <= p && found->memaddr() + found->sym.st_size > p) {
