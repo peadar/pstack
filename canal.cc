@@ -95,8 +95,9 @@ mainExcept(int argc, char *argv[])
     char *strbuf = 0;
     char *findstr = 0;
     size_t findstrlen;
+    int symOffset = -1;
 
-    while ((c = getopt(argc, argv, "vhr:sp:f:e:S:R:K:y:")) != -1) {
+    while ((c = getopt(argc, argv, "o:vhr:sp:f:e:S:R:K:y:")) != -1) {
         switch (c) {
             case 'p':
                 virtpattern = optarg;
@@ -111,6 +112,9 @@ mainExcept(int argc, char *argv[])
             case 'h':
                 clog << "usage: canal [exec] <core>" << endl;
                 return 0;
+            case 'o': // offset within a symbol that the pointers must meet.
+                symOffset = strtol(optarg, 0, 0);
+                break;
 
             case 'y':
                 patterns.push_back(optarg);
@@ -253,7 +257,10 @@ mainExcept(int argc, char *argv[])
                     }
                 } else {
                     auto found = lower_bound(listed.begin(), listed.end(), p);
-                    if (found != listed.end() && found->memaddr() <= p && found->memaddr() + found->sym.st_size > p) {
+                    if (found != listed.end() &&
+                            (symOffset != -1
+                                ? found->memaddr() + symOffset == p
+                                : found->memaddr() <= p && found->memaddr() + found->sym.st_size > p)) {
                         if (showaddrs)
                             cout << found->name << " 0x" << std::hex << loc <<
                             std::dec <<  " ... size=" << found->sym.st_size <<
