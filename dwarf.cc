@@ -836,11 +836,8 @@ DwarfCIE::execInsns(DWARFReader &r, int version, uintmax_t addr, uintmax_t wantA
         frame = dframe;
     }
     while (addr <= wantAddr) {
-        if (r.empty()) {
-            if (addr)
-                std::clog << "warning, wanted: " << wantAddr << ", got " << addr << " short by " << wantAddr - addr << "\n";
+        if (r.empty())
             return frame;
-        }
         uint8_t rawOp = r.getu8();
         reg = rawOp &0x3f;
         DwarfCFAInstruction op = (DwarfCFAInstruction)(rawOp & ~0x3f);
@@ -990,7 +987,6 @@ DwarfCIE::execInsns(DWARFReader &r, int version, uintmax_t addr, uintmax_t wantA
             break;
         }
     }
-    std::clog << "exact match " << addr << "\n";
     return frame;
 }
 
