@@ -12,10 +12,9 @@ class Process;
 
 struct StackFrame {
     Elf_Addr ip;
-    Elf_Addr bp;
     std::vector<Elf_Word> args;
     const char *unwindBy;
-    StackFrame(Elf_Addr ip_, Elf_Addr bp_) : ip(ip_), bp(bp_), unwindBy("ERROR") {}
+    StackFrame(Elf_Addr ip_) : ip(ip_), unwindBy("ERROR") {}
 };
 
 struct ThreadStack {

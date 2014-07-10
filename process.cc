@@ -479,67 +479,20 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
     try {
         /* Put a bound on the number of iterations. */
         Elf_Addr cfa = 0;
+        Elf_Addr ip = REG(regs, ip);
+        DwarfRegisters dr;
+        dwarfPtToDwarf(&dr, &regs);
         for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++) {
-            Elf_Addr ip;
-            StackFrame *frame = new StackFrame(ip = REG(regs, ip),
-    #ifdef __PPC
-                    0
-    #else
-                    REG(regs, bp)
-    #endif
-                    );
+            StackFrame *frame = new StackFrame(ip);
             stack.push_back(frame);
-
-            DwarfRegisters dr;
-            dwarfPtToDwarf(&dr, &regs);
-
-            // try dwarf first...
-            if (dwarfUnwind(p, &dr, ip, cfa) != 0) {
-                frame->unwindBy = "dwarf";
-#ifdef __amd64__
-                // The CFA is defined to be the stack pointer in the calling frame.
-                dwarfSetReg(&dr, 7, cfa);
-#endif
-                dwarfDwarfToPt(&regs, &dr);
-            } else {
-    #ifndef __PPC
-                try {
-                    for (int i = 0; i < gFrameArgs; i++) {
-                        Elf_Word arg;
-                        p.io->readObj(Elf_Addr(REG(regs, bp)) + sizeof(Elf_Word) * 2 + i * sizeof(Elf_Word), &arg);
-                        frame->args.push_back(arg);
-                    }
-                }
-                catch (...) {
-                    // not fatal if we can't read all the args.
-                }
-    #endif
-                frame->unwindBy = "END  ";
-    #ifdef __PPC
+            if (!dwarfUnwind(p, &dr, ip)) {
+                frame->unwindBy = "end";
                 break;
-    #else
-
-                /* Read the next frame */
-                try {
-                    // Call site's instruction pointer is just above the frame pointer
-                    p.io->readObj(Elf_Addr(REG(regs, bp)) + sizeof(REG(regs, bp)), &ip);
-                    REG(regs, ip) = ip;
-                    if (ip == 0) // XXX: if no return instruction, break out.
-                            break;
-                    // Read new frame pointer from stack.
-                    p.io->readObj(Elf_Addr(REG(regs, bp)), &REG(regs, bp));
-                    if (Elf_Addr(REG(regs, bp)) <= frame->bp)
-                        break;
-                }
-                catch (...) {
-                    break;
-                }
-                frame->unwindBy = "stdc  ";
-    #endif
             }
+            frame->unwindBy = "dwarf";
         }
     }
-    catch (...) {
-        // live with what we can get.
+    catch (const std::exception &ex) {
+        std::clog << "exception unwinding stack: " << ex.what() << std::endl;
     }
 }

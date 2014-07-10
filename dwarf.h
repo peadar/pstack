@@ -452,5 +452,5 @@ enum DwarfExpressionOp {
 #define DW_EH_PE_datarel        0x30
 #define DW_EH_PE_funcrel        0x40
 #define DW_EH_PE_aligned        0x50
-bool dwarfUnwind(Process &, DwarfRegisters *, Elf_Addr &pc /*in/out */, Elf_Addr &cfa /* out */);
+bool dwarfUnwind(Process &, DwarfRegisters *, Elf_Addr &pc /*in/out */);
 #endif

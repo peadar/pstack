@@ -1265,9 +1265,10 @@ DwarfInfo::getCFA(const Process &proc, const DwarfCallFrame *frame, const DwarfR
 }
 
 bool
-dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr &procaddr, Elf_Addr &cfa)
+dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr &procaddr)
 {
     int i;
+    Elf_Addr cfa;
     DwarfRegisters newRegs;
     DwarfRegisterUnwind *unwind;
     auto elf = p.findObject(procaddr);
@@ -1328,8 +1329,19 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr &procaddr, Elf_Addr &cfa)
                 break;
         }
     }
+
+    // If the return address isn't defined, then we can't unwind.
+    auto rar = fde->cie->rar;
+    if (frame.registers[rar].type == UNDEF)
+        return false;
     memcpy(regs, &newRegs, sizeof newRegs);
-    procaddr = dwarfGetReg(&newRegs, fde->cie->rar);
+    procaddr = dwarfGetReg(regs, rar);
+#ifdef __amd64__
+    // The CFA is defined to be the stack pointer in the calling frame.
+    dwarfSetReg(regs, 7, cfa);
+#elif defined(__i386__)
+    dwarfSetReg(regs, frame.cfaReg, cfa);
+#endif
     return true;
 }
 
