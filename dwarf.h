@@ -301,6 +301,7 @@ class DwarfInfo {
     mutable std::map<Elf_Off, DwarfUnit> unitsm;
     mutable ElfSection info, debstr, pubnamesh, arangesh, debug_frame;
 public:
+    std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
     const ElfSection abbrev, lineshdr;
     // interesting shdrs from the exe.
     std::shared_ptr<ElfObject> elf;
@@ -390,22 +391,36 @@ public:
     std::shared_ptr<Reader> io;
     unsigned addrLen;
     int version;
+    size_t dwarfLen; // 8 => 64-bit. 4 => 32-bit.
     std::shared_ptr<ElfObject> elf;
 
-    DWARFReader(std::shared_ptr<Reader> io_, int version_, Elf_Off off_, Elf_Word size_)
+    DWARFReader(std::shared_ptr<Reader> io_, int version_, Elf_Off off_, Elf_Word size_, size_t dwarfLen_)
         : off(off_)
         , end(off_ + size_)
         , io(io_)
         , addrLen(ELF_BITS / 8)
+        , dwarfLen(dwarfLen_)
         , version(version_)
     {
     }
 
-    DWARFReader(const ElfSection &section, int version_, Elf_Off off_ = 0)
+    DWARFReader(DWARFReader &rhs, Elf_Off off_, Elf_Word size_)
+        : off(off_)
+        , end(off_ + size_)
+        , io(rhs.io)
+        , addrLen(ELF_BITS / 8)
+        , dwarfLen(rhs.dwarfLen)
+        , version(rhs.version)
+    {
+    }
+
+
+    DWARFReader(const ElfSection &section, int version_, Elf_Off off_, size_t dwarfLen_)
         : off(off_ + section->sh_offset)
         , end(section->sh_offset + section->sh_size)
         , io(section.obj.io)
         , addrLen(ELF_BITS / 8)
+        , dwarfLen(dwarfLen_)
         , version(version_)
     {
     }
@@ -415,6 +430,8 @@ public:
     uint8_t getu8();
     int8_t gets8();
     uintmax_t getuint(int size);
+    uintmax_t getfmtuint() { return getuint(dwarfLen); }
+    uintmax_t getfmtint() { return getint(dwarfLen); }
     intmax_t getint(int size);
     uintmax_t getuleb128();
     intmax_t getsleb128();
@@ -423,7 +440,7 @@ public:
     Elf_Off getLimit() { return end; }
     void setOffset(Elf_Off off_) { off = off_; }
     bool empty() { return off == end; }
-    Elf_Off getlength();
+    Elf_Off getlength(size_t *);
     void skip(Elf_Off amount) { off += amount; }
 };
 

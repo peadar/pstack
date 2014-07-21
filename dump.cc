@@ -163,7 +163,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_ref8: os << "\"@" << value.ref8 << "\""; break;
     case DW_FORM_block1: case DW_FORM_block2: case DW_FORM_block4: case DW_FORM_block: os << value.block; break;
     case DW_FORM_flag: os << (value.flag ? "true" : "false"); break;
-    default: throw Exception() << "unknown DWARF attribute " << attr.spec->form;
+    default: os << "\"unknown DWARF form " << attr.spec->form << "\"";
     }
     return os;
 }
@@ -181,7 +181,7 @@ operator <<(std::ostream &os, const std::pair<const DwarfInfo *, const DwarfCIE 
         << ", \"instrlen\": " << dcie.second->end - dcie.second->instructions
         << ", \"instructions\": ";
    ;
-   DWARFReader r(dcie.first->elf->io, dcie.first->version, dcie.second->instructions, dcie.second->end - dcie.second->instructions);
+   DWARFReader r(dcie.first->elf->io, dcie.first->version, dcie.second->instructions, dcie.second->end - dcie.second->instructions, ELF_BITS / 8);
     dwarfDumpCFAInsns(os, r);
     return os
         << " }";
@@ -197,7 +197,7 @@ operator << (std::ostream &os, const std::pair<const DwarfInfo *, const DwarfFDE
         << ", \"auglen\": " << dfde.second->aug.size()
         << ", \"instructions\": "
     ; 
-    DWARFReader r(dfde.first->elf->io, dfde.second->cie->version, dfde.second->instructions, dfde.second->end - dfde.second->instructions);
+    DWARFReader r(dfde.first->elf->io, dfde.second->cie->version, dfde.second->instructions, dfde.second->end - dfde.second->instructions, ELF_BITS/8);
     dwarfDumpCFAInsns(os, r);
     return os << "}";
 }

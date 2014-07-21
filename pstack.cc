@@ -72,7 +72,7 @@ emain(int argc, char **argv)
 
     PstackOptions options;
 
-    while ((c = getopt(argc, argv, "d:D:hsv")) != -1) {
+    while ((c = getopt(argc, argv, "d:D:hsvn")) != -1) {
         switch (c) {
         case 'D':
         case 'd': {
@@ -95,6 +95,9 @@ emain(int argc, char **argv)
             break;
         case 'v':
             debug = &std::clog;
+            break;
+        case 'n':
+            noDebugLibs = true;
             break;
         default:
             return usage();

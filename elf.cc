@@ -9,6 +9,7 @@ using std::shared_ptr;
 
 std::ostream *debug;
 static uint32_t elf_hash(string);
+bool noDebugLibs;
 
 /*
  * Parse out an ELF file into an ElfObject structure.
@@ -276,7 +277,8 @@ ElfObject::~ElfObject()
 
 std::shared_ptr<ElfObject> ElfObject::getDebug()
 {
-    return 0;
+    if (noDebugLibs)
+        return 0;
     if (!debugLoaded) {
         debugLoaded = true;
 
@@ -296,13 +298,15 @@ std::shared_ptr<ElfObject> ElfObject::getDebug()
 
         // XXX: verify checksum.
         try {
-            debug = make_shared<ElfObject>(name);
+            debugObject = make_shared<ElfObject>(name);
+            if (debug)
+                *debug << "loaded symbols from debug image " << name << "\n";
         }
         catch (const std::exception &ex) {
             return 0;
         }
     }
-    return debug;
+    return debugObject;
 }
 
 /*

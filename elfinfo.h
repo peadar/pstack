@@ -28,6 +28,7 @@
 /*
  * Utility interface for accessing ELF images.
  */
+extern bool noDebugLibs;
 
 #ifndef elfinfo_h_guard
 #define elfinfo_h_guard
@@ -44,6 +45,7 @@ extern "C" {
 }
 #include <elf.h>
 #include "reader.h"
+
 
 /*
  * FreeBSD defines all elf types with a common header, defining the
@@ -135,7 +137,7 @@ private:
     std::map<std::string, Elf_Shdr *> namedSection;
     std::string name;
     bool debugLoaded;
-    std::shared_ptr<ElfObject> debug;
+    std::shared_ptr<ElfObject> debugObject;
     std::shared_ptr<ElfObject> getDebug();
 public:
     const ElfSection getSection(std::string name, int type);
