@@ -45,8 +45,8 @@ std::ostream & operator << (std::ostream &os, const DwarfEntry &entry) {
 
 std::ostream &operator << (std::ostream &os, const DwarfAttributeSpec &spec) {
     return os
-        << "{ \"name\": " << spec.name
-        << ", \"form\": " << spec.form
+        << "{ \"name\": " << "\"" << spec.name << "\""
+        << ", \"form\": " << "\"" << spec.form << "\""
         << "}";
 }
 
@@ -125,7 +125,7 @@ std::ostream &operator << (std::ostream &os, DwarfAttrName code) {
 std::ostream &operator << (std::ostream &os, const DwarfPubname &name) {
     return os
         << " { \"offset\": " << name.offset
-        << " , \"name\": " << name.name
+        << " , \"name\": \"" << name.name << "\""
         << " }";
 }
 
