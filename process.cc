@@ -295,6 +295,9 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                 obj = i.object;
                 obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
             } catch (...) {
+                std::ostringstream str;
+                str << "unknown@" << std::hex << frame->ip;
+                symName = str.str();
             }
         }
 
