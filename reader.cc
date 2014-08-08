@@ -70,15 +70,18 @@ MemReader::describe() const
 }
 
 string
-Reader:: readString(off_t offset) const
+Reader::readString(off_t offset) const
 {
     char c;
     string res;
+    char s[32];
     for (;;) {
-        readObj(offset++, &c);
-        if (c == 0)
-            break;
-        res += c;
+        size_t len = read(offset, 31, s);
+        s[len] = 0;
+        res += s;
+        if (strlen(s) < len)
+            return res;
+        offset += len;
     }
     return res;
 }
