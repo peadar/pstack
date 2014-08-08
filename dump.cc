@@ -208,16 +208,16 @@ operator << (std::ostream &os, const DwarfFrameInfo &info)
 
     os << "{ \"cielist\": [";
     const char *sep = "";
-    for (auto &cieent : info.cies) {
-        const DwarfCIE &cie  = cieent.second;
+    for (auto cieent = info.cies.begin(); cieent != info.cies.end(); ++cieent) {
+        const DwarfCIE &cie  = cieent->second;
         os << sep << std::make_pair(info.dwarf, &cie);
         sep = ", ";
     }
     os << "], \"fdelist\": [";
 
     sep = "";
-    for (auto &fde : info.fdeList) {
-        const std::pair<const DwarfInfo *, const DwarfFDE *> p = std::make_pair(info.dwarf, &fde);
+    for (auto fde = info.fdeList.begin(); fde != info.fdeList.end(); ++ fde) {
+        const std::pair<const DwarfInfo *, const DwarfFDE *> p = std::make_pair(info.dwarf, &(*fde));
         os << sep << p;
         sep = ", ";
     }
@@ -312,6 +312,47 @@ dwarfDumpCFAInsns(std::ostream &os, DWARFReader &r)
     os << "]";
 }
 
+
+struct NotePrinter {
+    const ElfObject &obj;
+    const char *sep;
+    std::ostream &os;
+    NotePrinter(const ElfObject &obj_, std::ostream &os_): obj(obj_), os(os_), sep("") {}
+
+    NoteIter operator() (const char *name, u_int32_t type, const void *datap, size_t len) {
+        os << sep;
+        sep = ", ";
+        os
+            << "{ \"name\": \"" << name << "\""
+            << ", \"type\": \"" << type << "\"";
+        switch (type) {
+            case NT_PRSTATUS: {
+                const prstatus_t *prstatus = (const prstatus_t *)datap;
+                os << ", \"prstatus\": " << *prstatus;
+            }
+            break;
+            case NT_AUXV: {
+                const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
+                const Elf_auxv_t *eaux = aux + len / sizeof *aux;
+                const char *sep = "";
+                os << ", \"auxv\": [";
+                while (aux < eaux) {
+                    os << sep;
+                    sep = ", ";
+                    os << *aux;
+                    aux++;
+                }
+                os << "]";
+            }
+            break;
+        }
+         os << " }";
+        return NOTE_CONTIN;
+    }
+};
+
+
+
 /*
  * Debug output of an ELF32 object.
  */
@@ -350,8 +391,8 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
 
     os << ", \"sections\": [";
     const char *sep = "";
-    for (auto &i : obj.getSections()) {
-        os << sep << ElfSection(obj, &i);
+    for (auto i = obj.getSections().begin(); i != obj.getSections().end(); ++i) {
+        os << sep << ElfSection(obj, &(*i));
         sep = ", ";
     }
     os << "]";
@@ -360,13 +401,13 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
     os << ", \"segments\": " << obj.getSegments();
 
 
-    for (auto seg : obj.getSegments()) {
+    for (auto seg = obj.getSegments().begin(); seg != obj.getSegments().end(); ++seg) {
 
-        if (seg.p_type == PT_DYNAMIC) {
+        if (seg->p_type == PT_DYNAMIC) {
             os << ", \"dynamic\": [";
             const char *sep = "";
-            off_t dynoff = seg.p_offset;
-            off_t edyn = dynoff + seg.p_filesz;
+            off_t dynoff = seg->p_offset;
+            off_t edyn = dynoff + seg->p_filesz;
             for (; dynoff < edyn; dynoff += sizeof (Elf_Dyn)) {
                 Elf_Dyn dyn;
                 obj.io->readObj(dynoff, &dyn);
@@ -382,39 +423,10 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
 
     sep = "";
     os << ", \"notes\": [";
-    obj.getNotes([&obj, &os, &sep] (const char *name, u_int32_t type, const void *datap, size_t len) -> NoteIter {
-        os << sep;
-        sep = ", ";
+    NotePrinter notePrinter(obj, os);
 
-        os
-            << "{ \"name\": \"" << name << "\""
-            << ", \"type\": \"" << type << "\"";
+    obj.getNotes(notePrinter);
 
-
-        switch (type) {
-            case NT_PRSTATUS: {
-                const prstatus_t *prstatus = (const prstatus_t *)datap;
-                os << ", \"prstatus\": " << *prstatus;
-            }
-            break;
-            case NT_AUXV: {
-                const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
-                const Elf_auxv_t *eaux = aux + len / sizeof *aux;
-                const char *sep = "";
-                os << ", \"auxv\": [";
-                while (aux < eaux) {
-                    os << sep;
-                    sep = ", ";
-                    os << *aux;
-                    aux++;
-                }
-                os << "]";
-            }
-            break;
-        }
-         os << " }";
-        return NOTE_CONTIN;
-    });
     os << "]";
     return os << "}";
 }

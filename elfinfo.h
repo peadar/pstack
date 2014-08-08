@@ -156,7 +156,7 @@ public:
     ElfObject(std::shared_ptr<Reader>);
     ElfObject(std::string name);
     ~ElfObject();
-    template <typename Callable> void getNotes(const Callable &callback) const;
+    template <typename Callable> void getNotes(Callable &callback) const;
     const Elf_Phdr *findHeaderForAddress(Elf_Off) const;
 };
 
@@ -211,7 +211,7 @@ std::ostream& operator<< (std::ostream &os, const Elf_Dyn &d);
 std::ostream& operator<< (std::ostream &os, const ElfObject &obj);
 
 template <typename Callable> void
-ElfObject::getNotes(const Callable &callback) const
+ElfObject::getNotes(Callable &callback) const
 {
     for (auto hdri = programHeaders.begin(); hdri != programHeaders.end(); ++hdri) {
         auto &hdr = *hdri;

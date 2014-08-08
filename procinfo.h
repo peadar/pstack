@@ -49,7 +49,7 @@ class Process : public ps_prochandle {
     char *vdso;
     bool isStatic;
     Elf_Addr sysent; // for AT_SYSINFO
-    std::map<std::shared_ptr<ElfObject>, std::unique_ptr<DwarfInfo>> dwarf;
+    std::map<std::shared_ptr<ElfObject>, DwarfInfo *> dwarf;
 
 protected:
     td_thragent_t *agent;
@@ -68,7 +68,7 @@ public:
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const = 0;
     void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
     LoadedObject findObject(Elf_Addr addr) const;
-    std::unique_ptr<DwarfInfo> &getDwarf(std::shared_ptr<ElfObject>);
+    DwarfInfo *getDwarf(std::shared_ptr<ElfObject>);
     Process(std::shared_ptr<ElfObject> obj, std::shared_ptr<Reader> mem, const PathReplacementList &prl);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
@@ -121,6 +121,7 @@ public:
     LiveReader(pid_t pid_, std::string base_) : FileReader(procname(pid_, base_)), pid(pid_), base(base_) {}
 };
 
+struct LiveThreadList;
 class LiveProcess : public Process {
     pid_t pid;
     std::map<pid_t, ThreadInfo> stoppedLwps;
@@ -128,6 +129,7 @@ class LiveProcess : public Process {
     int stopCount;
     timeval start;
     std::set<pid_t> lwps; // lwps we could not suspend.
+    friend class LiveThreadList;
 public:
     LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;

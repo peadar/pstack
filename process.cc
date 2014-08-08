@@ -104,8 +104,8 @@ static std::string auxv_name(Elf_Word val)
 template <typename T> static void
 delall(T &container)
 {
-    for (auto i : container)
-        delete i;
+    for (auto i = container.begin(); i != container.end(); ++i)
+        delete *i;
 }
 
 Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_, const PathReplacementList &prl)
@@ -151,15 +151,13 @@ Process::load()
 
 }
 
-std::unique_ptr<DwarfInfo> &
+DwarfInfo *
 Process::getDwarf(std::shared_ptr<ElfObject> elf)
 {
-    const auto &info = this->dwarf.find(elf);
-    if (info != this->dwarf.end())
-        return info->second;
-    auto newinfo = new DwarfInfo(elf);
-    dwarf[elf].reset(newinfo);
-    return dwarf[elf];
+    auto &info = dwarf[elf];
+    if (info == 0)
+        info = new DwarfInfo(elf);
+    return info;
 }
 
 void
@@ -219,7 +217,8 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
         << ", \"stack\": [ ";
 
     const char *frameSep = "";
-    for (auto frame : thread.stack) {
+    for (auto frameI = thread.stack.begin(); frameI != thread.stack.end(); ++frameI) {
+        auto frame = *frameI;
         Elf_Addr objIp = 0;
         std::shared_ptr<ElfObject> obj;
         int lineNo;
@@ -253,20 +252,22 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
 
         os << ", \"args:\": [ ";
         const char *sep = "";
-        for (auto &i : frame->args) {
-            os << sep << i;
+        for (auto i = frame->args.begin(); i != frame->args.end(); ++i) {
+            os << sep << *i;
             sep = ", ";
         }
         os << " ]";
         if (obj != 0) {
             os << ", \"off\": " << intptr_t(objIp) - sym.st_value;
             os << ", \"file\": " << "\"" << fileName << "\"";
-            auto &di = getDwarf(obj);
-            if (di)
-                for (auto &ent : di->sourceFromAddr(objIp - 1))
+            auto di = getDwarf(obj);
+            if (di) {
+                auto src = di->sourceFromAddr(objIp - 1);
+                for (auto ent = src.begin(); ent != src.end(); ++ent)
                     os
-                        << ", \"source\": \"" << ent.first << "\""
-                        << ", \"line\": " << ent.second;
+                        << ", \"source\": \"" << ent->first << "\""
+                        << ", \"line\": " << ent->second;
+            }
         }
         os << " }";
         frameSep = ", ";
@@ -278,9 +279,10 @@ std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options)
 {
     os << "thread: " << std::hex << thread.info.ti_tid << ", type: " << thread.info.ti_type << "\n";
-    for (auto frame : thread.stack) {
+    for (auto frameI = thread.stack.begin(); frameI != thread.stack.end(); ++frameI) {
+        auto &frame = *frameI;
         Elf_Addr objIp = 0;
-        std::shared_ptr<ElfObject> obj = 0;
+        std::shared_ptr<ElfObject> obj;
         int lineNo;
         Elf_Sym sym;
         std::string fileName = "unknown file";
@@ -303,8 +305,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 
         os << "    " << symName << "(";
         const char *sep = "";
-        for (auto &i : frame->args) {
-            os << sep << "0x" << std::hex << i;
+        for (auto i = frame->args.begin(); i != frame->args.end(); ++i) {
+            os << sep << "0x" << std::hex << *i;
             sep = ", ";
         }
         os << ")";
@@ -312,13 +314,14 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         if (obj != 0) {
             os << " in " << fileName;
             if (!options(PstackOptions::nosrc)) {
-                auto &di = getDwarf(obj);
+                auto di = getDwarf(obj);
                 if (di) {
-                    for (auto &ent : di->sourceFromAddr(objIp - 1)) {
+                    auto source = di->sourceFromAddr(objIp - 1);
+                    for (auto ent = source.begin(); ent != source.end(); ++ent) {
                         os << " at ";
                         if (debug)
-                            os << "[" << ent.first->directory << "] ";
-                        os << ent.first->name << ":" << std::dec << ent.second;
+                            os << "[" << ent->first->directory << "] ";
+                        os << ent->first->name << ":" << std::dec << ent->second;
                     }
                 }
             }
@@ -385,10 +388,10 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
         }
 
         std::string startPath = path;
-        for (auto &it : pathReplacements) {
-            size_t found = path.find(it.first);
+        for (auto it = pathReplacements.begin(); it != pathReplacements.end(); ++it) {
+            size_t found = path.find(it->first);
             if (found != std::string::npos)
-                path.replace(found, it.first.size(), it.second);
+                path.replace(found, it->first.size(), it->second);
         }
         if (debug && path != startPath)
             *debug << "replaced " << startPath << " with " << path << std::endl;
@@ -408,19 +411,20 @@ Elf_Addr
 Process::findRDebugAddr()
 {
     // Find DT_DEBUG in the process's dynamic section.
-    for (auto segment : execImage->getSegments()) {
-        if (segment.p_type != PT_DYNAMIC)
+    auto &segments = execImage->getSegments();
+    for (auto segment = segments.begin(); segment != segments.end(); ++segment) {
+        if (segment->p_type != PT_DYNAMIC)
             continue;
         Elf_Off reloc = entry - execImage->getElfHeader().e_entry;
         // the dynamic section is in the executable, but the process A/S contains
         // the modified version.
-        for (Elf_Addr dynOff = 0; dynOff < segment.p_filesz; dynOff += sizeof(Elf_Dyn)) {
+        for (Elf_Addr dynOff = 0; dynOff < segment->p_filesz; dynOff += sizeof(Elf_Dyn)) {
             Elf_Dyn dyn;
-            execImage->io->readObj(segment.p_offset + dynOff, &dyn);
+            execImage->io->readObj(segment->p_offset + dynOff, &dyn);
             if (dyn.d_tag == DT_DEBUG) {
                 // Now, we read this from the _process_ AS, not the executable - the
                 // in-memory one is changed by the linker.
-                io->readObj(segment.p_vaddr + dynOff + reloc, &dyn);
+                io->readObj(segment->p_vaddr + dynOff + reloc, &dyn);
                 return dyn.d_un.d_ptr;
             }
         }
@@ -432,12 +436,14 @@ Process::findRDebugAddr()
 Process::LoadedObject
 Process::findObject(Elf_Addr addr) const
 {
-    for (auto &i : objects)
-        for (auto &phdr : i.object->getSegments()) {
-            Elf_Off reloc = addr - i.reloc;
-            if (reloc >= phdr.p_vaddr && reloc < phdr.p_vaddr + phdr.p_memsz)
-                return i;
+    for (auto i = objects.begin(); i != objects.end(); ++i) {
+        auto &segments = i->object->getSegments();
+        for (auto phdr = segments.begin(); phdr != segments.end(); ++ phdr) {
+            Elf_Off reloc = addr - i->reloc;
+            if (reloc >= phdr->p_vaddr && reloc < phdr->p_vaddr + phdr->p_memsz)
+                return *i;
         }
+    }
     throw Exception() << "no loaded object at address 0x" << std::hex << addr;
 }
 
@@ -446,8 +452,8 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
 {
     if (isStatic) // static exe: ignore object name.
         objectName = 0;
-    for (auto &i : objects) {
-        auto obj = i.object;
+    for (auto i = objects.begin(); i != objects.end(); ++i) {
+        auto obj = i->object;
         if (objectName != 0) {
             auto objname = obj->getName();
             auto p = objname.rfind('/');
@@ -458,7 +464,7 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
         }
         Elf_Sym sym;
         if (obj->findSymbolByName(symbolName, sym))
-            return sym.st_value + i.reloc;
+            return sym.st_value + i->reloc;
         if (objectName)
             break;
     }
@@ -472,6 +478,8 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
 Process::~Process()
 {
     td_ta_delete(agent);
+    for (auto i = dwarf.begin(); i != dwarf.end(); ++i)
+        delete i->second;
     delete[] vdso;
 }
 
