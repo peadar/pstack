@@ -289,8 +289,7 @@ std::shared_ptr<ElfObject> ElfObject::getDebug()
         auto hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
         if (hdr == 0)
             return 0;
-        std::vector<char> buf;
-        buf.resize(hdr->sh_size);
+        std::vector<char> buf(hdr->sh_size);
         std::string link = io->readString(hdr->sh_offset);
 
         auto dir = dirname(oldname);
