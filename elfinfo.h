@@ -156,7 +156,7 @@ public:
     ElfObject(std::shared_ptr<Reader>);
     ElfObject(std::string name);
     ~ElfObject();
-    template <typename Callable> void getNotes(const Callable &callback) const;
+    template <typename Callable> void getNotes(Callable &callback) const;
     const Elf_Phdr *findHeaderForAddress(Elf_Off) const;
 };
 
@@ -174,8 +174,8 @@ struct SymbolIterator {
 struct SymbolSection {
     const ElfSection section;
     off_t stroff;
-    SymbolIterator begin() { return SymbolIterator(section && section.shdr ? section.obj.io : 0, section ? section->sh_offset : 0, stroff); }
-    SymbolIterator end() { return SymbolIterator(section && section.shdr ? section.obj.io : 0, section ? section->sh_offset + section->sh_size : 0, stroff); }
+    SymbolIterator begin() { return SymbolIterator(section && section.shdr ? section.obj.io : std::shared_ptr<Reader>((Reader *)0), section ? section->sh_offset : 0, stroff); }
+    SymbolIterator end() { return SymbolIterator(section && section.shdr ? section.obj.io : std::shared_ptr<Reader>((Reader *)0), section ? section->sh_offset + section->sh_size : 0, stroff); }
     SymbolSection(const ElfSection &section_)
         : section(section_)
         , stroff(section.shdr ? section_.getLink()->sh_offset : -1)
@@ -211,9 +211,10 @@ std::ostream& operator<< (std::ostream &os, const Elf_Dyn &d);
 std::ostream& operator<< (std::ostream &os, const ElfObject &obj);
 
 template <typename Callable> void
-ElfObject::getNotes(const Callable &callback) const
+ElfObject::getNotes(Callable &callback) const
 {
-    for (auto &hdr : programHeaders) {
+    for (auto hdri = programHeaders.begin(); hdri != programHeaders.end(); ++hdri) {
+        auto &hdr = *hdri;
         if (hdr.p_type == PT_NOTE) {
             Elf_Note note;
             off_t off = hdr.p_offset;

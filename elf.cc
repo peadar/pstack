@@ -18,9 +18,9 @@ bool noDebugLibs;
 const Elf_Phdr *
 ElfObject::findHeaderForAddress(Elf_Off a) const
 {
-    for (auto &hdr : programHeaders)
-        if (hdr.p_vaddr <= a && hdr.p_vaddr + hdr.p_memsz > a && hdr.p_type == PT_LOAD)
-            return &hdr;
+    for (auto hdr = programHeaders.begin(); hdr != programHeaders.end(); ++hdr)
+        if (hdr->p_vaddr <= a && hdr->p_vaddr + hdr->p_memsz > a && hdr->p_type == PT_LOAD)
+            return &(*hdr);
     return 0;
 }
 
@@ -40,18 +40,19 @@ Elf_Addr
 ElfObject::getBase() const
 {
     auto base = std::numeric_limits<Elf_Off>::max();
-    for (auto &i : getSegments())
-        if (i.p_type == PT_LOAD && Elf_Off(i.p_vaddr) <= base)
-            base = Elf_Off(i.p_vaddr);
+    auto &segments = getSegments();
+    for (auto i = segments.begin(); i != segments.end(); ++i)
+        if (i->p_type == PT_LOAD && Elf_Off(i->p_vaddr) <= base)
+            base = Elf_Off(i->p_vaddr);
     return base;
 }
 
 std::string
 ElfObject::getInterpreter() const
 {
-    for (auto &seg : getSegments())
-        if (seg.p_type == PT_INTERP)
-            return io->readString(seg.p_offset);
+    for (auto seg = getSegments().begin(); seg != getSegments().end(); ++seg)
+        if (seg->p_type == PT_INTERP)
+            return io->readString(seg->p_offset);
     return "";
 }
 
@@ -82,9 +83,9 @@ ElfObject::init(const shared_ptr<Reader> &io_)
 
     if (elfHeader.e_shstrndx != SHN_UNDEF) {
         auto sshdr = sectionHeaders[elfHeader.e_shstrndx];
-        for (auto &h : sectionHeaders) {
-            auto name = io->readString(sshdr.sh_offset + h.sh_name);
-            namedSection[name] = &h;
+        for (auto h = sectionHeaders.begin(); h != sectionHeaders.end(); ++h) {
+            auto name = io->readString(sshdr.sh_offset + h->sh_name);
+            namedSection[name] = &(*h);
         }
         auto tab = getSection(".hash", SHT_HASH);
         if (tab)
@@ -126,8 +127,8 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
         if (symSection == 0 || symSection->sh_type == SHT_NOBITS)
             continue;
         SymbolSection syms(symSection);
-        for (auto syminfo : syms) {
-            auto &candidate = syminfo.first;
+        for (auto syminfo = syms.begin(); syminfo != syms.end(); ++syminfo) {
+            auto &candidate = (*syminfo).first;
             if (candidate.st_shndx >= sectionHeaders.size())
                 continue;
             auto shdr = sectionHeaders[candidate.st_shndx];
@@ -142,7 +143,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
                 if (candidate.st_size + candidate.st_value > addr) {
                     // yep: return this one.
                     sym = candidate;
-                    name = syminfo.second;
+                    name = (*syminfo).second;
                     return true;
                 }
             } else if (lowest < candidate.st_value) {
@@ -152,7 +153,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
                  * value
                  */
                 sym = candidate;
-                name = syminfo.second;
+                name = (*syminfo).second;
                 lowest = candidate.st_value;
             }
         }
@@ -184,9 +185,9 @@ bool
 linearSymSearch(ElfSection &section, string name, Elf_Sym &sym)
 {
     SymbolSection sec(section);
-    for (auto info : sec) {
-        if (name == info.second) {
-            sym = info.first;
+    for (auto info = sec.begin(); info != sec.end(); ++info) {
+        if (name == (*info).second) {
+            sym = (*info).first;
             return true;
         }
     }
@@ -278,7 +279,7 @@ ElfObject::~ElfObject()
 std::shared_ptr<ElfObject> ElfObject::getDebug()
 {
     if (noDebugLibs)
-        return 0;
+        return std::shared_ptr<ElfObject>();
     if (!debugLoaded) {
         debugLoaded = true;
 
@@ -288,7 +289,7 @@ std::shared_ptr<ElfObject> ElfObject::getDebug()
 
         auto hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
         if (hdr == 0)
-            return 0;
+            return std::shared_ptr<ElfObject>();
         std::vector<char> buf(hdr->sh_size);
         std::string link = io->readString(hdr->sh_offset);
 
@@ -302,7 +303,7 @@ std::shared_ptr<ElfObject> ElfObject::getDebug()
                 *debug << "loaded symbols from debug image " << name << "\n";
         }
         catch (const std::exception &ex) {
-            return 0;
+            return std::shared_ptr<ElfObject>();
         }
     }
     return debugObject;
@@ -315,7 +316,8 @@ static uint32_t
 elf_hash(string name)
 {
     uint32_t h = 0, g;
-    for (auto c : name) {
+    for (auto i = name.begin(); i != name.end(); ++i) {
+        auto c = *i;
         h = (h << 4) + c;
         if ((g = h & 0xf0000000) != 0)
             h ^= g >> 24;

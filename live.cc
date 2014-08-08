@@ -83,33 +83,43 @@ LiveProcess::resume(lwpid_t pid)
 }
 
 
+struct LiveThreadList {
+    LiveProcess *proc;
+    LiveThreadList(LiveProcess *proc_) : proc(proc_) {}
+    void operator()(const td_thrhandle_t *thr) {
+        if (td_thr_dbsuspend(thr) == TD_NOCAPAB) {
+            /*
+             * This doesn't actually work under linux: just add the LWP
+             * to the list of stopped lwps.
+             */
+            td_thrinfo_t info;
+            td_thr_get_info(thr, &info);
+            proc->lwps.insert(info.ti_lid);
+        }
+    }
+};
+
 void
 LiveProcess::stopProcess()
 {
     stop(pid);
     // suspend everything quickly.
-    listThreads(
-        [this] (const td_thrhandle_t *thr) -> void {
-            if (td_thr_dbsuspend(thr) == TD_NOCAPAB) {
-                /*
-                 * This doesn't actually work under linux: just add the LWP
-                 * to the list of stopped lwps.
-                 */
-                td_thrinfo_t info;
-                td_thr_get_info(thr, &info);
-                lwps.insert(info.ti_lid);
-            }});
+    LiveThreadList lister(this);
+    listThreads(lister);
 
-    for (auto lwp : lwps)
-        stop(lwp);
+    for (auto lwp = lwps.begin(); lwp != lwps.end(); ++lwp)
+        stop(*lwp);
 }
+
+
+static void resumeThread(const td_thrhandle_t *thr) { td_thr_dbresume(thr); }
 
 void
 LiveProcess::resumeProcess()
 {
-    listThreads([](const td_thrhandle_t *thr) { td_thr_dbresume(thr); });
-    for (auto lwp : lwps)
-        resume(lwp);
+    listThreads(resumeThread);
+    for (auto lwp = lwps.begin(); lwp != lwps.end(); ++lwp)
+        resume(*lwp);
     resume(pid);
 }
 

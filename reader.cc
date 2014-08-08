@@ -115,8 +115,8 @@ CacheReader::CacheReader(std::shared_ptr<Reader> upstream_)
 
 CacheReader::~CacheReader()
 {
-    for (auto i : pages)
-        delete i;
+    for (auto i = pages.begin(); i != pages.end(); ++i)
+        delete *i;
 }
 
 CacheReader::Page *

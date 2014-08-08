@@ -12,6 +12,29 @@ extern "C" {
 }
 
 
+struct ThreadLister {
+
+    std::list<ThreadStack> threadStacks;
+    Process *process;
+
+    ThreadLister(Process *process_ ) : process(process_) {}
+
+    void operator() (const td_thrhandle_t *thr) {
+        CoreRegisters regs;
+        td_err_e the;
+#ifdef __linux__
+        the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
+#else
+        the = td_thr_getgregs(thr, &regs);
+#endif
+        if (the == TD_OK) {
+            threadStacks.push_back(ThreadStack());
+            td_thr_get_info(thr, &threadStacks.back().info);
+            threadStacks.back().unwind(*process, regs);
+        }
+    }
+};
+
 static int usage(void);
 std::ostream &
 Process::pstack(std::ostream &os, const PstackOptions &options)
@@ -22,28 +45,15 @@ Process::pstack(std::ostream &os, const PstackOptions &options)
 
     // get its back trace.
 
-    listThreads(
-        [&threadStacks, this](const td_thrhandle_t *thr) {
-            CoreRegisters regs;
-            td_err_e the;
-#ifdef __linux__
-            the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
-#else
-            the = td_thr_getgregs(thr, &regs);
-#endif
-            if (the == TD_OK) {
-                threadStacks.push_back(ThreadStack());
-                td_thr_get_info(thr, &threadStacks.back().info);
-                threadStacks.back().unwind(*this, regs);
-            }
-    });
+    ThreadLister threadLister(this);
+    listThreads(threadLister);
 
-    if (threadStacks.empty()) {
+    if (threadLister.threadStacks.empty()) {
         // get the register for the process itself, and use those.
         CoreRegisters regs;
         getRegs(ps_getpid(this),  &regs);
-        threadStacks.push_back(ThreadStack());
-        threadStacks.back().unwind(*this, regs);
+        threadLister.threadStacks.push_back(ThreadStack());
+        threadLister.threadStacks.back().unwind(*this, regs);
     }
 
 
@@ -53,8 +63,8 @@ Process::pstack(std::ostream &os, const PstackOptions &options)
      * unloaded while we print stuff out, but worth the risk, normally.
      */
     const char *sep = "";
-    for (auto &s : threadStacks) {
-        dumpStackText(os, s, options);
+    for (auto s = threadLister.threadStacks.begin(); s != threadLister.threadStacks.end(); ++s) {
+        dumpStackText(os, *s, options);
         os << "\n";
         sep = ", ";
     }

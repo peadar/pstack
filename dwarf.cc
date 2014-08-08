@@ -614,8 +614,8 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
     : type(&unit->abbreviations[DwarfTag(code)])
 {
 
-    for (auto &spec : type->specs)
-        attributes[spec.name] = DwarfAttribute(r, unit, &spec);
+    for (auto spec = type->specs.begin(); spec != type->specs.end(); ++spec)
+        attributes[spec->name] = DwarfAttribute(r, unit, &(*spec));
     switch (type->tag) {
     case DW_TAG_compile_unit: {
         if (unit->dwarf->lineshdr) {
@@ -1209,9 +1209,9 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, DWARFReader &reader, enum FIType
 const DwarfFDE *
 DwarfFrameInfo::findFDE(Elf_Addr addr) const
 {
-    for (auto &fde : fdeList)
-        if (fde.iloc <= addr && fde.iloc + fde.irange > addr)
-            return &fde;
+    for (auto fde = fdeList.begin(); fde != fdeList.end(); ++fde)
+        if (fde->iloc <= addr && fde->iloc + fde->irange > addr)
+            return &(*fde);
     return 0;
 }
 
@@ -1219,11 +1219,11 @@ std::vector<std::pair<const DwarfFileEntry *, int>>
 DwarfInfo::sourceFromAddr(uintmax_t addr)
 {
     std::vector<std::pair<const DwarfFileEntry *, int>> info;
-    units();
-    for (auto &rs : ranges()) {
-        for (auto &r : rs.ranges) {
-            if (r.start <= addr && r.start + r.length > addr) {
-                const auto &unitI = unitsm.find(rs.debugInfoOffset);
+    auto &rangelist = ranges();
+    for (auto rs = rangelist.begin(); rs != rangelist.end(); ++rs) {
+        for (auto r = rs->ranges.begin(); r != rs->ranges.end(); ++r) {
+            if (r->start <= addr && r->start + r->length > addr) {
+                const auto &unitI = unitsm.find(rs->debugInfoOffset);
                 if (unitI != unitsm.end()) {
                     const auto &u = unitI->second;
                     for (auto i = u.lines.matrix.begin(); i != u.lines.matrix.end(); ++i) {
@@ -1284,7 +1284,7 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr &procaddr)
 {
     DwarfRegisters newRegs;
     auto elf = p.findObject(procaddr);
-    auto &dwarf = p.getDwarf(elf.object);
+    auto dwarf = p.getDwarf(elf.object);
     Elf_Off objaddr = procaddr - elf.reloc; // relocate process address to object address
 
     const DwarfFDE *fde = dwarf->debugFrame ? dwarf->debugFrame->findFDE(objaddr) : 0;

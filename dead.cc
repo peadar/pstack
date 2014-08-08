@@ -12,19 +12,29 @@ CoreProcess::CoreProcess(
 {
 }
 
+struct NotesCb {
+    CoreProcess *cp;
+    NotesCb(CoreProcess *cp_) : cp(cp_) {}
+    NoteIter operator()(const char *, u_int32_t, const void *, size_t) const;
+};
+
+NoteIter
+NotesCb::operator()(const char *name, u_int32_t type, const void *datap, size_t len) const
+{
+    if (type == NT_AUXV) {
+        cp->processAUXV(datap, len);
+        return NOTE_DONE;
+    }
+    return NOTE_CONTIN;
+}
+
 void
 CoreProcess::load()
 {
 #ifdef __linux__
+    NotesCb cb(this);
     /* Find the linux-gate VDSO, and treat as an ELF file */
-    coreImage->getNotes(
-        [this] (const char *name, u_int32_t type, const void *datap, size_t len) {
-            if (type == NT_AUXV) {
-                this->processAUXV(datap, len);
-                return NOTE_DONE;
-            }
-            return NOTE_CONTIN;
-        });
+    coreImage->getNotes(cb);
 #endif
     Process::load();
 }
@@ -83,13 +93,13 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 
         // Either no data in core, or it was incomplete to this point: search loaded objects.
         hdr = 0;
-        obj = 0;
+        obj.reset();
         Elf_Off reloc;
-        for (auto &i : p->objects) {
-            hdr = i.object->findHeaderForAddress(remoteAddr - i.reloc);
+        for (auto i = p->objects.begin(); i != p->objects.end(); ++i) {
+            hdr = i->object->findHeaderForAddress(remoteAddr - i->reloc);
             if (hdr) {
-                obj = i.object;
-                reloc = i.reloc;
+                obj = i->object;
+                reloc = i->reloc;
                 break;
             }
         }
@@ -117,18 +127,25 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 
 CoreReader::CoreReader(CoreProcess *p_) : p(p_) { }
 
+struct RegCallback {
+    lwpid_t pid;
+    CoreRegisters *reg;
+    NoteIter operator()(const char *name, u_int32_t type, const void *data, size_t len) const {
+        const prstatus_t *prstatus = (const prstatus_t *)data;
+        if (type == NT_PRSTATUS && prstatus->pr_pid == pid) {
+            memcpy(reg, (const DwarfRegisters *)&prstatus->pr_reg, sizeof(*reg));
+            return (NOTE_DONE);
+        }
+        return NOTE_CONTIN;
+    }
+    RegCallback(lwpid_t pid_, CoreRegisters *reg_) : pid(pid_), reg(reg_) {}
+};
+
 bool
 CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg) const
 {
-    coreImage->getNotes(
-        [reg, pid] (const char *name, u_int32_t type, const void *data, size_t len) -> NoteIter {
-            const prstatus_t *prstatus = (const prstatus_t *)data;
-            if (type == NT_PRSTATUS && prstatus->pr_pid == pid) {
-                memcpy(reg, (const DwarfRegisters *)&prstatus->pr_reg, sizeof(*reg));
-                return (NOTE_DONE);
-            }
-            return NOTE_CONTIN;
-        });
+    RegCallback rc(pid, reg);
+    coreImage->getNotes(rc);
     return true;
 }
 
@@ -144,19 +161,28 @@ CoreProcess::stop(lwpid_t pid)
     // can't stop a dead process.
 }
 
+struct PidCallback {
+    mutable pid_t pid;
+    NoteIter operator()(const char *name, u_int32_t type, const void *data, size_t len) const {
+        if (type == NT_PRSTATUS) {
+            const prstatus_t *status = (const prstatus_t *)data;
+            pid = status->pr_pid;
+            return NOTE_DONE;
+        }
+        return NOTE_CONTIN;
+    }
+};
+
+
+
+
 pid_t
 CoreProcess::getPID() const
 {
-    pid_t pid;
-    coreImage->getNotes([this, &pid] (const char *name, u_int32_t type, const void *datap, size_t len) {
-        if (type == NT_PRSTATUS) {
-            const prstatus_t *status = (const prstatus_t *)datap;
-            pid = status->pr_pid;
-            return NOTE_DONE; }
-        return NOTE_CONTIN;
-    });
-    if (debug) *debug << "got pid: " << pid << std::endl;
-    return pid;
+    PidCallback cb;
+    coreImage->getNotes(cb);
+    if (debug) *debug << "got pid: " << cb.pid << std::endl;
+    return cb.pid;
 }
 
 

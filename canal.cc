@@ -78,6 +78,9 @@ vector<Symcounter> counters;
 
 static const char *virtpattern = "_ZTV*"; /* wildcard for all vtbls */
 
+
+static bool compareSymbolsByAddress(const ListedSymbol &l, const ListedSymbol &r) { return l.memaddr() < r.memaddr(); };
+static bool compareSymbolsByFrequency(const ListedSymbol &l, const ListedSymbol &r) { return l.count > r.count; };
 int
 mainExcept(int argc, char *argv[])
 {
@@ -197,8 +200,8 @@ mainExcept(int argc, char *argv[])
     process->load();
     if (searchaddrs.size()) {
         std::clog << "finding references to " << dec << searchaddrs.size() << " addresses\n";
-        for (auto &iter : searchaddrs) {
-            std::clog << "\t" << iter.first <<" - " << iter.second << "\n";
+        for (auto iter = searchaddrs.begin(); iter != searchaddrs.end(); ++iter) {
+            std::clog << "\t" << iter->first <<" - " << iter->second << "\n";
         }
     }
     clog << "opened process " << process << endl;
@@ -206,39 +209,39 @@ mainExcept(int argc, char *argv[])
     if (virtpattern)
         patterns.push_back(virtpattern);
     vector<ListedSymbol> listed;
-    for (auto &loaded : process->objects) {
+    for (auto loaded = process->objects.begin(); loaded != process->objects.end(); ++loaded) {
         size_t count = 0;
-        for (const auto sym : loaded.object->getSymbols(".dynsym")) {
-            for (auto &pattern : patterns) {
-                if (globmatch(pattern, sym.second)) {
-                    listed.push_back(ListedSymbol(sym.first, loaded.reloc, sym.second, loaded.object->io->describe()));
+        auto syms = loaded->object->getSymbols(".dynsym");
+        for (auto sym = syms.begin(); sym != syms.end(); ++sym) {
+            for (auto pattern = patterns.begin(); pattern != patterns.end(); ++pattern) {
+                if (globmatch(*pattern, (*sym).second)) {
+                    listed.push_back(ListedSymbol((*sym).first, loaded->reloc, (*sym).second, loaded->object->io->describe()));
                     count++;
                 }
             }
         }
         if (debug)
-            *debug << "found " << count << " symbols in " << loaded.object->io->describe() << endl;
+            *debug << "found " << count << " symbols in " << loaded->object->io->describe() << endl;
     }
-    sort(listed.begin()
-        , listed.end()
-        , [] (const ListedSymbol &l, const ListedSymbol &r) { return l.memaddr() < r.memaddr(); });
+    sort(listed.begin() , listed.end() , compareSymbolsByAddress);
 
     // Now run through the corefile, searching for virtual objects.
     off_t filesize = 0;
     off_t memsize = 0;
-    for (auto hdr : core->getSegments()) {
-        if (hdr.p_type != PT_LOAD)
+    auto segments = core->getSegments();
+    for (auto hdr = segments.begin(); hdr != segments.end(); ++hdr) {
+        if (hdr->p_type != PT_LOAD)
             continue;
         Elf_Off p;
-        filesize += hdr.p_filesz;
-        memsize += hdr.p_memsz;
+        filesize += hdr->p_filesz;
+        memsize += hdr->p_memsz;
         if (debug) {
-            *debug << "scan " << hex << hdr.p_vaddr <<  " to " << hdr.p_vaddr + hdr.p_memsz << " ";
-            *debug << "(filesiz = " << hdr.p_filesz  << ", memsiz=" << hdr.p_memsz << ") ";
+            *debug << "scan " << hex << hdr->p_vaddr <<  " to " << hdr->p_vaddr + hdr->p_memsz << " ";
+            *debug << "(filesiz = " << hdr->p_filesz  << ", memsiz=" << hdr->p_memsz << ") ";
         }
 
         if (findstr) {
-            for (auto loc = hdr.p_vaddr; loc < hdr.p_vaddr + hdr.p_filesz - findstrlen; loc++) {
+            for (auto loc = hdr->p_vaddr; loc < hdr->p_vaddr + hdr->p_filesz - findstrlen; loc++) {
                 size_t rc = process->io->read(loc, findstrlen, strbuf);
                 assert(rc == findstrlen);
                 if (memcmp(strbuf, findstr, findstrlen) == 0)
@@ -246,14 +249,14 @@ mainExcept(int argc, char *argv[])
             }
         } else {
 
-            for (auto loc = hdr.p_vaddr; loc < hdr.p_vaddr + hdr.p_filesz; loc += sizeof p) {
-                if (verbose && (loc - hdr.p_vaddr) % (1024 * 1024) == 0)
+            for (auto loc = hdr->p_vaddr; loc < hdr->p_vaddr + hdr->p_filesz; loc += sizeof p) {
+                if (verbose && (loc - hdr->p_vaddr) % (1024 * 1024) == 0)
                     clog << '.';
                 process->io->readObj(loc, &p);
                 if (searchaddrs.size()) {
-                    for (auto &range : searchaddrs) {
-                        if (p >= range.first && p < range.second && (p % 4 == 0))
-                        cout << "0x" << hex << loc << "\n";
+                    for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
+                        if (p >= range->first && p < range->second && (p % 4 == 0))
+                            cout << "0x" << hex << loc << "\n";
                     }
                 } else {
                     auto found = lower_bound(listed.begin(), listed.end(), p);
@@ -278,13 +281,11 @@ mainExcept(int argc, char *argv[])
     if (debug)
         *debug << "core file contains " << filesize << " out of " << memsize << " bytes of memory\n";
 
-    sort(listed.begin()
-        , listed.end()
-        , [] (const ListedSymbol &l, const ListedSymbol &r) { return l.count > r.count; });
+    sort(listed.begin() , listed.end() , compareSymbolsByFrequency);
 
-    for (auto &i : listed)
-        if (i.count)
-            cout << dec << i.count << " " << i.name << " ( from " << i.objname << ")" << endl;
+    for (auto i = listed.begin(); i != listed.end(); ++i)
+        if (i->count)
+            cout << dec << i->count << " " << i->name << " ( from " << i->objname << ")" << endl;
     return 0;
 }
 
