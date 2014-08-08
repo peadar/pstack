@@ -21,7 +21,10 @@ struct ThreadStack {
     td_thrinfo_t info;
     std::vector<StackFrame *> stack;
     ThreadStack() {}
-    ~ThreadStack() { for (auto i : stack) delete i; }
+    ~ThreadStack() {
+        for (auto i = stack.begin(); i != stack.end(); ++i)
+            delete *i;
+    }
     void unwind(Process &, CoreRegisters &regs);
 };
 
@@ -52,9 +55,9 @@ protected:
     td_thragent_t *agent;
     std::shared_ptr<ElfObject> execImage;
     std::string abiPrefix;
-    void processAUXV(const void *data, size_t len);
     PathReplacementList pathReplacements;
 public:
+    void processAUXV(const void *data, size_t len);
     std::shared_ptr<Reader> io;
     struct LoadedObject {
         Elf_Off reloc;
@@ -82,11 +85,15 @@ public:
     virtual void load();
 };
 
+template <typename T> int
+threadListCb(const td_thrhandle_t *thr, void *v)
+{ T &callback = *(T *)v; callback(thr); return 0; }
+
 template <typename T> void
 Process::listThreads(const T &callback)
 {
     td_ta_thr_iter(agent,
-            [] (const td_thrhandle_t *thr, void *v) -> int { T &callback = *(T *)v; callback(thr); return 0; },
+            threadListCb<T>,
             (void *)&callback, TD_THR_ANY_STATE, TD_THR_LOWEST_PRIORITY, TD_SIGNO_MASK, TD_THR_ANY_USER_FLAGS);
 }
 
