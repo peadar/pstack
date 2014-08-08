@@ -2,6 +2,8 @@
 #include <list>
 #include <string>
 #include <stdio.h>
+#include <map>
+#include <unordered_map>
 #include <memory>
 
 #include "ex.h"
@@ -19,7 +21,7 @@ public:
     }
     virtual size_t read(off_t off, size_t count, char *ptr) const = 0;
     virtual std::string describe() const = 0;
-    std::string readString(off_t offset) const;
+    virtual std::string readString(off_t offset) const;
 };
 
 class FileReader : public Reader {
@@ -34,6 +36,7 @@ public:
 
 class CacheReader : public Reader {
     std::shared_ptr<Reader> upstream;
+    mutable std::unordered_map<off_t, std::string> stringCache;
     static const size_t PAGESIZE = 1024;
     static const size_t MAXPAGES = 16;
     class Page {
@@ -52,6 +55,7 @@ public:
     virtual size_t read(off_t off, size_t count, char *ptr) const;
     virtual std::string describe() const { return upstream->describe(); }
     CacheReader(std::shared_ptr<Reader> upstream);
+    std::string readString(off_t absoff) const;
     ~CacheReader();
 };
 
