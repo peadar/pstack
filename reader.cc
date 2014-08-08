@@ -174,10 +174,10 @@ CacheReader::read(off_t absoff, size_t count, char *ptr) const
 string
 CacheReader::readString(off_t offset) const
 {
-    auto it = stringCache.find(offset);
-    if (it != stringCache.end())
-        return it->second;
-    string result = Reader::readString(offset);
-    stringCache[offset] = result;
-    return result;
+    auto &entry = stringCache[offset];
+    if (entry.isNew) {
+        entry.value = Reader::readString(offset);
+        entry.isNew = false;
+    }
+    return entry.value;
 }

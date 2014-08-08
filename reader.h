@@ -2,7 +2,6 @@
 #include <list>
 #include <string>
 #include <stdio.h>
-#include <map>
 #include <unordered_map>
 #include <memory>
 
@@ -34,9 +33,15 @@ public:
     std::string describe() const { return name; }
 };
 
+
 class CacheReader : public Reader {
+    struct CacheEnt {
+        std::string value;
+        bool isNew;
+        CacheEnt() : isNew(true) {}
+    };
     std::shared_ptr<Reader> upstream;
-    mutable std::unordered_map<off_t, std::string> stringCache;
+    mutable std::unordered_map<off_t, CacheEnt> stringCache;
     static const size_t PAGESIZE = 1024;
     static const size_t MAXPAGES = 16;
     class Page {
