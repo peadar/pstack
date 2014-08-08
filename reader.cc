@@ -126,14 +126,18 @@ CacheReader::Page *
 CacheReader::getPage(off_t pageoff) const
 {
     Page *p;
+    int first = true;
     for (auto i = pages.begin(); i != pages.end(); ++i) {
         p = *i;
         if (p->offset == pageoff) {
             // move page to front.
-            pages.erase(i);
-            pages.push_front(p);
+            if (!first) {
+                pages.erase(i);
+                pages.push_front(p);
+            }
             return p;
         }
+        first = false;
     }
     p = new Page(*upstream, pageoff);
     if (pages.size() == MAXPAGES) {
