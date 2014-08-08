@@ -71,6 +71,7 @@ emain(int argc, char **argv)
     std::shared_ptr<ElfObject> exec;
 
     PstackOptions options;
+    noDebugLibs = true;
 
     while ((c = getopt(argc, argv, "d:D:hsvn")) != -1) {
         switch (c) {
@@ -97,7 +98,7 @@ emain(int argc, char **argv)
             debug = &std::clog;
             break;
         case 'n':
-            noDebugLibs = true;
+            noDebugLibs = false;
             break;
         default:
             return usage();
