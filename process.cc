@@ -88,8 +88,12 @@ static std::string auxv_name(Elf_Word val)
         AUXV(AT_IGNOREPPC)
         AUXV(AT_SECURE)
         AUXV(AT_BASE_PLATFORM)
+#ifdef AT_RANDOM
         AUXV(AT_RANDOM)
+#endif
+#ifdef AT_EXECFN
         AUXV(AT_EXECFN)
+#endif
         AUXV(AT_SYSINFO)
         AUXV(AT_SYSINFO_EHDR)
         AUXV(AT_L1I_CACHESHAPE)
@@ -196,6 +200,7 @@ Process::processAUXV(const void *datap, size_t len)
                 }
                 break;
             }
+#ifdef AT_EXECFN
             case AT_EXECFN:
                 auto exeName = io->readString(hdr);
                 if (debug)
@@ -203,6 +208,7 @@ Process::processAUXV(const void *datap, size_t len)
                 if (execImage == 0)
                     execImage = std::make_shared<ElfObject>(exeName);
                 break;
+#endif
         }
     }
 }
