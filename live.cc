@@ -7,6 +7,9 @@
 #include <sys/ptrace.h>
 #include <fcntl.h>
 #include <wait.h>
+extern "C" {
+#include "proc_service.h"
+}
 
 std::string
 LiveReader::procname(pid_t pid, const std::string &base)
@@ -39,7 +42,10 @@ LiveProcess::load()
     close(fd);
     if (rc == -1)
         throw Exception() << "failed to read 4k from " << path;
+    // need to suspend while processing auxv, and resume before calling ps_ routines to enumerate threads.
+    ps_pstop(this);
     processAUXV(buf, rc);
+    ps_pcontinue(this);
     Process::load();
 }
 
@@ -81,7 +87,6 @@ LiveProcess::resume(lwpid_t pid)
         *debug << "child was stopped for " << std::dec << secs << " microseconds" << std::endl;
     }
 }
-
 
 struct LiveThreadList {
     LiveProcess *proc;

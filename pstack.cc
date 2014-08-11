@@ -39,13 +39,11 @@ static int usage(void);
 std::ostream &
 Process::pstack(std::ostream &os, const PstackOptions &options)
 {
-    std::list<ThreadStack> threadStacks;
+    ps_pstop(this);
 
     // get its back trace.
-
     ThreadLister threadLister(this);
     listThreads(threadLister);
-
     if (threadLister.threadStacks.empty()) {
         // get the register for the process itself, and use those.
         CoreRegisters regs;
@@ -53,7 +51,6 @@ Process::pstack(std::ostream &os, const PstackOptions &options)
         threadLister.threadStacks.push_back(ThreadStack());
         threadLister.threadStacks.back().unwind(*this, regs);
     }
-
 
     ps_pcontinue(this);
     /*
@@ -72,7 +69,6 @@ Process::pstack(std::ostream &os, const PstackOptions &options)
 static void
 doPstack(Process &proc, const PstackOptions &options)
 {
-    ps_pstop(&proc);
     proc.load();
     proc.pstack(std::cout, options);
 }
