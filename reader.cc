@@ -103,8 +103,13 @@ FileReader::read(off_t off, size_t count, char *ptr) const
 
 CacheReader::Page::Page(Reader &r, off_t offset_)
     : offset(offset_)
-    , len(r.read(offset_, PAGESIZE, data))
 {
+    try {
+        len = r.read(offset_, PAGESIZE, data);
+    }
+    catch (std::exception &ex) {
+        len = 0;
+    }
     assert(offset_ % PAGESIZE == 0);
 }
 
