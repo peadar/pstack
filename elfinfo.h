@@ -121,7 +121,7 @@ struct ElfSection {
     ElfSection(const ElfObject &obj_, const Elf_Shdr *shdr_) : obj(obj_), shdr(shdr_) {}
 };
 
-bool linearSymSearch(ElfSection &hdr, std::string name, Elf_Sym &);
+bool linearSymSearch(ElfSection &hdr, const std::string &name, Elf_Sym &);
 class ElfObject {
 public:
     typedef std::vector<Elf_Phdr> ProgramHeaders;
@@ -140,8 +140,8 @@ private:
     std::shared_ptr<ElfObject> debugObject;
     std::shared_ptr<ElfObject> getDebug();
 public:
-    const ElfSection getSection(std::string name, int type);
-    SymbolSection getSymbols(std::string table);
+    const ElfSection getSection(const std::string &name, int type);
+    SymbolSection getSymbols(const std::string &table);
     SectionHeaders sectionHeaders;
     std::shared_ptr<Reader> io; // IO for the ELF image.
     Elf_Off getBase() const; // lowest address of a PT_LOAD segment.
@@ -149,12 +149,12 @@ public:
     std::string getName() const { return name; }
     const SectionHeaders &getSections() const { return sectionHeaders; }
     const ProgramHeaders &getSegments() const  { return programHeaders; }
-    const ElfSection getSection(std::string name, int type) const;
+    const ElfSection getSection(const std::string &name, int type) const;
     const Elf_Ehdr &getElfHeader() const { return elfHeader; }
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
-    bool findSymbolByName(std::string name, Elf_Sym &sym);
+    bool findSymbolByName(const std::string &name, Elf_Sym &sym);
     ElfObject(std::shared_ptr<Reader>);
-    ElfObject(std::string name);
+    ElfObject(const std::string &name);
     ~ElfObject();
     template <typename Callable> void getNotes(Callable &callback) const;
     const Elf_Phdr *findHeaderForAddress(Elf_Off) const;
@@ -193,7 +193,7 @@ class ElfSymHash {
     const Elf_Word *buckets;
 public:
     ElfSymHash(ElfSection &);
-    bool findSymbol(Elf_Sym &sym, std::string &name);
+    bool findSymbol(Elf_Sym &sym, const std::string &name);
 };
 
 const char *pad(size_t size);

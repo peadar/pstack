@@ -24,9 +24,9 @@ ElfObject::findHeaderForAddress(Elf_Off a) const
     return 0;
 }
 
-ElfObject::ElfObject(string name_)
+ElfObject::ElfObject(const string &name_)
+    : name(name_)
 {
-    name = name_;
     init(make_shared<CacheReader>(make_shared<FileReader>(name)));
 }
 
@@ -162,7 +162,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
 }
 
 const ElfSection
-ElfObject::getSection(std::string name, int type)
+ElfObject::getSection(const std::string &name, int type)
 {
     auto dbg = getDebug();
     if (dbg) {
@@ -176,13 +176,13 @@ ElfObject::getSection(std::string name, int type)
 }
 
 SymbolSection
-ElfObject::getSymbols(std::string table)
+ElfObject::getSymbols(const std::string &table)
 {
     return SymbolSection(getSection(table, SHT_NULL));
 }
 
 bool
-linearSymSearch(ElfSection &section, string name, Elf_Sym &sym)
+linearSymSearch(ElfSection &section, const string &name, Elf_Sym &sym)
 {
     SymbolSection sec(section);
     for (auto info = sec.begin(); info != sec.end(); ++info) {
@@ -210,7 +210,7 @@ ElfSymHash::ElfSymHash(ElfSection &hash_)
 }
 
 bool
-ElfSymHash::findSymbol(Elf_Sym &sym, string &name)
+ElfSymHash::findSymbol(Elf_Sym &sym, const string &name)
 {
     uint32_t bucket = elf_hash(name) % nbucket;
     for (Elf_Word i = buckets[bucket]; i != STN_UNDEF; i = chains[i]) {
@@ -219,7 +219,6 @@ ElfSymHash::findSymbol(Elf_Sym &sym, string &name)
         string candidateName = syms.obj.io->readString(strings + candidate.st_name);
         if (candidateName == name) {
             sym = candidate;
-            name = candidateName;
             return true;
         }
     }
@@ -230,7 +229,7 @@ ElfSymHash::findSymbol(Elf_Sym &sym, string &name)
  * Locate a named symbol in an ELF image.
  */
 bool
-ElfObject::findSymbolByName(string name, Elf_Sym &sym)
+ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
 {
     if (hash && hash->findSymbol(sym, name))
         return true;
@@ -238,9 +237,7 @@ ElfObject::findSymbolByName(string name, Elf_Sym &sym)
     if (dyn && linearSymSearch(dyn, name, sym))
         return true;
     auto symtab = getSection(".symtab", SHT_SYMTAB);
-    if (symtab && linearSymSearch(symtab, name, sym))
-        return true;
-    return false;
+    return symtab && linearSymSearch(symtab, name, sym);
 }
 
 /*

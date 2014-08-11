@@ -9,7 +9,7 @@
 #include <wait.h>
 
 std::string
-LiveReader::procname(pid_t pid, std::string base)
+LiveReader::procname(pid_t pid, const std::string &base)
 {
     std::ostringstream ss;
     ss << "/proc/" << pid << "/" << base;

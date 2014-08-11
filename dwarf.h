@@ -180,7 +180,7 @@ struct DwarfFileEntry {
     std::string directory;
     unsigned lastMod;
     unsigned length;
-    DwarfFileEntry(std::string name_, std::string dir_, unsigned lastMod_, unsigned length_);
+    DwarfFileEntry(const std::string &name_, std::string dir_, unsigned lastMod_, unsigned length_);
     DwarfFileEntry(DWARFReader &r, DwarfLineInfo *info);
     DwarfFileEntry() {}
 };

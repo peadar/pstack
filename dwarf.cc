@@ -494,7 +494,8 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
 }
 
 
-DwarfFileEntry::DwarfFileEntry(std::string name_, std::string dir_, unsigned lastMod_, unsigned length_)
+DwarfFileEntry::DwarfFileEntry(const std::string &name_, std::string dir_,
+        unsigned lastMod_, unsigned length_)
     : name(name_)
     , directory(dir_)
     , lastMod(lastMod_)

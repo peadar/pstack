@@ -86,12 +86,7 @@ Reader:: readString(off_t offset) const
 size_t
 FileReader::read(off_t off, size_t count, char *ptr) const
 {
-    if (lseek(file, off, SEEK_SET) == -1)
-        throw Exception()
-            << "seek to " << off
-            << " on " << describe()
-            << " failed: " << strerror(errno);
-    ssize_t rc = ::read(file, ptr, count);
+    auto rc = pread(file, ptr, count, off);
     if (rc == -1)
         throw Exception()
             << "read " << count

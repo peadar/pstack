@@ -69,6 +69,13 @@ Process::pstack(std::ostream &os, const PstackOptions &options)
     return os;
 }
 
+static void
+doPstack(Process &proc, const PstackOptions &options)
+{
+    ps_pstop(&proc);
+    proc.load();
+    proc.pstack(std::cout, options);
+}
 
 int
 emain(int argc, char **argv)
@@ -123,17 +130,13 @@ emain(int argc, char **argv)
             auto obj = std::make_shared<ElfObject>(std::make_shared<FileReader>(argv[i]));
             if (obj->getElfHeader().e_type == ET_CORE) {
                 CoreProcess proc(exec, obj, std::vector<std::pair<std::string, std::string>>());
-                ps_pstop(&proc);
-                proc.load();
-                proc.pstack(std::cout, options);
+                doPstack(proc, options);
             } else {
                 exec = obj;
             }
         } else {
             LiveProcess proc(exec, pid);
-            ps_pstop(&proc);
-            proc.load();
-            proc.pstack(std::cout, options);
+            doPstack(proc, options);
         }
     }
     return (error);
