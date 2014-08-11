@@ -39,8 +39,6 @@ static int usage(void);
 std::ostream &
 Process::pstack(std::ostream &os, const PstackOptions &options)
 {
-    ps_pstop(this);
-
     std::list<ThreadStack> threadStacks;
 
     // get its back trace.
@@ -125,6 +123,7 @@ emain(int argc, char **argv)
             auto obj = std::make_shared<ElfObject>(std::make_shared<FileReader>(argv[i]));
             if (obj->getElfHeader().e_type == ET_CORE) {
                 CoreProcess proc(exec, obj, std::vector<std::pair<std::string, std::string>>());
+                ps_pstop(&proc);
                 proc.load();
                 proc.pstack(std::cout, options);
             } else {
@@ -132,6 +131,7 @@ emain(int argc, char **argv)
             }
         } else {
             LiveProcess proc(exec, pid);
+            ps_pstop(&proc);
             proc.load();
             proc.pstack(std::cout, options);
         }
