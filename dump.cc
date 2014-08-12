@@ -1,4 +1,5 @@
 #include "dump.h"
+#include <cassert>
 
 static void dwarfDumpCFAInsns(std::ostream &os, DWARFReader &r);
 
@@ -325,28 +326,33 @@ struct NotePrinter {
         os
             << "{ \"name\": \"" << name << "\""
             << ", \"type\": \"" << type << "\"";
-        switch (type) {
-            case NT_PRSTATUS: {
-                const prstatus_t *prstatus = (const prstatus_t *)datap;
-                os << ", \"prstatus\": " << *prstatus;
-            }
-            break;
-            case NT_AUXV: {
-                const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
-                const Elf_auxv_t *eaux = aux + len / sizeof *aux;
-                const char *sep = "";
-                os << ", \"auxv\": [";
-                while (aux < eaux) {
-                    os << sep;
-                    sep = ", ";
-                    os << *aux;
-                    aux++;
+
+        // need to switch on type and name for notes.
+        if (strcmp(name, "CORE") == 0) {
+            switch (type) {
+                case NT_PRSTATUS: {
+                    assert(len >= sizeof (prstatus_t));
+                    const prstatus_t *prstatus = (const prstatus_t *)datap;
+                    os << ", \"prstatus\": " << *prstatus;
                 }
-                os << "]";
+                break;
+                case NT_AUXV: {
+                    const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
+                    const Elf_auxv_t *eaux = aux + len / sizeof *aux;
+                    const char *sep = "";
+                    os << ", \"auxv\": [";
+                    while (aux < eaux) {
+                        os << sep;
+                        sep = ", ";
+                        os << *aux;
+                        aux++;
+                    }
+                    os << "]";
+                }
+                break;
             }
-            break;
         }
-         os << " }";
+        os << " }";
         return NOTE_CONTIN;
     }
 };
