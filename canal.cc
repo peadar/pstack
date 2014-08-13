@@ -99,8 +99,9 @@ mainExcept(int argc, char *argv[])
     char *findstr = 0;
     size_t findstrlen;
     int symOffset = -1;
+    bool showloaded = false;
 
-    while ((c = getopt(argc, argv, "o:vhr:sp:f:e:S:R:K:y:")) != -1) {
+    while ((c = getopt(argc, argv, "o:vhr:sp:f:e:S:R:K:y:l")) != -1) {
         switch (c) {
             case 'p':
                 virtpattern = optarg;
@@ -182,6 +183,11 @@ mainExcept(int argc, char *argv[])
 
             case 'X':
                 ps_lgetfpregs(0, 0, 0);
+                break;
+
+            case 'l':
+                showloaded = true;
+                break;
         }
     }
 
@@ -191,12 +197,14 @@ mainExcept(int argc, char *argv[])
     }
 
 
-    if (argc - optind >= 1) {
-        char *eoa;
-        pid_t pid = strtol(argv[optind], &eoa, 10);
-        core = make_shared<ElfObject>(argv[optind]);
-        process = make_shared<CoreProcess>(exec, core, pathReplacements);
+    if (argc - optind < 1) {
+        clog << "usage: canal [exec] <core>" << endl;
+        return 0;
     }
+
+    pid_t pid = strtol(argv[optind], 0, 0);
+    core = make_shared<ElfObject>(argv[optind]);
+    process = make_shared<CoreProcess>(exec, core, pathReplacements);
     process->load();
     if (searchaddrs.size()) {
         std::clog << "finding references to " << dec << searchaddrs.size() << " addresses\n";
@@ -205,6 +213,12 @@ mainExcept(int argc, char *argv[])
         }
     }
     clog << "opened process " << process << endl;
+
+    if (showloaded) {
+        for (auto loaded = process->objects.begin(); loaded != process->objects.end(); ++loaded)
+            std::cout << loaded->object->getName() << "\n";
+        exit(0);
+    }
 
     if (virtpattern)
         patterns.push_back(virtpattern);
