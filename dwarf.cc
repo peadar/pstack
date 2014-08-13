@@ -291,6 +291,7 @@ DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
 
 DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
     : dwarf(di)
+    , offset(r.getOffset())
 {
     length = r.getlength(&r.dwarfLen);
     Elf_Off nextoff = r.getOffset() + length;
@@ -313,7 +314,7 @@ std::string
 DwarfUnit::name() const
 {
     if (!entries.empty())
-        return entries.begin()->attrForName(DW_AT_name).value.string;
+        return entries.begin()->second->attrForName(DW_AT_name).value.string;
     throw "no name for this entry";
 }
 
@@ -336,11 +337,17 @@ static intmax_t
 dwarfAttr2Int(const DwarfAttribute &attr)
 {
     switch (attr.spec->form) {
-    case DW_FORM_data1: return attr.value.data1;
-    case DW_FORM_data2: return attr.value.data2;
-    case DW_FORM_data4: return attr.value.data4;
-    case DW_FORM_sec_offset: return attr.value.ref8;
-    default: abort();
+    case DW_FORM_data1:
+    case DW_FORM_data2:
+    case DW_FORM_data4:
+    case DW_FORM_data8:
+    case DW_FORM_sdata:
+    case DW_FORM_udata:
+        return attr.value.sdata;
+    case DW_FORM_sec_offset:
+        return attr.value.ref;
+    default:
+        abort();
     }
 }
 
@@ -511,28 +518,29 @@ DwarfFileEntry::DwarfFileEntry(DWARFReader &r, DwarfLineInfo *info)
 {
 }
 
-DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfUnit *unit, const DwarfAttributeSpec *spec_)
+DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const DwarfAttributeSpec *spec_)
     : spec(spec_)
+    , entry(entry_)
 {
     switch (spec->form) {
     case DW_FORM_addr:
-        value.addr = r.getuint(unit->addrlen);
+        value.addr = r.getuint(entry->unit->addrlen);
         break;
 
     case DW_FORM_data1:
-        value.data1 = r.getu8();
+        value.sdata = r.getu8();
         break;
 
     case DW_FORM_data2:
-        value.data2 = r.getu16();
+        value.sdata = r.getu16();
         break;
 
     case DW_FORM_data4:
-        value.data4 = r.getu32();
+        value.sdata = r.getu32();
         break;
 
     case DW_FORM_data8:
-        value.data8 = r.getuint(8);
+        value.sdata = r.getuint(8);
         break;
 
     case DW_FORM_sdata:
@@ -544,23 +552,23 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfUnit *unit, const Dwar
         break;
 
     case DW_FORM_strp:
-        value.string = unit->dwarf->debugStrings + r.getfmtint();
+        value.string = entry->unit->dwarf->debugStrings + r.getfmtint();
         break;
 
     case DW_FORM_ref2:
-        value.ref2 = r.getu16();
+        value.ref = r.getu16();
         break;
 
     case DW_FORM_ref4:
-        value.ref4 = r.getu32();
+        value.ref = r.getu32();
         break;
 
     case DW_FORM_ref_addr:
-        value.ref4 = r.getfmtuint();
+        value.ref = r.getfmtuint();
         break;
 
     case DW_FORM_ref8:
-        value.ref8 = r.getuint(8);
+        value.ref = r.getuint(8);
         break;
 
     case DW_FORM_string:
@@ -601,7 +609,7 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfUnit *unit, const Dwar
         break;
 
     case DW_FORM_sec_offset:
-        value.ref8 = r.getfmtint();
+        value.ref = r.getfmtint();
         break;
 
 
@@ -611,18 +619,28 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfUnit *unit, const Dwar
     }
 }
 
-DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
-    : type(&unit->abbreviations[DwarfTag(code)])
+DwarfEntry::DwarfEntry()
+    : unit(0)
+    , type(0)
+    , offset(-1)
+{
+
+}
+
+DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t offset_)
+    : unit(unit_)
+    , type(&unit->abbreviations.find(DwarfTag(code))->second)
+    , offset(offset_)
 {
 
     for (auto spec = type->specs.begin(); spec != type->specs.end(); ++spec)
-        attributes[spec->name] = DwarfAttribute(r, unit, &(*spec));
+        attributes[spec->name] = DwarfAttribute(r, this, &(*spec));
     switch (type->tag) {
     case DW_TAG_compile_unit: {
         if (unit->dwarf->lineshdr) {
             size_t stmts = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
             DWARFReader r2(unit->dwarf->lineshdr, unit->dwarf->version, stmts, r.dwarfLen);
-            unit->lines.build(r2, unit);
+            unit_->lines.build(r2, unit);
         } else {
             std::clog << "warning: no line number info found" << std::endl;
         }
@@ -632,17 +650,31 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit)
         break;
     }
     if (type->hasChildren)
-        unit->decodeEntries(r, children);
+        unit_->decodeEntries(r, children);
 }
 
 void
 DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries)
 {
     while (!r.empty()) {
+        intmax_t offset = r.getOffset();
         intmax_t code = r.getuleb128();
         if (code == 0)
             return;
-        entries.push_back(DwarfEntry(r, code, this));
+        allEntries[offset] = entries[offset] = std::make_shared<DwarfEntry>(r, code, this, offset);
+    }
+}
+
+const DwarfEntry *
+DwarfAttribute::getRef() const
+{
+    switch (spec->form) {
+        case DW_FORM_ref1:
+        case DW_FORM_ref2:
+        case DW_FORM_ref4:
+        case DW_FORM_ref8:
+        case DW_FORM_ref_udata:
+            return 0;
     }
 }
 

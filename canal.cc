@@ -202,7 +202,6 @@ mainExcept(int argc, char *argv[])
         return 0;
     }
 
-    pid_t pid = strtol(argv[optind], 0, 0);
     core = make_shared<ElfObject>(argv[optind]);
     process = make_shared<CoreProcess>(exec, core, pathReplacements);
     process->load();

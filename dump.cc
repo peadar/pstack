@@ -35,6 +35,7 @@ std::ostream &operator << (std::ostream &os, const DwarfLineInfo &lines) {
 std::ostream & operator << (std::ostream &os, const DwarfEntry &entry) {
     os
         << "{ \"type\": \"" << entry.type->tag << "\""
+        << ", \"offset\": " << entry.offset
         << ", \"attributes\": " << entry.attributes;
 
     if (entry.type->hasChildren)
@@ -62,6 +63,7 @@ std::ostream & operator << (std::ostream &os, const DwarfAbbreviation &abbr) {
 std::ostream &operator << (std::ostream &os, const DwarfUnit &unit) {
     return os
         << " { \"length\":" <<  unit.length
+        << " , \"offset\":" <<  unit.offset
         << " , \"version\":" <<  int(unit.version)
         << " , \"addrlen\":" <<  int(unit.addrlen)
         << " , \"linenumbers\":" << unit.lines
@@ -152,16 +154,27 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     const DwarfValue &value = attr.value;
     switch (attr.spec->form) {
     case DW_FORM_addr: os << value.addr; break;
-    case DW_FORM_data1: os << int(value.data1); break;
-    case DW_FORM_data2: os << value.data2; break;
-    case DW_FORM_data4: os << value.data4; break;
-    case DW_FORM_data8: os << value.data8; break;
+    case DW_FORM_data1:
+    case DW_FORM_data2:
+    case DW_FORM_data4:
+    case DW_FORM_data8:
     case DW_FORM_sdata: os << value.sdata; break;
     case DW_FORM_udata: os << value.udata; break;
     case DW_FORM_string: case DW_FORM_strp: os << "\"" << value.string << "\""; break;
-    case DW_FORM_ref2: os << "\"@" << value.ref2 << "\""; break;
-    case DW_FORM_ref4: os << "\"@" << value.ref4 << "\""; break;
-    case DW_FORM_ref8: os << "\"@" << value.ref8 << "\""; break;
+    case DW_FORM_ref2:
+    case DW_FORM_ref4:
+    case DW_FORM_ref8:
+    case DW_FORM_ref_udata: {
+        auto off = attr.entry->unit->offset + attr.value.ref;
+        const auto &allEntries = attr.entry->unit->allEntries;
+        const auto &entry = allEntries.find(off);
+        if (entry != allEntries.end())
+            os << "\"HAVEIT@" << off << "\"";
+        else
+            os << "\"HAVENOTIT@" << off << "\"";
+        break;
+
+    }
     case DW_FORM_block1: case DW_FORM_block2: case DW_FORM_block4: case DW_FORM_block: os << value.block; break;
     case DW_FORM_flag: os << (value.flag ? "true" : "false"); break;
     default: os << "\"unknown DWARF form " << attr.spec->form << "\"";
@@ -212,7 +225,7 @@ operator << (std::ostream &os, const DwarfFrameInfo &info)
     for (auto cieent = info.cies.begin(); cieent != info.cies.end(); ++cieent) {
         const DwarfCIE &cie  = cieent->second;
         os << sep << std::make_pair(info.dwarf, &cie);
-        sep = ", ";
+        sep = ",\n";
     }
     os << "], \"fdelist\": [";
 
@@ -220,7 +233,7 @@ operator << (std::ostream &os, const DwarfFrameInfo &info)
     for (auto fde = info.fdeList.begin(); fde != info.fdeList.end(); ++ fde) {
         const std::pair<const DwarfInfo *, const DwarfFDE *> p = std::make_pair(info.dwarf, &(*fde));
         os << sep << p;
-        sep = ", ";
+        sep = ",\n";
     }
     return os << " ] }";
 }
@@ -308,7 +321,7 @@ dwarfDumpCFAInsns(std::ostream &os, DWARFReader &r)
     while (!r.empty()) {
         os << sep;
         dwarfDumpCFAInsn(os, r);
-        sep = ", ";
+        sep = ",\n";
     }
     os << "]";
 }
@@ -322,7 +335,7 @@ struct NotePrinter {
 
     NoteIter operator() (const char *name, u_int32_t type, const void *datap, size_t len) {
         os << sep;
-        sep = ", ";
+        sep = ",\n";
         os
             << "{ \"name\": \"" << name << "\""
             << ", \"type\": \"" << type << "\"";
@@ -343,7 +356,7 @@ struct NotePrinter {
                     os << ", \"auxv\": [";
                     while (aux < eaux) {
                         os << sep;
-                        sep = ", ";
+                        sep = ",\n";
                         os << *aux;
                         aux++;
                     }
@@ -399,7 +412,7 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
     const char *sep = "";
     for (auto i = obj.getSections().begin(); i != obj.getSections().end(); ++i) {
         os << sep << ElfSection(obj, &(*i));
-        sep = ", ";
+        sep = ",\n";
     }
     os << "]";
 
@@ -418,7 +431,7 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
                 Elf_Dyn dyn;
                 obj.io->readObj(dynoff, &dyn);
                 os << sep << dyn;
-                sep = ", ";
+                sep = ",\n";
             }
             os << "]";
             break;
@@ -561,7 +574,7 @@ operator <<(std::ostream &os, const ElfSection &sec)
             o.io->readObj(symoff, &sym);
             std::pair<const ElfSection &, const Elf_Sym *> t = std::make_pair(sec, &sym);
             os << sep << t;
-            sep = ", ";
+            sep = ",\n";
         }
         os << "]";
         break;

@@ -20,7 +20,7 @@ class DwarfLineInfo;
 struct DwarfUnit;
 struct DwarfFrameInfo;
 struct DwarfEntry;
-typedef std::vector<DwarfEntry> DwarfEntries;
+typedef std::map<off_t, std::shared_ptr<DwarfEntry>> DwarfEntries;
 
 typedef struct {
     uintmax_t reg[DWARF_MAXREG];
@@ -114,36 +114,32 @@ struct DwarfBlock {
 
 union DwarfValue {
     uintmax_t addr;
-    uint8_t data1;
-    uint16_t data2;
-    uint32_t data4;
-    uint64_t data8;
     uintmax_t udata;
     intmax_t sdata;
+    uintmax_t ref;
     const char *string;
-    uint16_t ref2;
-    uint32_t ref4;
-    uint64_t ref8;
     DwarfBlock block;
     char flag;
 };
 
 struct DwarfAttribute {
     const DwarfAttributeSpec *spec; /* From abbrev table attached to type */
+    const DwarfEntry *entry;
     DwarfValue value;
-    DwarfAttribute(DWARFReader &, const DwarfUnit *, const DwarfAttributeSpec *spec);
+    DwarfAttribute(DWARFReader &, const DwarfEntry *, const DwarfAttributeSpec *spec);
     ~DwarfAttribute() {
         if (spec && spec->form == DW_FORM_string)
             free((void *)(const void *)value.string);
     }
-    DwarfAttribute() : spec(0) {}
-    DwarfAttribute(const DwarfAttribute &rhs) : spec(rhs.spec) {
+    DwarfAttribute() : spec(0), entry(0) {}
+    DwarfAttribute(const DwarfAttribute &rhs) : spec(rhs.spec), entry(rhs.entry) {
         if (spec && spec->form == DW_FORM_string)
             value.string = strdup(rhs.value.string);
         else
             value.udata = rhs.value.udata;
     }
     DwarfAttribute &operator = (const DwarfAttribute &rhs) {
+        entry = rhs.entry;
         if (spec && spec->form == DW_FORM_string)
             value.string = strdup(rhs.value.string);
         spec = rhs.spec;
@@ -153,12 +149,17 @@ struct DwarfAttribute {
             value.udata = rhs.value.udata;
         return *this;
     }
+    const DwarfEntry *getRef() const;
 };
 
 struct DwarfEntry {
     DwarfEntries children;
+    const DwarfUnit *unit;
     const DwarfAbbreviation *type;
+    intmax_t offset;
     std::map<DwarfAttrName, DwarfAttribute> attributes;
+
+    DwarfEntry();
 
     const DwarfAttribute &attrForName(DwarfAttrName name) const {
         auto attr = attributes.find(name);
@@ -167,7 +168,7 @@ struct DwarfEntry {
         throw "no such attribute";
     }
 
-    DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit);
+    DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit, intmax_t offset);
 };
 
 enum FIType {
@@ -210,6 +211,7 @@ struct DwarfLineInfo {
 
 struct DwarfUnit {
     const DwarfInfo *dwarf;
+    off_t offset;
     void decodeEntries(DWARFReader &r, DwarfEntries &entries);
     uint32_t length;
     uint16_t version;
@@ -218,10 +220,11 @@ struct DwarfUnit {
     const unsigned char *entryPtr;
     const unsigned char *lineInfo;
     DwarfEntries entries;
+    DwarfEntries allEntries;
     DwarfLineInfo lines;
     DwarfUnit(const DwarfInfo *, DWARFReader &);
     std::string name() const;
-    DwarfUnit() : dwarf(0) {}
+    DwarfUnit() : dwarf(0), offset(-1) {}
 };
 
 struct DwarfFDE {

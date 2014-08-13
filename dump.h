@@ -8,7 +8,7 @@ template <typename T> std::ostream &operator << (std::ostream &os, const std::li
     std::string sep = "";
     for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
         os << sep << *entry;
-        sep = ", ";
+        sep = ",\n";
     }
     return os << " ]";
 }
@@ -18,7 +18,7 @@ template <typename T> std::ostream &operator << (std::ostream &os, const std::li
     std::string sep = "";
     for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
         os << sep << **entry;
-        sep = ", ";
+        sep = ",\n";
     }
     return os << " ]";
 }
@@ -28,7 +28,7 @@ template <typename T> std::ostream &operator << (std::ostream &os, const std::li
     std::string sep = "";
     for (auto entry = entries.begin(); entry != entries.end; ++entry) {
         os << sep << **entry;
-        sep = ", ";
+        sep = ",\n";
     }
     return os << " ]";
 }
@@ -39,7 +39,7 @@ std::ostream &operator << (std::ostream &os, const std::list<std::string> &entri
     std::string sep = "";
     for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
         os << sep << "\"" << *entry << "\"";
-        sep = ", ";
+        sep = ",\n";
     }
     return os << " ]";
 }
@@ -49,7 +49,7 @@ template <typename T> std::ostream &operator << (std::ostream &os, const std::ve
     std::string sep = "";
     for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
         os << sep << *entry;
-        sep = ", ";
+        sep = ",\n";
     }
     return os << " ]";
 }
@@ -60,7 +60,7 @@ std::ostream &operator << (std::ostream &os, const std::vector<std::string> &ent
     std::string sep = "";
     for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
         os << sep << "\"" << *entry << "\"";
-        sep = ", ";
+        sep = ",\n";
     }
     return os << " ]";
 }
@@ -70,7 +70,7 @@ template <typename T> std::ostream &operator << (std::ostream &os, const std::ve
     const char *sep = "";
     for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
         os << sep << **entry;
-        sep = ", ";
+        sep = ",\n";
     }
     return os << " ]";
 }
@@ -80,7 +80,7 @@ template <typename T> std::ostream &operator << (std::ostream &os, const std::ve
     const char *sep = "";
     for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
         os << sep << **entry;
-        sep = ", ";
+        sep = ",\n";
     }
     return os << " ]";
 }
@@ -90,7 +90,7 @@ template <typename T> std::ostream &operator << (std::ostream &os, const std::ve
     const char *sep = "";
     for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
         os << sep << **entry;
-        sep = ", ";
+        sep = ",\n";
     }
     return os << " ]";
 }
@@ -100,7 +100,7 @@ template <typename K, typename V> std::ostream &operator << (std::ostream &os, c
     std::string sep = "";
     for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
         os << sep << " \"" << entry->first << "\": " << entry->second;
-        sep = ", ";
+        sep = ",\n";
     }
     return os << " }";
 }
@@ -111,10 +111,22 @@ const std::map<K, std::unique_ptr<V>> &entries) {
     std::string sep = "";
     for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
         os << sep << " \"" << entry->first << "\": " << *entry->second;
-        sep = ", ";
+        sep = ",\n";
     }
     return os << " }";
 }
+
+template <typename K, typename V> std::ostream &operator << (std::ostream &os,
+const std::map<K, std::shared_ptr<V>> &entries) {
+    os << "{ ";
+    std::string sep = "";
+    for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
+        os << sep << " \"" << entry->first << "\": " << *entry->second;
+        sep = ",\n";
+    }
+    return os << " }";
+}
+
 
 template <typename K, typename V> std::ostream &operator << (std::ostream &os, const std::map<K, V *> &entries) {
     os << "{ ";
@@ -122,7 +134,7 @@ template <typename K, typename V> std::ostream &operator << (std::ostream &os, c
     for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
         const V &v = *entry->second;
         os << sep << " \"" << entry->first << "\": " << v;
-        sep = ", ";
+        sep = ",\n";
     }
     return os << " }";
 }
