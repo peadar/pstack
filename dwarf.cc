@@ -1250,13 +1250,14 @@ DwarfInfo::sourceFromAddr(uintmax_t addr)
 {
     std::vector<std::pair<const DwarfFileEntry *, int>> info;
     auto &rangelist = ranges();
+    units(); // make sure we have our units
     for (auto rs = rangelist.begin(); rs != rangelist.end(); ++rs) {
         for (auto r = rs->ranges.begin(); r != rs->ranges.end(); ++r) {
             if (r->start <= addr && r->start + r->length > addr) {
                 const auto &unitI = unitsm.find(rs->debugInfoOffset);
                 if (unitI != unitsm.end()) {
                     const auto &u = unitI->second;
-                    for (auto i = u.lines.matrix.begin(); i != u.lines.matrix.end(); ++i) {
+                    for (auto i = u->lines.matrix.begin(); i != u->lines.matrix.end(); ++i) {
                         if (i->end_sequence)
                             continue;
                         auto next = i+1;
