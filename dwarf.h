@@ -169,6 +169,14 @@ struct DwarfEntry {
     }
 
     DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit, intmax_t offset);
+    const char *name() {
+        try {
+            return attrForName(DW_AT_name).value.string;
+        }
+        catch (...) {
+            return "anon";
+        }
+    }
 };
 
 enum FIType {
@@ -301,7 +309,7 @@ struct DwarfFrameInfo {
 class DwarfInfo {
     mutable std::list<DwarfPubnameUnit> pubnameUnits;
     mutable std::list<DwarfARangeSet> aranges;
-    mutable std::map<Elf_Off, DwarfUnit> unitsm;
+    mutable std::map<Elf_Off, std::shared_ptr<DwarfUnit>> unitsm;
     mutable ElfSection info, debstr, pubnamesh, arangesh, debug_frame;
 public:
     std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
@@ -310,7 +318,7 @@ public:
     std::shared_ptr<ElfObject> elf;
     std::list<DwarfARangeSet> &ranges() const;
     std::list<DwarfPubnameUnit> &pubnames() const;
-    std::map<Elf_Off, DwarfUnit> &units() const;
+    std::map<Elf_Off, std::shared_ptr<DwarfUnit>> &units() const;
     char *debugStrings;
     off_t lines;
     int version;

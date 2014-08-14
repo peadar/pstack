@@ -169,7 +169,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
         const auto &allEntries = attr.entry->unit->allEntries;
         const auto &entry = allEntries.find(off);
         if (entry != allEntries.end())
-            os << "\"HAVEIT@" << off << "\"";
+            os << "\"ref to " << entry->second->name() << " at " << off << "\"";
         else
             os << "\"HAVENOTIT@" << off << "\"";
         break;

@@ -218,25 +218,22 @@ std::list<DwarfPubnameUnit> &
 DwarfInfo::pubnames() const
 {
     if (pubnamesh) {
-        std::clog << "have pubnames" << std::endl;
         DWARFReader r(pubnamesh, version, 0, 0);
         while (!r.empty())
             pubnameUnits.push_back(DwarfPubnameUnit(r));
         pubnamesh = 0;
-    } else {
-        std::clog << "no pubnames" << std::endl;
     }
     return pubnameUnits;
 }
 
-std::map<Elf_Off, DwarfUnit> &
+std::map<Elf_Off, std::shared_ptr<DwarfUnit>> &
 DwarfInfo::units() const
 {
     if (info) {
         DWARFReader reader(info, version, 0, 0);
         while (!reader.empty()) {
             auto off = reader.getOffset() - info->sh_offset;
-            unitsm[off] = DwarfUnit(this, reader);
+            unitsm[off] = std::make_shared<DwarfUnit>(this, reader);
         }
         info = 0;
     }
