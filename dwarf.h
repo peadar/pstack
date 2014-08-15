@@ -332,12 +332,7 @@ public:
     ~DwarfInfo();
 };
 
-void dwarfDump(FILE *out, int, const DwarfInfo *info);
-DwarfInfo *dwarfLoad(Process *, struct ElfObject *obj, FILE *errs);
 const DwarfAbbreviation *dwarfUnitGetAbbrev(const DwarfUnit *unit, intmax_t code);
-void dwarfDumpSpec(FILE *out, int indent, const DwarfAttributeSpec *spec);
-void dwarfDumpAbbrev(FILE *out, int indent, const DwarfAbbreviation *abbrev);
-void dwarfDumpUnit(FILE *, int indent, const DwarfInfo *, const DwarfUnit *);
 const char *dwarfSOpcodeName(enum DwarfLineSOpcode code);
 const char *dwarfEOpcodeName(enum DwarfLineEOpcode code);
 int dwarfComputeCFA(Process *, const DwarfInfo *, DwarfFDE *, DwarfCallFrame *, DwarfRegisters *, uintmax_t addr);
@@ -403,7 +398,6 @@ public:
     unsigned addrLen;
     int version;
     size_t dwarfLen; // 8 => 64-bit. 4 => 32-bit.
-    std::shared_ptr<ElfObject> elf;
 
     DWARFReader(std::shared_ptr<Reader> io_, int version_, Elf_Off off_, Elf_Word size_, size_t dwarfLen_)
         : off(off_)
