@@ -21,10 +21,12 @@ struct NotesCb {
 NoteIter
 NotesCb::operator()(const char *name, u_int32_t type, const void *datap, size_t len) const
 {
+#ifdef NT_AUXV
     if (strcmp(name, "CORE") == 0 && type == NT_AUXV) {
         cp->processAUXV(datap, len);
         return NOTE_DONE;
     }
+#endif
     return NOTE_CONTIN;
 }
 
@@ -132,10 +134,12 @@ struct RegCallback {
     CoreRegisters *reg;
     NoteIter operator()(const char *name, u_int32_t type, const void *data, size_t len) const {
         const prstatus_t *prstatus = (const prstatus_t *)data;
+#ifdef NT_PRSTATUS
         if (strcmp(name, "CORE") == 0 && type == NT_PRSTATUS && prstatus->pr_pid == pid) {
             memcpy(reg, (const DwarfRegisters *)&prstatus->pr_reg, sizeof(*reg));
             return (NOTE_DONE);
         }
+#endif
         return NOTE_CONTIN;
     }
     RegCallback(lwpid_t pid_, CoreRegisters *reg_) : pid(pid_), reg(reg_) {}
@@ -164,11 +168,13 @@ CoreProcess::stop(lwpid_t pid)
 struct PidCallback {
     mutable pid_t pid;
     NoteIter operator()(const char *name, u_int32_t type, const void *data, size_t len) const {
+#ifdef NT_PRSTATUS
         if (strcmp(name, "CORE") == 0 && type == NT_PRSTATUS) {
             const prstatus_t *status = (const prstatus_t *)data;
             pid = status->pr_pid;
             return NOTE_DONE;
         }
+#endif
         return NOTE_CONTIN;
     }
 };

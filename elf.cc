@@ -257,7 +257,7 @@ elfImageNote(void *cookie, const char *name, u_int32_t type,
     const prpsinfo_t *psinfo;
 
     exename = (const char **)cookie;
-    psinfo = data;
+    psinfo = (const prpsinfo_t *)data;
 
     if (!strcmp(name, "FreeBSD") && type == NT_PRPSINFO &&
         psinfo->pr_version == PRPSINFO_VERSION) {

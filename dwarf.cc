@@ -848,8 +848,19 @@ dwarfEvalExpr(const Process &proc, DWARFReader r, const DwarfRegisters *frame, D
                 break;
             }
 
-
-
+            case DW_OP_reg0: case DW_OP_reg1: case DW_OP_reg2: case DW_OP_reg3:
+            case DW_OP_reg4: case DW_OP_reg5: case DW_OP_reg6: case DW_OP_reg7:
+            case DW_OP_reg8: case DW_OP_reg9: case DW_OP_reg10: case DW_OP_reg11:
+            case DW_OP_reg12: case DW_OP_reg13: case DW_OP_reg14: case DW_OP_reg15:
+            case DW_OP_reg16: case DW_OP_reg17: case DW_OP_reg18: case DW_OP_reg19:
+            case DW_OP_reg20: case DW_OP_reg21: case DW_OP_reg22: case DW_OP_reg23:
+            case DW_OP_reg24: case DW_OP_reg25: case DW_OP_reg26: case DW_OP_reg27:
+            case DW_OP_reg28: case DW_OP_reg29: case DW_OP_reg30: case DW_OP_reg31:
+                stack->push(frame->reg[op - DW_OP_reg0]);
+                break;
+            case DW_OP_regx:
+                stack->push(frame->reg[r.getsleb128()]);
+                break;
             default:
                 abort();
         }

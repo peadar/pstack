@@ -56,6 +56,7 @@ extern "C" {
 
 #define ELF_WORDSIZE ((ELF_BITS)/8)
 
+class ElfObject;
 #ifndef __FreeBSD__
 
 #define ElfTypeForBits(type, bits, uscore) typedef Elf##bits##uscore##type Elf##uscore##type ;
@@ -86,7 +87,6 @@ ElfType(Off)
 #define IS_ELF(a) 1
 #endif
 
-class ElfObject;
 
 static inline size_t
 roundup2(size_t val, size_t align)
