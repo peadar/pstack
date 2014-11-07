@@ -146,7 +146,7 @@ struct RegCallback {
 };
 
 bool
-CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg) const
+CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
 {
     RegCallback rc(pid, reg);
     coreImage->getNotes(rc);

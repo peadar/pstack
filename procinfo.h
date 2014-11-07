@@ -65,7 +65,7 @@ public:
         LoadedObject(Elf_Off reloc_, std::shared_ptr<ElfObject> object_) : reloc(reloc_), object(object_) {}
     };
     std::vector<LoadedObject> objects;
-    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const = 0;
+    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) = 0;
     void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
     LoadedObject findObject(Elf_Addr addr) const;
     DwarfInfo *getDwarf(std::shared_ptr<ElfObject>);
@@ -97,14 +97,9 @@ Process::listThreads(const T &callback)
             (void *)&callback, TD_THR_ANY_STATE, TD_THR_LOWEST_PRIORITY, TD_SIGNO_MASK, TD_THR_ANY_USER_FLAGS);
 }
 
-enum ThreadState {
-    stopped,
-    running
-};
-
 struct ThreadInfo {
-    ThreadState state;
-    ThreadInfo() : state(running) {}
+    int stopCount;
+    ThreadInfo() : stopCount(0) {}
 };
 
 class LiveReader : public FileReader {
@@ -129,10 +124,10 @@ class LiveProcess : public Process {
     int stopCount;
     timeval start;
     std::set<pid_t> lwps; // lwps we could not suspend.
-    friend class LiveThreadList;
+    friend class StopLWP;
 public:
     LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid);
-    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
+    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg);
     virtual void stop(pid_t lwpid);
     virtual void resume(pid_t lwpid);
     virtual pid_t getPID()  const{ return pid; }
@@ -159,11 +154,19 @@ struct CoreProcess : public Process {
 public:
     CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<ElfObject> core,
             const std::vector<std::pair<std::string, std::string>> &);
-    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
+    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg);
     virtual void stop(lwpid_t);
     virtual void resume(lwpid_t);
     virtual pid_t getPID() const;
     void stopProcess() { }
     void resumeProcess() { }
     virtual void load();
+};
+
+// RAII to stop a process.
+struct StopProcess {
+    Process *proc;
+public:
+    StopProcess(Process *proc_) : proc(proc_) { proc->stopProcess(); }
+    ~StopProcess() { proc->resumeProcess(); } 
 };

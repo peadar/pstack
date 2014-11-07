@@ -39,20 +39,21 @@ static int usage(void);
 std::ostream &
 Process::pstack(std::ostream &os, const PstackOptions &options)
 {
-    ps_pstop(this);
 
     // get its back trace.
     ThreadLister threadLister(this);
-    listThreads(threadLister);
-    if (threadLister.threadStacks.empty()) {
-        // get the register for the process itself, and use those.
-        CoreRegisters regs;
-        getRegs(ps_getpid(this),  &regs);
-        threadLister.threadStacks.push_back(ThreadStack());
-        threadLister.threadStacks.back().unwind(*this, regs);
+    {
+        StopProcess here(this);
+        listThreads(threadLister);
+        if (threadLister.threadStacks.empty()) {
+            // get the register for the process itself, and use those.
+            CoreRegisters regs;
+            getRegs(ps_getpid(this),  &regs);
+            threadLister.threadStacks.push_back(ThreadStack());
+            threadLister.threadStacks.back().unwind(*this, regs);
+        }
     }
 
-    ps_pcontinue(this);
     /*
      * resume at this point - maybe a bit optimistic if a shared library gets
      * unloaded while we print stuff out, but worth the risk, normally.

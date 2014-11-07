@@ -32,6 +32,7 @@ LiveProcess::LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid_)
 void
 LiveProcess::load()
 {
+    StopProcess here(this);
     char path[PATH_MAX];
     snprintf(path, sizeof path, "/proc/%d/auxv", pid);
     int fd = open(path, O_RDONLY);
@@ -42,15 +43,12 @@ LiveProcess::load()
     close(fd);
     if (rc == -1)
         throw Exception() << "failed to read 4k from " << path;
-    // need to suspend while processing auxv, and resume before calling ps_ routines to enumerate threads.
-    ps_pstop(this);
     processAUXV(buf, rc);
-    ps_pcontinue(this);
     Process::load();
 }
 
 bool
-LiveProcess::getRegs(lwpid_t pid, CoreRegisters *reg) const
+LiveProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
 {
 #ifdef __FreeBSD__
     int rc;
@@ -62,7 +60,10 @@ LiveProcess::getRegs(lwpid_t pid, CoreRegisters *reg) const
     return true;
 #endif
 #ifdef __linux__
-    return ptrace(__ptrace_request(PTRACE_GETREGS), pid, 0, reg) != -1;
+    stop(pid);
+    bool rc = ptrace(__ptrace_request(PTRACE_GETREGS), pid, 0, reg) != -1;
+    resume(pid);
+    return rc;
 #endif
 }
 
@@ -70,14 +71,13 @@ void
 LiveProcess::resume(lwpid_t pid)
 {
     auto &tcb = stoppedLwps[pid];
-    if (tcb.state == running)
+    if (--tcb.stopCount != 0)
         return;
 
     kill(pid, SIGCONT);
     if (ptrace(PT_DETACH, pid, (caddr_t)1, 0) != 0)
         std::clog << "failed to detach from process " << pid << ": " << strerror(errno);
 
-    tcb.state = running;
     if (debug && --stopCount == 0) {
         timeval tv;
         gettimeofday(&tv, 0);
@@ -88,18 +88,23 @@ LiveProcess::resume(lwpid_t pid)
     }
 }
 
-struct LiveThreadList {
+struct StopLWP {
     LiveProcess *proc;
-    LiveThreadList(LiveProcess *proc_) : proc(proc_) {}
+    StopLWP(LiveProcess *proc_) : proc(proc_) {}
     void operator()(const td_thrhandle_t *thr) {
         if (td_thr_dbsuspend(thr) == TD_NOCAPAB) {
             /*
              * This doesn't actually work under linux: just add the LWP
              * to the list of stopped lwps.
              */
+            if (debug)
+                *debug << "can't suspend LWP "  << thr << ": will do it later\n";
             td_thrinfo_t info;
             td_thr_get_info(thr, &info);
             proc->lwps.insert(info.ti_lid);
+        } else {
+            if (debug)
+                *debug << "suspended LWP "  << thr << "\n";
         }
     }
 };
@@ -109,11 +114,16 @@ LiveProcess::stopProcess()
 {
     stop(pid);
     // suspend everything quickly.
-    LiveThreadList lister(this);
+    StopLWP lister(this);
     listThreads(lister);
 
-    for (auto lwp = lwps.begin(); lwp != lwps.end(); ++lwp)
+    int i = 0;
+    for (auto lwp = lwps.begin(); lwp != lwps.end(); ++lwp) {
         stop(*lwp);
+        i++;
+    }
+    if (debug)
+        *debug << "attempted to stop " << i << " lwps\n";
 }
 
 
@@ -132,7 +142,7 @@ void
 LiveProcess::stop(lwpid_t pid)
 {
     auto &tcb = stoppedLwps[pid];
-    if (tcb.state == stopped)
+    if (tcb.stopCount++ != 0)
         return;
 
     if (stopCount++ == 0 && debug) {
@@ -143,11 +153,10 @@ LiveProcess::stop(lwpid_t pid)
     if (ptrace(PT_ATTACH, pid, 0, 0) == 0) {
         int status;
         pid_t waitedpid = waitpid(pid, &status, pid == this->pid ? 0 : __WCLONE);
-        if (waitedpid != -1) {
-            tcb.state = stopped;
+        if (waitedpid != -1)
             return;
-        }
-        if (debug) *debug << "wait failed: " << strerror(errno) << "\n";
+        if (debug)
+            *debug << "wait failed: " << strerror(errno) << "\n";
         return;
     }
     if (debug) *debug << "ptrace failed: " << strerror(errno) << "\n";
