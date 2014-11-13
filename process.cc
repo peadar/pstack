@@ -284,7 +284,7 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
 std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options)
 {
-    os << "thread: " << std::hex << thread.info.ti_tid << ", type: " << thread.info.ti_type << "\n";
+    os << "thread: " << (void *)thread.info.ti_tid << ", lwp: " << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
     for (auto frameI = thread.stack.begin(); frameI != thread.stack.end(); ++frameI) {
         auto &frame = *frameI;
         Elf_Addr objIp = 0;
