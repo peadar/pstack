@@ -202,6 +202,8 @@ struct DwarfLineState {
     unsigned is_stmt:1;
     unsigned basic_block:1;
     unsigned end_sequence:1;
+    unsigned prologue_end:1;
+    unsigned epilogue_begin:1;
     DwarfLineState(DwarfLineInfo *);
     void reset(DwarfLineInfo *);
 };

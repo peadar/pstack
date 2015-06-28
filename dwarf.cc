@@ -363,6 +363,8 @@ DwarfLineState::reset(DwarfLineInfo *li)
     is_stmt = li->default_is_stmt;
     basic_block = 0;
     end_sequence = 0;
+    prologue_end = 0;
+    epilogue_begin = 0;
 }
 
 static void
@@ -483,6 +485,12 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
                 break;
             case DW_LNS_set_basic_block:
                 state.basic_block = 1;
+                break;
+            case DW_LNS_set_prologue_end:
+                state.prologue_end = true;
+                break;
+            case DW_LNS_set_epilogue_begin:
+                state.epilogue_begin = true;
                 break;
             default:
                 abort();
@@ -609,6 +617,9 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
         value.ref = r.getfmtint();
         break;
 
+    case DW_FORM_ref_sig8:
+        value.ref = r.getu8();
+        break;
 
     default:
         abort();
