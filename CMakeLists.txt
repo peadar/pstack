@@ -7,6 +7,8 @@ add_executable(pstack pstack.cc )
 target_link_libraries(pstack dwelf)
 target_link_libraries(canal dwelf)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS,1)
+
 if(NOT ELF_BITS)
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
   SET(ELF_BITS 64)  

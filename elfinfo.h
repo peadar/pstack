@@ -54,6 +54,12 @@ extern "C" {
  * provide the same handy naming.
  */
 
+
+#ifndef ELF_BITS
+#error ELF BITS REDEF
+#define ELF_BITS 64
+#endif
+
 #define ELF_WORDSIZE ((ELF_BITS)/8)
 
 class ElfObject;
@@ -127,7 +133,7 @@ public:
     typedef std::vector<Elf_Phdr> ProgramHeaders;
     typedef std::vector<Elf_Shdr> SectionHeaders;
 private:
-    friend class ElfSection;
+    friend struct ElfSection;
     size_t fileSize;
     Elf_Ehdr elfHeader;
     ProgramHeaders programHeaders;
@@ -140,7 +146,6 @@ private:
     std::shared_ptr<ElfObject> debugObject;
     std::shared_ptr<ElfObject> getDebug();
 public:
-    const ElfSection getSection(const std::string &name, int type);
     SymbolSection getSymbols(const std::string &table);
     SectionHeaders sectionHeaders;
     std::shared_ptr<Reader> io; // IO for the ELF image.
@@ -149,7 +154,7 @@ public:
     std::string getName() const { return name; }
     const SectionHeaders &getSections() const { return sectionHeaders; }
     const ProgramHeaders &getSegments() const  { return programHeaders; }
-    const ElfSection getSection(const std::string &name, int type) const;
+    const ElfSection getSection(const std::string &name, Elf_Word type);
     const Elf_Ehdr &getElfHeader() const { return elfHeader; }
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(const std::string &name, Elf_Sym &sym);
