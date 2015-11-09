@@ -135,7 +135,7 @@ Process::load()
      * work while the process is stopped.
      */
 
-    if (execImage == 0)
+    if (!execImage)
         throw Exception() << "no executable image located for process";
 
     Elf_Addr r_debug_addr = findRDebugAddr();
@@ -205,7 +205,7 @@ Process::processAUXV(const void *datap, size_t len)
                 auto exeName = io->readString(hdr);
                 if (debug)
                     *debug << "filename from auxv: " << exeName << "\n";
-                if (execImage == 0)
+                if (!execImage)
                     execImage = std::make_shared<ElfObject>(exeName);
                 break;
 #endif
@@ -263,7 +263,7 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
             sep = ", ";
         }
         os << " ]";
-        if (obj != 0) {
+        if (obj) {
             os << ", \"off\": " << intptr_t(objIp) - sym.st_value;
             os << ", \"file\": " << "\"" << fileName << "\"";
             auto di = getDwarf(obj);
@@ -317,7 +317,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         }
         os << ")";
 
-        if (obj != 0) {
+        if (obj) {
             os << " in " << fileName;
             if (!options(PstackOptions::nosrc)) {
                 auto di = getDwarf(obj);

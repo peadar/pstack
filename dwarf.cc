@@ -1342,7 +1342,7 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr &procaddr)
 
     const DwarfFDE *fde = dwarf->debugFrame ? dwarf->debugFrame->findFDE(objaddr) : 0;
     if (fde == 0) {
-        if (dwarf->ehFrame == 0)
+        if (!dwarf->ehFrame)
             return 0;
         fde = dwarf->ehFrame->findFDE(objaddr);
         if (fde == 0)
