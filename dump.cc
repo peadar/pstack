@@ -410,8 +410,8 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
 
     os << ", \"sections\": [";
     const char *sep = "";
-    for (auto i = obj.getSections().begin(); i != obj.getSections().end(); ++i) {
-        os << sep << ElfSection(obj, &(*i));
+    for (auto &i : obj.getSections()) {
+        os << sep << ElfSection(obj, &i);
         sep = ",\n";
     }
     os << "]";
