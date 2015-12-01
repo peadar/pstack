@@ -14,7 +14,7 @@ class Process;
 
 enum DwarfHasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
 struct DwarfCIE;
-struct DwarfInfo;
+class DwarfInfo;
 class DWARFReader;
 class DwarfLineInfo;
 struct DwarfUnit;
@@ -312,6 +312,7 @@ class DwarfInfo {
     mutable std::list<DwarfPubnameUnit> pubnameUnits;
     mutable std::list<DwarfARangeSet> aranges;
     mutable std::map<Elf_Off, std::shared_ptr<DwarfUnit>> unitsm;
+    int version;
     mutable ElfSection info, debstr, pubnamesh, arangesh, debug_frame;
 public:
     std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
@@ -323,7 +324,6 @@ public:
     std::map<Elf_Off, std::shared_ptr<DwarfUnit>> &units() const;
     char *debugStrings;
     off_t lines;
-    int version;
     std::unique_ptr<DwarfFrameInfo> debugFrame;
     std::unique_ptr<DwarfFrameInfo> ehFrame;
     DwarfInfo(std::shared_ptr<ElfObject> object);
@@ -331,6 +331,7 @@ public:
     std::vector<std::pair<const DwarfFileEntry *, int>> sourceFromAddr(uintmax_t addr);
     uintmax_t unwind(Process *proc, DwarfRegisters *regs, uintmax_t addr);
     Elf_Addr getCFA(const Process &proc, const DwarfCallFrame *frame, const DwarfRegisters *regs);
+    int getVersion() const { return version; }
     ~DwarfInfo();
 };
 
@@ -398,8 +399,8 @@ class DWARFReader {
 public:
     std::shared_ptr<Reader> io;
     unsigned addrLen;
-    int version;
     size_t dwarfLen; // 8 => 64-bit. 4 => 32-bit.
+    int version;
 
     DWARFReader(std::shared_ptr<Reader> io_, int version_, Elf_Off off_, Elf_Word size_, size_t dwarfLen_)
         : off(off_)

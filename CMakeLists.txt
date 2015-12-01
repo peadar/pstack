@@ -7,7 +7,7 @@ add_executable(pstack pstack.cc )
 target_link_libraries(pstack dwelf)
 target_link_libraries(canal dwelf)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS,1)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT ELF_BITS)
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -23,7 +23,7 @@ if (PROFILE)
     set_target_properties(pstack PROPERTIES LINK_FLAGS -pg)
 endif(PROFILE)
 
-add_definitions("-std=c++0x")
+add_definitions("-std=c++0x" "-Wall")
 if (ELF_BITS EQUAL 32)
     add_definitions("-m32")
     set_target_properties(pstack PROPERTIES LINK_FLAGS -m32)

@@ -136,7 +136,6 @@ public:
     virtual void load();
 };
 
-
 class CoreProcess;
 class CoreReader : public Reader {
     CoreProcess *p;
@@ -147,7 +146,7 @@ public:
     std::string describe() const;
 };
 
-struct CoreProcess : public Process {
+class CoreProcess : public Process {
     pid_t pid;
     std::shared_ptr<ElfObject> coreImage;
     friend class CoreReader;

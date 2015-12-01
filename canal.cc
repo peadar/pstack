@@ -48,9 +48,9 @@ globmatch(string pattern, string name)
 struct ListedSymbol {
     Elf_Sym sym;
     Elf_Off objbase;
-    string objname;
-    size_t count;
     string name;
+    size_t count;
+    string objname;
     ListedSymbol(const Elf_Sym &sym_, Elf_Off objbase_, string name_, string object)
         : sym(sym_)
         , objbase(objbase_)
@@ -63,7 +63,7 @@ struct ListedSymbol {
     Elf_Off memaddr() const { return  sym.st_value + objbase; }
 };
 
-const bool operator < (const ListedSymbol &sym, Elf_Off addr) {
+bool operator < (const ListedSymbol &sym, Elf_Off addr) {
     return sym.memaddr() + sym.sym.st_size < addr;
 }
 
@@ -155,7 +155,6 @@ mainExcept(int argc, char *argv[])
                 in.open(optarg);
                 if (!in.good())
                     abort();
-                Elf_Off i;
                 char buf[1024];
                 int count = 0;
                 while (in.good()) {
