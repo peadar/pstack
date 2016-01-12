@@ -147,7 +147,6 @@ public:
 };
 
 class CoreProcess : public Process {
-    pid_t pid;
     std::shared_ptr<ElfObject> coreImage;
     friend class CoreReader;
 public:

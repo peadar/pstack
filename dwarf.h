@@ -208,7 +208,8 @@ struct DwarfLineState {
     void reset(DwarfLineInfo *);
 };
 
-struct DwarfLineInfo {
+class DwarfLineInfo {
+public:
     int default_is_stmt;
     uint8_t opcode_base;
     std::vector<int> opcode_lengths;
