@@ -37,20 +37,20 @@ struct ThreadLister {
 
 static int usage(void);
 std::ostream &
-Process::pstack(std::ostream &os, const PstackOptions &options)
+pstack(Process &proc, std::ostream &os, const PstackOptions &options)
 {
 
     // get its back trace.
-    ThreadLister threadLister(this);
+    ThreadLister threadLister(&proc);
     {
-        StopProcess here(this);
-        listThreads(threadLister);
+        StopProcess here(&proc);
+        proc.listThreads(threadLister);
         if (threadLister.threadStacks.empty()) {
             // get the register for the process itself, and use those.
             CoreRegisters regs;
-            getRegs(ps_getpid(this),  &regs);
+            proc.getRegs(ps_getpid(&proc),  &regs);
             threadLister.threadStacks.push_back(ThreadStack());
-            threadLister.threadStacks.back().unwind(*this, regs);
+            threadLister.threadStacks.back().unwind(proc, regs);
         }
     }
 
@@ -59,7 +59,7 @@ Process::pstack(std::ostream &os, const PstackOptions &options)
      * unloaded while we print stuff out, but worth the risk, normally.
      */
     for (auto s = threadLister.threadStacks.begin(); s != threadLister.threadStacks.end(); ++s) {
-        dumpStackText(os, *s, options);
+        proc.dumpStackText(os, *s, options);
         os << "\n";
     }
     return os;
@@ -69,7 +69,7 @@ static void
 doPstack(Process &proc, const PstackOptions &options)
 {
     proc.load();
-    proc.pstack(std::cout, options);
+    pstack(proc, std::cout, options);
 }
 
 int

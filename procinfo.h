@@ -79,7 +79,6 @@ public:
     std::ostream &dumpStackText(std::ostream &, const ThreadStack &, const PstackOptions &);
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &);
     template <typename T> void listThreads(const T &);
-    std::ostream &pstack(std::ostream &, const PstackOptions &options);
     Elf_Addr findNamedSymbol(const char *objectName, const char *symbolName) const;
     ~Process();
     virtual void load();
