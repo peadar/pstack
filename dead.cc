@@ -12,35 +12,20 @@ CoreProcess::CoreProcess(
 {
 }
 
-struct NotesCb {
-    CoreProcess *cp;
-    NotesCb(CoreProcess *cp_) : cp(cp_) {}
-    NoteIter operator()(const char *, u_int32_t, const void *, size_t) const;
-};
-
-NoteIter
-NotesCb::operator()(const char *name, u_int32_t type, const void *datap, size_t len) const
-{
-#ifdef NT_AUXV
-    if (strcmp(name, "CORE") == 0 && type == NT_AUXV) {
-        cp->processAUXV(datap, len);
-        return NOTE_DONE;
-    }
-#endif
-    return NOTE_CONTIN;
-}
-
 void
 CoreProcess::load()
 {
 #ifdef __linux__
-    NotesCb cb(this);
     /* Find the linux-gate VDSO, and treat as an ELF file */
-    coreImage->getNotes(cb);
+    for (auto note : coreImage->notes) {
+       if (note.name() == "CORE" && note.type() == NT_AUXV) {
+           processAUXV(note.data(), note.size());
+           break;
+       }
+    }
 #endif
     Process::load();
 }
-
 
 std::string CoreReader::describe() const
 {
@@ -129,28 +114,19 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 
 CoreReader::CoreReader(CoreProcess *p_) : p(p_) { }
 
-struct RegCallback {
-    lwpid_t pid;
-    CoreRegisters *reg;
-    NoteIter operator()(const char *name, u_int32_t type, const void *data, size_t len) const {
-        const prstatus_t *prstatus = (const prstatus_t *)data;
-#ifdef NT_PRSTATUS
-        if (strcmp(name, "CORE") == 0 && type == NT_PRSTATUS && prstatus->pr_pid == pid) {
-            memcpy(reg, (const DwarfRegisters *)&prstatus->pr_reg, sizeof(*reg));
-            return (NOTE_DONE);
-        }
-#endif
-        return NOTE_CONTIN;
-    }
-    RegCallback(lwpid_t pid_, CoreRegisters *reg_) : pid(pid_), reg(reg_) {}
-};
-
 bool
 CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
 {
-    RegCallback rc(pid, reg);
-    coreImage->getNotes(rc);
-    return true;
+   for (auto note : coreImage->notes) {
+        const prstatus_t *prstatus = (const prstatus_t *)note.data();
+#ifdef NT_PRSTATUS
+        if (note.name() == "CORE" && note.type() == NT_PRSTATUS && prstatus->pr_pid == pid) {
+            memcpy(reg, (const DwarfRegisters *)&prstatus->pr_reg, sizeof(*reg));
+            return true;
+        }
+#endif
+   }
+   return false;
 }
 
 void
@@ -165,30 +141,14 @@ CoreProcess::stop(lwpid_t pid)
     // can't stop a dead process.
 }
 
-struct PidCallback {
-    mutable pid_t pid;
-    NoteIter operator()(const char *name, u_int32_t type, const void *data, size_t len) const {
-#ifdef NT_PRSTATUS
-        if (strcmp(name, "CORE") == 0 && type == NT_PRSTATUS) {
-            const prstatus_t *status = (const prstatus_t *)data;
-            pid = status->pr_pid;
-            return NOTE_DONE;
-        }
-#endif
-        return NOTE_CONTIN;
-    }
-};
-
-
-
-
 pid_t
 CoreProcess::getPID() const
 {
-    PidCallback cb;
-    coreImage->getNotes(cb);
-    if (debug) *debug << "got pid: " << cb.pid << std::endl;
-    return cb.pid;
+    for (auto note : coreImage->notes) {
+        if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
+            const prstatus_t *status = (const prstatus_t *)note.data();
+            return status->pr_pid;
+        }
+    }
+    return -1;
 }
-
-

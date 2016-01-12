@@ -12,6 +12,46 @@ std::ostream *debug;
 static uint32_t elf_hash(string);
 bool noDebugLibs;
 
+ElfNoteIter
+ElfNotes::begin() const
+{
+   return ElfNoteIter(object, object->getSegments().begin());
+}
+
+ElfNoteIter
+ElfNotes::end() const
+{
+   return ElfNoteIter(object, object->getSegments().end());
+}
+
+std::string
+ElfNoteDesc::name() const
+{
+   char *buf = new char[note.n_namesz + 1];
+   object->io->readObj(offset + sizeof note, buf, note.n_namesz);
+   buf[note.n_namesz] = 0;
+   std::string s = buf;
+   delete[] buf;
+   return s;
+}
+
+const unsigned char *
+ElfNoteDesc::data() const
+{
+   if (databuf == 0) {
+      databuf = new unsigned char[note.n_descsz];
+      object->io->readObj(roundup2(offset + sizeof note + note.n_namesz, 4),
+            databuf, note.n_descsz);
+   }
+   return databuf;
+}
+
+size_t
+ElfNoteDesc::size() const
+{
+   return note.n_descsz;
+}
+
 /*
  * Parse out an ELF file into an ElfObject structure.
  */
@@ -27,11 +67,13 @@ ElfObject::findHeaderForAddress(Elf_Off a) const
 
 ElfObject::ElfObject(const string &name_)
     : name(name_)
+    , notes(this)
 {
     init(make_shared<CacheReader>(make_shared<FileReader>(name)));
 }
 
 ElfObject::ElfObject(shared_ptr<Reader> io_)
+   : notes(this)
 {
     name = io_->describe();
     init(io_);

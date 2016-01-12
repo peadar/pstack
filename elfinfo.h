@@ -127,6 +127,15 @@ struct ElfSection {
     ElfSection(const ElfObject &obj_, const Elf_Shdr *shdr_) : obj(obj_), shdr(shdr_) {}
 };
 
+class ElfNoteIter;
+
+struct ElfNotes {
+   ElfNoteIter begin() const;
+   ElfNoteIter end() const;
+   ElfObject *object;
+   ElfNotes(ElfObject *object_) : object(object_) {}
+};
+
 bool linearSymSearch(ElfSection &hdr, const std::string &name, Elf_Sym &);
 class ElfObject {
 public:
@@ -161,8 +170,9 @@ public:
     ElfObject(std::shared_ptr<Reader>);
     ElfObject(const std::string &name);
     ~ElfObject();
-    template <typename Callable> void getNotes(Callable &callback) const;
     const Elf_Phdr *findHeaderForAddress(Elf_Off) const;
+    bool findDebugInfo();
+    ElfNotes notes;
 };
 
 // Helpful for iterating over symbol sections.
@@ -215,41 +225,101 @@ std::ostream& operator<< (std::ostream &os, std::tuple<const ElfObject *, const 
 std::ostream& operator<< (std::ostream &os, const Elf_Dyn &d);
 std::ostream& operator<< (std::ostream &os, const ElfObject &obj);
 
-template <typename Callable> void
-ElfObject::getNotes(Callable &callback) const
-{
-    for (auto hdri = programHeaders.begin(); hdri != programHeaders.end(); ++hdri) {
-        auto &hdr = *hdri;
-        if (hdr.p_type == PT_NOTE) {
-            Elf_Note note;
-            off_t off = hdr.p_offset;
-            off_t e = off + hdr.p_filesz;
-            while (off < e) {
-                io->readObj(off, &note);
-                off += sizeof note;
-                char *name = new char[note.n_namesz + 1];
-                io->readObj(off, name, note.n_namesz);
-                name[note.n_namesz] = 0;
-                off += note.n_namesz;
-                off = roundup2(off, 4);
-                char *data = new char[note.n_descsz];
-                io->readObj(off, data, note.n_descsz);
-                off += note.n_descsz;
-                off = roundup2(off, 4);
-                NoteIter iter = callback(name, note.n_type, data, note.n_descsz);
-                delete[] data;
-                delete[] name;
-                switch (iter) {
-                case NOTE_DONE:
-                case NOTE_ERROR:
-                    return;
-                case NOTE_CONTIN:
-                    break;
-                }
-            }
-        }
-    }
-}
+class ElfNoteDesc {
+   Elf_Note note;
+   ElfObject *object;
+   off_t offset;
+   mutable unsigned char *databuf;
+public:
+   ElfNoteDesc(const ElfNoteDesc &rhs)
+      : note(rhs.note)
+      , object(rhs.object)
+      , offset(rhs.offset)
+      , databuf(0)
+   {
+      if (rhs.databuf) {
+         databuf = new unsigned char[rhs.size()];
+         memcpy(databuf, rhs.databuf, rhs.size());
+      }
+   }
+   std::string name() const;
+   const unsigned char *data() const;
+   size_t size() const;
+   int type()  const { return note.n_type; }
+   ElfNoteDesc(ElfObject *o, const Elf_Note &n, size_t off)
+      : note(n)
+      , object(o)
+      , offset(off)
+      , databuf(0)
+   {}
+   ~ElfNoteDesc() {
+      delete[] databuf;
+   }
+};
+
+struct ElfNoteIter {
+   ElfObject *object;
+   ElfObject::ProgramHeaders::const_iterator phdrs;
+   off_t noteOffset;
+   Elf_Note curNote;
+
+   ElfNoteDesc operator *() {
+      return ElfNoteDesc(object, curNote, noteOffset);
+   }
+
+   ElfNoteIter &operator++() {
+      auto newOff = noteOffset;
+      newOff += sizeof curNote + curNote.n_namesz;
+      newOff = roundup2(newOff, 4);
+      newOff += curNote.n_descsz;
+      newOff = roundup2(newOff, 4);
+      if (newOff >= phdrs->p_offset  + phdrs->p_filesz) {
+         if (!nextNoteHeader())
+            return *this;
+      } else {
+         noteOffset = newOff;
+      }
+      readNote();
+      return *this;
+   }
+
+   ElfNoteIter(ElfObject *object_, ElfObject::ProgramHeaders::const_iterator phdrs_)
+      : object(object_)
+      , phdrs(phdrs_)
+   {
+      if (nextNoteHeader())
+         readNote();
+   }
+
+   bool nextNoteHeader() {
+      if (phdrs == object->getSegments().end())
+         return false;
+
+      while (++phdrs != object->getSegments().end()) {
+         if (phdrs->p_type == PT_NOTE) {
+            noteOffset = phdrs->p_offset;
+            return true;
+         }
+      }
+      return false;
+   }
+
+   void readNote() {
+      object->io->readObj(noteOffset, &curNote);
+   }
+   bool operator == (const ElfNoteIter &rhs) const {
+      return object == rhs.object &&
+         phdrs == rhs.phdrs &&
+         (object->getSegments().end() == phdrs || noteOffset == rhs.noteOffset);
+   }
+   bool operator != (const ElfNoteIter &rhs) const {
+      return !(*this == rhs);
+   }
+};
+
+enum GNUNotes {
+   GNU_BUILD_ID = 3
+};
 
 
 #endif /* Guard. */

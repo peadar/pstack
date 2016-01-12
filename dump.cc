@@ -327,47 +327,40 @@ dwarfDumpCFAInsns(std::ostream &os, DWARFReader &r)
 }
 
 
-struct NotePrinter {
-    const ElfObject &obj;
-    const char *sep;
-    std::ostream &os;
-    NotePrinter(const ElfObject &obj_, std::ostream &os_): obj(obj_), sep(""), os(os_) {}
 
-    NoteIter operator() (const char *name, u_int32_t type, const void *datap, size_t len) {
-        os << sep;
-        sep = ",\n";
-        os
-            << "{ \"name\": \"" << name << "\""
-            << ", \"type\": \"" << type << "\"";
+void printNote(std::ostream &os, const ElfNoteDesc &note) {
+     os
+         << "{ \"name\": \"" << note.name() << "\""
+         << ", \"type\": \"" << note.type() << "\"";
 
-        // need to switch on type and name for notes.
-        if (strcmp(name, "CORE") == 0) {
-            switch (type) {
-                case NT_PRSTATUS: {
-                    assert(len >= sizeof (prstatus_t));
-                    const prstatus_t *prstatus = (const prstatus_t *)datap;
-                    os << ", \"prstatus\": " << *prstatus;
-                }
-                break;
-                case NT_AUXV: {
-                    const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
-                    const Elf_auxv_t *eaux = aux + len / sizeof *aux;
-                    const char *sep = "";
-                    os << ", \"auxv\": [";
-                    while (aux < eaux) {
-                        os << sep;
-                        sep = ",\n";
-                        os << *aux;
-                        aux++;
-                    }
-                    os << "]";
-                }
-                break;
-            }
-        }
-        os << " }";
-        return NOTE_CONTIN;
-    }
+     // need to switch on type and name for notes.
+     if (note.name() == "CORE") {
+         const unsigned char *datap = note.data();
+         size_t len = note.size();
+         switch (note.type()) {
+             case NT_PRSTATUS: {
+                 assert(len >= sizeof (prstatus_t));
+                 const prstatus_t *prstatus = (const prstatus_t *)datap;
+                 os << ", \"prstatus\": " << *prstatus;
+             }
+             break;
+             case NT_AUXV: {
+                 const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
+                 const Elf_auxv_t *eaux = aux + len / sizeof *aux;
+                 const char *sep = "";
+                 os << ", \"auxv\": [";
+                 while (aux < eaux) {
+                     os << sep;
+                     sep = ",\n";
+                     os << *aux;
+                     aux++;
+                 }
+                 os << "]";
+             }
+             break;
+         }
+     }
+     os << " }";
 };
 
 
@@ -442,9 +435,11 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
 
     sep = "";
     os << ", \"notes\": [";
-    NotePrinter notePrinter(obj, os);
-
-    obj.getNotes(notePrinter);
+    for (const auto note : obj.notes) {
+        os << sep;
+        sep = ",\n";
+       printNote(os, note);
+    }
 
     os << "]";
     return os << "}";
