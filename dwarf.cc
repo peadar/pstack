@@ -378,8 +378,10 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
 {
     uint32_t total_length = r.getlength(&r.dwarfLen);
     Elf_Off end = r.getOffset() + total_length;
-    Elf_Off prologue_length = r.getfmtuint();
-    Elf_Off expectedEnd = prologue_length + r.getOffset();
+
+    int version = r.getu16();
+    Elf_Off header_length = r.getfmtuint();
+    Elf_Off expectedEnd = header_length + r.getOffset();
     int min_insn_length = r.getu8();
     default_is_stmt = r.getu8();
     int line_base = r.gets8();
