@@ -88,8 +88,9 @@ LiveProcess::resume(lwpid_t pid)
     }
 }
 
-struct StopLWP {
+class StopLWP {
     LiveProcess *proc;
+public:
     StopLWP(LiveProcess *proc_) : proc(proc_) {}
     void operator()(const td_thrhandle_t *thr) {
         if (td_thr_dbsuspend(thr) == TD_NOCAPAB) {

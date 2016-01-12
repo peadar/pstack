@@ -38,7 +38,6 @@ typedef struct user_regs_struct  elf_regs;
 #error "not linux?"
 #endif
 
-static int gFrameArgs = 6; /* number of arguments to print */
 static size_t gMaxFrames = 1024; /* max number of frames to read */
 
 void
@@ -113,14 +112,14 @@ delall(T &container)
 }
 
 Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_, const PathReplacementList &prl)
-    : vdso(0)
-    , io(std::make_shared<CacheReader>(io_))
-    , pathReplacements(prl)
-    , execImage(exec)
-    , entry(0)
+    : entry(0)
+    , vdso(0)
     , isStatic(false)
     , sysent(0)
     , agent(0)
+    , execImage(exec)
+    , pathReplacements(prl)
+    , io(std::make_shared<CacheReader>(io_))
 {
 }
 
@@ -227,7 +226,6 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
         auto frame = *frameI;
         Elf_Addr objIp = 0;
         std::shared_ptr<ElfObject> obj;
-        int lineNo;
         Elf_Sym sym;
         std::string fileName;
         std::string symName = "unknown";
@@ -289,7 +287,6 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         auto &frame = *frameI;
         Elf_Addr objIp = 0;
         std::shared_ptr<ElfObject> obj;
-        int lineNo;
         Elf_Sym sym;
         std::string fileName = "unknown file";
         std::string symName = "unknown";
@@ -495,7 +492,6 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
     stack.clear();
     try {
         /* Put a bound on the number of iterations. */
-        Elf_Addr cfa = 0;
         Elf_Addr ip = REG(regs, ip);
         DwarfRegisters dr;
         dwarfPtToDwarf(&dr, &regs);

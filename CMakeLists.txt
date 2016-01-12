@@ -1,13 +1,17 @@
-cmake_minimum_required(VERSION 2.6)
-project (pstack)
+cmake_minimum_required(VERSION 3.1.0)
+project(pstack CXX)
 add_executable(t t.cc)
 add_executable(canal canal.cc)
 add_library(dwelf STATIC dead.cc dump.cc dwarf.cc elf.cc live.cc process.cc proc_service.cc reader.cc util.cc)
+
 add_executable(pstack pstack.cc )
 target_link_libraries(pstack dwelf)
 target_link_libraries(canal dwelf)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS,1)
+set_target_properties(pstack PROPERTIES CXX_STANDARD 11)
+set_target_properties(dwelf PROPERTIES CXX_STANDARD 11)
+set_target_properties(canal PROPERTIES CXX_STANDARD 11)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT ELF_BITS)
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -23,7 +27,6 @@ if (PROFILE)
     set_target_properties(pstack PROPERTIES LINK_FLAGS -pg)
 endif(PROFILE)
 
-add_definitions("-std=c++0x")
 if (ELF_BITS EQUAL 32)
     add_definitions("-m32")
     set_target_properties(pstack PROPERTIES LINK_FLAGS -m32)

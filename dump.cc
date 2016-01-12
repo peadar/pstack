@@ -195,7 +195,7 @@ operator <<(std::ostream &os, const std::pair<const DwarfInfo *, const DwarfCIE 
         << ", \"instrlen\": " << dcie.second->end - dcie.second->instructions
         << ", \"instructions\": ";
    ;
-   DWARFReader r(dcie.first->elf->io, dcie.first->version, dcie.second->instructions, dcie.second->end - dcie.second->instructions, ELF_BITS / 8);
+   DWARFReader r(dcie.first->elf->io, dcie.first->getVersion(), dcie.second->instructions, dcie.second->end - dcie.second->instructions, ELF_BITS / 8);
     dwarfDumpCFAInsns(os, r);
     return os
         << " }";
@@ -331,7 +331,7 @@ struct NotePrinter {
     const ElfObject &obj;
     const char *sep;
     std::ostream &os;
-    NotePrinter(const ElfObject &obj_, std::ostream &os_): obj(obj_), os(os_), sep("") {}
+    NotePrinter(const ElfObject &obj_, std::ostream &os_): obj(obj_), sep(""), os(os_) {}
 
     NoteIter operator() (const char *name, u_int32_t type, const void *datap, size_t len) {
         os << sep;
