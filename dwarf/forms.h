@@ -24,3 +24,6 @@ DWARF_FORM(DW_FORM_exprloc, 0x18)
 DWARF_FORM(DW_FORM_flag_present, 0x19)
 // XXX: 1a->1f
 DWARF_FORM(DW_FORM_ref_sig8, 0x20)
+//XXX: GNU extensions. Please someone show me a proper references for these.
+DWARF_FORM(DW_FORM_GNU_strp_alt, 0x1f21)
+DWARF_FORM(DW_FORM_GNU_ref_alt, 0x1f20)

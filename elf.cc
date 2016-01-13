@@ -1,5 +1,7 @@
 #include <limits>
 #include <iostream>
+#include <iomanip>
+#include <unistd.h>
 #include "util.h"
 #include "elfinfo.h"
 #include <algorithm>
@@ -320,8 +322,20 @@ std::shared_ptr<ElfObject> ElfObject::getDebug()
 {
     if (noDebugLibs)
         return std::shared_ptr<ElfObject>();
+
     if (!debugLoaded) {
         debugLoaded = true;
+
+        for (auto note : notes) {
+           if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
+              std::clog << "GNU buildID: ";
+              auto data = note.data();
+              for (auto i = 0; i < note.size(); ++i)
+                 std::clog << std::hex << std::setw(2) << std::setfill('0') << int(data[i]);
+              std::clog << "\n";
+              break;
+           }
+        }
 
         std::ostringstream stream;
         stream << io->describe();

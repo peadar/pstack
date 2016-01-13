@@ -1,11 +1,16 @@
 cmake_minimum_required(VERSION 2.8.11)
 project(pstack CXX)
+
+include_directories("/usr/include/python2.7/")
 add_executable(t t.cc)
 add_executable(canal canal.cc)
 add_library(dwelf STATIC dead.cc dump.cc dwarf.cc elf.cc live.cc process.cc proc_service.cc reader.cc util.cc)
 
-add_executable(dumpit dumpit.cc proc_service.cc)
-target_link_libraries(dumpit dwelf)
+add_library(gentypes SHARED pyplug.cc staticstub.cc)
+target_link_libraries(gentypes dwelf)
+
+add_executable(ctypes ctypes.cc proc_service.cc)
+target_link_libraries(ctypes dwelf)
 
 add_executable(pstack pstack.cc )
 target_link_libraries(pstack dwelf)
@@ -44,6 +49,6 @@ if("${CMAKE_SYSTEM}" MATCHES "Linux")
     add_definitions("-D_LARGEFILE_SOURCE")
     target_link_libraries(pstack "-lthread_db")
     target_link_libraries(canal "-lthread_db")
-    target_link_libraries(dumpit "-lthread_db")
+    target_link_libraries(ctypes "-lthread_db")
     target_link_libraries(t "-lpthread -ldl")
 endif("${CMAKE_SYSTEM}" MATCHES "Linux")

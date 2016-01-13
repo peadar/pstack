@@ -1,4 +1,6 @@
 #include <stack>
+#include <libgen.h>
+#include <sstream>
 #include <unistd.h>
 #include <elf.h>
 #include <err.h>
@@ -172,6 +174,7 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
     , pubnamesh(obj->getSection(".debug_pubnames", SHT_PROGBITS))
     , arangesh(obj->getSection(".debug_aranges", SHT_PROGBITS))
     , debug_frame(obj->getSection(".debug_frame", SHT_PROGBITS))
+    , altImageLoaded(false)
     , abbrev(obj->getSection(".debug_abbrev", SHT_PROGBITS))
     , lineshdr(obj->getSection(".debug_line", SHT_PROGBITS))
     , elf(obj)
@@ -215,7 +218,7 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
 }
 
 std::list<DwarfPubnameUnit> &
-DwarfInfo::pubnames() const
+DwarfInfo::pubnames()
 {
     if (pubnamesh) {
         DWARFReader r(pubnamesh, version, 0, 0);
@@ -227,7 +230,7 @@ DwarfInfo::pubnames() const
 }
 
 std::map<Elf_Off, std::shared_ptr<DwarfUnit>> &
-DwarfInfo::units() const
+DwarfInfo::units()
 {
     if (info) {
         DWARFReader reader(info, version, 0, 0);
@@ -241,7 +244,7 @@ DwarfInfo::units() const
 }
 
 std::list<DwarfARangeSet> &
-DwarfInfo::ranges() const
+DwarfInfo::ranges()
 {
     if (arangesh) {
         DWARFReader r(arangesh, version, 0, 0);
@@ -286,7 +289,7 @@ DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
     }
 }
 
-DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
+DwarfUnit::DwarfUnit(DwarfInfo *di, DWARFReader &r)
     : dwarf(di)
     , offset(r.getOffset())
 {
@@ -529,6 +532,19 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
     , entry(entry_)
 {
     switch (spec->form) {
+
+    case DW_FORM_GNU_strp_alt: {
+        DwarfInfo *info = entry->unit->dwarf;
+        value.string = info->getAltDwarf()->debugStrings + r.getfmtint();
+        break;
+    }
+
+    case DW_FORM_GNU_ref_alt: {
+        DwarfInfo *info = entry->unit->dwarf;
+        value.ref = r.getfmtint();
+        break;
+    }
+
     case DW_FORM_addr:
         value.addr = r.getuint(entry->unit->addrlen);
         break;
@@ -557,8 +573,16 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
         value.udata = r.getuleb128();
         break;
 
+    case DW_FORM_ref_udata:
+        value.ref = r.getuleb128();
+        break;
+
     case DW_FORM_strp:
         value.string = entry->unit->dwarf->debugStrings + r.getfmtint();
+        break;
+
+    case DW_FORM_ref1:
+        value.ref = r.getu8();
         break;
 
     case DW_FORM_ref2:
@@ -670,7 +694,7 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries)
         intmax_t code = r.getuleb128();
         if (code == 0)
             return;
-        allEntries[offset] = entries[offset] = std::make_shared<DwarfEntry>(r, code, this, offset);
+        dwarf->allEntries[offset] = entries[offset] = std::make_shared<DwarfEntry>(r, code, this, offset);
     }
 }
 
@@ -1052,6 +1076,48 @@ DwarfCIE::execInsns(DWARFReader &r, int version, uintmax_t addr, uintmax_t wantA
         }
     }
     return frame;
+}
+
+std::shared_ptr<DwarfInfo>
+DwarfInfo::getAltDwarf()
+{
+    if (!altDwarf) {
+        altDwarf = std::make_shared<DwarfInfo>(getAltImage());
+    }
+    altDwarf->units(); // Load DWARF info.
+    return altDwarf;
+}
+
+std::shared_ptr<ElfObject>
+DwarfInfo::getAltImage()
+{
+    if (!altImageLoaded) {
+        altImageLoaded = true;
+        auto dbg = elf->getDebug();
+        auto shdr = dbg->getSection(".gnu_debugaltlink", 0);
+        char name[1024];
+        assert(shdr->sh_size < sizeof name);
+        name[shdr->sh_size] = 0;
+        dbg->io->read(shdr->sh_offset, shdr->sh_size, name);
+        char *path;
+        if (name[0] != '/') {
+            // Not relative - prefix it with dirname of the image
+            std::ostringstream os;
+            os << dbg->io->describe();
+            char absbuf[1024];
+            strncpy(absbuf, os.str().c_str(), sizeof absbuf);
+            dirname(absbuf);
+            strncat(absbuf, "/", sizeof absbuf);
+            strncat(absbuf, "/", sizeof absbuf);
+            strncat(absbuf, name, sizeof absbuf);
+            path = absbuf;
+        } else {
+            path = name;
+        }
+        std::clog << "io: " << dbg->io->describe() << ", alt path: " << name << "\n";
+        altImage = std::make_shared<ElfObject>(path);
+    }
+    return altImage;
 }
 
 intmax_t

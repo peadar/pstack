@@ -149,7 +149,7 @@ std::ostream &operator << (std::ostream &, const DwarfEntry &);
 std::ostream &operator << (std::ostream &, const DwarfExpressionOp);
 std::ostream &operator << (std::ostream &, const DwarfFileEntry &);
 std::ostream &operator << (std::ostream &, const DwarfFrameInfo &);
-std::ostream &operator << (std::ostream &, const DwarfInfo &);
+std::ostream &operator << (std::ostream &, DwarfInfo &);
 std::ostream &operator << (std::ostream &, const DwarfLineInfo &);
 std::ostream &operator << (std::ostream &, const DwarfLineState &);
 std::ostream &operator << (std::ostream &, const DwarfPubname &);

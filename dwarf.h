@@ -221,7 +221,7 @@ public:
 };
 
 struct DwarfUnit {
-    const DwarfInfo *dwarf;
+    DwarfInfo *dwarf;
     off_t offset;
     void decodeEntries(DWARFReader &r, DwarfEntries &entries);
     uint32_t length;
@@ -231,9 +231,8 @@ struct DwarfUnit {
     const unsigned char *entryPtr;
     const unsigned char *lineInfo;
     DwarfEntries entries;
-    DwarfEntries allEntries;
     DwarfLineInfo lines;
-    DwarfUnit(const DwarfInfo *, DWARFReader &);
+    DwarfUnit(DwarfInfo *, DWARFReader &);
     std::string name() const;
     DwarfUnit() : dwarf(0), offset(-1) {}
 };
@@ -310,19 +309,26 @@ struct DwarfFrameInfo {
 };
 
 class DwarfInfo {
-    mutable std::list<DwarfPubnameUnit> pubnameUnits;
-    mutable std::list<DwarfARangeSet> aranges;
-    mutable std::map<Elf_Off, std::shared_ptr<DwarfUnit>> unitsm;
+    std::list<DwarfPubnameUnit> pubnameUnits;
+    std::list<DwarfARangeSet> aranges;
+    std::map<Elf_Off, std::shared_ptr<DwarfUnit>> unitsm;
     int version;
-    mutable ElfSection info, debstr, pubnamesh, arangesh, debug_frame;
+    ElfSection info, debstr, pubnamesh, arangesh, debug_frame;
+    std::shared_ptr<ElfObject> altImage;
+    std::shared_ptr<DwarfInfo> altDwarf;
+    bool altImageLoaded;
+
 public:
+    std::shared_ptr<ElfObject> getAltImage();
+    std::shared_ptr<DwarfInfo> getAltDwarf();
+    mutable DwarfEntries allEntries;
     std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
     const ElfSection abbrev, lineshdr;
     // interesting shdrs from the exe.
     std::shared_ptr<ElfObject> elf;
-    std::list<DwarfARangeSet> &ranges() const;
-    std::list<DwarfPubnameUnit> &pubnames() const;
-    std::map<Elf_Off, std::shared_ptr<DwarfUnit>> &units() const;
+    std::list<DwarfARangeSet> &ranges();
+    std::list<DwarfPubnameUnit> &pubnames();
+    std::map<Elf_Off, std::shared_ptr<DwarfUnit>> &units();
     char *debugStrings;
     off_t lines;
     std::unique_ptr<DwarfFrameInfo> debugFrame;
