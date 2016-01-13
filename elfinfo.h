@@ -153,8 +153,9 @@ private:
     std::string name;
     bool debugLoaded;
     std::shared_ptr<ElfObject> debugObject;
-public:
     std::shared_ptr<ElfObject> getDebug();
+public:
+    static std::shared_ptr<ElfObject> getDebug(std::shared_ptr<ElfObject> &);
     SymbolSection getSymbols(const std::string &table);
     SectionHeaders sectionHeaders;
     std::shared_ptr<Reader> io; // IO for the ELF image.

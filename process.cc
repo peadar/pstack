@@ -159,7 +159,7 @@ Process::getDwarf(std::shared_ptr<ElfObject> elf)
 {
     auto &info = dwarf[elf];
     if (info == 0)
-        info = new DwarfInfo(elf);
+        info = new DwarfInfo(ElfObject::getDebug(elf));
     return info;
 }
 

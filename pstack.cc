@@ -93,7 +93,7 @@ emain(int argc, char **argv)
                 std::cout << "{ \"elf\": ";
             std::cout << *dumpobj;
             if (c == 'D') {
-                DwarfInfo dwarf(dumpobj);
+                DwarfInfo dwarf(ElfObject::getDebug(dumpobj));
                 std::cout << ", \"dwarf\": " << dwarf << "}";
             }
             return 0;

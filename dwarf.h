@@ -303,7 +303,7 @@ struct DwarfFrameInfo {
     std::map<Elf_Addr, DwarfCIE> cies;
     std::list<DwarfFDE> fdeList;
     DwarfFrameInfo(DwarfInfo *, DWARFReader &, FIType type);
-    Elf_Addr decodeCIEFDEHdr(int version, DWARFReader &, Elf_Addr &id, enum FIType, DwarfCIE **);
+    Elf_Addr decodeCIEFDEHdr(int version, DWARFReader &, Elf_Addr &id, off_t start, DwarfCIE **);
     const DwarfFDE *findFDE(Elf_Addr) const;
     bool isCIE(Elf_Off id);
 };

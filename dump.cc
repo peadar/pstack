@@ -153,7 +153,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
 {
     const DwarfValue &value = attr.value;
     auto dwarf = attr.entry->unit->dwarf;
-    auto dbg = dwarf->elf->getDebug();
+    auto elf = dwarf->elf;
     switch (attr.spec->form) {
     case DW_FORM_addr:
         os << value.addr;
@@ -174,7 +174,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
         os << "\"" << value.string << "\"";
         break;
     case DW_FORM_ref_addr: {
-        auto section = dbg->getSection(".debug_info", 0);
+        auto section = elf->getSection(".debug_info", 0);
         auto off = section->sh_offset + attr.value.ref;
         const auto &allEntries = attr.entry->unit->dwarf->allEntries;
         const auto &entry = allEntries.find(off);

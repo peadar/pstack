@@ -1093,17 +1093,16 @@ DwarfInfo::getAltImage()
 {
     if (!altImageLoaded) {
         altImageLoaded = true;
-        auto dbg = elf->getDebug();
-        auto shdr = dbg->getSection(".gnu_debugaltlink", 0);
+        auto shdr = elf->getSection(".gnu_debugaltlink", 0);
         char name[1024];
         assert(shdr->sh_size < sizeof name);
         name[shdr->sh_size] = 0;
-        dbg->io->read(shdr->sh_offset, shdr->sh_size, name);
+        elf->io->read(shdr->sh_offset, shdr->sh_size, name);
         char *path;
         if (name[0] != '/') {
             // Not relative - prefix it with dirname of the image
             std::ostringstream os;
-            os << dbg->io->describe();
+            os << elf->io->describe();
             char absbuf[1024];
             strncpy(absbuf, os.str().c_str(), sizeof absbuf);
             dirname(absbuf);
@@ -1114,7 +1113,7 @@ DwarfInfo::getAltImage()
         } else {
             path = name;
         }
-        std::clog << "io: " << dbg->io->describe() << ", alt path: " << name << "\n";
+        std::clog << "io: " << elf->io->describe() << ", alt path: " << name << "\n";
         altImage = std::make_shared<ElfObject>(path);
     }
     return altImage;
@@ -1272,7 +1271,7 @@ DWARFReader::getlength(size_t *addrLen)
 }
 
 Elf_Off
-DwarfFrameInfo::decodeCIEFDEHdr(int version, DWARFReader &r, Elf_Addr &id, enum FIType type, DwarfCIE **ciep)
+DwarfFrameInfo::decodeCIEFDEHdr(int version, DWARFReader &r, Elf_Addr &id, off_t start, DwarfCIE **ciep)
 {
     size_t addrLen;
     Elf_Off length = r.getlength(&addrLen);
@@ -1283,7 +1282,7 @@ DwarfFrameInfo::decodeCIEFDEHdr(int version, DWARFReader &r, Elf_Addr &id, enum 
     Elf_Off idoff = r.getOffset();
     id = r.getuint(addrLen);
     if (!isCIE(id) && ciep) {
-        auto ciei = cies.find(type == FI_EH_FRAME ? idoff - id : id);
+        auto ciei = cies.find(start == 0 ? idoff - id : id + start);
         *ciep = ciei != cies.end() ? &ciei->second : 0;
     }
     return idoff + length;
@@ -1303,10 +1302,11 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, DWARFReader &reader, enum FIType
 
     // decode in 2 passes: first for CIE, then for FDE
     off_t start = reader.getOffset();
+    off_t decodeStart = type == FI_DEBUG_FRAME ? start : 0;
     off_t nextoff;
     for (; !reader.empty();  reader.setOffset(nextoff)) {
         size_t cieoff = reader.getOffset();
-        nextoff = decodeCIEFDEHdr(info->getVersion(), reader, cieid, type, 0);
+        nextoff = decodeCIEFDEHdr(info->getVersion(), reader, cieid, decodeStart, 0);
         if (nextoff == 0)
             break;
         if (isCIE(cieid))
@@ -1315,7 +1315,7 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, DWARFReader &reader, enum FIType
     reader.setOffset(start);
     for (reader.setOffset(start); !reader.empty(); reader.setOffset(nextoff)) {
         DwarfCIE *cie;
-        nextoff = decodeCIEFDEHdr(info->getVersion(), reader, cieid, type, &cie);
+        nextoff = decodeCIEFDEHdr(info->getVersion(), reader, cieid, decodeStart, &cie);
         if (nextoff == 0)
             break;
         if (!isCIE(cieid)) {
