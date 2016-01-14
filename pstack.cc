@@ -1,6 +1,8 @@
 #include <sysexits.h>
 #include <unistd.h>
 #include <iostream>
+#include <sys/types.h>
+#include <signal.h>
 
 #include "dwarf.h"
 #include "dump.h"
@@ -85,17 +87,15 @@ emain(int argc, char **argv)
 
     while ((c = getopt(argc, argv, "d:D:hsvn")) != -1) {
         switch (c) {
-        case 'D':
+        case 'D': {
+            auto dumpobj = std::make_shared<ElfObject>(std::make_shared<FileReader>(optarg, -1));
+            DwarfInfo di(ElfObject::getDebug(dumpobj));
+            std::cout << di;
+            return 0;
+        }
         case 'd': {
             /* Undocumented option to dump image contents */
-            auto dumpobj = std::make_shared<ElfObject>(std::make_shared<FileReader>(optarg, -1));
-            if (c == 'D')
-                std::cout << "{ \"elf\": ";
-            std::cout << *dumpobj;
-            if (c == 'D') {
-                DwarfInfo dwarf(ElfObject::getDebug(dumpobj));
-                std::cout << ", \"dwarf\": " << dwarf << "}";
-            }
+            std::cout << ElfObject(std::make_shared<FileReader>(optarg, -1));
             return 0;
         }
         case 'h':

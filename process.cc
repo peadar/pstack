@@ -10,6 +10,7 @@ extern "C" {
 }
 #include "procinfo.h"
 #include "dwarf.h"
+#include "dwarfproc.h"
 #include "dump.h"
 
 typedef struct regs ptrace_regs;
@@ -244,9 +245,6 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
 
         os
             << frameSep << "{ \"ip\": " << intptr_t(frame->ip)
-#ifdef i386
-            << ", \"bp\": " << intptr_t(frame->bp)
-#endif
             << ", \"unwind\": \"" << frame->unwindBy << "\"";
 
         frameSep = ", ";
@@ -333,9 +331,6 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         if (debug) {
             os
                 << "\t(ip=0x" << std::hex << intptr_t(frame->ip)
-#ifdef i386
-                << ", bp=0x" << std::hex << intptr_t(frame->bp)
-#endif
                 << ", symval=0x" << std::hex << sym.st_value
                 << ", off=0x" << std::hex << intptr_t(objIp) - sym.st_value;
             if (strcmp(frame->unwindBy, "END") != 0)

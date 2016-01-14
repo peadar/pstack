@@ -1,4 +1,8 @@
 #include "elfinfo.h"
+extern "C" {
+#include "thread_db.h"
+}
+#include "proc_service.h"
 #include "dwarf.h"
 #include <map>
 #include <set>

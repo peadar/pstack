@@ -1,4 +1,5 @@
 #include "dump.h"
+#include <sys/procfs.h>
 #include <cassert>
 
 static void dwarfDumpCFAInsns(std::ostream &os, DWARFReader &r);
@@ -483,16 +484,6 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
 }
 
 std::ostream &
-operator <<(std::ostream &os, const elf_siginfo &prinfo)
-{
-    return os
-        << "{ \"si_signo\": " << prinfo.si_signo
-        << ", \"si_code\": " << prinfo.si_code
-        << ", \"si_errno\": " << prinfo.si_errno
-        << " }";
-}
-
-std::ostream &
 operator <<(std::ostream &os, const timeval &tv)
 {
     return os
@@ -514,27 +505,6 @@ operator <<(std::ostream &os, const Elf_auxv_t &a)
     }
     return os
         << ", \"a_val\": " << a.a_un.a_val
-        << "}";
-}
-
-std::ostream &
-operator <<(std::ostream &os, const prstatus_t &prstat)
-{
-    return os
-        << "{ \"pr_info\": " << prstat.pr_info
-        << ", \"pr_cursig\": " << prstat.pr_cursig
-        << ", \"pr_sigpend\": " << prstat.pr_sigpend
-        << ", \"pr_sighold\": " << prstat.pr_sighold
-        << ", \"pr_pid\": " << prstat.pr_pid
-        << ", \"pr_ppid\": " << prstat.pr_ppid
-        << ", \"pr_pgrp\": " << prstat.pr_pgrp
-        << ", \"pr_sid\": " << prstat.pr_sid
-        << ", \"pr_utime\": " << prstat.pr_utime
-        << ", \"pr_stime\": " << prstat.pr_stime
-        << ", \"pr_cutime\": " << prstat.pr_cutime
-        << ", \"pr_cstime\": " << prstat.pr_cstime
-        << ", \"pr_reg\": " << intptr_t(prstat.pr_reg)
-        << ", \"pr_fpvalid\": " << prstat.pr_fpvalid
         << "}";
 }
 
@@ -804,7 +774,7 @@ operator << (std::ostream &os, DynTag tag)
     T(DT_VERNEED)
     T(DT_VERNEEDNUM)
     T(DT_AUXILIARY)
-    default: return os << "unknown " << tag;
+    default: return os << "unknown " << tag.tag;
     }
 #undef T
 }
@@ -827,102 +797,35 @@ operator<< (std::ostream &os, DwarfExpressionOp op)
 #undef DWARF_OP
 }
 
-#define T(a, b) case a: return os << #a " (" b ")";
-std::ostream &operator << (std::ostream &os, td_err_e err)
+std::ostream &
+operator <<(std::ostream &os, const elf_siginfo &prinfo)
 {
-switch (err) {
-T(TD_OK, "No error.")
-T(TD_ERR, "No further specified error.")
-T(TD_NOTHR, "No matching thread found.")
-T(TD_NOSV, "No matching synchronization handle found.")
-T(TD_NOLWP, "No matching light-weighted process found.")
-T(TD_BADPH, "Invalid process handle.")
-T(TD_BADTH, "Invalid thread handle.")
-T(TD_BADSH, "Invalid synchronization handle.")
-T(TD_BADTA, "Invalid thread agent.")
-T(TD_BADKEY, "Invalid key.")
-T(TD_NOMSG, "No event available.")
-T(TD_NOFPREGS, "No floating-point register content available.")
-T(TD_NOLIBTHREAD, "Application not linked with thread library.")
-T(TD_NOEVENT, "Requested event is not supported.")
-T(TD_NOCAPAB, "Capability not available.")
-T(TD_DBERR, "Internal debug library error.")
-T(TD_NOAPLIC, "Operation is not applicable.")
-T(TD_NOTSD, "No thread-specific data available.")
-T(TD_MALLOC, "Out of memory.")
-T(TD_PARTIALREG, "Not entire register set was read or written.")
-T(TD_NOXREGS, "X register set not available for given thread.")
-T(TD_TLSDEFER, "Thread has not yet allocated TLS for given module.")
-T(TD_VERSION, "Version if libpthread and libthread_db do not match.")
-T(TD_NOTLS, "There is no TLS segment in the given module.")
-default: return os << "unknown TD error " << int(err);
+    return os
+        << "{ \"si_signo\": " << prinfo.si_signo
+        << ", \"si_code\": " << prinfo.si_code
+        << ", \"si_errno\": " << prinfo.si_errno
+        << " }";
 }
-}
-#undef T
 
-#ifdef NOTYET
-
-static const char *
-auxTypeName(int t)
+std::ostream &
+operator <<(std::ostream &os, const prstatus_t &prstat)
 {
-#define T(name) case name: return #name;
-    switch (t) {
-         T(AT_IGNORE)
-         T(AT_EXECFD)
-         T(AT_PHDR)
-         T(AT_PHENT)
-         T(AT_PHNUM)
-         T(AT_PAGESZ)
-         T(AT_BASE)
-         T(AT_FLAGS)
-         T(AT_ENTRY)
-         T(AT_NOTELF)
-         T(AT_UID)
-         T(AT_EUID)
-         T(AT_GID)
-         T(AT_EGID)
-         T(AT_CLKTCK)
-         T(AT_SYSINFO)
-         T(AT_SYSINFO_EHDR)
-         default: return "unknown";
-    }
-#undef T
+    return os
+        << "{ \"pr_info\": " << prstat.pr_info
+        << ", \"pr_cursig\": " << prstat.pr_cursig
+        << ", \"pr_sigpend\": " << prstat.pr_sigpend
+        << ", \"pr_sighold\": " << prstat.pr_sighold
+        << ", \"pr_pid\": " << prstat.pr_pid
+        << ", \"pr_ppid\": " << prstat.pr_ppid
+        << ", \"pr_pgrp\": " << prstat.pr_pgrp
+        << ", \"pr_sid\": " << prstat.pr_sid
+        << ", \"pr_utime\": " << prstat.pr_utime
+        << ", \"pr_stime\": " << prstat.pr_stime
+        << ", \"pr_cutime\": " << prstat.pr_cutime
+        << ", \"pr_cstime\": " << prstat.pr_cstime
+        << ", \"pr_reg\": " << intptr_t(prstat.pr_reg)
+        << ", \"pr_fpvalid\": " << prstat.pr_fpvalid
+        << "}";
 }
-
-#define T(a) case a: return #a;
-static const char *
-DW_EH_PE_typeStr(unsigned char c)
-{
-    switch (c & 0xf) {
-        T(DW_EH_PE_absptr)
-        T(DW_EH_PE_uleb128)
-        T(DW_EH_PE_udata2)
-        T(DW_EH_PE_udata4)
-        T(DW_EH_PE_udata8)
-        T(DW_EH_PE_sleb128)
-        T(DW_EH_PE_sdata2)
-        T(DW_EH_PE_sdata4)
-        T(DW_EH_PE_sdata8)
-        default: return "(unknown)";
-    }
-}
-
-static const char *
-DW_EH_PE_relStr(unsigned char c)
-{
-    switch (c & 0xf0) {
-    T(DW_EH_PE_pcrel)
-    T(DW_EH_PE_textrel)
-    T(DW_EH_PE_datarel)
-    T(DW_EH_PE_funcrel)
-    T(DW_EH_PE_aligned)
-    default: return "(unknown)";
-    }
-
-}
-#undef T
-
-
-#endif
 
 

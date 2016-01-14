@@ -329,16 +329,18 @@ ElfObject::getDebug()
     if (!debugLoaded) {
         debugLoaded = true;
 
+    if (debug) {
         for (auto note : notes) {
            if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
-              std::clog << "GNU buildID: ";
+              *debug << "GNU buildID: ";
               auto data = note.data();
               for (auto i = 0; i < note.size(); ++i)
-                 std::clog << std::hex << std::setw(2) << std::setfill('0') << int(data[i]);
-              std::clog << "\n";
+                 *debug << std::hex << std::setw(2) << std::setfill('0') << int(data[i]);
+              *debug << "\n";
               break;
            }
         }
+    }
 
         std::ostringstream stream;
         stream << io->describe();

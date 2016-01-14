@@ -18,8 +18,13 @@
    02111-1307 USA.  */
 
 /* The definitions in this file must correspond to those in the debugger.  */
-#include <sys/procfs.h>
 
+#ifndef PROC_SERVICE_H
+#define PROC_SERVICE_H
+#ifdef __cplusplus
+extern "C" {
+#endif
+#include <sys/procfs.h>
 /* Functions in this interface return one of these status codes.  */
 typedef enum
 {
@@ -85,3 +90,7 @@ extern ps_err_e ps_pcontinue (const struct ps_prochandle *);
 /* Stop or continue the given LWP alone.  */
 extern ps_err_e ps_lstop (const struct ps_prochandle *, lwpid_t);
 extern ps_err_e ps_lcontinue (const struct ps_prochandle *, lwpid_t);
+#ifdef __cplusplus
+}
+#endif
+#endif

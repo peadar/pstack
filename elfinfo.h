@@ -38,11 +38,7 @@ extern bool noDebugLibs;
 #include <list>
 #include <vector>
 #include <map>
-#include <elf.h>
 #include <memory>
-extern "C" {
-#include <thread_db.h>
-}
 #include <elf.h>
 #include "reader.h"
 
@@ -153,8 +149,8 @@ private:
     std::string name;
     bool debugLoaded;
     std::shared_ptr<ElfObject> debugObject;
-    std::shared_ptr<ElfObject> getDebug();
 public:
+    std::shared_ptr<ElfObject> getDebug();
     static std::shared_ptr<ElfObject> getDebug(std::shared_ptr<ElfObject> &);
     SymbolSection getSymbols(const std::string &table);
     SectionHeaders sectionHeaders;

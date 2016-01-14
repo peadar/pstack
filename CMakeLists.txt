@@ -1,24 +1,19 @@
 cmake_minimum_required(VERSION 2.8.11)
 project(pstack CXX)
+add_definitions("-std=c++11")
 
 include_directories("/usr/include/python2.7/")
-add_executable(t t.cc)
+
 add_executable(canal canal.cc)
-add_library(dwelf STATIC dead.cc dump.cc dwarf.cc elf.cc live.cc process.cc proc_service.cc reader.cc util.cc)
+add_library(dwelf SHARED dwarf.cc elf.cc reader.cc util.cc dump.cc)
 
-add_library(gentypes SHARED pyplug.cc staticstub.cc)
-target_link_libraries(gentypes dwelf)
-
-add_executable(ctypes ctypes.cc proc_service.cc)
-target_link_libraries(ctypes dwelf)
+add_library(procman SHARED dead.cc live.cc process.cc proc_service.cc dwarfproc.cc procdump.cc)
+target_link_libraries(procman dwelf)
 
 add_executable(pstack pstack.cc )
-target_link_libraries(pstack dwelf)
-target_link_libraries(canal dwelf)
+target_link_libraries(pstack dwelf procman)
+target_link_libraries(canal dwelf procman)
 
-set_target_properties(pstack PROPERTIES CXX_STANDARD 11)
-set_target_properties(dwelf PROPERTIES CXX_STANDARD 11)
-set_target_properties(canal PROPERTIES CXX_STANDARD 11)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT ELF_BITS)
@@ -30,25 +25,14 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
 endif(CMAKE_SIZEOF_VOID_P EQUAL 4)
 endif(NOT ELF_BITS)
 
-if (PROFILE)
-    add_definitions("-pg")
-    set_target_properties(pstack PROPERTIES LINK_FLAGS -pg)
-endif(PROFILE)
-
 if (ELF_BITS EQUAL 32)
-    add_definitions("-m32 -std=c++11")
+    add_definitions("-m32")
     set_target_properties(pstack PROPERTIES LINK_FLAGS -m32)
     set_target_properties(canal PROPERTIES LINK_FLAGS -m32)
-    set_target_properties(t PROPERTIES LINK_FLAGS -m32)
 endif()
 
 add_definitions("-DELF_BITS=${ELF_BITS}")
-
-if("${CMAKE_SYSTEM}" MATCHES "Linux")
-    add_definitions("-D_FILE_OFFSET_BITS=64")
-    add_definitions("-D_LARGEFILE_SOURCE")
-    target_link_libraries(pstack "-lthread_db")
-    target_link_libraries(canal "-lthread_db")
-    target_link_libraries(ctypes "-lthread_db")
-    target_link_libraries(t "-lpthread -ldl")
-endif("${CMAKE_SYSTEM}" MATCHES "Linux")
+target_link_libraries(pstack "-lthread_db")
+target_link_libraries(canal "-lthread_db")
+add_definitions("-D_FILE_OFFSET_BITS=64")
+add_definitions("-D_LARGEFILE_SOURCE")

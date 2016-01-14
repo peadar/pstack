@@ -2,15 +2,12 @@
 #define DWARF_H
 
 #include "elfinfo.h"
-#include <sys/ucontext.h>
 #include <map>
 #include <list>
 #include <vector>
 #include <string>
 
 #define DWARF_MAXREG 128
-
-class Process;
 
 enum DwarfHasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
 struct DwarfCIE;
@@ -161,21 +158,29 @@ struct DwarfEntry {
 
     DwarfEntry();
 
-    const DwarfAttribute &attrForName(DwarfAttrName name) const {
+    bool attrForName(DwarfAttrName name, const DwarfAttribute **ent) const {
         auto attr = attributes.find(name);
-        if (attr != attributes.end())
-            return attr->second;
-        throw "no such attribute";
+        if (attr != attributes.end()) {
+            if (ent)
+               *ent = &attr->second;
+            return true;
+        }
+        return false;
+    }
+
+    const DwarfAttribute &attrForName(DwarfAttrName name) const {
+        const DwarfAttribute *ent;
+        if (!attrForName(name, &ent))
+           throw "no such attribute";
+        return *ent;
     }
 
     DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit, intmax_t offset);
     const char *name() {
-        try {
-            return attrForName(DW_AT_name).value.string;
-        }
-        catch (...) {
-            return "anon";
-        }
+        const DwarfAttribute *ent;
+        if (attrForName(DW_AT_name, &ent))
+            return ent->value.string;
+        return "anon";
     }
 };
 
@@ -336,8 +341,6 @@ public:
     DwarfInfo(std::shared_ptr<ElfObject> object);
     intmax_t decodeAddress(DWARFReader &, int encoding) const;
     std::vector<std::pair<const DwarfFileEntry *, int>> sourceFromAddr(uintmax_t addr);
-    uintmax_t unwind(Process *proc, DwarfRegisters *regs, uintmax_t addr);
-    Elf_Addr getCFA(const Process &proc, const DwarfCallFrame *frame, const DwarfRegisters *regs);
     int getVersion() const { return version; }
     ~DwarfInfo();
 };
@@ -345,14 +348,6 @@ public:
 const DwarfAbbreviation *dwarfUnitGetAbbrev(const DwarfUnit *unit, intmax_t code);
 const char *dwarfSOpcodeName(enum DwarfLineSOpcode code);
 const char *dwarfEOpcodeName(enum DwarfLineEOpcode code);
-int dwarfComputeCFA(Process *, const DwarfInfo *, DwarfFDE *, DwarfCallFrame *, DwarfRegisters *, uintmax_t addr);
-void dwarfArchGetRegs(const gregset_t *regs, uintmax_t *dwarfRegs);
-uintmax_t dwarfGetReg(const DwarfRegisters *regs, int regno);
-void dwarfSetReg(DwarfRegisters *regs, int regno, uintmax_t regval);
-DwarfRegisters *dwarfPtToDwarf(DwarfRegisters *dwarf, const CoreRegisters *sys);
-const DwarfRegisters *dwarfDwarfToPt(CoreRegisters *sys, const DwarfRegisters *dwarf);
-
-/* Linux extensions: */
 
 enum DwarfCFAInstruction {
 
@@ -459,14 +454,11 @@ public:
     void skip(Elf_Off amount) { off += amount; }
 };
 
-
 #define DWARF_OP(op, value, args) op = value,
-
 enum DwarfExpressionOp {
 #include "dwarf/ops.h"
     LASTOP = 0x100
 };
-
 #undef DWARF_OP
 
 #define DW_EH_PE_absptr 0x00
@@ -478,11 +470,11 @@ enum DwarfExpressionOp {
 #define DW_EH_PE_sdata2 0x0A
 #define DW_EH_PE_sdata4 0x0B
 #define DW_EH_PE_sdata8 0x0C
-
 #define DW_EH_PE_pcrel  0x10
 #define DW_EH_PE_textrel        0x20
 #define DW_EH_PE_datarel        0x30
 #define DW_EH_PE_funcrel        0x40
 #define DW_EH_PE_aligned        0x50
-bool dwarfUnwind(Process &, DwarfRegisters *, Elf_Addr &pc /*in/out */);
+
+
 #endif
