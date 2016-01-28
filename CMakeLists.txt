@@ -40,3 +40,4 @@ add_definitions("-D_LARGEFILE_SOURCE")
 
 install(TARGETS pstack canal DESTINATION bin)
 install(TARGETS dwelf procman DESTINATION lib)
+install(DIRECTORY pstack DESTINATION include)
