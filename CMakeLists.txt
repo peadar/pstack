@@ -38,6 +38,10 @@ target_link_libraries(procman "-lthread_db")
 add_definitions("-D_FILE_OFFSET_BITS=64")
 add_definitions("-D_LARGEFILE_SOURCE")
 
+
+set_target_properties(dwelf PROPERTIES VERSION 1.0.0 SOVERSION 1)
+set_target_properties(procman PROPERTIES VERSION 1.0.0 SOVERSION 1)
+
 install(TARGETS pstack canal DESTINATION bin)
 install(TARGETS dwelf procman DESTINATION lib)
 install(DIRECTORY libpstack DESTINATION include)

@@ -25,35 +25,35 @@ typedef struct {
 
 #define DWARF_TAG(a,b) a = b,
 enum DwarfTag {
-#include "dwarf/tags.h"
+#include <libpstack/dwarf/tags.h>
     DW_TAG_none = 0x0
 };
 #undef DWARF_TAG
 
 #define DWARF_FORM(a,b) a = b,
 enum DwarfForm {
-#include "dwarf/forms.h"
+#include <libpstack/dwarf/forms.h>
     DW_FORM_none = 0x0
 };
 #undef DWARF_FORM
 
 #define DWARF_ATTR(a,b) a = b,
 enum DwarfAttrName {
-#include "dwarf/attr.h"
+#include <libpstack/dwarf/attr.h>
     DW_AT_none = 0x0
 };
 #undef DWARF_ATTR
 
 #define DWARF_LINE_S(a,b) a = b,
 enum DwarfLineSOpcode {
-#include "dwarf/line_s.h"
+#include <libpstack/dwarf/line_s.h>
     DW_LNS_none = -1
 };
 #undef DWARF_LINE_S
 
 #define DWARF_LINE_E(a,b) a = b,
 enum DwarfLineEOpcode {
-#include "dwarf/line_e.h"
+#include <libpstack/dwarf/line_e.h>
     DW_LNE_none = -1
 };
 #undef DWARF_LINE_E
@@ -456,7 +456,7 @@ public:
 
 #define DWARF_OP(op, value, args) op = value,
 enum DwarfExpressionOp {
-#include "dwarf/ops.h"
+#include <libpstack/dwarf/ops.h>
     LASTOP = 0x100
 };
 #undef DWARF_OP

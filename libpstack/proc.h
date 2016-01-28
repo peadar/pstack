@@ -1,6 +1,6 @@
 #include <elf.h>
 extern "C" {
-#include "thread_db.h"
+#include <thread_db.h>
 }
 #include <libpstack/ps_callback.h>
 #include <libpstack/dwarf.h>
