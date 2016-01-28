@@ -1,7 +1,7 @@
 #ifndef DWARF_H
 #define DWARF_H
 
-#include <pstack/elf.h>
+#include <libpstack/elf.h>
 #include <map>
 #include <list>
 #include <vector>

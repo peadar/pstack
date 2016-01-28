@@ -14,8 +14,8 @@
 #include <sstream>
 #include <iostream>
 
-#include "pstack/elf.h"
-#include "pstack/dwarf.h"
+#include <libpstack/elf.h>
+#include <libpstack/dwarf.h>
 
 extern int gVerbose;
 

@@ -4,11 +4,11 @@
 #include <sys/types.h>
 #include <signal.h>
 
-#include <pstack/dwarf.h>
-#include <pstack/dump.h>
-#include <pstack/elf.h>
-#include <pstack/proc.h>
-#include <pstack/ps_callback.h>
+#include <libpstack/dwarf.h>
+#include <libpstack/dump.h>
+#include <libpstack/elf.h>
+#include <libpstack/proc.h>
+#include <libpstack/ps_callback.h>
 
 
 struct ThreadLister {

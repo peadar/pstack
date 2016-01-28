@@ -2,8 +2,8 @@
 #include <iostream>
 #include <iomanip>
 #include <unistd.h>
-#include <pstack/util.h>
-#include <pstack/elf.h>
+#include <libpstack/util.h>
+#include <libpstack/elf.h>
 #include <algorithm>
 
 using std::string;

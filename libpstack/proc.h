@@ -2,8 +2,8 @@
 extern "C" {
 #include "thread_db.h"
 }
-#include <pstack/ps_callback.h>
-#include <pstack/dwarf.h>
+#include <libpstack/ps_callback.h>
+#include <libpstack/dwarf.h>
 #include <map>
 #include <set>
 #include <sstream>

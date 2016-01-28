@@ -5,9 +5,9 @@
 #include <exception>
 #include <algorithm>
 #include <memory>
-#include <pstack/proc.h>
-#include <pstack/elf.h>
-#include <pstack/dwarf.h>
+#include <libpstack/proc.h>
+#include <libpstack/elf.h>
+#include <libpstack/dwarf.h>
 
 using namespace std;
 

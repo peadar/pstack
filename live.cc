@@ -1,4 +1,4 @@
-#include <pstack/proc.h>
+#include <libpstack/proc.h>
 #include <err.h>
 
 #include <iostream>
@@ -7,7 +7,7 @@
 #include <sys/ptrace.h>
 #include <fcntl.h>
 #include <wait.h>
-#include <pstack/ps_callback.h>
+#include <libpstack/ps_callback.h>
 
 std::string
 LiveReader::procname(pid_t pid, const std::string &base)

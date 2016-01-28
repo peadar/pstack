@@ -40,7 +40,7 @@ extern bool noDebugLibs;
 #include <map>
 #include <memory>
 #include <elf.h>
-#include "reader.h"
+#include <libpstack/util.h>
 
 
 /*

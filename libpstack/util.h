@@ -1,11 +1,50 @@
-#include <string.h>
-#include <list>
-#include <string>
-#include <stdio.h>
-#include <unordered_map>
-#include <memory>
+// Copyright (c) 2016 Arista Networks, Inc.  All rights reserved.
+// Arista Networks, Inc. Confidential and Proprietary.
 
-#include "ex.h"
+#ifndef LIBPSTACK_UTIL_H
+#define LIBPSTACK_UTIL_H
+
+
+#include <exception>
+#include <list>
+#include <memory>
+#include <sstream>
+#include <stdio.h>
+#include <string>
+#include <string.h>
+#include <unordered_map>
+
+std::string dirname(std::string);
+
+class Exception : public std::exception {
+    mutable std::ostringstream str;
+    mutable std::string intermediate;
+public:
+    Exception() {
+    }
+
+    Exception(const Exception &rhs) {
+        str << rhs.str.str();
+    }
+
+    ~Exception() throw () {
+    }
+
+    const char *what() const throw() {
+        intermediate = str.str();
+        return intermediate.c_str();
+    }
+    std::ostream &getStream() const { return str; }
+    typedef void IsStreamable;
+};
+
+template <typename E, typename Object, typename Test = typename E::IsStreamable>
+inline const E &operator << (const E &stream, const Object &o) {
+    stream.getStream() << o;
+    return stream;
+}
+
+extern std::ostream *debug;
 class Reader {
     Reader(const Reader &);
 public:
@@ -73,3 +112,5 @@ public:
     std::string describe() const;
 };
 std::string linkResolve(std::string name);
+
+#endif // LIBPSTACK_UTIL_H

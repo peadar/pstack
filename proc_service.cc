@@ -1,6 +1,6 @@
 #include <stdarg.h>
-#include <pstack/proc.h>
-#include <pstack/ps_callback.h>
+#include <libpstack/proc.h>
+#include <libpstack/ps_callback.h>
 
 extern "C" {
 
