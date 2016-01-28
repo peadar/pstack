@@ -5,13 +5,11 @@
 #include <iostream>
 #include <link.h>
 #include <unistd.h>
-extern "C" {
-#include "proc_service.h"
-}
-#include "procinfo.h"
-#include "dwarf.h"
-#include "dwarfproc.h"
-#include "dump.h"
+#include <pstack/ps_callback.h>
+#include <pstack/proc.h>
+#include <pstack/dwarf.h>
+#include <pstack/dwarfproc.h>
+#include <pstack/dump.h>
 
 typedef struct regs ptrace_regs;
 

@@ -1,7 +1,7 @@
 #include <iostream>
-#include "elfinfo.h"
-#include "dwarf.h"
-#include "procinfo.h"
+#include <pstack/elf.h>
+#include <pstack/dwarf.h>
+#include <pstack/proc.h>
 
 CoreProcess::CoreProcess(
         std::shared_ptr<ElfObject> exe,

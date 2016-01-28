@@ -2,11 +2,11 @@
 // Arista Networks, Inc. Confidential and Proprietary.
 #include <stack>
 
-#include "procinfo.h"
-#include "elfinfo.h"
-#include "dwarf.h"
-#include "dwarfproc.h"
-#include "dump.h"
+#include <pstack/proc.h>
+#include <pstack/elf.h>
+#include <pstack/dwarf.h>
+#include <pstack/dwarfproc.h>
+#include <pstack/dump.h>
 
 
 static int
@@ -14,7 +14,7 @@ dwarfIsArchReg(int regno)
 {
 #define REGMAP(regno, regname) case regno: return 1;
 switch (regno) {
-#include "dwarf/archreg.h"
+#include <pstack/dwarf/archreg.h>
 default: return 0;
 }
 #undef REGMAP
@@ -338,7 +338,7 @@ DwarfRegisters *
 dwarfPtToDwarf(DwarfRegisters *dwarf, const CoreRegisters *sys)
 {
 #define REGMAP(number, field) dwarf->reg[number] = sys->field;
-#include "dwarf/archreg.h"
+#include <pstack/dwarf/archreg.h>
 #undef REGMAP
     return dwarf;
 }
@@ -347,7 +347,7 @@ const DwarfRegisters *
 dwarfDwarfToPt(CoreRegisters *core, const DwarfRegisters *dwarf)
 {
 #define REGMAP(number, field) core->field = dwarf->reg[number];
-#include "dwarf/archreg.h"
+#include <pstack/dwarf/archreg.h>
 #undef REGMAP
     return dwarf;
 }

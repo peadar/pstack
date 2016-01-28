@@ -5,15 +5,11 @@
 #include <exception>
 #include <algorithm>
 #include <memory>
-#include "procinfo.h"
-#include "elfinfo.h"
-#include "dwarf.h"
+#include <pstack/proc.h>
+#include <pstack/elf.h>
+#include <pstack/dwarf.h>
 
 using namespace std;
-
-extern "C" {
-#include "proc_service.h"
-}
 
 static int
 globmatchR(const char *pattern, const char *name)

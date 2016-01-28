@@ -2,9 +2,9 @@
 extern "C" {
 #include <thread_db.h>
 }
-#include "proc_service.h"
-#include "dump.h"
-#include "procdump.h"
+#include <pstack/ps_callback.h>
+#include <pstack/dump.h>
+#include <pstack/procdump.h>
 
 #define T(a, b) case a: return os << #a " (" b ")";
 std::ostream &operator << (std::ostream &os, td_err_e err)

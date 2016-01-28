@@ -1,8 +1,8 @@
 #include <stdarg.h>
-#include "procinfo.h"
+#include <pstack/proc.h>
+#include <pstack/ps_callback.h>
 
 extern "C" {
-#include "proc_service.h"
 
 ps_err_e
 ps_pcontinue(const struct ps_prochandle *ph)

@@ -1,4 +1,4 @@
-#include "procinfo.h"
+#include <pstack/proc.h>
 #include <err.h>
 
 #include <iostream>
@@ -7,9 +7,7 @@
 #include <sys/ptrace.h>
 #include <fcntl.h>
 #include <wait.h>
-extern "C" {
-#include "proc_service.h"
-}
+#include <pstack/ps_callback.h>
 
 std::string
 LiveReader::procname(pid_t pid, const std::string &base)

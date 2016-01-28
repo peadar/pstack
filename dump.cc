@@ -1,4 +1,4 @@
-#include "dump.h"
+#include "pstack/dump.h"
 #include <sys/procfs.h>
 #include <cassert>
 
@@ -93,7 +93,7 @@ std::ostream & operator << (std::ostream &os, const DwarfARangeSet &ranges) {
 std::ostream & operator << (std::ostream &os, DwarfTag tag) {
 #define DWARF_TAG(x,y) case x: return os << #x;
     switch (tag) {
-#include "dwarf/tags.h"
+#include "pstack/dwarf/tags.h"
     default: return os << int(tag);
     }
 #undef DWARF_TAG
@@ -102,7 +102,7 @@ std::ostream & operator << (std::ostream &os, DwarfTag tag) {
 std::ostream &operator << (std::ostream &os, DwarfLineEOpcode code) {
 #define DWARF_LINE_E(x,y) case x: return os << "\"" #x "\"";
     switch (code) {
-#include "dwarf/line_e.h"
+#include "pstack/dwarf/line_e.h"
     default: return os << int(code);
     }
 #undef DWARF_LINE_E
@@ -111,7 +111,7 @@ std::ostream &operator << (std::ostream &os, DwarfLineEOpcode code) {
 std::ostream &operator << (std::ostream &os, DwarfForm code) {
 #define DWARF_FORM(x,y) case x: return os << #x;
     switch (code) {
-#include "dwarf/forms.h"
+#include "pstack/dwarf/forms.h"
     default: return os << "(unknown)";
     }
 #undef DWARF_FORM
@@ -120,7 +120,7 @@ std::ostream &operator << (std::ostream &os, DwarfForm code) {
 std::ostream &operator << (std::ostream &os, DwarfAttrName code) {
 #define DWARF_ATTR(x,y) case x: return os <<  #x ;
     switch (code) {
-#include "dwarf/attr.h"
+#include "pstack/dwarf/attr.h"
     default: return os << int(code);
     }
 #undef DWARF_ATTR
@@ -791,7 +791,7 @@ operator<< (std::ostream &os, DwarfExpressionOp op)
 {
 #define DWARF_OP(name, value, args) case name: return os << #name;
     switch (op) {
-#include "dwarf/ops.h"
+#include "pstack/dwarf/ops.h"
         default: return os << "(unknown operation)";
     }
 #undef DWARF_OP
