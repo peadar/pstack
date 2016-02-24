@@ -120,6 +120,8 @@ Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_, c
     , pathReplacements(prl)
     , io(std::make_shared<CacheReader>(io_))
 {
+   if (exec)
+      entry = exec->getElfHeader().e_entry;
 }
 
 void
@@ -154,11 +156,14 @@ Process::load()
 }
 
 DwarfInfo *
-Process::getDwarf(std::shared_ptr<ElfObject> elf)
+Process::getDwarf(std::shared_ptr<ElfObject> elf, bool debug)
 {
+    if (debug)
+        elf = ElfObject::getDebug(elf);
+
     auto &info = dwarf[elf];
     if (info == 0)
-        info = new DwarfInfo(ElfObject::getDebug(elf));
+        info = new DwarfInfo(elf);
     return info;
 }
 
@@ -203,8 +208,12 @@ Process::processAUXV(const void *datap, size_t len)
                 auto exeName = io->readString(hdr);
                 if (debug)
                     *debug << "filename from auxv: " << exeName << "\n";
-                if (!execImage)
+                if (!execImage) {
                     execImage = std::make_shared<ElfObject>(exeName);
+                    if (!entry)
+                       entry = execImage->getElfHeader().e_entry;
+                }
+
                 break;
 #endif
         }

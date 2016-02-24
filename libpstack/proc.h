@@ -72,7 +72,7 @@ public:
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) = 0;
     void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
     LoadedObject findObject(Elf_Addr addr) const;
-    DwarfInfo *getDwarf(std::shared_ptr<ElfObject>);
+    DwarfInfo *getDwarf(std::shared_ptr<ElfObject>, bool debug = true);
     Process(std::shared_ptr<ElfObject> obj, std::shared_ptr<Reader> mem, const PathReplacementList &prl);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
