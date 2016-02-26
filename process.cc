@@ -501,8 +501,27 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
             StackFrame *frame = new StackFrame(ip);
             stack.push_back(frame);
             if (!dwarfUnwind(p, &dr, ip)) {
+#ifdef __i386__
+
+#define R_EBP 5
+#define R_EIP 8
+
+                // Read the instruction pointer from just below the base pointer,
+                // and the new base pointer, from the existing one.
+                uint32_t newBp;
+                uint32_t newIp;
+                p.io->readObj((dr.reg[R_EBP] + 4) & 0xffffffff, &newIp);
+                p.io->readObj(dr.reg[R_EBP] & 0xffffffff, &newBp);
+                dr.reg[R_EBP] = newBp;
+                dr.reg[R_EIP] = newIp;
+                ip = newIp;
+                if (newIp == 0) {
+#endif
                 frame->unwindBy = "end";
                 break;
+#ifdef __i386__
+                }
+#endif
             }
             frame->unwindBy = "dwarf";
         }
