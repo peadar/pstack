@@ -6,9 +6,9 @@ include_directories("/usr/include/python2.7/")
 include_directories(".")
 
 add_executable(canal canal.cc)
-add_library(dwelf SHARED dwarf.cc elf.cc reader.cc util.cc dump.cc)
+add_library(dwelf STATIC dwarf.cc elf.cc reader.cc util.cc dump.cc)
 
-add_library(procman SHARED dead.cc live.cc process.cc proc_service.cc dwarfproc.cc procdump.cc)
+add_library(procman STATIC dead.cc live.cc process.cc proc_service.cc dwarfproc.cc procdump.cc)
 target_link_libraries(procman dwelf)
 
 add_executable(pstack pstack.cc )
