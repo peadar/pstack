@@ -142,7 +142,6 @@ private:
     size_t fileSize;
     Elf_Ehdr elfHeader;
     ProgramHeaders programHeaders;
-    void init(FILE *);
     std::unique_ptr<ElfSymHash> hash;
     void init(const std::shared_ptr<Reader> &); // want constructor chaining
     std::map<std::string, Elf_Shdr *> namedSection;
