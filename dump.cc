@@ -574,7 +574,7 @@ operator <<(std::ostream &os, const ElfSection &sec)
         for (; symoff < esym; symoff += sizeof (Elf_Sym)) {
             Elf_Sym sym;
             o.io->readObj(symoff, &sym);
-            std::pair<const ElfSection &, const Elf_Sym *> t = std::make_pair(sec, &sym);
+            std::pair<const ElfSection &, const Elf_Sym *> t = std::make_pair(std::ref(sec), &sym);
             os << sep << t;
             sep = ",\n";
         }
