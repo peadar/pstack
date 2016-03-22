@@ -132,7 +132,7 @@ CoreReader::CoreReader(CoreProcess *p_) : p(p_) { }
 struct RegCallback {
     lwpid_t pid;
     CoreRegisters *reg;
-    NoteIter operator()(const char *name, u_int32_t type, const void *data, size_t len) const {
+    NoteIter operator()(const char *name, u_int32_t type, const void *data, size_t) const {
         const prstatus_t *prstatus = (const prstatus_t *)data;
 #ifdef NT_PRSTATUS
         if (strcmp(name, "CORE") == 0 && type == NT_PRSTATUS && prstatus->pr_pid == pid) {
@@ -160,14 +160,14 @@ CoreProcess::resume(pid_t)
 }
 
 void
-CoreProcess::stop(lwpid_t pid)
+CoreProcess::stop(lwpid_t)
 {
     // can't stop a dead process.
 }
 
 struct PidCallback {
     mutable pid_t pid;
-    NoteIter operator()(const char *name, u_int32_t type, const void *data, size_t len) const {
+    NoteIter operator()(const char *name, u_int32_t type, const void *data, size_t) const {
 #ifdef NT_PRSTATUS
         if (strcmp(name, "CORE") == 0 && type == NT_PRSTATUS) {
             const prstatus_t *status = (const prstatus_t *)data;

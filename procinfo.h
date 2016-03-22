@@ -129,7 +129,7 @@ class LiveProcess : public Process {
     int stopCount;
     timeval start;
     std::set<pid_t> lwps; // lwps we could not suspend.
-    friend class LiveThreadList;
+    friend struct LiveThreadList;
 public:
     LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
@@ -152,13 +152,12 @@ public:
     std::string describe() const;
 };
 
-struct CoreProcess : public Process {
+class CoreProcess : public Process {
     pid_t pid;
     std::shared_ptr<ElfObject> coreImage;
     friend class CoreReader;
 public:
-    CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<ElfObject> core,
-            const std::vector<std::pair<std::string, std::string>> &);
+    CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<ElfObject> core, const PathReplacementList &);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
     virtual void stop(lwpid_t);
     virtual void resume(lwpid_t);

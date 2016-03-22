@@ -14,9 +14,9 @@ class Process;
 
 enum DwarfHasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
 struct DwarfCIE;
-struct DwarfInfo;
+class DwarfInfo;
 class DWARFReader;
-class DwarfLineInfo;
+struct DwarfLineInfo;
 struct DwarfUnit;
 struct DwarfFrameInfo;
 struct DwarfEntry;
@@ -404,8 +404,8 @@ public:
         , end(off_ + size_)
         , io(io_)
         , addrLen(ELF_BITS / 8)
-        , dwarfLen(dwarfLen_)
         , version(version_)
+        , dwarfLen(dwarfLen_)
     {
     }
 
@@ -414,8 +414,8 @@ public:
         , end(off_ + size_)
         , io(rhs.io)
         , addrLen(ELF_BITS / 8)
-        , dwarfLen(rhs.dwarfLen)
         , version(rhs.version)
+        , dwarfLen(rhs.dwarfLen)
     {
     }
 
@@ -425,8 +425,8 @@ public:
         , end(section->sh_offset + section->sh_size)
         , io(section.obj.io)
         , addrLen(ELF_BITS / 8)
-        , dwarfLen(dwarfLen_)
         , version(version_)
+        , dwarfLen(dwarfLen_)
     {
     }
 

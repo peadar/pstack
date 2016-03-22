@@ -127,7 +127,7 @@ public:
     typedef std::vector<Elf_Phdr> ProgramHeaders;
     typedef std::vector<Elf_Shdr> SectionHeaders;
 private:
-    friend class ElfSection;
+    friend struct ElfSection;
     size_t fileSize;
     Elf_Ehdr elfHeader;
     ProgramHeaders programHeaders;

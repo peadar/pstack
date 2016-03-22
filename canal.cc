@@ -54,16 +54,16 @@ struct ListedSymbol {
     ListedSymbol(const Elf_Sym &sym_, Elf_Off objbase_, string name_, string object)
         : sym(sym_)
         , objbase(objbase_)
-        , name(name_)
-        , count(0)
         , objname(object)
+        , count(0)
+        , name(name_)
 
     {
     }
     Elf_Off memaddr() const { return  sym.st_value + objbase; }
 };
 
-const bool operator < (const ListedSymbol &sym, Elf_Off addr) {
+bool operator < (const ListedSymbol &sym, Elf_Off addr) {
     return sym.memaddr() + sym.sym.st_size < addr;
 }
 
@@ -155,7 +155,6 @@ mainExcept(int argc, char *argv[])
                 in.open(optarg);
                 if (!in.good())
                     abort();
-                Elf_Off i;
                 char buf[1024];
                 int count = 0;
                 while (in.good()) {
@@ -257,7 +256,7 @@ mainExcept(int argc, char *argv[])
             for (auto loc = hdr->p_vaddr; loc < hdr->p_vaddr + hdr->p_filesz - findstrlen; loc++) {
                 size_t rc = process->io->read(loc, findstrlen, strbuf);
                 assert(rc == findstrlen);
-                if (memcmp(strbuf, findstr, findstrlen) == 0)
+                if (memcmp(strbuf, findstr, rc) == 0)
                     std::cout << "0x" << hex << loc << "\n";
             }
         } else {

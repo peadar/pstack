@@ -30,7 +30,7 @@ ps_lcontinue(const struct ps_prochandle *ph, lwpid_t pid)
     }
 }
 
-ps_err_e ps_pdmodel(struct ps_prochandle *p, int *model)
+ps_err_e ps_pdmodel(struct ps_prochandle *, int *)
 {
     abort();
     return (PS_ERR);
