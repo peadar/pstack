@@ -5,12 +5,11 @@
 #include <iostream>
 #include <link.h>
 #include <unistd.h>
-extern "C" {
-#include "proc_service.h"
-}
-#include "procinfo.h"
-#include "dwarf.h"
-#include "dump.h"
+#include <libpstack/ps_callback.h>
+#include <libpstack/proc.h>
+#include <libpstack/dwarf.h>
+#include <libpstack/dwarfproc.h>
+#include <libpstack/dump.h>
 
 typedef struct regs ptrace_regs;
 
@@ -38,7 +37,6 @@ typedef struct user_regs_struct  elf_regs;
 #error "not linux?"
 #endif
 
-static int gFrameArgs = 6; /* number of arguments to print */
 static size_t gMaxFrames = 1024; /* max number of frames to read */
 
 void
@@ -113,15 +111,17 @@ delall(T &container)
 }
 
 Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_, const PathReplacementList &prl)
-    : vdso(0)
-    , io(std::make_shared<CacheReader>(io_))
-    , pathReplacements(prl)
-    , execImage(exec)
-    , entry(0)
+    : entry(0)
+    , vdso(0)
     , isStatic(false)
     , sysent(0)
     , agent(0)
+    , execImage(exec)
+    , pathReplacements(prl)
+    , io(std::make_shared<CacheReader>(io_))
 {
+   if (exec)
+      entry = exec->getElfHeader().e_entry;
 }
 
 void
@@ -135,7 +135,7 @@ Process::load()
      * work while the process is stopped.
      */
 
-    if (execImage == 0)
+    if (!execImage)
         throw Exception() << "no executable image located for process";
 
     Elf_Addr r_debug_addr = findRDebugAddr();
@@ -156,8 +156,11 @@ Process::load()
 }
 
 DwarfInfo *
-Process::getDwarf(std::shared_ptr<ElfObject> elf)
+Process::getDwarf(std::shared_ptr<ElfObject> elf, bool debug)
 {
+    if (debug)
+        elf = ElfObject::getDebug(elf);
+
     auto &info = dwarf[elf];
     if (info == 0)
         info = new DwarfInfo(elf);
@@ -205,8 +208,12 @@ Process::processAUXV(const void *datap, size_t len)
                 auto exeName = io->readString(hdr);
                 if (debug)
                     *debug << "filename from auxv: " << exeName << "\n";
-                if (execImage == 0)
+                if (!execImage) {
                     execImage = std::make_shared<ElfObject>(exeName);
+                    if (!entry)
+                       entry = execImage->getElfHeader().e_entry;
+                }
+
                 break;
 #endif
         }
@@ -227,7 +234,6 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
         auto frame = *frameI;
         Elf_Addr objIp = 0;
         std::shared_ptr<ElfObject> obj;
-        int lineNo;
         Elf_Sym sym;
         std::string fileName;
         std::string symName = "unknown";
@@ -246,9 +252,6 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
 
         os
             << frameSep << "{ \"ip\": " << intptr_t(frame->ip)
-#ifdef i386
-            << ", \"bp\": " << intptr_t(frame->bp)
-#endif
             << ", \"unwind\": \"" << frame->unwindBy << "\"";
 
         frameSep = ", ";
@@ -263,7 +266,7 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
             sep = ", ";
         }
         os << " ]";
-        if (obj != 0) {
+        if (obj) {
             os << ", \"off\": " << intptr_t(objIp) - sym.st_value;
             os << ", \"file\": " << "\"" << fileName << "\"";
             auto di = getDwarf(obj);
@@ -284,12 +287,11 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
 std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options)
 {
-    os << "thread: " << std::hex << thread.info.ti_tid << ", type: " << thread.info.ti_type << "\n";
+    os << "thread: " << (void *)thread.info.ti_tid << ", lwp: " << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
     for (auto frameI = thread.stack.begin(); frameI != thread.stack.end(); ++frameI) {
         auto &frame = *frameI;
         Elf_Addr objIp = 0;
         std::shared_ptr<ElfObject> obj;
-        int lineNo;
         Elf_Sym sym;
         std::string fileName = "unknown file";
         std::string symName = "unknown";
@@ -317,7 +319,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         }
         os << ")";
 
-        if (obj != 0) {
+        if (obj) {
             os << " in " << fileName;
             if (!options(PstackOptions::nosrc)) {
                 auto di = getDwarf(obj);
@@ -336,9 +338,6 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         if (debug) {
             os
                 << "\t(ip=0x" << std::hex << intptr_t(frame->ip)
-#ifdef i386
-                << ", bp=0x" << std::hex << intptr_t(frame->bp)
-#endif
                 << ", symval=0x" << std::hex << sym.st_value
                 << ", off=0x" << std::hex << intptr_t(objIp) - sym.st_value;
             if (strcmp(frame->unwindBy, "END") != 0)
@@ -495,7 +494,6 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
     stack.clear();
     try {
         /* Put a bound on the number of iterations. */
-        Elf_Addr cfa = 0;
         Elf_Addr ip = REG(regs, ip);
         DwarfRegisters dr;
         dwarfPtToDwarf(&dr, &regs);
@@ -503,8 +501,27 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
             StackFrame *frame = new StackFrame(ip);
             stack.push_back(frame);
             if (!dwarfUnwind(p, &dr, ip)) {
+#ifdef __i386__
+
+#define R_EBP 5
+#define R_EIP 8
+
+                // Read the instruction pointer from just below the base pointer,
+                // and the new base pointer, from the existing one.
+                uint32_t newBp;
+                uint32_t newIp;
+                p.io->readObj((dr.reg[R_EBP] + 4) & 0xffffffff, &newIp);
+                p.io->readObj(dr.reg[R_EBP] & 0xffffffff, &newBp);
+                dr.reg[R_EBP] = newBp;
+                dr.reg[R_EIP] = newIp;
+                ip = newIp;
+                if (newIp == 0) {
+#endif
                 frame->unwindBy = "end";
                 break;
+#ifdef __i386__
+                }
+#endif
             }
             frame->unwindBy = "dwarf";
         }

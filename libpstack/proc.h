@@ -1,5 +1,9 @@
-#include "elfinfo.h"
-#include "dwarf.h"
+#include <elf.h>
+extern "C" {
+#include <thread_db.h>
+}
+#include <libpstack/ps_callback.h>
+#include <libpstack/dwarf.h>
 #include <map>
 #include <set>
 #include <sstream>
@@ -65,10 +69,10 @@ public:
         LoadedObject(Elf_Off reloc_, std::shared_ptr<ElfObject> object_) : reloc(reloc_), object(object_) {}
     };
     std::vector<LoadedObject> objects;
-    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const = 0;
+    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) = 0;
     void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
     LoadedObject findObject(Elf_Addr addr) const;
-    DwarfInfo *getDwarf(std::shared_ptr<ElfObject>);
+    DwarfInfo *getDwarf(std::shared_ptr<ElfObject>, bool debug = true);
     Process(std::shared_ptr<ElfObject> obj, std::shared_ptr<Reader> mem, const PathReplacementList &prl);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
@@ -79,7 +83,6 @@ public:
     std::ostream &dumpStackText(std::ostream &, const ThreadStack &, const PstackOptions &);
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &);
     template <typename T> void listThreads(const T &);
-    std::ostream &pstack(std::ostream &, const PstackOptions &options);
     Elf_Addr findNamedSymbol(const char *objectName, const char *symbolName) const;
     ~Process();
     virtual void load();
@@ -97,14 +100,9 @@ Process::listThreads(const T &callback)
             (void *)&callback, TD_THR_ANY_STATE, TD_THR_LOWEST_PRIORITY, TD_SIGNO_MASK, TD_THR_ANY_USER_FLAGS);
 }
 
-enum ThreadState {
-    stopped,
-    running
-};
-
 struct ThreadInfo {
-    ThreadState state;
-    ThreadInfo() : state(running) {}
+    int stopCount;
+    ThreadInfo() : stopCount(0) {}
 };
 
 class LiveReader : public FileReader {
@@ -129,10 +127,10 @@ class LiveProcess : public Process {
     int stopCount;
     timeval start;
     std::set<pid_t> lwps; // lwps we could not suspend.
-    friend struct LiveThreadList;
+    friend class StopLWP;
 public:
     LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid);
-    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
+    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg);
     virtual void stop(pid_t lwpid);
     virtual void resume(pid_t lwpid);
     virtual pid_t getPID()  const{ return pid; }
@@ -140,7 +138,6 @@ public:
     void resumeProcess();
     virtual void load();
 };
-
 
 class CoreProcess;
 class CoreReader : public Reader {
@@ -153,16 +150,23 @@ public:
 };
 
 class CoreProcess : public Process {
-    pid_t pid;
     std::shared_ptr<ElfObject> coreImage;
     friend class CoreReader;
 public:
     CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<ElfObject> core, const PathReplacementList &);
-    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) const;
+    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg);
     virtual void stop(lwpid_t);
     virtual void resume(lwpid_t);
     virtual pid_t getPID() const;
     void stopProcess() { }
     void resumeProcess() { }
     virtual void load();
+};
+
+// RAII to stop a process.
+struct StopProcess {
+    Process *proc;
+public:
+    StopProcess(Process *proc_) : proc(proc_) { proc->stopProcess(); }
+    ~StopProcess() { proc->resumeProcess(); } 
 };

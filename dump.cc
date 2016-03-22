@@ -1,4 +1,5 @@
-#include "dump.h"
+#include <libpstack/dump.h>
+#include <sys/procfs.h>
 #include <cassert>
 
 static void dwarfDumpCFAInsns(std::ostream &os, DWARFReader &r);
@@ -92,7 +93,7 @@ std::ostream & operator << (std::ostream &os, const DwarfARangeSet &ranges) {
 std::ostream & operator << (std::ostream &os, DwarfTag tag) {
 #define DWARF_TAG(x,y) case x: return os << #x;
     switch (tag) {
-#include "dwarf/tags.h"
+#include <libpstack/dwarf/tags.h>
     default: return os << int(tag);
     }
 #undef DWARF_TAG
@@ -101,7 +102,7 @@ std::ostream & operator << (std::ostream &os, DwarfTag tag) {
 std::ostream &operator << (std::ostream &os, DwarfLineEOpcode code) {
 #define DWARF_LINE_E(x,y) case x: return os << "\"" #x "\"";
     switch (code) {
-#include "dwarf/line_e.h"
+#include <libpstack/dwarf/line_e.h>
     default: return os << int(code);
     }
 #undef DWARF_LINE_E
@@ -110,7 +111,7 @@ std::ostream &operator << (std::ostream &os, DwarfLineEOpcode code) {
 std::ostream &operator << (std::ostream &os, DwarfForm code) {
 #define DWARF_FORM(x,y) case x: return os << #x;
     switch (code) {
-#include "dwarf/forms.h"
+#include <libpstack/dwarf/forms.h>
     default: return os << "(unknown)";
     }
 #undef DWARF_FORM
@@ -119,7 +120,7 @@ std::ostream &operator << (std::ostream &os, DwarfForm code) {
 std::ostream &operator << (std::ostream &os, DwarfAttrName code) {
 #define DWARF_ATTR(x,y) case x: return os <<  #x ;
     switch (code) {
-#include "dwarf/attr.h"
+#include <libpstack/dwarf/attr.h>
     default: return os << int(code);
     }
 #undef DWARF_ATTR
@@ -152,31 +153,68 @@ std::ostream &
 operator << (std::ostream &os, const DwarfAttribute &attr)
 {
     const DwarfValue &value = attr.value;
+    auto dwarf = attr.entry->unit->dwarf;
+    auto elf = dwarf->elf;
     switch (attr.spec->form) {
-    case DW_FORM_addr: os << value.addr; break;
+    case DW_FORM_addr:
+        os << value.addr;
+        break;
     case DW_FORM_data1:
     case DW_FORM_data2:
     case DW_FORM_data4:
     case DW_FORM_data8:
-    case DW_FORM_sdata: os << value.sdata; break;
-    case DW_FORM_udata: os << value.udata; break;
-    case DW_FORM_string: case DW_FORM_strp: os << "\"" << value.string << "\""; break;
+    case DW_FORM_sdata:
+        os << value.sdata;
+        break;
+    case DW_FORM_udata:
+        os << value.udata;
+        break;
+    case DW_FORM_GNU_strp_alt:
+    case DW_FORM_string:
+    case DW_FORM_strp:
+        os << "\"" << value.string << "\"";
+        break;
+    case DW_FORM_ref_addr: {
+        auto section = elf->getSection(".debug_info", 0);
+        auto off = section->sh_offset + attr.value.ref;
+        const auto &allEntries = attr.entry->unit->dwarf->allEntries;
+        const auto &entry = allEntries.find(off);
+        if (entry != allEntries.end())
+            os << "\"ref to " << entry->second->name() << " at " << off << "\"";
+        else
+            os << "\"HAVENOTIT@" << off << (abort(),0) << "\"";
+        break;
+
+    }
     case DW_FORM_ref2:
     case DW_FORM_ref4:
     case DW_FORM_ref8:
     case DW_FORM_ref_udata: {
         auto off = attr.entry->unit->offset + attr.value.ref;
-        const auto &allEntries = attr.entry->unit->allEntries;
+        const auto &allEntries = attr.entry->unit->dwarf->allEntries;
         const auto &entry = allEntries.find(off);
         if (entry != allEntries.end())
             os << "\"ref to " << entry->second->name() << " at " << off << "\"";
         else
-            os << "\"HAVENOTIT@" << off << "\"";
+            os << "\"HAVENOTIT@" << off << (abort(), 0) << "\"";
         break;
 
     }
+    case DW_FORM_GNU_ref_alt: {
+        auto altDwarf = dwarf->getAltDwarf();
+        auto section = altDwarf->elf->getSection(".debug_info", 0);
+        auto off = section->sh_offset + attr.value.ref;
+        const auto &allEntries = altDwarf->allEntries;
+        const auto &entry = allEntries.find(off);
+        if (entry != allEntries.end())
+            os << "\"alt ref to " << entry->second->name() << " at " << off << " in " << altDwarf->elf->io->describe() <<"\"";
+        else
+            os << "\"HAVENOTIT@" << off << (abort(),0) << "\"";
+        break;
+    }
     case DW_FORM_block1: case DW_FORM_block2: case DW_FORM_block4: case DW_FORM_block: os << value.block; break;
     case DW_FORM_flag: os << (value.flag ? "true" : "false"); break;
+    case DW_FORM_flag_present: os << "true"; break;
     default: os << "\"unknown DWARF form " << attr.spec->form << "\"";
     }
     return os;
@@ -195,7 +233,7 @@ operator <<(std::ostream &os, const std::pair<const DwarfInfo *, const DwarfCIE 
         << ", \"instrlen\": " << dcie.second->end - dcie.second->instructions
         << ", \"instructions\": ";
    ;
-   DWARFReader r(dcie.first->elf->io, dcie.first->version, dcie.second->instructions, dcie.second->end - dcie.second->instructions, ELF_BITS / 8);
+   DWARFReader r(dcie.first->elf->io, dcie.first->getVersion(), dcie.second->instructions, dcie.second->end - dcie.second->instructions, ELF_BITS / 8);
     dwarfDumpCFAInsns(os, r);
     return os
         << " }";
@@ -239,7 +277,7 @@ operator << (std::ostream &os, const DwarfFrameInfo &info)
 }
 
 std::ostream &
-operator << (std::ostream &os, const DwarfInfo &dwarf)
+operator << (std::ostream &os, DwarfInfo &dwarf)
 {
     os
         << "{ \"units\": " << dwarf.units()
@@ -327,47 +365,40 @@ dwarfDumpCFAInsns(std::ostream &os, DWARFReader &r)
 }
 
 
-struct NotePrinter {
-    const ElfObject &obj;
-    const char *sep;
-    std::ostream &os;
-    NotePrinter(const ElfObject &obj_, std::ostream &os_): obj(obj_), os(os_), sep("") {}
 
-    NoteIter operator() (const char *name, u_int32_t type, const void *datap, size_t len) {
-        os << sep;
-        sep = ",\n";
-        os
-            << "{ \"name\": \"" << name << "\""
-            << ", \"type\": \"" << type << "\"";
+void printNote(std::ostream &os, const ElfNoteDesc &note) {
+     os
+         << "{ \"name\": \"" << note.name() << "\""
+         << ", \"type\": \"" << note.type() << "\"";
 
-        // need to switch on type and name for notes.
-        if (strcmp(name, "CORE") == 0) {
-            switch (type) {
-                case NT_PRSTATUS: {
-                    assert(len >= sizeof (prstatus_t));
-                    const prstatus_t *prstatus = (const prstatus_t *)datap;
-                    os << ", \"prstatus\": " << *prstatus;
-                }
-                break;
-                case NT_AUXV: {
-                    const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
-                    const Elf_auxv_t *eaux = aux + len / sizeof *aux;
-                    const char *sep = "";
-                    os << ", \"auxv\": [";
-                    while (aux < eaux) {
-                        os << sep;
-                        sep = ",\n";
-                        os << *aux;
-                        aux++;
-                    }
-                    os << "]";
-                }
-                break;
-            }
-        }
-        os << " }";
-        return NOTE_CONTIN;
-    }
+     // need to switch on type and name for notes.
+     if (note.name() == "CORE") {
+         const unsigned char *datap = note.data();
+         size_t len = note.size();
+         switch (note.type()) {
+             case NT_PRSTATUS: {
+                 assert(len >= sizeof (prstatus_t));
+                 const prstatus_t *prstatus = (const prstatus_t *)datap;
+                 os << ", \"prstatus\": " << *prstatus;
+             }
+             break;
+             case NT_AUXV: {
+                 const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
+                 const Elf_auxv_t *eaux = aux + len / sizeof *aux;
+                 const char *sep = "";
+                 os << ", \"auxv\": [";
+                 while (aux < eaux) {
+                     os << sep;
+                     sep = ",\n";
+                     os << *aux;
+                     aux++;
+                 }
+                 os << "]";
+             }
+             break;
+         }
+     }
+     os << " }";
 };
 
 
@@ -410,8 +441,8 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
 
     os << ", \"sections\": [";
     const char *sep = "";
-    for (auto i = obj.getSections().begin(); i != obj.getSections().end(); ++i) {
-        os << sep << ElfSection(obj, &(*i));
+    for (auto &i : obj.getSections()) {
+        os << sep << ElfSection(obj, &i);
         sep = ",\n";
     }
     os << "]";
@@ -442,22 +473,14 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
 
     sep = "";
     os << ", \"notes\": [";
-    NotePrinter notePrinter(obj, os);
-
-    obj.getNotes(notePrinter);
+    for (const auto note : obj.notes) {
+        os << sep;
+        sep = ",\n";
+       printNote(os, note);
+    }
 
     os << "]";
     return os << "}";
-}
-
-std::ostream &
-operator <<(std::ostream &os, const elf_siginfo &prinfo)
-{
-    return os
-        << "{ \"si_signo\": " << prinfo.si_signo
-        << ", \"si_code\": " << prinfo.si_code
-        << ", \"si_errno\": " << prinfo.si_errno
-        << " }";
 }
 
 std::ostream &
@@ -482,27 +505,6 @@ operator <<(std::ostream &os, const Elf_auxv_t &a)
     }
     return os
         << ", \"a_val\": " << a.a_un.a_val
-        << "}";
-}
-
-std::ostream &
-operator <<(std::ostream &os, const prstatus_t &prstat)
-{
-    return os
-        << "{ \"pr_info\": " << prstat.pr_info
-        << ", \"pr_cursig\": " << prstat.pr_cursig
-        << ", \"pr_sigpend\": " << prstat.pr_sigpend
-        << ", \"pr_sighold\": " << prstat.pr_sighold
-        << ", \"pr_pid\": " << prstat.pr_pid
-        << ", \"pr_ppid\": " << prstat.pr_ppid
-        << ", \"pr_pgrp\": " << prstat.pr_pgrp
-        << ", \"pr_sid\": " << prstat.pr_sid
-        << ", \"pr_utime\": " << prstat.pr_utime
-        << ", \"pr_stime\": " << prstat.pr_stime
-        << ", \"pr_cutime\": " << prstat.pr_cutime
-        << ", \"pr_cstime\": " << prstat.pr_cstime
-        << ", \"pr_reg\": " << intptr_t(prstat.pr_reg)
-        << ", \"pr_fpvalid\": " << prstat.pr_fpvalid
         << "}";
 }
 
@@ -572,7 +574,7 @@ operator <<(std::ostream &os, const ElfSection &sec)
         for (; symoff < esym; symoff += sizeof (Elf_Sym)) {
             Elf_Sym sym;
             o.io->readObj(symoff, &sym);
-            std::pair<const ElfSection &, const Elf_Sym *> t = std::make_pair(sec, &sym);
+            std::pair<const ElfSection &, const Elf_Sym *> t = std::make_pair(std::ref(sec), &sym);
             os << sep << t;
             sep = ",\n";
         }
@@ -772,7 +774,7 @@ operator << (std::ostream &os, DynTag tag)
     T(DT_VERNEED)
     T(DT_VERNEEDNUM)
     T(DT_AUXILIARY)
-    default: return os << "unknown " << tag;
+    default: return os << "unknown " << tag.tag;
     }
 #undef T
 }
@@ -789,108 +791,41 @@ operator<< (std::ostream &os, DwarfExpressionOp op)
 {
 #define DWARF_OP(name, value, args) case name: return os << #name;
     switch (op) {
-#include "dwarf/ops.h"
+#include <libpstack/dwarf/ops.h>
         default: return os << "(unknown operation)";
     }
 #undef DWARF_OP
 }
 
-#define T(a, b) case a: return os << #a " (" b ")";
-std::ostream &operator << (std::ostream &os, td_err_e err)
+std::ostream &
+operator <<(std::ostream &os, const elf_siginfo &prinfo)
 {
-switch (err) {
-T(TD_OK, "No error.")
-T(TD_ERR, "No further specified error.")
-T(TD_NOTHR, "No matching thread found.")
-T(TD_NOSV, "No matching synchronization handle found.")
-T(TD_NOLWP, "No matching light-weighted process found.")
-T(TD_BADPH, "Invalid process handle.")
-T(TD_BADTH, "Invalid thread handle.")
-T(TD_BADSH, "Invalid synchronization handle.")
-T(TD_BADTA, "Invalid thread agent.")
-T(TD_BADKEY, "Invalid key.")
-T(TD_NOMSG, "No event available.")
-T(TD_NOFPREGS, "No floating-point register content available.")
-T(TD_NOLIBTHREAD, "Application not linked with thread library.")
-T(TD_NOEVENT, "Requested event is not supported.")
-T(TD_NOCAPAB, "Capability not available.")
-T(TD_DBERR, "Internal debug library error.")
-T(TD_NOAPLIC, "Operation is not applicable.")
-T(TD_NOTSD, "No thread-specific data available.")
-T(TD_MALLOC, "Out of memory.")
-T(TD_PARTIALREG, "Not entire register set was read or written.")
-T(TD_NOXREGS, "X register set not available for given thread.")
-T(TD_TLSDEFER, "Thread has not yet allocated TLS for given module.")
-T(TD_VERSION, "Version if libpthread and libthread_db do not match.")
-T(TD_NOTLS, "There is no TLS segment in the given module.")
-default: return os << "unknown TD error " << int(err);
+    return os
+        << "{ \"si_signo\": " << prinfo.si_signo
+        << ", \"si_code\": " << prinfo.si_code
+        << ", \"si_errno\": " << prinfo.si_errno
+        << " }";
 }
-}
-#undef T
 
-#ifdef NOTYET
-
-static const char *
-auxTypeName(int t)
+std::ostream &
+operator <<(std::ostream &os, const prstatus_t &prstat)
 {
-#define T(name) case name: return #name;
-    switch (t) {
-         T(AT_IGNORE)
-         T(AT_EXECFD)
-         T(AT_PHDR)
-         T(AT_PHENT)
-         T(AT_PHNUM)
-         T(AT_PAGESZ)
-         T(AT_BASE)
-         T(AT_FLAGS)
-         T(AT_ENTRY)
-         T(AT_NOTELF)
-         T(AT_UID)
-         T(AT_EUID)
-         T(AT_GID)
-         T(AT_EGID)
-         T(AT_CLKTCK)
-         T(AT_SYSINFO)
-         T(AT_SYSINFO_EHDR)
-         default: return "unknown";
-    }
-#undef T
+    return os
+        << "{ \"pr_info\": " << prstat.pr_info
+        << ", \"pr_cursig\": " << prstat.pr_cursig
+        << ", \"pr_sigpend\": " << prstat.pr_sigpend
+        << ", \"pr_sighold\": " << prstat.pr_sighold
+        << ", \"pr_pid\": " << prstat.pr_pid
+        << ", \"pr_ppid\": " << prstat.pr_ppid
+        << ", \"pr_pgrp\": " << prstat.pr_pgrp
+        << ", \"pr_sid\": " << prstat.pr_sid
+        << ", \"pr_utime\": " << prstat.pr_utime
+        << ", \"pr_stime\": " << prstat.pr_stime
+        << ", \"pr_cutime\": " << prstat.pr_cutime
+        << ", \"pr_cstime\": " << prstat.pr_cstime
+        << ", \"pr_reg\": " << intptr_t(prstat.pr_reg)
+        << ", \"pr_fpvalid\": " << prstat.pr_fpvalid
+        << "}";
 }
-
-#define T(a) case a: return #a;
-static const char *
-DW_EH_PE_typeStr(unsigned char c)
-{
-    switch (c & 0xf) {
-        T(DW_EH_PE_absptr)
-        T(DW_EH_PE_uleb128)
-        T(DW_EH_PE_udata2)
-        T(DW_EH_PE_udata4)
-        T(DW_EH_PE_udata8)
-        T(DW_EH_PE_sleb128)
-        T(DW_EH_PE_sdata2)
-        T(DW_EH_PE_sdata4)
-        T(DW_EH_PE_sdata8)
-        default: return "(unknown)";
-    }
-}
-
-static const char *
-DW_EH_PE_relStr(unsigned char c)
-{
-    switch (c & 0xf0) {
-    T(DW_EH_PE_pcrel)
-    T(DW_EH_PE_textrel)
-    T(DW_EH_PE_datarel)
-    T(DW_EH_PE_funcrel)
-    T(DW_EH_PE_aligned)
-    default: return "(unknown)";
-    }
-
-}
-#undef T
-
-
-#endif
 
 

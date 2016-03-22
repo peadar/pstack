@@ -1,4 +1,4 @@
-#include "reader.h"
+#include <libpstack/util.h>
 #include <unistd.h>
 #include <iostream>
 #include <fcntl.h>
@@ -56,7 +56,7 @@ MemReader::MemReader(char *data_, size_t len_)
 size_t
 MemReader::read(off_t off, size_t count, char *ptr) const
 {
-    if (off > len)
+    if (off > off_t(len))
         throw Exception() << "read past end of memory";
     size_t rc = std::min(count, len - size_t(off));
     memcpy(ptr, data + off, rc);

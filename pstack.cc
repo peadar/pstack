@@ -1,15 +1,14 @@
 #include <sysexits.h>
 #include <unistd.h>
 #include <iostream>
+#include <sys/types.h>
+#include <signal.h>
 
-#include "dwarf.h"
-#include "dump.h"
-#include "elfinfo.h"
-#include "procinfo.h"
-
-extern "C" {
-#include "proc_service.h"
-}
+#include <libpstack/dwarf.h>
+#include <libpstack/dump.h>
+#include <libpstack/elf.h>
+#include <libpstack/proc.h>
+#include <libpstack/ps_callback.h>
 
 
 struct ThreadLister {
@@ -37,31 +36,30 @@ struct ThreadLister {
 
 static int usage(void);
 std::ostream &
-Process::pstack(std::ostream &os, const PstackOptions &options)
+pstack(Process &proc, std::ostream &os, const PstackOptions &options)
 {
-    ps_pstop(this);
 
     // get its back trace.
-    ThreadLister threadLister(this);
-    listThreads(threadLister);
-    if (threadLister.threadStacks.empty()) {
-        // get the register for the process itself, and use those.
-        CoreRegisters regs;
-        getRegs(ps_getpid(this),  &regs);
-        threadLister.threadStacks.push_back(ThreadStack());
-        threadLister.threadStacks.back().unwind(*this, regs);
+    ThreadLister threadLister(&proc);
+    {
+        StopProcess here(&proc);
+        proc.listThreads(threadLister);
+        if (threadLister.threadStacks.empty()) {
+            // get the register for the process itself, and use those.
+            CoreRegisters regs;
+            proc.getRegs(ps_getpid(&proc),  &regs);
+            threadLister.threadStacks.push_back(ThreadStack());
+            threadLister.threadStacks.back().unwind(proc, regs);
+        }
     }
 
-    ps_pcontinue(this);
     /*
      * resume at this point - maybe a bit optimistic if a shared library gets
      * unloaded while we print stuff out, but worth the risk, normally.
      */
-    const char *sep = "";
     for (auto s = threadLister.threadStacks.begin(); s != threadLister.threadStacks.end(); ++s) {
-        dumpStackText(os, *s, options);
+        proc.dumpStackText(os, *s, options);
         os << "\n";
-        sep = ", ";
     }
     return os;
 }
@@ -70,7 +68,7 @@ static void
 doPstack(Process &proc, const PstackOptions &options)
 {
     proc.load();
-    proc.pstack(std::cout, options);
+    pstack(proc, std::cout, options);
 }
 
 int
@@ -86,17 +84,15 @@ emain(int argc, char **argv)
 
     while ((c = getopt(argc, argv, "d:D:hsvn")) != -1) {
         switch (c) {
-        case 'D':
+        case 'D': {
+            auto dumpobj = std::make_shared<ElfObject>(std::make_shared<FileReader>(optarg, -1));
+            DwarfInfo di(ElfObject::getDebug(dumpobj));
+            std::cout << di;
+            return 0;
+        }
         case 'd': {
             /* Undocumented option to dump image contents */
-            auto dumpobj = std::make_shared<ElfObject>(std::make_shared<FileReader>(optarg, -1));
-            if (c == 'D')
-                std::cout << "{ \"elf\": ";
-            std::cout << *dumpobj;
-            if (c == 'D') {
-                DwarfInfo dwarf(dumpobj);
-                std::cout << ", \"dwarf\": " << dwarf << "}";
-            }
+            std::cout << ElfObject(std::make_shared<FileReader>(optarg, -1));
             return 0;
         }
         case 'h':

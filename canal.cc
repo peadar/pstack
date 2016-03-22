@@ -5,15 +5,11 @@
 #include <exception>
 #include <algorithm>
 #include <memory>
-#include "procinfo.h"
-#include "elfinfo.h"
-#include "dwarf.h"
+#include <libpstack/proc.h>
+#include <libpstack/elf.h>
+#include <libpstack/dwarf.h>
 
 using namespace std;
-
-extern "C" {
-#include "proc_service.h"
-}
 
 static int
 globmatchR(const char *pattern, const char *name)
@@ -48,9 +44,9 @@ globmatch(string pattern, string name)
 struct ListedSymbol {
     Elf_Sym sym;
     Elf_Off objbase;
-    string objname;
-    size_t count;
     string name;
+    size_t count;
+    string objname;
     ListedSymbol(const Elf_Sym &sym_, Elf_Off objbase_, string name_, string object)
         : sym(sym_)
         , objbase(objbase_)

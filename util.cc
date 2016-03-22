@@ -1,4 +1,4 @@
-#include "util.h"
+#include <libpstack/util.h>
 std::string
 dirname(std::string in)
 {

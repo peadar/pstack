@@ -1,7 +1,10 @@
 #include <limits>
 #include <iostream>
-#include "util.h"
-#include "elfinfo.h"
+#include <iomanip>
+#include <unistd.h>
+#include <libpstack/util.h>
+#include <libpstack/elf.h>
+#include <algorithm>
 
 using std::string;
 using std::make_shared;
@@ -11,6 +14,46 @@ std::ostream *debug;
 static uint32_t elf_hash(string);
 bool noDebugLibs;
 
+ElfNoteIter
+ElfNotes::begin() const
+{
+   return ElfNoteIter(object, object->getSegments().begin());
+}
+
+ElfNoteIter
+ElfNotes::end() const
+{
+   return ElfNoteIter(object, object->getSegments().end());
+}
+
+std::string
+ElfNoteDesc::name() const
+{
+   char *buf = new char[note.n_namesz + 1];
+   object->io->readObj(offset + sizeof note, buf, note.n_namesz);
+   buf[note.n_namesz] = 0;
+   std::string s = buf;
+   delete[] buf;
+   return s;
+}
+
+const unsigned char *
+ElfNoteDesc::data() const
+{
+   if (databuf == 0) {
+      databuf = new unsigned char[note.n_descsz];
+      object->io->readObj(roundup2(offset + sizeof note + note.n_namesz, 4),
+            databuf, note.n_descsz);
+   }
+   return databuf;
+}
+
+size_t
+ElfNoteDesc::size() const
+{
+   return note.n_descsz;
+}
+
 /*
  * Parse out an ELF file into an ElfObject structure.
  */
@@ -18,19 +61,21 @@ bool noDebugLibs;
 const Elf_Phdr *
 ElfObject::findHeaderForAddress(Elf_Off a) const
 {
-    for (auto hdr = programHeaders.begin(); hdr != programHeaders.end(); ++hdr)
-        if (hdr->p_vaddr <= a && hdr->p_vaddr + hdr->p_memsz > a && hdr->p_type == PT_LOAD)
-            return &(*hdr);
+    for (auto &hdr : programHeaders)
+        if (hdr.p_vaddr <= a && hdr.p_vaddr + hdr.p_memsz > a && hdr.p_type == PT_LOAD)
+            return &hdr;
     return 0;
 }
 
 ElfObject::ElfObject(const string &name_)
     : name(name_)
+    , notes(this)
 {
     init(make_shared<CacheReader>(make_shared<FileReader>(name)));
 }
 
 ElfObject::ElfObject(shared_ptr<Reader> io_)
+   : notes(this)
 {
     name = io_->describe();
     init(io_);
@@ -41,18 +86,18 @@ ElfObject::getBase() const
 {
     auto base = std::numeric_limits<Elf_Off>::max();
     auto &segments = getSegments();
-    for (auto i = segments.begin(); i != segments.end(); ++i)
-        if (i->p_type == PT_LOAD && Elf_Off(i->p_vaddr) <= base)
-            base = Elf_Off(i->p_vaddr);
+    for (auto &seg : segments)
+        if (seg.p_type == PT_LOAD && Elf_Off(seg.p_vaddr) <= base)
+            base = Elf_Off(seg.p_vaddr);
     return base;
 }
 
 std::string
 ElfObject::getInterpreter() const
 {
-    for (auto seg = getSegments().begin(); seg != getSegments().end(); ++seg)
-        if (seg->p_type == PT_INTERP)
-            return io->readString(seg->p_offset);
+    for (auto &seg : getSegments())
+        if (seg.p_type == PT_INTERP)
+            return io->readString(seg.p_offset);
     return "";
 }
 
@@ -83,9 +128,9 @@ ElfObject::init(const shared_ptr<Reader> &io_)
 
     if (elfHeader.e_shstrndx != SHN_UNDEF) {
         auto sshdr = sectionHeaders[elfHeader.e_shstrndx];
-        for (auto h = sectionHeaders.begin(); h != sectionHeaders.end(); ++h) {
-            auto name = io->readString(sshdr.sh_offset + h->sh_name);
-            namedSection[name] = &(*h);
+        for (auto &h : sectionHeaders) {
+            auto name = io->readString(sshdr.sh_offset + h.sh_name);
+            namedSection[name] = &h;
         }
         auto tab = getSection(".hash", SHT_HASH);
         if (tab)
@@ -127,8 +172,8 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
         if (symSection == 0 || symSection->sh_type == SHT_NOBITS)
             continue;
         SymbolSection syms(symSection);
-        for (auto syminfo = syms.begin(); syminfo != syms.end(); ++syminfo) {
-            auto &candidate = (*syminfo).first;
+        for (auto syminfo : syms) {
+            auto &candidate = syminfo.first;
             if (candidate.st_shndx >= sectionHeaders.size())
                 continue;
             auto shdr = sectionHeaders[candidate.st_shndx];
@@ -143,7 +188,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
                 if (candidate.st_size + candidate.st_value > addr) {
                     // yep: return this one.
                     sym = candidate;
-                    name = (*syminfo).second;
+                    name = syminfo.second;
                     return true;
                 }
             } else if (lowest < candidate.st_value) {
@@ -153,7 +198,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
                  * value
                  */
                 sym = candidate;
-                name = (*syminfo).second;
+                name = syminfo.second;
                 lowest = candidate.st_value;
             }
         }
@@ -162,14 +207,8 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
 }
 
 const ElfSection
-ElfObject::getSection(const std::string &name, int type)
+ElfObject::getSection(const std::string &name, Elf_Word type)
 {
-    auto dbg = getDebug();
-    if (dbg) {
-        auto debugSection = dbg->getSection(name, type);
-        if (debugSection)
-            return debugSection;
-    }
 
     auto s = namedSection.find(name);
     return ElfSection(*this, s != namedSection.end() && (s->second->sh_type == type || type == SHT_NULL) ? s->second : 0);
@@ -185,9 +224,9 @@ bool
 linearSymSearch(ElfSection &section, const string &name, Elf_Sym &sym)
 {
     SymbolSection sec(section);
-    for (auto info = sec.begin(); info != sec.end(); ++info) {
-        if (name == (*info).second) {
-            sym = (*info).first;
+    for (const auto &info : sec) {
+        if (name == info.second) {
+            sym = info.first;
             return true;
         }
     }
@@ -273,12 +312,35 @@ ElfObject::~ElfObject()
 {
 }
 
-std::shared_ptr<ElfObject> ElfObject::getDebug()
+
+std::shared_ptr<ElfObject>
+ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
+{
+   auto sp = in->getDebug();
+   return sp ? sp : in;
+}
+
+std::shared_ptr<ElfObject>
+ElfObject::getDebug()
 {
     if (noDebugLibs)
         return std::shared_ptr<ElfObject>();
+
     if (!debugLoaded) {
         debugLoaded = true;
+
+    if (debug) {
+        for (auto note : notes) {
+           if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
+              *debug << "GNU buildID: ";
+              auto data = note.data();
+              for (auto i = 0; i < note.size(); ++i)
+                 *debug << std::hex << std::setw(2) << std::setfill('0') << int(data[i]);
+              *debug << "\n";
+              break;
+           }
+        }
+    }
 
         std::ostringstream stream;
         stream << io->describe();
@@ -313,8 +375,7 @@ static uint32_t
 elf_hash(string name)
 {
     uint32_t h = 0, g;
-    for (auto i = name.begin(); i != name.end(); ++i) {
-        auto c = *i;
+    for (auto c : name) {
         h = (h << 4) + c;
         if ((g = h & 0xf0000000) != 0)
             h ^= g >> 24;

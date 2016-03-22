@@ -1,8 +1,8 @@
 #include <stdarg.h>
-#include "procinfo.h"
+#include <libpstack/proc.h>
+#include <libpstack/ps_callback.h>
 
 extern "C" {
-#include "proc_service.h"
 
 ps_err_e
 ps_pcontinue(const struct ps_prochandle *ph)
@@ -154,7 +154,7 @@ ps_err_e ps_lgetfpregs(struct ps_prochandle *p, lwpid_t pid, prfpregset_t *fpreg
 
 ps_err_e ps_lgetregs(struct ps_prochandle *ph, lwpid_t pid, prgregset_t gregset)
 {
-    const Process *p = static_cast<const Process *>(ph);
+    Process *p = static_cast<Process *>(ph);
     return p->getRegs(pid, (CoreRegisters *)gregset) ? PS_OK : PS_ERR;
 }
 
