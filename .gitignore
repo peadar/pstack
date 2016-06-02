@@ -2,3 +2,6 @@ tags
 .*.*sw*
 .sw*
 /.project
+*64
+*32
+ID

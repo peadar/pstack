@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <signal.h>
 #include <fstream>
 #include <assert.h>
 #include <iostream>
@@ -8,6 +9,7 @@
 #include <libpstack/proc.h>
 #include <libpstack/elf.h>
 #include <libpstack/dwarf.h>
+#include <sys/types.h>
 
 using namespace std;
 
@@ -35,11 +37,10 @@ globmatchR(const char *pattern, const char *name)
 }
 
 static int
-globmatch(string pattern, string name)
+globmatch(const string &pattern, const string &name)
 {
     return globmatchR(pattern.c_str(), name.c_str());
 }
-
 
 struct ListedSymbol {
     Elf_Sym sym;
@@ -53,9 +54,7 @@ struct ListedSymbol {
         , objname(object)
         , count(0)
         , name(name_)
-
-    {
-    }
+    {}
     Elf_Off memaddr() const { return  sym.st_value + objbase; }
 };
 
@@ -63,20 +62,10 @@ bool operator < (const ListedSymbol &sym, Elf_Off addr) {
     return sym.memaddr() + sym.sym.st_size < addr;
 }
 
-struct Symcounter {
-    Elf_Off addr;
-    string name;
-    unsigned count;
-    struct ListedSymbol *sym;
-};
-
-vector<Symcounter> counters;
-
 static const char *virtpattern = "_ZTV*"; /* wildcard for all vtbls */
-
-
 static bool compareSymbolsByAddress(const ListedSymbol &l, const ListedSymbol &r) { return l.memaddr() < r.memaddr(); };
 static bool compareSymbolsByFrequency(const ListedSymbol &l, const ListedSymbol &r) { return l.count > r.count; };
+
 int
 mainExcept(int argc, char *argv[])
 {
@@ -191,20 +180,25 @@ mainExcept(int argc, char *argv[])
         optind++;
     }
 
-
     if (argc - optind < 1) {
         clog << "usage: canal [exec] <core>" << endl;
         return 0;
     }
 
-    core = make_shared<ElfObject>(argv[optind]);
-    process = make_shared<CoreProcess>(exec, core, pathReplacements);
+    pid_t pid = 0;
+    std::istringstream(argv[optind]) >> pid;
+    if (pid != 0 && kill(pid, 0) == 0) {
+       std::clog << "attaching to live process" << std::endl;
+       process = make_shared<LiveProcess>(exec, pid, pathReplacements);
+    } else {
+       core = make_shared<ElfObject>(argv[optind]);
+       process = make_shared<CoreProcess>(exec, core, pathReplacements);
+    }
     process->load();
     if (searchaddrs.size()) {
         std::clog << "finding references to " << dec << searchaddrs.size() << " addresses\n";
-        for (auto iter = searchaddrs.begin(); iter != searchaddrs.end(); ++iter) {
-            std::clog << "\t" << iter->first <<" - " << iter->second << "\n";
-        }
+        for (auto &addr : searchaddrs)
+            std::clog << "\t" << addr.first <<" - " << addr.second << "\n";
     }
     clog << "opened process " << process << endl;
 
@@ -216,13 +210,14 @@ mainExcept(int argc, char *argv[])
 
     if (virtpattern)
         patterns.push_back(virtpattern);
+
     vector<ListedSymbol> listed;
     for (auto loaded = process->objects.begin(); loaded != process->objects.end(); ++loaded) {
         size_t count = 0;
         auto syms = loaded->object->getSymbols(".dynsym");
         for (auto sym = syms.begin(); sym != syms.end(); ++sym) {
-            for (auto pattern = patterns.begin(); pattern != patterns.end(); ++pattern) {
-                if (globmatch(*pattern, (*sym).second)) {
+            for (auto &pattern : patterns) {
+                if (globmatch(pattern, (*sym).second)) {
                     listed.push_back(ListedSymbol((*sym).first, loaded->reloc, (*sym).second, loaded->object->io->describe()));
                     count++;
                 }
@@ -237,28 +232,28 @@ mainExcept(int argc, char *argv[])
     off_t filesize = 0;
     off_t memsize = 0;
     auto segments = core->getSegments();
-    for (auto hdr = segments.begin(); hdr != segments.end(); ++hdr) {
-        if (hdr->p_type != PT_LOAD)
+    for (auto &hdr : segments) {
+        if (hdr.p_type != PT_LOAD)
             continue;
         Elf_Off p;
-        filesize += hdr->p_filesz;
-        memsize += hdr->p_memsz;
+        filesize += hdr.p_filesz;
+        memsize += hdr.p_memsz;
         if (debug) {
-            *debug << "scan " << hex << hdr->p_vaddr <<  " to " << hdr->p_vaddr + hdr->p_memsz << " ";
-            *debug << "(filesiz = " << hdr->p_filesz  << ", memsiz=" << hdr->p_memsz << ") ";
+            *debug << "scan " << hex << hdr.p_vaddr <<  " to " << hdr.p_vaddr + hdr.p_memsz
+                << " (filesiz = " << hdr.p_filesz  << ", memsiz=" << hdr.p_memsz << ") ";
         }
 
         if (findstr) {
-            for (auto loc = hdr->p_vaddr; loc < hdr->p_vaddr + hdr->p_filesz - findstrlen; loc++) {
+            for (auto loc = hdr.p_vaddr; loc < hdr.p_vaddr + hdr.p_filesz - findstrlen; loc++) {
                 size_t rc = process->io->read(loc, findstrlen, strbuf);
                 assert(rc == findstrlen);
                 if (memcmp(strbuf, findstr, rc) == 0)
                     std::cout << "0x" << hex << loc << "\n";
             }
         } else {
-
-            for (auto loc = hdr->p_vaddr; loc < hdr->p_vaddr + hdr->p_filesz; loc += sizeof p) {
-                if (verbose && (loc - hdr->p_vaddr) % (1024 * 1024) == 0)
+            for (auto loc = hdr.p_vaddr; loc < hdr.p_vaddr + hdr.p_filesz; loc += sizeof p) {
+                // log a '.' every megabyte.
+                if (verbose && (loc - hdr.p_vaddr) % (1024 * 1024) == 0)
                     clog << '.';
                 process->io->readObj(loc, &p);
                 if (searchaddrs.size()) {
@@ -273,9 +268,10 @@ mainExcept(int argc, char *argv[])
                                 ? found->memaddr() + symOffset == p
                                 : found->memaddr() <= p && found->memaddr() + found->sym.st_size > p)) {
                         if (showaddrs)
-                            cout << found->name << " 0x" << std::hex << loc <<
-                            std::dec <<  " ... size=" << found->sym.st_size <<
-                            ", diff=" << p - found->memaddr() << endl;
+                            cout
+                                << found->name << " 0x" << std::hex << loc
+                                << std::dec <<  " ... size=" << found->sym.st_size
+                                << ", diff=" << p - found->memaddr() << endl;
                         found->count++;
                     }
                 }
@@ -291,9 +287,9 @@ mainExcept(int argc, char *argv[])
 
     sort(listed.begin() , listed.end() , compareSymbolsByFrequency);
 
-    for (auto i = listed.begin(); i != listed.end(); ++i)
-        if (i->count)
-            cout << dec << i->count << " " << i->name << " ( from " << i->objname << ")" << endl;
+    for (auto &i : listed)
+        if (i.count)
+            cout << dec << i.count << " " << i.name << " ( from " << i.objname << ")" << endl;
     return 0;
 }
 

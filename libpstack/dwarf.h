@@ -28,7 +28,14 @@ enum DwarfTag {
 #include <libpstack/dwarf/tags.h>
     DW_TAG_none = 0x0
 };
+#undef DWARF_ATE
+#define DWARF_ATE(a,b) a = b,
+enum DwarfEncoding {
+#include <libpstack/dwarf/encodings.h>
+    DW_ATE_none = 0x0
+};
 #undef DWARF_TAG
+
 
 #define DWARF_FORM(a,b) a = b,
 enum DwarfForm {
@@ -133,7 +140,7 @@ struct DwarfAttribute {
         if (spec && spec->form == DW_FORM_string)
             value.string = strdup(rhs.value.string);
         else
-            value.udata = rhs.value.udata;
+            value.block = rhs.value.block;
     }
     DwarfAttribute &operator = (const DwarfAttribute &rhs) {
         entry = rhs.entry;
@@ -143,7 +150,7 @@ struct DwarfAttribute {
         if (spec && spec->form == DW_FORM_string)
             value.string = strdup(rhs.value.string);
         else
-            value.udata = rhs.value.udata;
+            value.block = rhs.value.block;
         return *this;
     }
     const DwarfEntry *getRef() const;
@@ -182,6 +189,7 @@ struct DwarfEntry {
             return ent->value.string;
         return "anon";
     }
+    std::shared_ptr<DwarfEntry> firstChild(DwarfTag tag);
 };
 
 enum FIType {
@@ -226,6 +234,7 @@ public:
 };
 
 struct DwarfUnit {
+    mutable DwarfEntries allEntries;
     DwarfInfo *dwarf;
     off_t offset;
     void decodeEntries(DWARFReader &r, DwarfEntries &entries);
@@ -326,7 +335,6 @@ class DwarfInfo {
 public:
     std::shared_ptr<ElfObject> getAltImage();
     std::shared_ptr<DwarfInfo> getAltDwarf();
-    mutable DwarfEntries allEntries;
     std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
     const ElfSection abbrev, lineshdr;
     // interesting shdrs from the exe.

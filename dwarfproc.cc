@@ -22,10 +22,9 @@ default: return 0;
 }
 
 
-typedef std::stack<Elf_Addr> DwarfExpressionStack;
 
-static Elf_Addr
-dwarfEvalExpr(const Process &proc, DWARFReader r, const DwarfRegisters *frame, DwarfExpressionStack *stack)
+Elf_Addr
+dwarfEvalExpr(DwarfInfo *dwarf, const Process &proc, DWARFReader r, const DwarfRegisters *frame, DwarfExpressionStack *stack)
 {
     while (!r.empty()) {
         auto op = DwarfExpressionOp(r.getu8());
@@ -185,6 +184,17 @@ dwarfEvalExpr(const Process &proc, DWARFReader r, const DwarfRegisters *frame, D
                 break;
             }
 
+            case DW_OP_addr: {
+                auto value = r.getuint(r.addrLen);
+                for (auto &o : proc.objects) {
+                   if (o.object == dwarf->elf) {
+                      value += o.reloc;
+                   }
+                }
+                stack->push(value);
+                break;
+            }
+
             case DW_OP_reg0: case DW_OP_reg1: case DW_OP_reg2: case DW_OP_reg3:
             case DW_OP_reg4: case DW_OP_reg5: case DW_OP_reg6: case DW_OP_reg7:
             case DW_OP_reg8: case DW_OP_reg9: case DW_OP_reg10: case DW_OP_reg11:
@@ -230,7 +240,7 @@ dwarfGetCFA(DwarfInfo *dwarf, const Process &proc,
                     frame->cfaValue.u.expression.offset,
                     frame->cfaValue.u.expression.length,
                     0);
-            return dwarfEvalExpr(proc, r, regs, &stack);
+            return dwarfEvalExpr(dwarf, proc, r, regs, &stack);
         }
     }
     return -1;
@@ -293,7 +303,7 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr &procaddr)
                 DwarfExpressionStack stack;
                 stack.push(cfa);
                 DWARFReader reader(elf.object->io, dwarf->getVersion(), unwind->u.expression.offset, unwind->u.expression.length, 0);
-                auto val = dwarfEvalExpr(p, reader, regs, &stack);
+                auto val = dwarfEvalExpr(dwarf, p, reader, regs, &stack);
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                 if (unwind->type == EXPRESSION)
                     p.io->readObj(val, &val);
