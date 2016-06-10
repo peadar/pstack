@@ -214,14 +214,22 @@ mainExcept(int argc, char *argv[])
     vector<ListedSymbol> listed;
     for (auto loaded = process->objects.begin(); loaded != process->objects.end(); ++loaded) {
         size_t count = 0;
-        auto syms = loaded->object->getSymbols(".dynsym");
-        for (auto sym = syms.begin(); sym != syms.end(); ++sym) {
-            for (auto &pattern : patterns) {
-                if (globmatch(pattern, (*sym).second)) {
-                    listed.push_back(ListedSymbol((*sym).first, loaded->reloc, (*sym).second, loaded->object->io->describe()));
-                    count++;
-                }
-            }
+
+
+        struct SymbolSection symtabs[2] = {
+           loaded->object->getSymbols(".dynsym"),
+           loaded->object->getSymbols(".symtab")
+        };
+
+        for (auto &syms : symtabs) {
+           for (auto sym = syms.begin(); sym != syms.end(); ++sym) {
+               for (auto &pattern : patterns) {
+                   if (globmatch(pattern, (*sym).second)) {
+                       listed.push_back(ListedSymbol((*sym).first, loaded->reloc, (*sym).second, loaded->object->io->describe()));
+                       count++;
+                   }
+               }
+           }
         }
         if (debug)
             *debug << "found " << count << " symbols in " << loaded->object->io->describe() << endl;
