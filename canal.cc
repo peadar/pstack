@@ -58,6 +58,8 @@ struct ListedSymbol {
     Elf_Off memaddr() const { return  sym.st_value + objbase; }
 };
 
+class Usage {};
+
 bool operator < (const ListedSymbol &sym, Elf_Off addr) {
     return sym.memaddr() + sym.sym.st_size < addr;
 }
@@ -65,6 +67,20 @@ bool operator < (const ListedSymbol &sym, Elf_Off addr) {
 static const char *virtpattern = "_ZTV*"; /* wildcard for all vtbls */
 static bool compareSymbolsByAddress(const ListedSymbol &l, const ListedSymbol &r) { return l.memaddr() < r.memaddr(); };
 static bool compareSymbolsByFrequency(const ListedSymbol &l, const ListedSymbol &r) { return l.count > r.count; };
+
+ostream &
+operator <<(ostream &os, const Usage &)
+{
+   return os
+      << "usage: canal [options] <executable> <core>" << endl
+      << "options:" << endl
+      << "\t-p <pattern>: use a specific pattern to search (default " << virtpattern << ") (repeatable)" << endl
+      << "\t-s: show the address of each located object" << endl
+      << "\t-v: verbose (repeat for more verbosity)" << endl
+      << "\t-h: this message" << endl
+      << "\t-r <prefix=path>: replace 'prefix' in core with 'path' when loading shared libraries" << endl
+      ;
+}
 
 int
 mainExcept(int argc, char *argv[])
@@ -76,6 +92,7 @@ mainExcept(int argc, char *argv[])
     int c;
     int verbose = 0;
     bool showaddrs = false;
+    bool showsyms = false;
     int rate = 1;
 
     std::vector<std::pair<Elf_Off, Elf_Off>> searchaddrs;
@@ -86,11 +103,11 @@ mainExcept(int argc, char *argv[])
     int symOffset = -1;
     bool showloaded = false;
 
-    while ((c = getopt(argc, argv, "o:vhr:sp:f:e:S:R:K:y:l")) != -1) {
+    while ((c = getopt(argc, argv, "o:vhr:sp:f:e:S:R:K:lV")) != -1) {
         switch (c) {
-            case 'p':
-                virtpattern = optarg;
-                break;
+            case 'V':
+               showsyms = true;
+               break;
             case 's':
                 showaddrs = true;
                 break;
@@ -99,13 +116,13 @@ mainExcept(int argc, char *argv[])
                 verbose++;
                 break;
             case 'h':
-                clog << "usage: canal [exec] <core>" << endl;
+                clog << Usage();
                 return 0;
             case 'o': // offset within a symbol that the pointers must meet.
                 symOffset = strtol(optarg, 0, 0);
                 break;
 
-            case 'y':
+            case 'p':
                 patterns.push_back(optarg);
                 virtpattern = 0;
                 break;
@@ -181,7 +198,7 @@ mainExcept(int argc, char *argv[])
     }
 
     if (argc - optind < 1) {
-        clog << "usage: canal [exec] <core>" << endl;
+        clog << Usage();
         return 0;
     }
 
@@ -225,7 +242,12 @@ mainExcept(int argc, char *argv[])
            for (auto sym = syms.begin(); sym != syms.end(); ++sym) {
                for (auto &pattern : patterns) {
                    if (globmatch(pattern, (*sym).second)) {
-                       listed.push_back(ListedSymbol((*sym).first, loaded->reloc, (*sym).second, loaded->object->io->describe()));
+                       listed.push_back(ListedSymbol((*sym).first,
+                                loaded->reloc,
+                                (*sym).second,
+                                loaded->object->io->describe()));
+                       if (verbose > 1 || showsyms)
+                          std::cout << (*sym).second << "\n";
                        count++;
                    }
                }
@@ -234,6 +256,8 @@ mainExcept(int argc, char *argv[])
         if (debug)
             *debug << "found " << count << " symbols in " << loaded->object->io->describe() << endl;
     }
+    if (showsyms)
+       exit(0);
     sort(listed.begin() , listed.end() , compareSymbolsByAddress);
 
     // Now run through the corefile, searching for virtual objects.
