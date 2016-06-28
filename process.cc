@@ -485,7 +485,7 @@ Process::~Process()
     td_ta_delete(agent);
     for (auto i = dwarf.begin(); i != dwarf.end(); ++i)
         delete i->second;
-    delete[] vdso;
+    delete[] vdsoMem;
 }
 
 void
