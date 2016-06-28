@@ -664,6 +664,16 @@ DwarfEntry::DwarfEntry()
 
 }
 
+
+std::shared_ptr<DwarfEntry>
+DwarfEntry::firstChild(DwarfTag tag)
+{
+   for (auto &ent : children)
+      if (ent.second->type->tag == tag)
+         return ent.second;
+   return 0;
+}
+
 DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t offset_)
     : unit(unit_)
     , type(&unit->abbreviations.find(DwarfTag(code))->second)
@@ -696,11 +706,11 @@ void
 DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries)
 {
     while (!r.empty()) {
-        intmax_t offset = r.getOffset();
+        intmax_t offset = r.getOffset() - this->offset;
         intmax_t code = r.getuleb128();
         if (code == 0)
             return;
-        dwarf->allEntries[offset] = entries[offset] = std::make_shared<DwarfEntry>(r, code, this, offset);
+        allEntries[offset] = entries[offset] = std::make_shared<DwarfEntry>(r, code, this, offset);
     }
 }
 

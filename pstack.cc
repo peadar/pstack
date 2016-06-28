@@ -121,13 +121,13 @@ emain(int argc, char **argv)
             // It's a file: should be ELF, treat core and exe differently
             auto obj = std::make_shared<ElfObject>(std::make_shared<FileReader>(argv[i]));
             if (obj->getElfHeader().e_type == ET_CORE) {
-                CoreProcess proc(exec, obj, std::vector<std::pair<std::string, std::string>>());
+                CoreProcess proc(exec, obj, PathReplacementList());
                 doPstack(proc, options);
             } else {
                 exec = obj;
             }
         } else {
-            LiveProcess proc(exec, pid);
+            LiveProcess proc(exec, pid, PathReplacementList());
             doPstack(proc, options);
         }
     }

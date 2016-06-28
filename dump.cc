@@ -176,8 +176,8 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
         break;
     case DW_FORM_ref_addr: {
         auto section = elf->getSection(".debug_info", 0);
-        auto off = section->sh_offset + attr.value.ref;
-        const auto &allEntries = attr.entry->unit->dwarf->allEntries;
+        auto off = attr.value.ref;
+        const auto &allEntries = attr.entry->unit->allEntries;
         const auto &entry = allEntries.find(off);
         if (entry != allEntries.end())
             os << "\"ref to " << entry->second->name() << " at " << off << "\"";
@@ -190,8 +190,8 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_ref4:
     case DW_FORM_ref8:
     case DW_FORM_ref_udata: {
-        auto off = attr.entry->unit->offset + attr.value.ref;
-        const auto &allEntries = attr.entry->unit->dwarf->allEntries;
+        auto off = attr.value.ref;
+        const auto &allEntries = attr.entry->unit->allEntries;
         const auto &entry = allEntries.find(off);
         if (entry != allEntries.end())
             os << "\"ref to " << entry->second->name() << " at " << off << "\"";
@@ -201,9 +201,10 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
 
     }
     case DW_FORM_GNU_ref_alt: {
+                                 abort(); /*
         auto altDwarf = dwarf->getAltDwarf();
         auto section = altDwarf->elf->getSection(".debug_info", 0);
-        auto off = section->sh_offset + attr.value.ref;
+        auto off = attr.value.ref;
         const auto &allEntries = altDwarf->allEntries;
         const auto &entry = allEntries.find(off);
         if (entry != allEntries.end())
@@ -211,8 +212,9 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
         else
             os << "\"HAVENOTIT@" << off << (abort(),0) << "\"";
         break;
+        */
     }
-    case DW_FORM_block1: case DW_FORM_block2: case DW_FORM_block4: case DW_FORM_block: os << value.block; break;
+    case DW_FORM_exprloc: DW_FORM_block1: case DW_FORM_block2: case DW_FORM_block4: case DW_FORM_block: os << value.block; break;
     case DW_FORM_flag: os << (value.flag ? "true" : "false"); break;
     case DW_FORM_flag_present: os << "true"; break;
     default: os << "\"unknown DWARF form " << attr.spec->form << "\"";

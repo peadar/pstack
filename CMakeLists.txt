@@ -12,6 +12,7 @@ add_library(procman STATIC dead.cc live.cc process.cc proc_service.cc dwarfproc.
 target_link_libraries(procman dwelf)
 
 add_executable(pstack pstack.cc )
+
 target_link_libraries(pstack dwelf procman "-lthread_db")
 target_link_libraries(canal dwelf procman "-lthread_db")
 target_link_libraries(procman "-lthread_db")

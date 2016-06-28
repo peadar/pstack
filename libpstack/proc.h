@@ -129,7 +129,7 @@ class LiveProcess : public Process {
     std::set<pid_t> lwps; // lwps we could not suspend.
     friend class StopLWP;
 public:
-    LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid);
+    LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid, const PathReplacementList &repls);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg);
     virtual void stop(pid_t lwpid);
     virtual void resume(pid_t lwpid);
