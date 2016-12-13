@@ -152,6 +152,7 @@ usage(void)
         "usage: pstack\n\t"
         "[-<D|d> <elf object>]        dump details of ELF object (D => show DWARF info\n"
         "[-D <elf object>]            dump details of ELF object (including DWARF info)\n\t"
+        "[-E <elf object>]            print name of executable that generated a core)\n\t"
         "or\n\t"
         "[-h]                         show this message\n"
         "or\n\t"
