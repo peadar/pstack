@@ -1093,6 +1093,12 @@ DwarfCIE::execInsns(DWARFReader &r, int version, uintmax_t addr, uintmax_t wantA
                 break;
             }
 
+            case DW_CFA_GNU_args_size: {
+                intmax_t offset = r.getsleb128();
+                // XXX: We don't do anything with this for the moment.
+                break;
+            }
+
             // Can't deal with anything else yet.
             case DW_CFA_GNU_window_size:
             case DW_CFA_GNU_negative_offset_extended:
