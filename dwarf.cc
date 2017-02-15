@@ -112,7 +112,7 @@ DWARFReader::getuleb128shift(int *shift, bool &isSigned)
     unsigned char byte;
     for (result = 0, *shift = 0;;) {
         io->readObj(off++, &byte);
-        result |= (byte & 0x7f) << *shift;
+        result |= (uintmax_t)(byte & 0x7f) << *shift;
         *shift += 7;
         if ((byte & 0x80) == 0)
             break;
