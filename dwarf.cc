@@ -304,7 +304,7 @@ DwarfUnit::DwarfUnit(DwarfInfo *di, DWARFReader &r)
 
     DWARFReader entriesR(r, r.getOffset(), nextoff - r.getOffset());
     assert(nextoff <= r.getLimit());
-    decodeEntries(entriesR, entries);
+    decodeEntries(entriesR, entries, nullptr);
     r.setOffset(nextoff);
 }
 
@@ -674,10 +674,11 @@ DwarfEntry::firstChild(DwarfTag tag)
    return 0;
 }
 
-DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t offset_)
+DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t offset_, DwarfEntry *parent_)
     : unit(unit_)
     , type(&unit->abbreviations.find(DwarfTag(code))->second)
     , offset(offset_)
+    , parent(parent_)
 {
 
     for (auto spec = type->specs.begin(); spec != type->specs.end(); ++spec)
@@ -699,18 +700,18 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
         break;
     }
     if (type->hasChildren)
-        unit_->decodeEntries(r, children);
+        unit_->decodeEntries(r, children, this);
 }
 
 void
-DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries)
+DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *parent)
 {
     while (!r.empty()) {
         intmax_t offset = r.getOffset() - this->offset;
         intmax_t code = r.getuleb128();
         if (code == 0)
             return;
-        allEntries[offset] = entries[offset] = std::make_shared<DwarfEntry>(r, code, this, offset);
+        allEntries[offset] = entries[offset] = std::make_shared<DwarfEntry>(r, code, this, offset, parent);
     }
 }
 

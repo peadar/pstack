@@ -157,6 +157,7 @@ struct DwarfAttribute {
 };
 
 struct DwarfEntry {
+    DwarfEntry *parent;
     DwarfEntries children;
     const DwarfUnit *unit;
     const DwarfAbbreviation *type;
@@ -182,7 +183,7 @@ struct DwarfEntry {
         return *ent;
     }
 
-    DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit, intmax_t offset);
+    DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit, intmax_t offset, DwarfEntry *parent);
     const char *name() {
         const DwarfAttribute *ent;
         if (attrForName(DW_AT_name, &ent))
@@ -237,7 +238,7 @@ struct DwarfUnit {
     mutable DwarfEntries allEntries;
     DwarfInfo *dwarf;
     off_t offset;
-    void decodeEntries(DWARFReader &r, DwarfEntries &entries);
+    void decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *parent);
     uint32_t length;
     uint16_t version;
     std::map<DwarfTag, DwarfAbbreviation> abbreviations;
