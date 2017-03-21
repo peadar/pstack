@@ -501,6 +501,7 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
             StackFrame *frame = new StackFrame(ip);
             stack.push_back(frame);
             if (!dwarfUnwind(p, &dr, ip)) {
+                frame->unwindBy = "end";
 #ifdef __i386__
 
 #define R_EBP 5
@@ -510,20 +511,26 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
                 // and the new base pointer, from the existing one.
                 uint32_t newBp;
                 uint32_t newIp;
-                p.io->readObj((dr.reg[R_EBP] + 4) & 0xffffffff, &newIp);
-                p.io->readObj(dr.reg[R_EBP] & 0xffffffff, &newBp);
-                dr.reg[R_EBP] = newBp;
-                dr.reg[R_EIP] = newIp;
-                ip = newIp;
-                if (newIp == 0) {
+                try {
+                   p.io->readObj((dr.reg[R_EBP] + 4) & 0xffffffff, &newIp);
+                   p.io->readObj(dr.reg[R_EBP] & 0xffffffff, &newBp);
+                   dr.reg[R_EBP] = newBp;
+                   dr.reg[R_EIP] = newIp;
+                   ip = newIp;
+                   if (newIp) {
+                      frame->unwindBy = "arch";
+                   } else {
 #endif
-                frame->unwindBy = "end";
-                break;
+                      break;
 #ifdef __i386__
+                   }
+                } catch (...) {
+                   break;
                 }
 #endif
+            } else {
+               frame->unwindBy = "dwarf";
             }
-            frame->unwindBy = "dwarf";
         }
     }
     catch (const std::exception &ex) {
