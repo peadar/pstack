@@ -268,7 +268,10 @@ DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
     Elf_Off next = r.getOffset() + length;
     version = r.version = r.getu16();
     debugInfoOffset = r.getu32();
-    r.addrLen = addrlen = r.getu8();
+    addrlen = r.getu8();
+    if (addrlen == 0)
+       addrlen = 1;
+    r.addrLen = addrlen;
     segdesclen = r.getu8();
     tupleLen = addrlen * 2;
 
