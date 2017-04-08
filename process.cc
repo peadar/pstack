@@ -304,6 +304,19 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                 objIp = frame->ip - i.reloc;
                 obj = i.object;
                 obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+
+                auto dwarf = getDwarf(obj, true);
+                if (dwarf) {
+                   for (const auto &rangeset : dwarf->ranges()) {
+                      for (const auto range : rangeset.ranges) {
+                         auto tu = dwarf->units()[rangeset.debugInfoOffset];
+                         if (objIp >= range.start && objIp <= range.start + range.length) {
+                           pause();
+                         }
+
+                      }
+                   }
+                }
             } catch (...) {
                 std::ostringstream str;
                 str << "unknown@" << std::hex << frame->ip;
