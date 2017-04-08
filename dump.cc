@@ -36,7 +36,6 @@ std::ostream &operator << (std::ostream &os, const DwarfLineInfo &lines) {
 std::ostream & operator << (std::ostream &os, const DwarfEntry &entry) {
     os
         << "{ \"type\": \"" << entry.type->tag << "\""
-        << ", \"offset\": " << entry.offset
         << ", \"attributes\": " << entry.attributes;
 
     if (entry.type->hasChildren)
