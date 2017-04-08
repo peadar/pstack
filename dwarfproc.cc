@@ -253,17 +253,26 @@ dwarfUnwind(Process &p, DwarfRegisters *regs, Elf_Addr &procaddr)
 {
     DwarfRegisters newRegs;
     auto elf = p.findObject(procaddr);
-    auto dwarf = p.getDwarf(elf.object);
+    DwarfInfo *dwarf;
     Elf_Off objaddr = procaddr - elf.reloc; // relocate process address to object address
 
-    const DwarfFDE *fde = dwarf->debugFrame ? dwarf->debugFrame->findFDE(objaddr) : 0;
-    if (fde == 0) {
-        if (!dwarf->ehFrame)
-            return 0;
-        fde = dwarf->ehFrame->findFDE(objaddr);
-        if (fde == 0)
-            return false;
+    const DwarfFDE *fde;
+    DwarfFrameInfo *dwarfFrame;
+
+    // Try and find DWARF data with debug frame information, or an eh_frame section.
+    for (bool debug : {true, false}) {
+       dwarf = p.getDwarf(elf.object, debug);
+       if (dwarf) {
+          dwarfFrame = dwarf->debugFrame ? dwarf->debugFrame.get() : dwarf->ehFrame.get();
+          if (dwarfFrame)
+             break;
+       }
     }
+    if (!dwarfFrame)
+       return false;
+    fde = dwarfFrame->findFDE(objaddr);
+    if (!fde)
+       return false;
 
     DWARFReader r(elf.object->io, dwarf->getVersion(), fde->instructions, fde->end - fde->instructions, 0);
 
