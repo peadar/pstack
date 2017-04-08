@@ -175,7 +175,6 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
         os << "\"" << value.string << "\"";
         break;
     case DW_FORM_ref_addr: {
-        auto section = elf->getSection(".debug_info", 0);
         auto off = attr.value.ref;
         const auto &allEntries = attr.entry->unit->allEntries;
         const auto &entry = allEntries.find(off);
@@ -214,9 +213,19 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
         break;
         */
     }
-    case DW_FORM_exprloc: DW_FORM_block1: case DW_FORM_block2: case DW_FORM_block4: case DW_FORM_block: os << value.block; break;
-    case DW_FORM_flag: os << (value.flag ? "true" : "false"); break;
-    case DW_FORM_flag_present: os << "true"; break;
+    case DW_FORM_exprloc:
+    case DW_FORM_block1:
+    case DW_FORM_block2:
+    case DW_FORM_block4:
+    case DW_FORM_block:
+        os << value.block;
+        break;
+    case DW_FORM_flag:
+        os << (value.flag ? "true" : "false");
+        break;
+    case DW_FORM_flag_present:
+        os << "true";
+        break;
     default: os << "\"unknown DWARF form " << attr.spec->form << "\"";
     }
     return os;
@@ -401,7 +410,7 @@ void printNote(std::ostream &os, const ElfNoteDesc &note) {
          }
      }
      os << " }";
-};
+}
 
 
 
@@ -436,7 +445,7 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
     auto ehdr = obj.getElfHeader();
     auto brand = ehdr.e_ident[EI_OSABI];
     os << "{ \"type\": \"" << typeNames[ehdr.e_type] << "\", \"entry\": " <<  ehdr.e_entry << ", \"abi\": ";
-    if (brand >= 0 && brand < sizeof abiNames / sizeof abiNames[0])
+    if (brand < sizeof abiNames / sizeof abiNames[0])
         os << "\"" << abiNames[brand] << "\"";
     else
         os << brand;

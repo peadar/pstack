@@ -1,6 +1,6 @@
 #include <libpstack/util.h>
 std::string
-dirname(std::string in)
+dirname(const std::string &in)
 {
     auto it = in.rfind('/');
     if (it == std::string::npos)

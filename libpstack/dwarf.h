@@ -318,7 +318,7 @@ struct DwarfFrameInfo {
     std::map<Elf_Addr, DwarfCIE> cies;
     std::list<DwarfFDE> fdeList;
     DwarfFrameInfo(DwarfInfo *, DWARFReader &, FIType type);
-    Elf_Addr decodeCIEFDEHdr(int version, DWARFReader &, Elf_Addr &id, off_t start, DwarfCIE **);
+    Elf_Addr decodeCIEFDEHdr(DWARFReader &, Elf_Addr &id, off_t start, DwarfCIE **);
     const DwarfFDE *findFDE(Elf_Addr) const;
     bool isCIE(Elf_Off id);
 };
@@ -418,8 +418,8 @@ public:
         , end(off_ + size_)
         , io(io_)
         , addrLen(ELF_BITS / 8)
-        , version(version_)
         , dwarfLen(dwarfLen_)
+        , version(version_)
     {
     }
 
@@ -428,8 +428,8 @@ public:
         , end(off_ + size_)
         , io(rhs.io)
         , addrLen(ELF_BITS / 8)
-        , version(rhs.version)
         , dwarfLen(rhs.dwarfLen)
+        , version(rhs.version)
     {
     }
 
@@ -439,8 +439,8 @@ public:
         , end(section->sh_offset + section->sh_size)
         , io(section.obj.io)
         , addrLen(ELF_BITS / 8)
-        , version(version_)
         , dwarfLen(dwarfLen_)
+        , version(version_)
     {
     }
 

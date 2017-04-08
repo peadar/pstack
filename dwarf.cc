@@ -386,7 +386,8 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
     uint32_t total_length = r.getlength(&r.dwarfLen);
     Elf_Off end = r.getOffset() + total_length;
 
-    int version = r.getu16();
+    uint16_t version = r.getu16();
+    (void)version;
     Elf_Off header_length = r.getfmtuint();
     Elf_Off expectedEnd = header_length + r.getOffset();
     int min_insn_length = r.getu8();
@@ -543,11 +544,9 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
         break;
     }
 
-    case DW_FORM_GNU_ref_alt: {
-        DwarfInfo *info = entry->unit->dwarf;
+    case DW_FORM_GNU_ref_alt:
         value.ref = r.getfmtint();
         break;
-    }
 
     case DW_FORM_addr:
         value.addr = r.getuint(entry->unit->addrlen);
@@ -675,10 +674,10 @@ DwarfEntry::firstChild(DwarfTag tag)
 }
 
 DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t offset_, DwarfEntry *parent_)
-    : unit(unit_)
+    : parent(parent_)
+    , unit(unit_)
     , type(&unit->abbreviations.find(DwarfTag(code))->second)
     , offset(offset_)
-    , parent(parent_)
 {
 
     for (auto spec = type->specs.begin(); spec != type->specs.end(); ++spec)
@@ -839,7 +838,7 @@ DWARFReader::getlength(size_t *addrLen)
 }
 
 Elf_Off
-DwarfFrameInfo::decodeCIEFDEHdr(int version, DWARFReader &r, Elf_Addr &id, off_t start, DwarfCIE **ciep)
+DwarfFrameInfo::decodeCIEFDEHdr(DWARFReader &r, Elf_Addr &id, off_t start, DwarfCIE **ciep)
 {
     size_t addrLen;
     Elf_Off length = r.getlength(&addrLen);
@@ -874,7 +873,7 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, DWARFReader &reader, enum FIType
     off_t nextoff;
     for (; !reader.empty();  reader.setOffset(nextoff)) {
         size_t cieoff = reader.getOffset();
-        nextoff = decodeCIEFDEHdr(info->getVersion(), reader, cieid, decodeStart, 0);
+        nextoff = decodeCIEFDEHdr(reader, cieid, decodeStart, 0);
         if (nextoff == 0)
             break;
         if (isCIE(cieid))
@@ -883,7 +882,7 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, DWARFReader &reader, enum FIType
     reader.setOffset(start);
     for (reader.setOffset(start); !reader.empty(); reader.setOffset(nextoff)) {
         DwarfCIE *cie;
-        nextoff = decodeCIEFDEHdr(info->getVersion(), reader, cieid, decodeStart, &cie);
+        nextoff = decodeCIEFDEHdr(reader, cieid, decodeStart, &cie);
         if (nextoff == 0)
             break;
         if (!isCIE(cieid)) {
@@ -1095,7 +1094,7 @@ DwarfCIE::execInsns(DWARFReader &r, int version, uintmax_t addr, uintmax_t wantA
             }
 
             case DW_CFA_GNU_args_size: {
-                intmax_t offset = r.getsleb128();
+                r.getsleb128(); // Offset.
                 // XXX: We don't do anything with this for the moment.
                 break;
             }

@@ -52,7 +52,6 @@ extern bool noDebugLibs;
 
 
 #ifndef ELF_BITS
-#error ELF BITS REDEF
 #define ELF_BITS 64
 #endif
 
@@ -256,7 +255,7 @@ public:
 struct ElfNoteIter {
    ElfObject *object;
    ElfObject::ProgramHeaders::const_iterator phdrs;
-   off_t noteOffset;
+   Elf_Off noteOffset;
    Elf_Note curNote;
 
    ElfNoteDesc operator *() {

@@ -14,7 +14,7 @@
 #include <string.h>
 #include <unordered_map>
 
-std::string dirname(std::string);
+std::string dirname(const std::string &);
 
 class Exception : public std::exception {
     mutable std::ostringstream str;

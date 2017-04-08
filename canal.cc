@@ -51,9 +51,9 @@ struct ListedSymbol {
     ListedSymbol(const Elf_Sym &sym_, Elf_Off objbase_, string name_, string object)
         : sym(sym_)
         , objbase(objbase_)
-        , objname(object)
-        , count(0)
         , name(name_)
+        , count(0)
+        , objname(object)
     {}
     Elf_Off memaddr() const { return  sym.st_value + objbase; }
 };
@@ -65,8 +65,10 @@ bool operator < (const ListedSymbol &sym, Elf_Off addr) {
 }
 
 static const char *virtpattern = "_ZTV*"; /* wildcard for all vtbls */
-static bool compareSymbolsByAddress(const ListedSymbol &l, const ListedSymbol &r) { return l.memaddr() < r.memaddr(); };
-static bool compareSymbolsByFrequency(const ListedSymbol &l, const ListedSymbol &r) { return l.count > r.count; };
+static bool compareSymbolsByAddress(const ListedSymbol &l, const ListedSymbol &r)
+    { return l.memaddr() < r.memaddr(); }
+static bool compareSymbolsByFrequency(const ListedSymbol &l, const ListedSymbol &r)
+    { return l.count > r.count; }
 
 ostream &
 operator <<(ostream &os, const Usage &)

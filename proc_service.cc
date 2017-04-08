@@ -85,7 +85,7 @@ ps_pstop(const struct ps_prochandle *ph)
 }
 
 ps_err_e
-ps_pwrite(struct ps_prochandle *p, psaddr_t addr, const void *buf, size_t len)
+ps_pwrite(struct ps_prochandle *, psaddr_t, const void *, size_t)
 {
     return (PS_ERR);
 }
@@ -110,21 +110,21 @@ ps_pdread(struct ps_prochandle *p, psaddr_t addr, void *d, size_t l)
 }
 
 ps_err_e
-ps_pdwrite(struct ps_prochandle *p, psaddr_t addr, const void *d, size_t l)
+ps_pdwrite(struct ps_prochandle *, psaddr_t, const void *, size_t)
 {
     abort();
     return PS_ERR;
 }
 
 ps_err_e
-ps_ptread(struct ps_prochandle *p, psaddr_t addr, void *d, size_t l)
+ps_ptread(struct ps_prochandle *, psaddr_t, void *, size_t)
 {
     abort();
     return PS_ERR;
 }
 
 ps_err_e
-ps_ptwrite(struct ps_prochandle *p, psaddr_t addr, const void *d, size_t l)
+ps_ptwrite(struct ps_prochandle *, psaddr_t, const void *, size_t)
 {
     abort();
     return PS_ERR;
@@ -133,20 +133,20 @@ ps_ptwrite(struct ps_prochandle *p, psaddr_t addr, const void *d, size_t l)
 
 #ifdef __i386__
 ps_err_e
-ps_lgetxmmregs (struct ps_prochandle *ph, lwpid_t pid, char *xxx)
+ps_lgetxmmregs (struct ps_prochandle *, lwpid_t, char *)
 {
     abort();
     return (PS_ERR);
 }
 ps_err_e
-ps_lsetxmmregs (struct ps_prochandle *ph, lwpid_t pid, const char *xxx)
+ps_lsetxmmregs (struct ps_prochandle *, lwpid_t, const char *)
 {
     abort();
     return (PS_ERR);
 }
 #endif
 
-ps_err_e ps_lgetfpregs(struct ps_prochandle *p, lwpid_t pid, prfpregset_t *fpregsetp)
+ps_err_e ps_lgetfpregs(struct ps_prochandle *, lwpid_t, prfpregset_t *)
 {
     abort();
     return (PS_ERR);
@@ -158,13 +158,13 @@ ps_err_e ps_lgetregs(struct ps_prochandle *ph, lwpid_t pid, prgregset_t gregset)
     return p->getRegs(pid, (CoreRegisters *)gregset) ? PS_OK : PS_ERR;
 }
 
-ps_err_e ps_lsetfpregs(struct ps_prochandle *p, lwpid_t pid, const prfpregset_t *fpregsetp)
+ps_err_e ps_lsetfpregs(struct ps_prochandle *, lwpid_t, const prfpregset_t *)
 {
     abort();
     return (PS_ERR);
 }
 
-ps_err_e ps_lsetregs(struct ps_prochandle *p, lwpid_t pid, const prgregset_t regs)
+ps_err_e ps_lsetregs(struct ps_prochandle *, lwpid_t, const prgregset_t)
 {
     abort();
     return (PS_ERR);
