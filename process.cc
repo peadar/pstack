@@ -284,12 +284,76 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
     return os << " ] }";
 }
 
+std::shared_ptr<DwarfEntry>
+findEntryForFunc(Elf_Addr address, std::shared_ptr<DwarfEntry> &entry)
+{
+   switch (entry->type->tag) {
+      case DW_TAG_subprogram: {
+         const DwarfAttribute *lowAttr, *highAttr;
+         if (entry->attrForName(DW_AT_low_pc, &lowAttr) && entry->attrForName(DW_AT_high_pc, &highAttr)) {
+            Elf_Addr start, end;
+            switch (lowAttr->spec->form) {
+               case DW_FORM_addr:
+                  start = lowAttr->value.addr;
+                  break;
+               default:
+                  abort();
+                  break;
+            }
+            switch (highAttr->spec->form) {
+               case DW_FORM_addr:
+                  end = highAttr->value.addr;
+                  break;
+               case DW_FORM_data1:
+               case DW_FORM_data2:
+               case DW_FORM_data4:
+               case DW_FORM_data8:
+                  end = start + highAttr->value.sdata;
+                  break;
+               default:
+                  abort();
+                  
+            }
+            if (start <= address && end > address)
+               return entry;
+         }
+         break;
+      }
+
+      default:
+         for (auto &child : entry->children) {
+            auto descendent = findEntryForFunc(address, child.second);
+            if (descendent)
+               return descendent;
+         }
+         break;
+   }
+   return nullptr;
+}
+
+void
+Process::printArgs(const DwarfEntry *function, const StackFrame *frame)
+{
+   for (auto &childEnt : function->children) {
+      const std::shared_ptr<DwarfEntry> child = childEnt.second;
+      switch (child->type->tag) {
+         case DW_TAG_formal_parameter:
+            const DwarfAttribute *locationA;
+            if (child->attrForName(DW_AT_location, &locationA)) {
+               pause();
+            }
+            break;
+         default:
+            break;
+      }
+   }
+}
+
 std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options)
 {
     os << "thread: " << (void *)thread.info.ti_tid << ", lwp: " << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
-    for (auto frameI = thread.stack.begin(); frameI != thread.stack.end(); ++frameI) {
-        auto &frame = *frameI;
+    for (auto frame : thread.stack) {
         Elf_Addr objIp = 0;
         std::shared_ptr<ElfObject> obj;
         Elf_Sym sym;
@@ -305,18 +369,6 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                 obj = i.object;
                 obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
 
-                auto dwarf = getDwarf(obj, true);
-                if (dwarf) {
-                   for (const auto &rangeset : dwarf->ranges()) {
-                      for (const auto range : rangeset.ranges) {
-                         auto tu = dwarf->units()[rangeset.debugInfoOffset];
-                         if (objIp >= range.start && objIp <= range.start + range.length) {
-                           pause();
-                         }
-
-                      }
-                   }
-                }
             } catch (...) {
                 std::ostringstream str;
                 str << "unknown@" << std::hex << frame->ip;
@@ -324,11 +376,37 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             }
         }
 
+        auto dwarf = getDwarf(obj, true);
+        std::shared_ptr<DwarfEntry> de;
+        if (dwarf) {
+            for (const auto &rangeset : dwarf->ranges()) {
+                for (const auto range : rangeset.ranges) {
+                    auto tu = dwarf->units()[rangeset.debugInfoOffset];
+                    if (objIp >= range.start && objIp <= range.start + range.length) {
+                        // find the DIE for this function
+                        for (auto it : tu->entries) {
+                            de = findEntryForFunc(objIp, it.second);
+                            if (de)
+                                break;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        const DwarfAttribute *dwarfNamea;
+        if (de && de->attrForName(DW_AT_name, &dwarfNamea)) {
+            std::string dwarfName = dwarfNamea->value.string;
+            if (dwarfName != symName) {
+                if (debug)
+                    *debug << "override name " << symName << "\n";
+                symName = dwarfName;
+            }
+        }
+
         os << "    " << symName << "(";
-        const char *sep = "";
-        for (auto i = frame->args.begin(); i != frame->args.end(); ++i) {
-            os << sep << "0x" << std::hex << *i;
-            sep = ", ";
+        if (de) {
+           printArgs(de.get(), frame);
         }
         os << ")";
 
@@ -351,6 +429,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         if (debug) {
             os
                 << "\t(ip=0x" << std::hex << intptr_t(frame->ip)
+                << ", objip=0x" << std::hex << objIp
                 << ", symval=0x" << std::hex << sym.st_value
                 << ", off=0x" << std::hex << intptr_t(objIp) - sym.st_value;
             if (strcmp(frame->unwindBy, "END") != 0)
