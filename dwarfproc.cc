@@ -30,16 +30,7 @@ getFBreg(DwarfInfo *dwarf, const Process &p, const StackFrame *frame, intmax_t o
       stack->push(0);
       return;
    }
-   switch (attr->spec->form) {
-      case DW_FORM_exprloc: {
-         DWARFReader r(dwarf->elf->io, dwarf->getVersion(), attr->value.block.offset, attr->value.block.length, 0);
-         auto val = dwarfEvalExpr(dwarf, p, r, frame, stack);
-         stack->push(val + offset);
-         break;
-      }
-      default:
-         abort();
-   }
+   dwarfEvalExpr(p, attr, frame, stack);
 }
 
 Elf_Addr
