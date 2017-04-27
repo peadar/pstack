@@ -16,9 +16,11 @@ class Process;
 
 struct StackFrame {
     Elf_Addr ip;
-    std::vector<Elf_Word> args;
+    Elf_Addr cfa;
     const char *unwindBy;
-    StackFrame(Elf_Addr ip_) : ip(ip_), unwindBy("ERROR") {}
+    DwarfRegisters regs;
+    std::shared_ptr<DwarfEntry> function;
+    StackFrame() : ip(-1), unwindBy("ERROR"), function(0) {}
 };
 
 struct ThreadStack {
@@ -54,7 +56,7 @@ class Process : public ps_prochandle {
     bool isStatic;
     Elf_Addr sysent; // for AT_SYSINFO
     std::map<std::shared_ptr<ElfObject>, DwarfInfo *> dwarf;
-    void printArgs(const DwarfEntry *function, const StackFrame *frame);
+    void printArgs(std::ostream &, const DwarfEntry *function, const StackFrame *frame);
 
 protected:
     td_thragent_t *agent;

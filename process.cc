@@ -1,4 +1,5 @@
 #include <set>
+#include <limits>
 #include <cassert>
 #include <limits>
 #include <limits.h>
@@ -259,13 +260,6 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
         if (symName != "")
             os << ", \"function\": \"" << symName << "\"";
 
-        os << ", \"args:\": [ ";
-        const char *sep = "";
-        for (auto i = frame->args.begin(); i != frame->args.end(); ++i) {
-            os << sep << *i;
-            sep = ", ";
-        }
-        os << " ]";
         if (obj) {
             os << ", \"off\": " << intptr_t(objIp) - sym.st_value;
             os << ", \"file\": " << "\"" << fileName << "\"";
@@ -332,21 +326,31 @@ findEntryForFunc(Elf_Addr address, std::shared_ptr<DwarfEntry> &entry)
 }
 
 void
-Process::printArgs(const DwarfEntry *function, const StackFrame *frame)
+Process::printArgs(std::ostream &os, const DwarfEntry *function, const StackFrame *frame)
 {
-   for (auto &childEnt : function->children) {
-      const std::shared_ptr<DwarfEntry> child = childEnt.second;
-      switch (child->type->tag) {
-         case DW_TAG_formal_parameter:
-            const DwarfAttribute *locationA;
-            if (child->attrForName(DW_AT_location, &locationA)) {
-               pause();
+    const char *sep = "";
+    for (auto &childEnt : function->children) {
+        const std::shared_ptr<DwarfEntry> child = childEnt.second;
+        switch (child->type->tag) {
+            case DW_TAG_formal_parameter: {
+                const DwarfAttribute *locationA, *nameA;
+                const char *name = child->attrForName(DW_AT_name, &nameA)
+                    ? nameA->value.string
+                    : "unknown";
+
+                Elf_Addr addr = 0;
+                if (child->attrForName(DW_AT_location, &locationA)) {
+                    DwarfExpressionStack fbstack;
+                    addr = dwarfEvalExpr(*this, locationA, frame, &fbstack);
+                }
+                os << sep << name << "=@" << std::hex << addr;
+                sep = ", ";
+                break;
             }
-            break;
-         default:
-            break;
-      }
-   }
+            default:
+                break;
+        }
+    }
 }
 
 std::ostream &
@@ -376,9 +380,9 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             }
         }
 
-        auto dwarf = getDwarf(obj, true);
+        DwarfInfo *dwarf;
         std::shared_ptr<DwarfEntry> de;
-        if (dwarf) {
+        if (obj != 0 && (dwarf = getDwarf(obj, true)) != 0 ) {
             for (const auto &rangeset : dwarf->ranges()) {
                 for (const auto range : rangeset.ranges) {
                     auto tu = dwarf->units()[rangeset.debugInfoOffset];
@@ -393,20 +397,21 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                     }
                 }
             }
-        }
-        const DwarfAttribute *dwarfNamea;
-        if (de && de->attrForName(DW_AT_name, &dwarfNamea)) {
-            std::string dwarfName = dwarfNamea->value.string;
-            if (dwarfName != symName) {
-                if (debug)
-                    *debug << "override name " << symName << "\n";
-                symName = dwarfName;
+            const DwarfAttribute *dwarfNamea;
+            if (de && de->attrForName(DW_AT_name, &dwarfNamea)) {
+                std::string dwarfName = dwarfNamea->value.string;
+                frame->function = de;
+                if (dwarfName != symName) {
+                    if (debug)
+                        *debug << "override name " << symName << "\n";
+                    symName = dwarfName;
+                }
             }
         }
 
         os << "    " << symName << "(";
         if (de) {
-           printArgs(de.get(), frame);
+           printArgs(os, de.get(), frame);
         }
         os << ")";
 
@@ -585,16 +590,18 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
 {
     stack.clear();
     try {
-        /* Put a bound on the number of iterations. */
-        Elf_Addr ip = REG(regs, ip);
-        DwarfRegisters dr;
-        dwarfPtToDwarf(&dr, &regs);
-        for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++) {
-            StackFrame *frame = new StackFrame(ip);
-            stack.push_back(frame);
-            if (!dwarfUnwind(p, &dr, ip)) {
-                frame->unwindBy = "end";
-#ifdef __i386__
+        StackFrame *frame;
+        auto prevFrame = new StackFrame();
+
+        // Set up the first frame using the machine context registers
+        prevFrame->ip = REG(regs, ip);
+        dwarfPtToDwarf(&prevFrame->regs, &regs);
+        for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++, prevFrame = frame) {
+            stack.push_back(prevFrame);
+            frame = new StackFrame();
+            if (!dwarfUnwind(p, prevFrame, frame, &prevFrame->cfa)) {
+                prevFrame->unwindBy = "end";
+#if 0
 
 #define R_EBP 5
 #define R_EIP 8
@@ -614,16 +621,17 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
                    } else {
 #endif
                       break;
-#ifdef __i386__
+#if 0
                    }
                 } catch (...) {
                    break;
                 }
 #endif
             } else {
-               frame->unwindBy = "dwarf";
+               prevFrame->unwindBy = "dwarf";
             }
         }
+        delete frame;
     }
     catch (const std::exception &ex) {
         std::clog << "exception unwinding stack: " << ex.what() << std::endl;
