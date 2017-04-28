@@ -278,8 +278,8 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
     return os << " ] }";
 }
 
-std::shared_ptr<DwarfEntry>
-findEntryForFunc(Elf_Addr address, std::shared_ptr<DwarfEntry> &entry)
+DwarfEntry *
+findEntryForFunc(Elf_Addr address, DwarfEntry *entry)
 {
    switch (entry->type->tag) {
       case DW_TAG_subprogram: {
@@ -330,7 +330,7 @@ Process::printArgs(std::ostream &os, const DwarfEntry *function, const StackFram
 {
     const char *sep = "";
     for (auto &childEnt : function->children) {
-        const std::shared_ptr<DwarfEntry> child = childEnt.second;
+        const DwarfEntry *child = childEnt.second;
         switch (child->type->tag) {
             case DW_TAG_formal_parameter: {
                 const DwarfAttribute *locationA, *nameA;
@@ -380,8 +380,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             }
         }
 
-        DwarfInfo *dwarf;
-        std::shared_ptr<DwarfEntry> de;
+        DwarfInfo *dwarf = 0;
+        DwarfEntry *de = 0;
         if (obj != 0 && (dwarf = getDwarf(obj, true)) != 0 ) {
             for (const auto &rangeset : dwarf->ranges()) {
                 for (const auto range : rangeset.ranges) {
@@ -401,6 +401,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             if (de && de->attrForName(DW_AT_name, &dwarfNamea)) {
                 std::string dwarfName = dwarfNamea->value.string;
                 frame->function = de;
+                frame->dwarf = dwarf; // hold on to 'de'
                 if (dwarfName != symName) {
                     if (debug)
                         *debug << "override name " << symName << "\n";
@@ -411,7 +412,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 
         os << "    " << symName << "(";
         if (de) {
-           printArgs(os, de.get(), frame);
+           printArgs(os, de, frame);
         }
         os << ")";
 

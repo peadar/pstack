@@ -659,7 +659,8 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
 }
 
 DwarfEntry::DwarfEntry()
-    : unit(0)
+    : parent(0)
+    , unit(0)
     , type(0)
     , offset(-1)
 {
@@ -667,7 +668,7 @@ DwarfEntry::DwarfEntry()
 }
 
 
-std::shared_ptr<DwarfEntry>
+DwarfEntry *
 DwarfEntry::firstChild(DwarfTag tag)
 {
    for (auto &ent : children)
@@ -713,7 +714,8 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
         intmax_t code = r.getuleb128();
         if (code == 0)
             return;
-        allEntries[offset] = entries[offset] = std::make_shared<DwarfEntry>(r, code, this, offset, parent);
+        allEntries[offset] = new DwarfEntry(r, code, this, offset, parent);
+        entries[offset] = allEntries[offset];
     }
 }
 

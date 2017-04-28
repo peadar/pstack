@@ -17,7 +17,9 @@ struct DwarfLineInfo;
 struct DwarfUnit;
 struct DwarfFrameInfo;
 struct DwarfEntry;
-typedef std::map<off_t, std::shared_ptr<DwarfEntry>> DwarfEntries;
+// The DWARF Unit's allEntries map contains the underlying data for the tree.
+typedef std::map<off_t, DwarfEntry *> DwarfEntries;
+
 
 typedef struct {
     uintmax_t reg[DWARF_MAXREG];
@@ -184,13 +186,13 @@ struct DwarfEntry {
     }
 
     DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit, intmax_t offset, DwarfEntry *parent);
-    const char *name() {
+    const char *name() const {
         const DwarfAttribute *ent;
         if (attrForName(DW_AT_name, &ent))
             return ent->value.string;
         return "anon";
     }
-    std::shared_ptr<DwarfEntry> firstChild(DwarfTag tag);
+    DwarfEntry *firstChild(DwarfTag tag);
 };
 
 enum FIType {
@@ -235,7 +237,7 @@ public:
 };
 
 struct DwarfUnit {
-    mutable DwarfEntries allEntries;
+    mutable std::map<off_t, DwarfEntry *> allEntries;
     DwarfInfo *dwarf;
     off_t offset;
     void decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *parent);

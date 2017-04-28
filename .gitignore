@@ -5,3 +5,5 @@ tags
 *64
 *32
 ID
+**/CMakeFiles
+**/CMakeCache.txt

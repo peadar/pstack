@@ -22,7 +22,7 @@ default: return 0;
 
 
 void
-getFBreg(DwarfInfo *dwarf, const Process &p, const StackFrame *frame, intmax_t offset, DwarfExpressionStack *stack)
+getFBreg(const Process &p, const StackFrame *frame, intmax_t offset, DwarfExpressionStack *stack)
 {
 
    const DwarfAttribute *attr;
@@ -30,7 +30,7 @@ getFBreg(DwarfInfo *dwarf, const Process &p, const StackFrame *frame, intmax_t o
       stack->push(0);
       return;
    }
-   dwarfEvalExpr(p, attr, frame, stack);
+   stack->push(dwarfEvalExpr(p, attr, frame, stack));
 }
 
 Elf_Addr
@@ -43,14 +43,12 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
                     attr->value.udata, std::numeric_limits<size_t>::max(), 0);
             size_t size = r.getuleb128();
             DWARFReader expr(r, r.getOffset(), size);
-            DwarfExpressionStack stack;
-            return dwarfEvalExpr(dwarf, proc, expr, 0, &stack);
+            return dwarfEvalExpr(dwarf, proc, expr, 0, stack);
         }
         case DW_FORM_exprloc: {
             auto &block = attr->value.block;
             DWARFReader r(dwarf->elf->io, dwarf->getVersion(), block.offset, block.length, 0);
-            DwarfExpressionStack stack;
-            return dwarfEvalExpr(dwarf, proc, r, frame, &stack);
+            return dwarfEvalExpr(dwarf, proc, r, frame, stack);
         }
         default:
             abort();
@@ -233,7 +231,7 @@ dwarfEvalExpr(DwarfInfo *dwarf, const Process &proc, DWARFReader &r, const Stack
                break;
             case DW_OP_fbreg:
                // Yuk - find DW_AT_frame_base, and offset from that.
-               getFBreg(dwarf, proc, frame, r.getsleb128(), stack);
+               getFBreg(proc, frame, r.getsleb128(), stack);
                break;
 
             case DW_OP_reg0: case DW_OP_reg1: case DW_OP_reg2: case DW_OP_reg3:

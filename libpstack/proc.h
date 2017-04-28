@@ -19,7 +19,8 @@ struct StackFrame {
     Elf_Addr cfa;
     const char *unwindBy;
     DwarfRegisters regs;
-    std::shared_ptr<DwarfEntry> function;
+    DwarfInfo *dwarf;
+    DwarfEntry * function;
     StackFrame() : ip(-1), unwindBy("ERROR"), function(0) {}
 };
 
