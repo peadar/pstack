@@ -39,7 +39,8 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
     DwarfInfo *dwarf = attr->entry->unit->dwarf;
     switch (attr->spec->form) {
         case DW_FORM_sec_offset: {
-            DWARFReader r(dwarf->info, dwarf->getVersion(), attr->value.udata, std::numeric_limits<size_t>::max());
+            auto sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
+            DWARFReader r(sec, dwarf->getVersion(), attr->value.udata, std::numeric_limits<size_t>::max());
             size_t size = r.getuleb128();
             DWARFReader expr(r, r.getOffset(), size);
             return dwarfEvalExpr(dwarf, proc, expr, frame, stack);
