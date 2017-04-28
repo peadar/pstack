@@ -164,6 +164,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_data2:
     case DW_FORM_data4:
     case DW_FORM_data8:
+    case DW_FORM_sec_offset:
     case DW_FORM_sdata:
         os << value.sdata;
         break;

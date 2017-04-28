@@ -95,7 +95,6 @@ class CacheReader : public Reader {
         Page(Reader &r, off_t offset);
     };
     mutable std::list<Page *> pages;
-    size_t pagecount;
     Page *getPage(off_t offset) const;
 public:
     virtual size_t read(off_t off, size_t count, char *ptr) const;

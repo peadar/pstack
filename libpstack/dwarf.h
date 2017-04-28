@@ -2,6 +2,7 @@
 #define DWARF_H
 
 #include <libpstack/elf.h>
+#include <limits>
 #include <map>
 #include <list>
 #include <vector>
@@ -330,12 +331,12 @@ class DwarfInfo {
     std::list<DwarfARangeSet> aranges;
     std::map<Elf_Off, std::shared_ptr<DwarfUnit>> unitsm;
     int version;
+public:
     ElfSection info, debstr, pubnamesh, arangesh, debug_frame;
     std::shared_ptr<ElfObject> altImage;
     std::shared_ptr<DwarfInfo> altDwarf;
     bool altImageLoaded;
 
-public:
     std::shared_ptr<ElfObject> getAltImage();
     std::shared_ptr<DwarfInfo> getAltDwarf();
     std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
@@ -435,10 +436,9 @@ public:
     {
     }
 
-
-    DWARFReader(const ElfSection &section, int version_, Elf_Off off_, size_t dwarfLen_)
+    DWARFReader(const ElfSection &section, int version_, Elf_Off off_, size_t dwarfLen_, size_t size = std::numeric_limits<size_t>::max())
         : off(off_ + section->sh_offset)
-        , end(section->sh_offset + section->sh_size)
+        , end(section->sh_offset + std::min(section->sh_size, size))
         , io(section.obj.io)
         , addrLen(ELF_BITS / 8)
         , dwarfLen(dwarfLen_)

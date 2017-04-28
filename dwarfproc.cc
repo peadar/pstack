@@ -30,7 +30,7 @@ getFBreg(const Process &p, const StackFrame *frame, intmax_t offset, DwarfExpres
       stack->push(0);
       return;
    }
-   stack->push(dwarfEvalExpr(p, attr, frame, stack));
+   stack->push(dwarfEvalExpr(p, attr, frame, stack) + offset);
 }
 
 Elf_Addr
@@ -39,11 +39,10 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
     DwarfInfo *dwarf = attr->entry->unit->dwarf;
     switch (attr->spec->form) {
         case DW_FORM_sec_offset: {
-            DWARFReader r(dwarf->elf->io, dwarf->getVersion(),
-                    attr->value.udata, std::numeric_limits<size_t>::max(), 0);
+            DWARFReader r(dwarf->info, dwarf->getVersion(), attr->value.udata, std::numeric_limits<size_t>::max());
             size_t size = r.getuleb128();
             DWARFReader expr(r, r.getOffset(), size);
-            return dwarfEvalExpr(dwarf, proc, expr, 0, stack);
+            return dwarfEvalExpr(dwarf, proc, expr, frame, stack);
         }
         case DW_FORM_exprloc: {
             auto &block = attr->value.block;

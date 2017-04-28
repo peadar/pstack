@@ -230,13 +230,12 @@ DwarfInfo::pubnames()
 std::map<Elf_Off, std::shared_ptr<DwarfUnit>> &
 DwarfInfo::units()
 {
-    if (info) {
+    if (unitsm.size() == 0) {
         DWARFReader reader(info, version, 0, 0);
         while (!reader.empty()) {
             auto off = reader.getOffset() - info->sh_offset;
             unitsm[off] = std::make_shared<DwarfUnit>(this, reader);
         }
-        info = 0;
     }
     return unitsm;
 }
