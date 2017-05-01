@@ -41,7 +41,7 @@ DWARFReader::getint(int len)
     intmax_t rc;
     int i;
     uint8_t bytes[16];
-    if (len > 16)
+    if (len > 16 || len < 1)
         throw Exception() << "can't deal with ints of size " << len;
     io->readObj(off, bytes, len);
     off += len;
@@ -230,7 +230,7 @@ DwarfInfo::pubnames()
 std::map<Elf_Off, std::shared_ptr<DwarfUnit>> &
 DwarfInfo::units()
 {
-    if (unitsm.size() == 0) {
+    if (unitsm.size() == 0 && info) {
         DWARFReader reader(info, version, 0, 0);
         while (!reader.empty()) {
             auto off = reader.getOffset() - info->sh_offset;
