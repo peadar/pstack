@@ -150,7 +150,7 @@ Process::load()
     the = td_ta_new(this, &agent);
     if (the != TD_OK) {
         agent = 0;
-        if (debug)
+        if (debug && the != TD_NOLIBTHREAD)
             *debug << "failed to load thread agent: " << the << std::endl;
     }
 
@@ -333,15 +333,22 @@ Process::printArgs(std::ostream &os, const DwarfEntry *function, const StackFram
         const DwarfEntry *child = childEnt.second;
         switch (child->type->tag) {
             case DW_TAG_formal_parameter: {
-                const DwarfAttribute *locationA, *nameA;
-                const char *name = child->attrForName(DW_AT_name, &nameA)
-                    ? nameA->value.string
-                    : "unknown";
+                const char *name = child->name();
+                if (name == 0)
+                   name = "unknown";
 
                 Elf_Addr addr = 0;
+                const DwarfAttribute *locationA, *typeA;
                 if (child->attrForName(DW_AT_location, &locationA)) {
+
                     DwarfExpressionStack fbstack;
                     addr = dwarfEvalExpr(*this, locationA, frame, &fbstack);
+                    if (child->attrForName(DW_AT_type, &typeA)) {
+                        switch (typeA->spec->form) {
+                           case DW_FORM_ref4:
+                                break;
+                        }
+                    }
                 }
                 os << sep << name << "=@" << std::hex << addr;
                 sep = ", ";
@@ -382,7 +389,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 
         DwarfInfo *dwarf = 0;
         DwarfEntry *de = 0;
-        if (obj != 0 && (dwarf = getDwarf(obj, true)) != 0 ) {
+        // Only do arg dumps if we're in debug mode for the moment.
+        if (debug && obj != 0 && (dwarf = getDwarf(obj, true)) != 0 ) {
             for (const auto &rangeset : dwarf->ranges()) {
                 for (const auto range : rangeset.ranges) {
                     auto tu = dwarf->units()[rangeset.debugInfoOffset];
@@ -397,9 +405,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                     }
                 }
             }
-            const DwarfAttribute *dwarfNamea;
-            if (de && de->attrForName(DW_AT_name, &dwarfNamea)) {
-                std::string dwarfName = dwarfNamea->value.string;
+            if (de && de->name()) {
+                std::string dwarfName = de->name();
                 frame->function = de;
                 frame->dwarf = dwarf; // hold on to 'de'
                 if (dwarfName != symName) {

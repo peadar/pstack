@@ -191,7 +191,7 @@ struct DwarfEntry {
         const DwarfAttribute *ent;
         if (attrForName(DW_AT_name, &ent))
             return ent->value.string;
-        return "anon";
+        return 0;
     }
     DwarfEntry *firstChild(DwarfTag tag);
 };
