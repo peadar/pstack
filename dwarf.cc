@@ -313,14 +313,8 @@ DwarfUnit::DwarfUnit(DwarfInfo *di, DWARFReader &r)
 std::string
 DwarfUnit::name() const
 {
-    try {
-       if (!entries.empty())
-           return entries.begin()->second->attrForName(DW_AT_name).value.string;
-       throw "no name for this entry";
-    }
-    catch (...) {
-        return "(anon unit)";
-    }
+    const char *name = entries.begin()->second->name();
+    return name ? name : "(anon unit)";
 
 }
 

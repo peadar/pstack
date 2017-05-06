@@ -114,4 +114,8 @@ public:
 };
 std::string linkResolve(std::string name);
 
+template <typename T> T maybe(T val, T dflt) {
+    return val ?  val : dflt;
+}
+
 #endif // LIBPSTACK_UTIL_H

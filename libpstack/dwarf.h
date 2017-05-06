@@ -169,29 +169,15 @@ struct DwarfEntry {
 
     DwarfEntry();
 
-    bool attrForName(DwarfAttrName name, const DwarfAttribute **ent) const {
+    const DwarfAttribute *attrForName(DwarfAttrName name) const {
         auto attr = attributes.find(name);
-        if (attr != attributes.end()) {
-            if (ent)
-               *ent = &attr->second;
-            return true;
-        }
-        return false;
-    }
-
-    const DwarfAttribute &attrForName(DwarfAttrName name) const {
-        const DwarfAttribute *ent;
-        if (!attrForName(name, &ent))
-           throw "no such attribute";
-        return *ent;
+        return attr != attributes.end() ? &attr->second : 0;
     }
 
     DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit, intmax_t offset, DwarfEntry *parent);
     const char *name() const {
-        const DwarfAttribute *ent;
-        if (attrForName(DW_AT_name, &ent))
-            return ent->value.string;
-        return 0;
+        const DwarfAttribute *ent = attrForName(DW_AT_name);
+        return ent ? ent->value.string : 0;
     }
     DwarfEntry *firstChild(DwarfTag tag);
 };
@@ -289,7 +275,7 @@ struct DwarfRegisterUnwind {
 };
 
 struct DwarfCallFrame {
-    DwarfRegisterUnwind registers[MAXREG];
+    std::map<int, DwarfRegisterUnwind> registers;
     int cfaReg;
     DwarfRegisterUnwind cfaValue;
     DwarfCallFrame();

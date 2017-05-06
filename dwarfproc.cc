@@ -7,6 +7,7 @@
 #include <libpstack/dwarfproc.h>
 #include <libpstack/dump.h>
 
+#include <assert.h>
 
 static int
 dwarfIsArchReg(int regno)
@@ -26,7 +27,7 @@ getFBreg(const Process &p, const StackFrame *frame, intmax_t offset, DwarfExpres
 {
 
    const DwarfAttribute *attr;
-   if (!frame->function || !frame->function->attrForName(DW_AT_frame_base, &attr)) {
+   if (!frame->function || (attr = frame->function->attrForName(DW_AT_frame_base)) == 0) {
       stack->push(0);
       return;
    }
@@ -40,10 +41,39 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
     switch (attr->spec->form) {
         case DW_FORM_sec_offset: {
             auto sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
+            auto loaded = proc.findObject(frame->ip);
+            auto objIp = frame->ip - loaded.reloc;
+            // convert this object-relative addr to a unit-relative one
+            const DwarfEntry *unitEntry = attr->entry->unit->entries.begin()->second;
+            auto unitLow = unitEntry->attrForName(DW_AT_low_pc);
+            auto unitHigh = unitEntry->attrForName(DW_AT_high_pc);
+            Elf_Addr endAddr;
+            switch (unitHigh->spec->form) {
+                case DW_FORM_addr:
+                    endAddr = unitHigh->value.addr;
+                    break;
+                case DW_FORM_data1: case DW_FORM_data2: case DW_FORM_data4: case DW_FORM_data8:
+                    endAddr = unitHigh->value.sdata + unitLow->value.addr;
+                    break;
+                default:
+                    abort();
+            }
+            assert(objIp >= unitLow->value.udata && objIp < endAddr);
+            Elf_Addr unitIp = objIp - unitLow->value.udata;
+
             DWARFReader r(sec, dwarf->getVersion(), attr->value.udata, std::numeric_limits<size_t>::max());
-            size_t size = r.getuleb128();
-            DWARFReader expr(r, r.getOffset(), size);
-            return dwarfEvalExpr(dwarf, proc, expr, frame, stack);
+            for (;;) {
+                Elf_Addr start = r.getint(sizeof start);
+                Elf_Addr end = r.getint(sizeof end);
+                if (start == 0 && end == 0)
+                    return 0;
+                auto len = r.getuint(2);
+                if (unitIp >= start && unitIp < end) {
+                    DWARFReader exr(r, r.getOffset(), Elf_Word(len));
+                    return dwarfEvalExpr(dwarf, proc, exr, frame, stack);
+                }
+                r.skip(len);
+            }
         }
         case DW_FORM_exprloc: {
             auto &block = attr->value.block;
@@ -234,6 +264,7 @@ dwarfEvalExpr(DwarfInfo *dwarf, const Process &proc, DWARFReader &r, const Stack
                getFBreg(proc, frame, r.getsleb128(), stack);
                break;
 
+            // XXX: this is wrong - this indicates an object contained in a register, not a location contained in a register.
             case DW_OP_reg0: case DW_OP_reg1: case DW_OP_reg2: case DW_OP_reg3:
             case DW_OP_reg4: case DW_OP_reg5: case DW_OP_reg6: case DW_OP_reg7:
             case DW_OP_reg8: case DW_OP_reg9: case DW_OP_reg10: case DW_OP_reg11:
@@ -247,8 +278,20 @@ dwarfEvalExpr(DwarfInfo *dwarf, const Process &proc, DWARFReader &r, const Stack
             case DW_OP_regx:
                 stack->push(frame->regs.reg[r.getsleb128()]);
                 break;
+
+            case DW_OP_entry_value: case DW_OP_GNU_entry_value: {
+                auto len = r.getuleb128();
+                DWARFReader r2(r, r.getOffset(), len);
+                stack->push(dwarfEvalExpr(dwarf, proc, r2, frame, stack));
+                break;
+            }
+
+            case DW_OP_stack_value:
+                break; // XXX: the returned value is not a location, but the underlying value itself.
+
             default:
-                abort();
+                std::clog << "error evaluating DWARF OP " << op << " (" << int(op) << ")\n";
+                return -1;
         }
     }
     intmax_t rv = stack->top();

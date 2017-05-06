@@ -147,8 +147,11 @@ DWARF_OP(DW_OP_piece, 0x93, 1)
 DWARF_OP(DW_OP_deref_size, 0x94, 1)
 DWARF_OP(DW_OP_xderef_size, 0x95, 1)
 DWARF_OP(DW_OP_nop, 0x96, 0)
+DWARF_OP(DW_OP_stack_value, 0x9f, 0)
 DWARF_OP(DW_OP_lo_user, 0xe0, 0)
 DWARF_OP(DW_OP_hi_user, 0xff, 0)
+DWARF_OP(DW_OP_GNU_entry_value, 0xf3, 0)
+DWARF_OP(DW_OP_entry_value, 0xa3, 0)
 
 // DWARF V3
 DWARF_OP(DW_OP_push_object_address, 0x97, 0)

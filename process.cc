@@ -283,8 +283,9 @@ findEntryForFunc(Elf_Addr address, DwarfEntry *entry)
 {
    switch (entry->type->tag) {
       case DW_TAG_subprogram: {
-         const DwarfAttribute *lowAttr, *highAttr;
-         if (entry->attrForName(DW_AT_low_pc, &lowAttr) && entry->attrForName(DW_AT_high_pc, &highAttr)) {
+         const DwarfAttribute *lowAttr = entry->attrForName(DW_AT_low_pc);
+         const DwarfAttribute *highAttr =entry->attrForName(DW_AT_high_pc);
+         if (lowAttr && highAttr) {
             Elf_Addr start, end;
             switch (lowAttr->spec->form) {
                case DW_FORM_addr:
@@ -306,7 +307,7 @@ findEntryForFunc(Elf_Addr address, DwarfEntry *entry)
                   break;
                default:
                   abort();
-                  
+
             }
             if (start <= address && end > address)
                return entry;
@@ -338,17 +339,16 @@ Process::printArgs(std::ostream &os, const DwarfEntry *function, const StackFram
                    name = "unknown";
 
                 Elf_Addr addr = 0;
-                const DwarfAttribute *locationA, *typeA;
-                if (child->attrForName(DW_AT_location, &locationA)) {
-
+                const DwarfAttribute *locationA = child->attrForName(DW_AT_location);
+                const DwarfAttribute *typeA = child->attrForName(DW_AT_type);
+                if (locationA && typeA) {
                     DwarfExpressionStack fbstack;
                     addr = dwarfEvalExpr(*this, locationA, frame, &fbstack);
-                    if (child->attrForName(DW_AT_type, &typeA)) {
-                        switch (typeA->spec->form) {
-                           case DW_FORM_ref4:
-                                break;
-                        }
-                    }
+                    switch (typeA->spec->form) {
+                        case DW_FORM_ref4:
+                        default:
+                        break;
+                     }
                 }
                 os << sep << name << "=@" << std::hex << addr;
                 sep = ", ";

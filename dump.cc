@@ -181,7 +181,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
         const auto &allEntries = attr.entry->unit->allEntries;
         const auto &entry = allEntries.find(off);
         if (entry != allEntries.end())
-            os << "\"ref to " << entry->second->name() << " at " << off << "\"";
+            os << "\"ref to " << maybe(entry->second->name(), "unnamed") << " at " << off << "\"";
         else
             os << "\"HAVENOTIT@" << off << (abort(),0) << "\"";
         break;
@@ -195,7 +195,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
         const auto &allEntries = attr.entry->unit->allEntries;
         const auto &entry = allEntries.find(off);
         if (entry != allEntries.end())
-            os << "\"ref to " << entry->second->name() << " at " << off << "\"";
+            os << "\"ref to " << maybe(entry->second->name(), "unnamed") << " at " << off << "\"";
         else
             os << "\"HAVENOTIT@" << off << (abort(), 0) << "\"";
         break;
