@@ -371,36 +371,35 @@ dwarfUnwind(Process &p, const StackFrame *in, StackFrame *out, Elf_Addr *cfa)
     dwarfSetReg(&out->regs, CFA_RESTORE_REGNO, *cfa); // "The CFA is defined to be the stack pointer in the calling frame."
 #endif
 
-    for (int i = 0; i < MAXREG; i++) {
-        if (!dwarfIsArchReg(i))
-            continue;
+    for (auto &entry : frame.registers) {
 
-        auto unwind = frame.registers + i;
-        switch (unwind->type) {
-            case UNDEF:
+        const auto &unwind = entry.second;
+        const int regno = entry.first;
+        switch (unwind.type) {
             case SAME:
-                dwarfSetReg(&out->regs, i, dwarfGetReg(&in->regs, i));
+            case UNDEF:
+                dwarfSetReg(&out->regs, regno, dwarfGetReg(&in->regs, regno));
                 break;
             case OFFSET: {
                 Elf_Addr reg; // XXX: assume addrLen = sizeof Elf_Addr
-                p.io->readObj(*cfa + unwind->u.offset, &reg);
-                dwarfSetReg(&out->regs, i, reg);
+                p.io->readObj(*cfa + unwind.u.offset, &reg);
+                dwarfSetReg(&out->regs, regno, reg);
                 break;
             }
             case REG:
-                dwarfSetReg(&out->regs, i, dwarfGetReg(&in->regs, unwind->u.reg));
+                dwarfSetReg(&out->regs, regno, dwarfGetReg(&in->regs, unwind.u.reg));
                 break;
 
             case VAL_EXPRESSION:
             case EXPRESSION: {
                 DwarfExpressionStack stack;
                 stack.push(*cfa);
-                DWARFReader reader(elf.object->io, dwarf->getVersion(), unwind->u.expression.offset, unwind->u.expression.length, 0);
+                DWARFReader reader(elf.object->io, dwarf->getVersion(), unwind.u.expression.offset, unwind.u.expression.length, 0);
                 auto val = dwarfEvalExpr(dwarf, p, reader, in, &stack);
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
-                if (unwind->type == EXPRESSION)
+                if (unwind.type == EXPRESSION)
                     p.io->readObj(val, &val);
-                dwarfSetReg(&out->regs, i, val);
+                dwarfSetReg(&out->regs, regno, val);
                 break;
             }
 
@@ -413,7 +412,8 @@ dwarfUnwind(Process &p, const StackFrame *in, StackFrame *out, Elf_Addr *cfa)
 
     // If the return address isn't defined, then we can't unwind.
     auto rar = fde->cie->rar;
-    if (frame.registers[rar].type == UNDEF)
+    auto rarInfo = frame.registers.find(rar);
+    if (rarInfo == frame.registers.end() || rarInfo->second.type == UNDEF)
         return false;
 
     out->ip = dwarfGetReg(&out->regs, rar);
