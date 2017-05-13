@@ -368,16 +368,16 @@ dwarfUnwind(Process &p, const StackFrame *in, StackFrame *out, Elf_Addr *cfa)
     // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
     *cfa = dwarfGetCFA(dwarf, p, &frame, in);
 #ifdef CFA_RESTORE_REGNO
-    dwarfSetReg(&out->regs, CFA_RESTORE_REGNO, *cfa); // "The CFA is defined to be the stack pointer in the calling frame."
+    // "The CFA is defined to be the stack pointer in the calling frame."
+    dwarfSetReg(&out->regs, CFA_RESTORE_REGNO, *cfa);
 #endif
 
     for (auto &entry : frame.registers) {
-
         const auto &unwind = entry.second;
         const int regno = entry.first;
         switch (unwind.type) {
-            case SAME:
             case UNDEF:
+            case SAME:
                 dwarfSetReg(&out->regs, regno, dwarfGetReg(&in->regs, regno));
                 break;
             case OFFSET: {

@@ -928,9 +928,6 @@ DwarfInfo::sourceFromAddr(uintmax_t addr)
 
 DwarfCallFrame::DwarfCallFrame()
 {
-    int i;
-    for (i = 0; i < MAXREG; i++)
-        registers[i].type = UNDEF;
     cfaReg = 0;
     cfaValue.type = UNDEF;
 }
