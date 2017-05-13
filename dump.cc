@@ -247,7 +247,7 @@ operator <<(std::ostream &os, const std::pair<const DwarfInfo *, const DwarfCIE 
         << ", \"instrlen\": " << dcie.second->end - dcie.second->instructions
         << ", \"instructions\": ";
    ;
-   DWARFReader r(dcie.first->elf->io, dcie.first->getVersion(), dcie.second->instructions, dcie.second->end - dcie.second->instructions, ELF_BITS / 8);
+   DWARFReader r(dcie.first->elf->io, dcie.second->instructions, dcie.second->end - dcie.second->instructions, ELF_BITS / 8);
     dwarfDumpCFAInsns(os, r);
     return os
         << " }";
@@ -263,7 +263,7 @@ operator << (std::ostream &os, const std::pair<const DwarfInfo *, const DwarfFDE
         << ", \"auglen\": " << dfde.second->aug.size()
         << ", \"instructions\": "
     ; 
-    DWARFReader r(dfde.first->elf->io, dfde.second->cie->version, dfde.second->instructions, dfde.second->end - dfde.second->instructions, ELF_BITS/8);
+    DWARFReader r(dfde.first->elf->io, dfde.second->instructions, dfde.second->end - dfde.second->instructions, ELF_BITS/8);
     dwarfDumpCFAInsns(os, r);
     return os << "}";
 }
@@ -324,8 +324,7 @@ dwarfDumpCFAInsn(std::ostream &os, DWARFReader &r)
         switch (op & 0x3f) {
             case 0x0: os << "\"DW_CFA_nop\""; break;
             case 0x1: os << "\"DW_CFA_set_loc\""
-                    << ", \"arg\":"
-                    << r.getuint(r.version >= 3 ? r.addrLen : 4); break;
+                    << ", \"arg\":" << r.getuint(r.addrLen); break;
             case 0x2: os << "\"DW_CFA_advance_loc1\"" << ", \"arg\":" << int(r.getu8()); break;
             case 0x3: os << "\"DW_CFA_advance_loc2\"" << ", \"arg\":" <<  r.getu16(); break;
             case 0x4: os << "\"DW_CFA_advance_loc4\"" << ", \"arg\":" << r.getu32(); break;

@@ -8,8 +8,6 @@
 #include <vector>
 #include <string>
 
-#define DWARF_MAXREG 128
-
 enum DwarfHasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
 struct DwarfCIE;
 class DwarfInfo;
@@ -22,9 +20,6 @@ struct DwarfEntry;
 typedef std::map<off_t, DwarfEntry *> DwarfEntries;
 
 
-typedef struct {
-    uintmax_t reg[DWARF_MAXREG];
-} DwarfRegisters;
 
 #define DWARF_TAG(a,b) a = b,
 enum DwarfTag {
@@ -298,7 +293,7 @@ struct DwarfCIE {
     std::string augmentation;
     DwarfCIE(const DwarfInfo *, DWARFReader &, Elf_Off);
     DwarfCIE() {}
-    DwarfCallFrame execInsns(DWARFReader &r, int version, uintmax_t addr, uintmax_t wantAddr);
+    DwarfCallFrame execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr);
 };
 
 struct DwarfFrameInfo {
@@ -316,7 +311,6 @@ class DwarfInfo {
     std::list<DwarfPubnameUnit> pubnameUnits;
     std::list<DwarfARangeSet> aranges;
     std::map<Elf_Off, std::shared_ptr<DwarfUnit>> unitsm;
-    int version;
 public:
     ElfSection info, debstr, pubnamesh, arangesh, debug_frame;
     std::shared_ptr<ElfObject> altImage;
@@ -339,7 +333,6 @@ public:
     DwarfInfo(std::shared_ptr<ElfObject> object);
     intmax_t decodeAddress(DWARFReader &, int encoding) const;
     std::vector<std::pair<const DwarfFileEntry *, int>> sourceFromAddr(uintmax_t addr);
-    int getVersion() const { return version; }
     ~DwarfInfo();
 };
 
@@ -400,15 +393,13 @@ public:
     std::shared_ptr<Reader> io;
     unsigned addrLen;
     size_t dwarfLen; // 8 => 64-bit. 4 => 32-bit.
-    int version;
 
-    DWARFReader(std::shared_ptr<Reader> io_, int version_, Elf_Off off_, Elf_Word size_, size_t dwarfLen_)
+    DWARFReader(std::shared_ptr<Reader> io_, Elf_Off off_, Elf_Word size_, size_t dwarfLen_)
         : off(off_)
         , end(off_ + size_)
         , io(io_)
         , addrLen(ELF_BITS / 8)
         , dwarfLen(dwarfLen_)
-        , version(version_)
     {
     }
 
@@ -418,17 +409,15 @@ public:
         , io(rhs.io)
         , addrLen(ELF_BITS / 8)
         , dwarfLen(rhs.dwarfLen)
-        , version(rhs.version)
     {
     }
 
-    DWARFReader(const ElfSection &section, int version_, Elf_Off off_, size_t dwarfLen_, size_t size = std::numeric_limits<size_t>::max())
+    DWARFReader(const ElfSection &section, Elf_Off off_, size_t dwarfLen_, size_t size = std::numeric_limits<size_t>::max())
         : off(off_ + section->sh_offset)
         , end(section->sh_offset + std::min(section->sh_size, size))
         , io(section.obj.io)
         , addrLen(ELF_BITS / 8)
         , dwarfLen(dwarfLen_)
-        , version(version_)
     {
     }
 

@@ -251,9 +251,7 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
             }
         }
 
-        os
-            << frameSep << "{ \"ip\": " << intptr_t(frame->ip)
-            << ", \"unwind\": \"" << frame->unwindBy << "\"";
+        os << frameSep << "{ \"ip\": " << intptr_t(frame->ip);
 
         frameSep = ", ";
 
@@ -365,32 +363,19 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 {
     os << "thread: " << (void *)thread.info.ti_tid << ", lwp: " << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
     for (auto frame : thread.stack) {
-        Elf_Addr objIp = 0;
-        std::shared_ptr<ElfObject> obj;
         Elf_Sym sym;
         std::string fileName = "unknown file";
-        std::string symName = "unknown";
-        if (frame->ip == sysent) {
-            symName = "(syscall)";
-        } else {
-            try {
-                auto i = findObject(frame->ip);
-                fileName = i.object->io->describe();
-                objIp = frame->ip - i.reloc;
-                obj = i.object;
-                obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+        std::string symName;
 
-            } catch (...) {
-                std::ostringstream str;
-                str << "unknown@" << std::hex << frame->ip;
-                symName = str.str();
-            }
-        }
+        auto i = findObject(frame->ip);
+        fileName = i.object->io->describe();
+        Elf_Addr objIp = frame->ip - i.reloc;
+        std::shared_ptr<ElfObject> obj = i.object;
 
         DwarfInfo *dwarf = 0;
         DwarfEntry *de = 0;
         // Only do arg dumps if we're in debug mode for the moment.
-        if (debug && obj != 0 && (dwarf = getDwarf(obj, true)) != 0 ) {
+        if (options(PstackOptions::dwarfish) && obj != 0 && (dwarf = getDwarf(obj, true)) != 0 ) {
             for (const auto &rangeset : dwarf->ranges()) {
                 for (const auto range : rangeset.ranges) {
                     auto tu = dwarf->units()[rangeset.debugInfoOffset];
@@ -406,13 +391,24 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                 }
             }
             if (de && de->name()) {
+                symName = de->name();
                 std::string dwarfName = de->name();
                 frame->function = de;
                 frame->dwarf = dwarf; // hold on to 'de'
-                if (dwarfName != symName) {
-                    if (debug)
-                        *debug << "override name " << symName << "\n";
-                    symName = dwarfName;
+            }
+        }
+
+        if (symName == "") {
+
+            if (frame->ip == sysent) {
+                symName = "(syscall)";
+            } else {
+                try {
+                    obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+                } catch (...) {
+                    std::ostringstream str;
+                    str << "unknown@" << std::hex << frame->ip;
+                    symName = str.str();
                 }
             }
         }
@@ -431,23 +427,10 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                     auto source = di->sourceFromAddr(objIp - 1);
                     for (auto ent = source.begin(); ent != source.end(); ++ent) {
                         os << " at ";
-                        if (debug)
-                            os << "[" << ent->first->directory << "] ";
-                        os << ent->first->name << ":" << std::dec << ent->second;
+                        os << ent->first->directory << "/" << ent->first->name << ":" << std::dec << ent->second;
                     }
                 }
             }
-        }
-
-        if (debug) {
-            os
-                << "\t(ip=0x" << std::hex << intptr_t(frame->ip)
-                << ", objip=0x" << std::hex << objIp
-                << ", symval=0x" << std::hex << sym.st_value
-                << ", off=0x" << std::hex << intptr_t(objIp) - sym.st_value;
-            if (strcmp(frame->unwindBy, "END") != 0)
-                os << ", unwind by: " << frame->unwindBy;
-            os << ")";
         }
         os << "\n";
     }
@@ -598,48 +581,19 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
 {
     stack.clear();
     try {
-        StackFrame *frame;
         auto prevFrame = new StackFrame();
 
         // Set up the first frame using the machine context registers
         prevFrame->ip = REG(regs, ip);
-        dwarfPtToDwarf(&prevFrame->regs, &regs);
+        prevFrame->setCoreRegs(regs);
+
+        StackFrame *frame;
         for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++, prevFrame = frame) {
             stack.push_back(prevFrame);
-            frame = new StackFrame();
-            if (!dwarfUnwind(p, prevFrame, frame, &prevFrame->cfa)) {
-                prevFrame->unwindBy = "end";
-#if 0
-
-#define R_EBP 5
-#define R_EIP 8
-
-                // Read the instruction pointer from just below the base pointer,
-                // and the new base pointer, from the existing one.
-                uint32_t newBp;
-                uint32_t newIp;
-                try {
-                   p.io->readObj((dr.reg[R_EBP] + 4) & 0xffffffff, &newIp);
-                   p.io->readObj(dr.reg[R_EBP] & 0xffffffff, &newBp);
-                   dr.reg[R_EBP] = newBp;
-                   dr.reg[R_EIP] = newIp;
-                   ip = newIp;
-                   if (newIp) {
-                      frame->unwindBy = "arch";
-                   } else {
-#endif
-                      break;
-#if 0
-                   }
-                } catch (...) {
-                   break;
-                }
-#endif
-            } else {
-               prevFrame->unwindBy = "dwarf";
-            }
+            frame = prevFrame->unwind(p);
+            if (!frame)
+                break;
         }
-        delete frame;
     }
     catch (const std::exception &ex) {
         std::clog << "exception unwinding stack: " << ex.what() << std::endl;

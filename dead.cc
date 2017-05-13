@@ -121,7 +121,7 @@ CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
         const prstatus_t *prstatus = (const prstatus_t *)note.data();
 #ifdef NT_PRSTATUS
         if (note.name() == "CORE" && note.type() == NT_PRSTATUS && prstatus->pr_pid == pid) {
-            memcpy(reg, (const DwarfRegisters *)&prstatus->pr_reg, sizeof(*reg));
+            memcpy(reg, &prstatus->pr_reg, sizeof(*reg));
             return true;
         }
 #endif

@@ -82,7 +82,7 @@ emain(int argc, char **argv)
     PstackOptions options;
     noDebugLibs = true;
 
-    while ((c = getopt(argc, argv, "d:D:hsvn")) != -1) {
+    while ((c = getopt(argc, argv, "d:D:hsvna")) != -1) {
         switch (c) {
         case 'D': {
             auto dumpobj = std::make_shared<ElfObject>(std::make_shared<FileReader>(optarg, -1));
@@ -98,6 +98,9 @@ emain(int argc, char **argv)
         case 'h':
             usage();
             return (0);
+        case 'a':
+            options += PstackOptions::dwarfish;
+            break;
         case 's':
             options += PstackOptions::nosrc;
             break;

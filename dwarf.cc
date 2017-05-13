@@ -152,7 +152,7 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
     length = r.getu32();
     Elf_Off next = r.getOffset() + length;
 
-    version = r.version = r.getu16();
+    version = r.getu16();
     infoOffset = r.getu32();
     infoLength = r.getu32();
 
@@ -166,8 +166,7 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
 }
 
 DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
-    : version(2)
-    , info(obj->getSection(".debug_info", SHT_PROGBITS))
+    : info(obj->getSection(".debug_info", SHT_PROGBITS))
     , debstr(obj->getSection(".debug_str", SHT_PROGBITS))
     , pubnamesh(obj->getSection(".debug_pubnames", SHT_PROGBITS))
     , arangesh(obj->getSection(".debug_aranges", SHT_PROGBITS))
@@ -186,7 +185,7 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
     }
     auto eh_frame = obj->getSection(".eh_frame", SHT_PROGBITS);
     if (eh_frame) {
-        DWARFReader reader(eh_frame, version, 0, 0);
+        DWARFReader reader(eh_frame, 0, 0);
         try {
             ehFrame = std::unique_ptr<DwarfFrameInfo>(new DwarfFrameInfo(this, reader, FI_EH_FRAME));
         }
@@ -200,7 +199,7 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
     }
 
     if (debug_frame && ! noDebugLibs) {
-        DWARFReader reader(debug_frame, version, 0, 0);
+        DWARFReader reader(debug_frame, 0, 0);
         try {
             debugFrame = std::unique_ptr<DwarfFrameInfo>(new DwarfFrameInfo(this, reader, FI_DEBUG_FRAME));
         }
@@ -219,7 +218,7 @@ std::list<DwarfPubnameUnit> &
 DwarfInfo::pubnames()
 {
     if (pubnamesh) {
-        DWARFReader r(pubnamesh, version, 0, 0);
+        DWARFReader r(pubnamesh, 0, 0);
         while (!r.empty())
             pubnameUnits.push_back(DwarfPubnameUnit(r));
         pubnamesh = 0;
@@ -231,7 +230,7 @@ std::map<Elf_Off, std::shared_ptr<DwarfUnit>> &
 DwarfInfo::units()
 {
     if (unitsm.size() == 0 && info) {
-        DWARFReader reader(info, version, 0, 0);
+        DWARFReader reader(info, 0, 0);
         while (!reader.empty()) {
             auto off = reader.getOffset() - info->sh_offset;
             unitsm[off] = std::make_shared<DwarfUnit>(this, reader);
@@ -244,7 +243,7 @@ std::list<DwarfARangeSet> &
 DwarfInfo::ranges()
 {
     if (arangesh) {
-        DWARFReader r(arangesh, version, 0, 0);
+        DWARFReader r(arangesh, 0, 0);
         while (!r.empty())
             aranges.push_back(DwarfARangeSet(r));
         arangesh = 0;
@@ -265,7 +264,7 @@ DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
 
     length = r.getlength(&r.dwarfLen);
     Elf_Off next = r.getOffset() + length;
-    version = r.version = r.getu16();
+    version = r.getu16();
     debugInfoOffset = r.getu32();
     addrlen = r.getu8();
     if (addrlen == 0)
@@ -295,10 +294,10 @@ DwarfUnit::DwarfUnit(DwarfInfo *di, DWARFReader &r)
 {
     length = r.getlength(&r.dwarfLen);
     Elf_Off nextoff = r.getOffset() + length;
-    version = r.version = r.getu16();
+    version = r.getu16();
 
     off_t off = r.getfmtuint();
-    DWARFReader abbR(di->abbrev, di->getVersion(), off, r.dwarfLen);
+    DWARFReader abbR(di->abbrev, off, r.dwarfLen);
     r.addrLen = addrlen = r.getu8();
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
@@ -684,7 +683,7 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
     case DW_TAG_compile_unit: {
         if (unit->dwarf->lineshdr && attributes.find(DW_AT_stmt_list) != attributes.end()) {
             size_t stmts = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
-            DWARFReader r2(unit->dwarf->lineshdr, unit->dwarf->getVersion(), stmts, r.dwarfLen);
+            DWARFReader r2(unit->dwarf->lineshdr, stmts, r.dwarfLen);
             unit_->lines.build(r2, unit);
         } else {
             if (debug)
@@ -930,11 +929,17 @@ DwarfCallFrame::DwarfCallFrame()
 {
     cfaReg = 0;
     cfaValue.type = UNDEF;
+#define REGMAP(number, field) registers[number].type = UNDEF;
+#include <libpstack/dwarf/archreg.h>
+#undef REGMAP
+#ifdef CFA_RESTORE_REGNO
+    registers[CFA_RESTORE_REGNO].type = ARCH;
+#endif
 }
 
 
 DwarfCallFrame
-DwarfCIE::execInsns(DWARFReader &r, int version, uintmax_t addr, uintmax_t wantAddr)
+DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr)
 {
     std::stack<DwarfCallFrame> stack;
     DwarfCallFrame frame;
@@ -946,7 +951,7 @@ DwarfCIE::execInsns(DWARFReader &r, int version, uintmax_t addr, uintmax_t wantA
     DwarfCallFrame dframe;
     if (addr || wantAddr) {
         DWARFReader r2(r, instructions, end - instructions);
-        dframe = execInsns(r2, version, 0, 0);
+        dframe = execInsns(r2, 0, 0);
         frame = dframe;
     }
     while (addr <= wantAddr) {
@@ -1129,7 +1134,7 @@ DwarfCIE::DwarfCIE(const DwarfInfo *info_, DWARFReader &r, Elf_Off end_)
     , isSignalHandler(false)
     , end(end_)
 {
-    version = r.version = r.getu8();
+    version = r.getu8();
     augmentation = r.getstring();
     codeAlign = r.getuleb128();
     dataAlign = r.getsleb128();

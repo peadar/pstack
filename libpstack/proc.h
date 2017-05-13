@@ -17,11 +17,23 @@ class Process;
 struct StackFrame {
     Elf_Addr ip;
     Elf_Addr cfa;
-    const char *unwindBy;
-    DwarfRegisters regs;
+    std::map<unsigned, uintmax_t> regs;
     DwarfInfo *dwarf;
+    DwarfFrameInfo *dwarfFrame;
     DwarfEntry * function;
-    StackFrame() : ip(-1), unwindBy("ERROR"), function(0) {}
+    StackFrame()
+        : ip(-1)
+        , cfa(0)
+        , dwarf(0)
+        , dwarfFrame(0)
+        , function(0)
+    {}
+    void setReg(unsigned regno, uintmax_t value);
+    uintmax_t getReg(unsigned regno) const;
+    Elf_Addr getCFA(const Process &proc, const DwarfCallFrame &cfi) const;
+    StackFrame *unwind(Process &p);
+    void setCoreRegs(const CoreRegisters &core);
+    void getCoreRegs(CoreRegisters &core) const;
 };
 
 struct ThreadStack {
@@ -39,8 +51,9 @@ struct ThreadStack {
 class PstackOptions {
 public:
     enum PstackOption {
-        nosrc = 1 << 0,
-        maxopt = 1 << 1
+        nosrc,
+        dwarfish,
+        maxopt
     };
     void operator += (PstackOption);
     void operator -= (PstackOption);

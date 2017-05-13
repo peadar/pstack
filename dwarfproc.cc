@@ -9,16 +9,20 @@
 
 #include <assert.h>
 
-static int
-dwarfIsArchReg(int regno)
+void
+StackFrame::setCoreRegs(const CoreRegisters &sys)
 {
-#define REGMAP(regno, regname) case regno: return 1;
-switch (regno) {
+#define REGMAP(number, field) setReg(number, sys.field);
 #include <libpstack/dwarf/archreg.h>
-default: return 0;
-}
 #undef REGMAP
+}
 
+void
+StackFrame::getCoreRegs(CoreRegisters &core) const
+{
+#define REGMAP(number, field) core.field = getReg(number);
+#include <libpstack/dwarf/archreg.h>
+#undef REGMAP
 }
 
 
@@ -61,7 +65,7 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
             assert(objIp >= unitLow->value.udata && objIp < endAddr);
             Elf_Addr unitIp = objIp - unitLow->value.udata;
 
-            DWARFReader r(sec, dwarf->getVersion(), attr->value.udata, std::numeric_limits<size_t>::max());
+            DWARFReader r(sec, attr->value.udata, std::numeric_limits<size_t>::max());
             for (;;) {
                 Elf_Addr start = r.getint(sizeof start);
                 Elf_Addr end = r.getint(sizeof end);
@@ -77,7 +81,7 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
         }
         case DW_FORM_exprloc: {
             auto &block = attr->value.block;
-            DWARFReader r(dwarf->elf->io, dwarf->getVersion(), block.offset, block.length, 0);
+            DWARFReader r(dwarf->elf->io, block.offset, block.length, 0);
             return dwarfEvalExpr(dwarf, proc, r, frame, stack);
         }
         default:
@@ -142,7 +146,7 @@ dwarfEvalExpr(DwarfInfo *dwarf, const Process &proc, DWARFReader &r, const Stack
             case DW_OP_breg24: case DW_OP_breg25: case DW_OP_breg26: case DW_OP_breg27:
             case DW_OP_breg28: case DW_OP_breg29: case DW_OP_breg30: case DW_OP_breg31: {
                 Elf_Off offset = r.getsleb128();
-                stack->push(frame->regs.reg[op - DW_OP_breg0] + offset);
+                stack->push(frame->getReg(op - DW_OP_breg0) + offset);
                 break;
             }
 
@@ -273,10 +277,10 @@ dwarfEvalExpr(DwarfInfo *dwarf, const Process &proc, DWARFReader &r, const Stack
             case DW_OP_reg20: case DW_OP_reg21: case DW_OP_reg22: case DW_OP_reg23:
             case DW_OP_reg24: case DW_OP_reg25: case DW_OP_reg26: case DW_OP_reg27:
             case DW_OP_reg28: case DW_OP_reg29: case DW_OP_reg30: case DW_OP_reg31:
-                stack->push(frame->regs.reg[op - DW_OP_reg0]);
+                stack->push(frame->getReg(op - DW_OP_reg0));
                 break;
             case DW_OP_regx:
-                stack->push(frame->regs.reg[r.getsleb128()]);
+                stack->push(frame->getReg(r.getsleb128()));
                 break;
 
             case DW_OP_entry_value: case DW_OP_GNU_entry_value: {
@@ -299,12 +303,10 @@ dwarfEvalExpr(DwarfInfo *dwarf, const Process &proc, DWARFReader &r, const Stack
     return rv;
 }
 
-
 Elf_Addr
-dwarfGetCFA(DwarfInfo *dwarf, const Process &proc,
-      const DwarfCallFrame *cfi, const StackFrame *frame)
+StackFrame::getCFA(const Process &proc, const DwarfCallFrame &dcf) const
 {
-    switch (cfi->cfaValue.type) {
+    switch (dcf.cfaValue.type) {
         case SAME:
         case VAL_OFFSET:
         case VAL_EXPRESSION:
@@ -315,32 +317,25 @@ dwarfGetCFA(DwarfInfo *dwarf, const Process &proc,
             break;
 
         case OFFSET:
-            return dwarfGetReg(&frame->regs, cfi->cfaReg) + cfi->cfaValue.u.offset;
+            return getReg(dcf.cfaReg) + dcf.cfaValue.u.offset;
         case EXPRESSION: {
             DwarfExpressionStack stack;
-            DWARFReader r(dwarf->elf->io, dwarf->getVersion(),
-                    cfi->cfaValue.u.expression.offset,
-                    cfi->cfaValue.u.expression.length,
-                    0);
-            return dwarfEvalExpr(dwarf, proc, r, frame, &stack);
+            DWARFReader r(dwarf->elf->io, dcf.cfaValue.u.expression.offset, dcf.cfaValue.u.expression.length, 0);
+            return dwarfEvalExpr(dwarf, proc, r, this, &stack);
         }
     }
     return -1;
 }
 
-
-
-bool
-dwarfUnwind(Process &p, const StackFrame *in, StackFrame *out, Elf_Addr *cfa)
+StackFrame *
+StackFrame::unwind(Process &p)
 {
-    auto elf = p.findObject(in->ip);
-    DwarfInfo *dwarf;
-    Elf_Off objaddr = in->ip - elf.reloc; // relocate process address to object address
+    auto elf = p.findObject(ip);
+    Elf_Off objaddr = ip - elf.reloc; // relocate process address to object address
 
-    const DwarfFDE *fde;
-    DwarfFrameInfo *dwarfFrame;
 
     // Try and find DWARF data with debug frame information, or an eh_frame section.
+
     for (bool debug : {true, false}) {
        dwarf = p.getDwarf(elf.object, debug);
        if (dwarf) {
@@ -350,104 +345,90 @@ dwarfUnwind(Process &p, const StackFrame *in, StackFrame *out, Elf_Addr *cfa)
        }
     }
     if (!dwarfFrame)
-       return false;
-    fde = dwarfFrame->findFDE(objaddr);
-    if (!fde)
-       return false;
+       return 0;
 
-    DWARFReader r(elf.object->io, dwarf->getVersion(), fde->instructions, fde->end - fde->instructions, 0);
+    const DwarfFDE *fde = dwarfFrame->findFDE(objaddr);
+    if (!fde)
+       return 0;
+
+    DWARFReader r(elf.object->io, fde->instructions, fde->end - fde->instructions, 0);
 
     auto iter = dwarf->callFrameForAddr.find(objaddr);
     if (iter == dwarf->callFrameForAddr.end()) {
-        const DwarfCallFrame frame = fde->cie->execInsns(r, dwarf->getVersion(), fde->iloc, objaddr);
+        const DwarfCallFrame frame = fde->cie->execInsns(r, fde->iloc, objaddr);
         dwarf->callFrameForAddr[objaddr] = frame;
     }
 
-    const DwarfCallFrame &frame = dwarf->callFrameForAddr[objaddr];
+    const DwarfCallFrame &dcf = dwarf->callFrameForAddr[objaddr];
 
     // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
-    *cfa = dwarfGetCFA(dwarf, p, &frame, in);
+    cfa = getCFA(p, dcf);
+
+    StackFrame *out = new StackFrame();
 #ifdef CFA_RESTORE_REGNO
     // "The CFA is defined to be the stack pointer in the calling frame."
-    dwarfSetReg(&out->regs, CFA_RESTORE_REGNO, *cfa);
+    out->setReg(CFA_RESTORE_REGNO, cfa);
 #endif
 
-    for (auto &entry : frame.registers) {
+    for (auto &entry : dcf.registers) {
         const auto &unwind = entry.second;
         const int regno = entry.first;
         switch (unwind.type) {
             case UNDEF:
             case SAME:
-                dwarfSetReg(&out->regs, regno, dwarfGetReg(&in->regs, regno));
+                out->setReg(regno, getReg(regno));
                 break;
             case OFFSET: {
                 Elf_Addr reg; // XXX: assume addrLen = sizeof Elf_Addr
-                p.io->readObj(*cfa + unwind.u.offset, &reg);
-                dwarfSetReg(&out->regs, regno, reg);
+                p.io->readObj(cfa + unwind.u.offset, &reg);
+                out->setReg(regno, reg);
                 break;
             }
             case REG:
-                dwarfSetReg(&out->regs, regno, dwarfGetReg(&in->regs, unwind.u.reg));
+                out->setReg(regno, getReg(unwind.u.reg));
                 break;
 
             case VAL_EXPRESSION:
             case EXPRESSION: {
                 DwarfExpressionStack stack;
-                stack.push(*cfa);
-                DWARFReader reader(elf.object->io, dwarf->getVersion(), unwind.u.expression.offset, unwind.u.expression.length, 0);
-                auto val = dwarfEvalExpr(dwarf, p, reader, in, &stack);
+                stack.push(cfa);
+                DWARFReader reader(elf.object->io, unwind.u.expression.offset, unwind.u.expression.length, 0);
+                auto val = dwarfEvalExpr(dwarf, p, reader, this, &stack);
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                 if (unwind.type == EXPRESSION)
                     p.io->readObj(val, &val);
-                dwarfSetReg(&out->regs, regno, val);
+                out->setReg(regno, val);
                 break;
             }
 
             default:
             case ARCH:
-                abort();
                 break;
         }
     }
 
     // If the return address isn't defined, then we can't unwind.
     auto rar = fde->cie->rar;
-    auto rarInfo = frame.registers.find(rar);
-    if (rarInfo == frame.registers.end() || rarInfo->second.type == UNDEF)
-        return false;
+    auto rarInfo = dcf.registers.find(rar);
+    if (rarInfo == dcf.registers.end() || rarInfo->second.type == UNDEF) {
+        delete out;
+        return 0;
+    }
 
-    out->ip = dwarfGetReg(&out->regs, rar);
-
-    return true;
+    out->ip = out->getReg(rar);
+    return out;
 }
 
 void
-dwarfSetReg(DwarfRegisters *regs, int regno, uintmax_t regval)
+StackFrame::setReg(unsigned regno, uintmax_t regval)
 {
-    regs->reg[regno] = regval;
+    regs[regno] = regval;
 }
+
 
 uintmax_t
-dwarfGetReg(const DwarfRegisters *regs, int regno)
+StackFrame::getReg(unsigned regno) const
 {
-    return regs->reg[regno];
+    auto i = regs.find(regno);
+    return i != regs.end() ? i->second : 0;
 }
-
-DwarfRegisters *
-dwarfPtToDwarf(DwarfRegisters *dwarf, const CoreRegisters *sys)
-{
-#define REGMAP(number, field) dwarf->reg[number] = sys->field;
-#include <libpstack/dwarf/archreg.h>
-#undef REGMAP
-    return dwarf;
-}
-
-const DwarfRegisters *
-dwarfDwarfToPt(CoreRegisters *core, const DwarfRegisters *dwarf)
-{
-#define REGMAP(number, field) core->field = dwarf->reg[number];
-#include <libpstack/dwarf/archreg.h>
-#undef REGMAP
-    return dwarf;
-}
-
