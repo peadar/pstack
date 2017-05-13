@@ -4,7 +4,6 @@
 #include <libpstack/proc.h>
 #include <libpstack/elf.h>
 #include <libpstack/dwarf.h>
-#include <libpstack/dwarfproc.h>
 #include <libpstack/dump.h>
 
 #include <assert.h>
@@ -27,15 +26,15 @@ StackFrame::getCoreRegs(CoreRegisters &core) const
 
 
 void
-getFBreg(const Process &p, const StackFrame *frame, intmax_t offset, DwarfExpressionStack *stack)
+StackFrame::getFrameBase(const Process &p, intmax_t offset, DwarfExpressionStack *stack) const
 {
 
    const DwarfAttribute *attr;
-   if (!frame->function || (attr = frame->function->attrForName(DW_AT_frame_base)) == 0) {
+   if (!function || (attr = function->attrForName(DW_AT_frame_base)) == 0) {
       stack->push(0);
       return;
    }
-   stack->push(dwarfEvalExpr(p, attr, frame, stack) + offset);
+   stack->push(dwarfEvalExpr(p, attr, this, stack) + offset);
 }
 
 Elf_Addr
@@ -50,6 +49,7 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
             // convert this object-relative addr to a unit-relative one
             const DwarfEntry *unitEntry = attr->entry->unit->entries.begin()->second;
             auto unitLow = unitEntry->attrForName(DW_AT_low_pc);
+#ifndef NDEBUG
             auto unitHigh = unitEntry->attrForName(DW_AT_high_pc);
             Elf_Addr endAddr;
             switch (unitHigh->spec->form) {
@@ -63,6 +63,7 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
                     abort();
             }
             assert(objIp >= unitLow->value.udata && objIp < endAddr);
+#endif
             Elf_Addr unitIp = objIp - unitLow->value.udata;
 
             DWARFReader r(sec, attr->value.udata, std::numeric_limits<size_t>::max());
@@ -74,7 +75,7 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
                 auto len = r.getuint(2);
                 if (unitIp >= start && unitIp < end) {
                     DWARFReader exr(r, r.getOffset(), Elf_Word(len));
-                    return dwarfEvalExpr(dwarf, proc, exr, frame, stack);
+                    return dwarfEvalExpr(proc, exr, frame, stack);
                 }
                 r.skip(len);
             }
@@ -82,7 +83,7 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
         case DW_FORM_exprloc: {
             auto &block = attr->value.block;
             DWARFReader r(dwarf->elf->io, block.offset, block.length, 0);
-            return dwarfEvalExpr(dwarf, proc, r, frame, stack);
+            return dwarfEvalExpr(proc, r, frame, stack);
         }
         default:
             abort();
@@ -90,7 +91,7 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
 }
 
 Elf_Addr
-dwarfEvalExpr(DwarfInfo *dwarf, const Process &proc, DWARFReader &r, const StackFrame *frame, DwarfExpressionStack *stack)
+dwarfEvalExpr(const Process &proc, DWARFReader &r, const StackFrame *frame, DwarfExpressionStack *stack)
 {
     while (!r.empty()) {
         auto op = DwarfExpressionOp(r.getu8());
@@ -249,14 +250,8 @@ dwarfEvalExpr(DwarfInfo *dwarf, const Process &proc, DWARFReader &r, const Stack
                 stack->push(lhs >> rhs);
                 break;
             }
-
             case DW_OP_addr: {
                 auto value = r.getuint(r.addrLen);
-                for (auto &o : proc.objects) {
-                   if (o.object == dwarf->elf) {
-                      value += o.reloc;
-                   }
-                }
                 stack->push(value);
                 break;
             }
@@ -265,7 +260,7 @@ dwarfEvalExpr(DwarfInfo *dwarf, const Process &proc, DWARFReader &r, const Stack
                break;
             case DW_OP_fbreg:
                // Yuk - find DW_AT_frame_base, and offset from that.
-               getFBreg(proc, frame, r.getsleb128(), stack);
+               frame->getFrameBase(proc, r.getsleb128(), stack);
                break;
 
             // XXX: this is wrong - this indicates an object contained in a register, not a location contained in a register.
@@ -286,7 +281,7 @@ dwarfEvalExpr(DwarfInfo *dwarf, const Process &proc, DWARFReader &r, const Stack
             case DW_OP_entry_value: case DW_OP_GNU_entry_value: {
                 auto len = r.getuleb128();
                 DWARFReader r2(r, r.getOffset(), len);
-                stack->push(dwarfEvalExpr(dwarf, proc, r2, frame, stack));
+                stack->push(dwarfEvalExpr(proc, r2, frame, stack));
                 break;
             }
 
@@ -321,7 +316,7 @@ StackFrame::getCFA(const Process &proc, const DwarfCallFrame &dcf) const
         case EXPRESSION: {
             DwarfExpressionStack stack;
             DWARFReader r(dwarf->elf->io, dcf.cfaValue.u.expression.offset, dcf.cfaValue.u.expression.length, 0);
-            return dwarfEvalExpr(dwarf, proc, r, this, &stack);
+            return dwarfEvalExpr(proc, r, this, &stack);
         }
     }
     return -1;
@@ -393,7 +388,7 @@ StackFrame::unwind(Process &p)
                 DwarfExpressionStack stack;
                 stack.push(cfa);
                 DWARFReader reader(elf.object->io, unwind.u.expression.offset, unwind.u.expression.length, 0);
-                auto val = dwarfEvalExpr(dwarf, p, reader, this, &stack);
+                auto val = dwarfEvalExpr(p, reader, this, &stack);
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                 if (unwind.type == EXPRESSION)
                     p.io->readObj(val, &val);

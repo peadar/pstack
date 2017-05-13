@@ -9,7 +9,6 @@
 #include <libpstack/ps_callback.h>
 #include <libpstack/proc.h>
 #include <libpstack/dwarf.h>
-#include <libpstack/dwarfproc.h>
 #include <libpstack/dump.h>
 
 typedef struct regs ptrace_regs;

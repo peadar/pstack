@@ -14,6 +14,8 @@ struct ps_prochandle {};
 
 class Process;
 
+typedef std::stack<Elf_Addr> DwarfExpressionStack;
+
 struct StackFrame {
     Elf_Addr ip;
     Elf_Addr cfa;
@@ -34,6 +36,7 @@ struct StackFrame {
     StackFrame *unwind(Process &p);
     void setCoreRegs(const CoreRegisters &core);
     void getCoreRegs(CoreRegisters &core) const;
+    void getFrameBase(const Process &p, intmax_t offset, DwarfExpressionStack *stack) const;
 };
 
 struct ThreadStack {
@@ -104,6 +107,9 @@ public:
     ~Process();
     virtual void load();
 };
+
+Elf_Addr dwarfEvalExpr(const Process &proc, DWARFReader &r, const StackFrame *frame, DwarfExpressionStack *stack);
+Elf_Addr dwarfEvalExpr(const Process &, const DwarfAttribute *, const StackFrame *, DwarfExpressionStack *stack);
 
 template <typename T> int
 threadListCb(const td_thrhandle_t *thr, void *v)
