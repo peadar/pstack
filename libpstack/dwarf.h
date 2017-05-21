@@ -8,6 +8,8 @@
 #include <vector>
 #include <string>
 
+#include <stack>
+
 enum DwarfHasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
 struct DwarfCIE;
 class DwarfInfo;
@@ -461,6 +463,5 @@ enum DwarfExpressionOp {
 #define DW_EH_PE_datarel        0x30
 #define DW_EH_PE_funcrel        0x40
 #define DW_EH_PE_aligned        0x50
-
 
 #endif

@@ -101,7 +101,7 @@ mainExcept(int argc, char *argv[])
     std::vector<std::pair<std::string, std::string>> pathReplacements;
     char *strbuf = 0;
     char *findstr = 0;
-    size_t findstrlen;
+    size_t findstrlen = 0;
     int symOffset = -1;
     bool showloaded = false;
 
