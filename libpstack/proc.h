@@ -70,7 +70,6 @@ class Process : public ps_prochandle {
     bool isStatic;
     Elf_Addr sysent; // for AT_SYSINFO
     std::map<std::shared_ptr<ElfObject>, DwarfInfo *> dwarf;
-    void printArgs(std::ostream &, const DwarfEntry *function, const StackFrame *frame);
 
 protected:
     td_thragent_t *agent;

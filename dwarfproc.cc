@@ -52,17 +52,19 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
             auto unitLow = unitEntry->attrForName(DW_AT_low_pc);
             auto unitHigh = unitEntry->attrForName(DW_AT_high_pc);
             Elf_Addr endAddr;
-            switch (unitHigh->spec->form) {
-                case DW_FORM_addr:
-                    endAddr = unitHigh->value.addr;
-                    break;
-                case DW_FORM_data1: case DW_FORM_data2: case DW_FORM_data4: case DW_FORM_data8:
-                    endAddr = unitHigh->value.sdata + unitLow->value.addr;
-                    break;
-                default:
-                    abort();
+            if (unitHigh) {
+               switch (unitHigh->spec->form) {
+                   case DW_FORM_addr:
+                       endAddr = unitHigh->value.addr;
+                       break;
+                   case DW_FORM_data1: case DW_FORM_data2: case DW_FORM_data4: case DW_FORM_data8:
+                       endAddr = unitHigh->value.sdata + unitLow->value.addr;
+                       break;
+                   default:
+                       abort();
+               }
+               assert(objIp >= unitLow->value.udata && objIp < endAddr);
             }
-            assert(objIp >= unitLow->value.udata && objIp < endAddr);
             Elf_Addr unitIp = objIp - unitLow->value.udata;
 
             DWARFReader r(sec, attr->value.udata, std::numeric_limits<size_t>::max());

@@ -324,11 +324,17 @@ findEntryForFunc(Elf_Addr address, DwarfEntry *entry)
    return nullptr;
 }
 
-void
-Process::printArgs(std::ostream &os, const DwarfEntry *function, const StackFrame *frame)
+struct ArgPrint {
+    const Process &p;
+    const struct StackFrame *frame;
+    ArgPrint(const Process &p_, const StackFrame *frame_) : p(p_), frame(frame_) {}
+};
+
+std::ostream &
+operator << (std::ostream &os, const ArgPrint &ap)
 {
     const char *sep = "";
-    for (auto &childEnt : function->children) {
+    for (auto &childEnt : ap.frame->function->children) {
         const DwarfEntry *child = childEnt.second;
         switch (child->type->tag) {
             case DW_TAG_formal_parameter: {
@@ -341,7 +347,7 @@ Process::printArgs(std::ostream &os, const DwarfEntry *function, const StackFram
                 const DwarfAttribute *typeA = child->attrForName(DW_AT_type);
                 if (locationA && typeA) {
                     DwarfExpressionStack fbstack;
-                    addr = dwarfEvalExpr(*this, locationA, frame, &fbstack);
+                    addr = dwarfEvalExpr(ap.p, locationA, ap.frame, &fbstack);
                     switch (typeA->spec->form) {
                         case DW_FORM_ref4:
                         default:
@@ -356,6 +362,7 @@ Process::printArgs(std::ostream &os, const DwarfEntry *function, const StackFram
                 break;
         }
     }
+    return os;
 }
 
 std::ostream &
@@ -374,6 +381,9 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 
         DwarfInfo *dwarf = 0;
         DwarfEntry *de = 0;
+        bool haveDwarf = false;
+
+        os << "    " << symName;
         // Only do arg dumps if we're in debug mode for the moment.
         if (options(PstackOptions::dwarfish) && obj != 0 && (dwarf = getDwarf(obj, true)) != 0 ) {
             for (const auto &rangeset : dwarf->ranges()) {
@@ -383,23 +393,23 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         // find the DIE for this function
                         for (auto it : tu->entries) {
                             de = findEntryForFunc(objIp, it.second);
-                            if (de)
+                            if (de) {
+                                symName = de->name();
+                                std::string dwarfName = de->name();
+                                frame->function = de;
+                                frame->dwarf = dwarf; // hold on to 'de'
+                                os << de->name() << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(" << ArgPrint(*this, frame) << ")";
+                                haveDwarf = true;
                                 break;
+                            }
                         }
                         break;
                     }
                 }
             }
-            if (de && de->name()) {
-                symName = de->name();
-                std::string dwarfName = de->name();
-                frame->function = de;
-                frame->dwarf = dwarf; // hold on to 'de'
-            }
         }
 
-        if (symName == "") {
-
+        if (!haveDwarf) {
             if (frame->ip == sysent) {
                 symName = "(syscall)";
             } else {
@@ -410,15 +420,9 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                     str << "unknown@" << std::hex << frame->ip;
                     symName = str.str();
                 }
+                os << symName << "+" << objIp - sym.st_value << "()";
             }
         }
-
-        os << "    " << symName << "(";
-        if (de) {
-           printArgs(os, de, frame);
-        }
-        os << ")";
-
         if (obj) {
             os << " in " << fileName;
             if (!options(PstackOptions::nosrc)) {
