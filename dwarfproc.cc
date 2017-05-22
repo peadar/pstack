@@ -332,19 +332,20 @@ StackFrame::unwind(Process &p)
 
 
     // Try and find DWARF data with debug frame information, or an eh_frame section.
-
+    const DwarfFDE *fde = 0;
     for (bool debug : {true, false}) {
        dwarf = p.getDwarf(elf.object, debug);
        if (dwarf) {
-          dwarfFrame = dwarf->debugFrame ? dwarf->debugFrame.get() : dwarf->ehFrame.get();
-          if (dwarfFrame)
-             break;
+          auto frames = { dwarf->debugFrame.get(), dwarf->ehFrame.get() };
+          for (auto frame : frames) {
+             if (frame) {
+                 fde = frame->findFDE(objaddr);
+                 if (fde)
+                    break;
+             }
+          }
        }
     }
-    if (!dwarfFrame)
-       return 0;
-
-    const DwarfFDE *fde = dwarfFrame->findFDE(objaddr);
     if (!fde)
        return 0;
 
