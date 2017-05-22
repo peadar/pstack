@@ -1,4 +1,5 @@
 #include <set>
+#include <iomanip>
 #include <limits>
 #include <cassert>
 #include <limits>
@@ -384,6 +385,11 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         bool haveDwarf = false;
 
         os << "    ";
+        if (debug) {
+              os << "[ip=" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->ip
+              << ", cfa=" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa
+              << "] ";
+        }
         // Only do arg dumps if we're in debug mode for the moment.
         if (options(PstackOptions::dwarfish) && obj != 0 && (dwarf = getDwarf(obj, true)) != 0 ) {
             for (const auto &rangeset : dwarf->ranges()) {
