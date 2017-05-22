@@ -18,6 +18,7 @@ GlobalDebugDirectories globalDebugDirectories;
 GlobalDebugDirectories::GlobalDebugDirectories()
 {
    add("/usr/lib/debug");
+   add("/usr/lib/debug/usr"); // Add as a hack for when linker loads from /lib, but package has /usr/lib
 }
 
 void
