@@ -359,7 +359,7 @@ ElfObject::getDebug()
         if (debug) {
             for (auto note : notes) {
                if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
-                  *debug << "GNU buildID: ";
+                  *debug << "GNU buildID for " << io->describe() << ": ";
                   auto data = note.data();
                   for (size_t i = 0; i < note.size(); ++i)
                      *debug << std::hex << std::setw(2) << std::setfill('0') << int(data[i]);
