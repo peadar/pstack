@@ -226,17 +226,15 @@ DwarfInfo::pubnames()
     return pubnameUnits;
 }
 
-std::map<Elf_Off, std::shared_ptr<DwarfUnit>> &
-DwarfInfo::units()
+std::shared_ptr<DwarfUnit>
+DwarfInfo::getUnit(off_t offset)
 {
-    if (unitsm.size() == 0 && info) {
-        DWARFReader reader(info, 0, 0);
-        while (!reader.empty()) {
-            auto off = reader.getOffset() - info->sh_offset;
-            unitsm[off] = std::make_shared<DwarfUnit>(this, reader);
-        }
-    }
-    return unitsm;
+    auto unit = unitsm.find(offset);
+    if (unit != unitsm.end())
+        return unit->second;
+    DWARFReader r(info, offset, 0);
+    unitsm[offset] = std::make_shared<DwarfUnit>(this, r);
+    return unitsm[offset];
 }
 
 std::list<DwarfARangeSet> &
@@ -731,7 +729,6 @@ DwarfInfo::getAltDwarf()
     if (!altDwarf) {
         altDwarf = std::make_shared<DwarfInfo>(getAltImage());
     }
-    altDwarf->units(); // Load DWARF info.
     return altDwarf;
 }
 
@@ -905,20 +902,16 @@ DwarfInfo::sourceFromAddr(uintmax_t addr)
 {
     std::vector<std::pair<const DwarfFileEntry *, int>> info;
     auto &rangelist = ranges();
-    units(); // make sure we have our units
     for (auto rs = rangelist.begin(); rs != rangelist.end(); ++rs) {
         for (auto r = rs->ranges.begin(); r != rs->ranges.end(); ++r) {
             if (r->start <= addr && r->start + r->length > addr) {
-                const auto &unitI = unitsm.find(rs->debugInfoOffset);
-                if (unitI != unitsm.end()) {
-                    const auto &u = unitI->second;
-                    for (auto i = u->lines.matrix.begin(); i != u->lines.matrix.end(); ++i) {
-                        if (i->end_sequence)
-                            continue;
-                        auto next = i+1;
-                        if (i->addr <= addr && next->addr > addr)
-                            info.push_back(std::make_pair(i->file, i->line));
-                    }
+                const auto u = getUnit(rs->debugInfoOffset);
+                for (auto i = u->lines.matrix.begin(); i != u->lines.matrix.end(); ++i) {
+                    if (i->end_sequence)
+                        continue;
+                    auto next = i+1;
+                    if (i->addr <= addr && next->addr > addr)
+                        info.push_back(std::make_pair(i->file, i->line));
                 }
             }
         }

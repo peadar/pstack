@@ -387,8 +387,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         if (options(PstackOptions::dwarfish) && obj != 0 && (dwarf = getDwarf(obj, true)) != 0 ) {
             for (const auto &rangeset : dwarf->ranges()) {
                 for (const auto range : rangeset.ranges) {
-                    auto tu = dwarf->units()[rangeset.debugInfoOffset];
                     if (objIp >= range.start && objIp <= range.start + range.length) {
+                        auto tu = dwarf->getUnit(rangeset.debugInfoOffset);
                         // find the DIE for this function
                         for (auto it : tu->entries) {
                             de = findEntryForFunc(objIp, it.second);

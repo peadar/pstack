@@ -329,7 +329,7 @@ public:
     std::shared_ptr<ElfObject> elf;
     std::list<DwarfARangeSet> &ranges();
     std::list<DwarfPubnameUnit> &pubnames();
-    std::map<Elf_Off, std::shared_ptr<DwarfUnit>> &units();
+    std::shared_ptr<DwarfUnit> getUnit(off_t offset);
     char *debugStrings;
     off_t lines;
     std::unique_ptr<DwarfFrameInfo> debugFrame;
