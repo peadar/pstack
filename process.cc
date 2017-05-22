@@ -300,6 +300,7 @@ findEntryForFunc(Elf_Addr address, DwarfEntry *entry)
                case DW_FORM_data2:
                case DW_FORM_data4:
                case DW_FORM_data8:
+               case DW_FORM_udata:
                   end = start + highAttr->value.sdata;
                   break;
                default:
