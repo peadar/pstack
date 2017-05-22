@@ -330,6 +330,7 @@ public:
     std::list<DwarfARangeSet> &ranges();
     std::list<DwarfPubnameUnit> &pubnames();
     std::shared_ptr<DwarfUnit> getUnit(off_t offset);
+    std::list<std::shared_ptr<DwarfUnit>> getUnits();
     char *debugStrings;
     off_t lines;
     std::unique_ptr<DwarfFrameInfo> debugFrame;

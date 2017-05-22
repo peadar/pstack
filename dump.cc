@@ -294,7 +294,7 @@ std::ostream &
 operator << (std::ostream &os, DwarfInfo &dwarf)
 {
     os
-        /*<< "{ \"units\": " << dwarf.units() */
+        << "{ \"units\": " << dwarf.getUnits()
         << ", \"pubnameUnits\": " << dwarf.pubnames()
         << ", \"aranges\": " << dwarf.ranges();
 

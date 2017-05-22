@@ -237,6 +237,26 @@ DwarfInfo::getUnit(off_t offset)
     return unitsm[offset];
 }
 
+std::list<std::shared_ptr<DwarfUnit>>
+DwarfInfo::getUnits()
+{
+    std::list<std::shared_ptr<DwarfUnit>> list;
+    DWARFReader r(info, 0, 0);
+
+    for (;;) {
+       auto off = r.getOffset() - info->sh_offset;
+       if (unitsm.find(off) != unitsm.end()) {
+          auto length = r.getlength(&r.dwarfLen);
+          r.setOffset(r.getOffset() + length);
+       } else {
+          unitsm[off] = std::make_shared<DwarfUnit>(this, r);
+       }
+       list.push_back(unitsm[off]);
+    }
+    return list;
+}
+
+
 std::list<DwarfARangeSet> &
 DwarfInfo::ranges()
 {
