@@ -243,7 +243,7 @@ DwarfInfo::getUnits()
     std::list<std::shared_ptr<DwarfUnit>> list;
     DWARFReader r(info, 0, 0);
 
-    for (;;) {
+    while (!r.empty()) {
        auto off = r.getOffset() - info->sh_offset;
        if (unitsm.find(off) != unitsm.end()) {
           auto length = r.getlength(&r.dwarfLen);
