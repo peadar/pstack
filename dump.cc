@@ -841,4 +841,52 @@ operator <<(std::ostream &os, const prstatus_t &prstat)
         << "}";
 }
 
+std::string
+auxv_name(Elf_Word val)
+{
+#define AUXV(n) case n : return #n;
+    switch (val) {
+        AUXV(AT_NULL)
+        AUXV(AT_IGNORE)
+        AUXV(AT_EXECFD)
+        AUXV(AT_PHDR)
+        AUXV(AT_PHENT)
+        AUXV(AT_PHNUM)
+        AUXV(AT_PAGESZ)
+        AUXV(AT_BASE)
+        AUXV(AT_FLAGS)
+        AUXV(AT_ENTRY)
+        AUXV(AT_NOTELF)
+        AUXV(AT_UID)
+        AUXV(AT_EUID)
+        AUXV(AT_GID)
+        AUXV(AT_EGID)
+        AUXV(AT_CLKTCK)
+        AUXV(AT_PLATFORM)
+        AUXV(AT_HWCAP)
+        AUXV(AT_FPUCW)
+        AUXV(AT_DCACHEBSIZE)
+        AUXV(AT_ICACHEBSIZE)
+        AUXV(AT_UCACHEBSIZE)
+        AUXV(AT_IGNOREPPC)
+        AUXV(AT_SECURE)
+        AUXV(AT_BASE_PLATFORM)
+#ifdef AT_RANDOM
+        AUXV(AT_RANDOM)
+#endif
+#ifdef AT_EXECFN
+        AUXV(AT_EXECFN)
+#endif
+        AUXV(AT_SYSINFO)
+        AUXV(AT_SYSINFO_EHDR)
+        AUXV(AT_L1I_CACHESHAPE)
+        AUXV(AT_L1D_CACHESHAPE)
+        AUXV(AT_L2_CACHESHAPE)
+        AUXV(AT_L3_CACHESHAPE)
+        default: return "unknown";
+    }
+}
+#undef AUXV
+
+
 

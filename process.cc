@@ -58,52 +58,6 @@ PstackOptions::operator () (PstackOption opt) const
     return values[opt];
 }
 
-static std::string auxv_name(Elf_Word val)
-{
-#define AUXV(n) case n : return #n;
-    switch (val) {
-        AUXV(AT_NULL)
-        AUXV(AT_IGNORE)
-        AUXV(AT_EXECFD)
-        AUXV(AT_PHDR)
-        AUXV(AT_PHENT)
-        AUXV(AT_PHNUM)
-        AUXV(AT_PAGESZ)
-        AUXV(AT_BASE)
-        AUXV(AT_FLAGS)
-        AUXV(AT_ENTRY)
-        AUXV(AT_NOTELF)
-        AUXV(AT_UID)
-        AUXV(AT_EUID)
-        AUXV(AT_GID)
-        AUXV(AT_EGID)
-        AUXV(AT_CLKTCK)
-        AUXV(AT_PLATFORM)
-        AUXV(AT_HWCAP)
-        AUXV(AT_FPUCW)
-        AUXV(AT_DCACHEBSIZE)
-        AUXV(AT_ICACHEBSIZE)
-        AUXV(AT_UCACHEBSIZE)
-        AUXV(AT_IGNOREPPC)
-        AUXV(AT_SECURE)
-        AUXV(AT_BASE_PLATFORM)
-#ifdef AT_RANDOM
-        AUXV(AT_RANDOM)
-#endif
-#ifdef AT_EXECFN
-        AUXV(AT_EXECFN)
-#endif
-        AUXV(AT_SYSINFO)
-        AUXV(AT_SYSINFO_EHDR)
-        AUXV(AT_L1I_CACHESHAPE)
-        AUXV(AT_L1D_CACHESHAPE)
-        AUXV(AT_L2_CACHESHAPE)
-        AUXV(AT_L3_CACHESHAPE)
-        default: return "unknown";
-    }
-}
-#undef AUXV
-
 template <typename T> static void
 delall(T &container)
 {
@@ -175,8 +129,6 @@ Process::processAUXV(const void *datap, size_t len)
     const Elf_auxv_t *eaux = aux + len / sizeof *aux;
     for (; aux < eaux; aux++) {
         Elf_Addr hdr = aux->a_un.a_val;
-        if (debug)
-            *debug << "auxv: " << auxv_name(aux->a_type) << "= " << (void *)hdr << "\n";
         switch (aux->a_type) {
             case AT_ENTRY: {
                 // this provides a reference for relocating the executable when
@@ -380,7 +332,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         Elf_Addr objIp = frame->ip - i.reloc;
         std::shared_ptr<ElfObject> obj = i.object;
 
-        DwarfInfo *dwarf = 0;
+        DwarfInfo *dwarf = getDwarf(obj, true);
         DwarfEntry *de = 0;
         bool haveDwarf = false;
 
@@ -390,29 +342,34 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
               << ", cfa=" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa
               << "] ";
         }
-        // Only do arg dumps if we're in debug mode for the moment.
-        if (options(PstackOptions::dwarfish) && obj != 0 && (dwarf = getDwarf(obj, true)) != 0 ) {
-            for (const auto &rangeset : dwarf->ranges()) {
-                for (const auto range : rangeset.ranges) {
-                    if (objIp >= range.start && objIp <= range.start + range.length) {
-                        auto tu = dwarf->getUnit(rangeset.debugInfoOffset);
-                        // find the DIE for this function
-                        for (auto it : tu->entries) {
-                            de = findEntryForFunc(objIp, it.second);
-                            if (de) {
-                                if (de->name())
-                                   symName = de->name();
-                                else
-                                   obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
-                                frame->function = de;
-                                frame->dwarf = dwarf; // hold on to 'de'
-                                os << symName << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(" << ArgPrint(*this, frame) << ")";
-                                haveDwarf = true;
-                                break;
+
+        std::shared_ptr<DwarfUnit> dwarfUnit;
+        for (const auto &rangeset : dwarf->ranges()) {
+            for (const auto range : rangeset.ranges) {
+                if (objIp >= range.start && objIp <= range.start + range.length) {
+                    auto dwarfUnit = dwarf->getUnit(rangeset.debugInfoOffset);
+                    // find the DIE for this function
+                    for (auto it : dwarfUnit->entries) {
+                        de = findEntryForFunc(objIp, it.second);
+                        if (de) {
+                            if (de->name()) {
+                               symName = de->name();
+                            } else {
+                               obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+                               symName += "[nd]";
                             }
+                            frame->function = de;
+                            frame->dwarf = dwarf; // hold on to 'de'
+                            os << symName << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(";
+                            if (options(PstackOptions::doargs)) {
+                                os << ArgPrint(*this, frame);
+                            }
+                            os << ")";
+                            haveDwarf = true;
+                            break;
                         }
-                        break;
                     }
+                    break;
                 }
             }
         }
@@ -425,22 +382,25 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                     obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
                 } catch (...) {
                     std::ostringstream str;
-                    str << "unknown@" << std::hex << frame->ip;
+                    str << "unknown";
+                    if (dwarfUnit)
+                        str << "(u)";
+
+                    str << "@" << std::hex << frame->ip;
                     symName = str.str();
                 }
-                os << symName << "+" << objIp - sym.st_value << "()";
+                if (dwarfUnit)
+                    symName +=  "(u)";
+                os << symName << "+" << objIp - sym.st_value << "()*";
             }
         }
-        if (obj) {
-            os << " in " << fileName;
-            if (!options(PstackOptions::nosrc)) {
-                auto di = getDwarf(obj);
-                if (di) {
-                    auto source = di->sourceFromAddr(objIp - 1);
-                    for (auto ent = source.begin(); ent != source.end(); ++ent) {
-                        os << " at ";
-                        os << ent->first->directory << "/" << ent->first->name << ":" << std::dec << ent->second;
-                    }
+        os << " in " << fileName;
+        if (!options(PstackOptions::nosrc)) {
+            if (dwarf) {
+                auto source = dwarf->sourceFromAddr(objIp - 1);
+                for (auto ent = source.begin(); ent != source.end(); ++ent) {
+                    os << " at ";
+                    os << ent->first->directory << "/" << ent->first->name << ":" << std::dec << ent->second;
                 }
             }
         }

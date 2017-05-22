@@ -121,10 +121,7 @@ LiveProcess::stopProcess()
         stop(*lwp);
         i++;
     }
-    if (debug)
-        *debug << "attempted to stop " << i << " lwps\n";
 }
-
 
 static void resumeThread(const td_thrhandle_t *thr) { td_thr_dbresume(thr); }
 
@@ -144,10 +141,8 @@ LiveProcess::stop(lwpid_t pid)
     if (tcb.stopCount++ != 0)
         return;
 
-    if (stopCount++ == 0 && debug) {
-        *debug << "stopping child" << std::endl;
+    if (stopCount++ == 0 && debug)
         gettimeofday(&start, 0);
-    }
 
     if (ptrace(PT_ATTACH, pid, 0, 0) == 0) {
         int status;

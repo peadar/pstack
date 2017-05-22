@@ -339,6 +339,8 @@ tryLoad(const std::string &name) {
     for (auto dir : globalDebugDirectories.dirs) {
         try {
            auto debugObject = make_shared<ElfObject>(dir + "/" + name);
+           if (debug)
+              *debug << "found debug object " << dir << "/" << name << "\n";
            return debugObject;
         }
         catch (const std::exception &ex) {

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8.11)
 project(pstack CXX)
-add_definitions("-std=c++11 -Wpedantic -Wall -Wextra")
+add_definitions("-std=c++11 -Wall -Wextra")
 
 include_directories("/usr/include/python2.7/")
 include_directories(".")

@@ -53,7 +53,7 @@ class PstackOptions {
 public:
     enum PstackOption {
         nosrc,
-        dwarfish,
+        doargs,
         maxopt
     };
     void operator += (PstackOption);

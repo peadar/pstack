@@ -102,7 +102,7 @@ emain(int argc, char **argv)
             usage();
             return (0);
         case 'a':
-            options += PstackOptions::dwarfish;
+            options += PstackOptions::doargs;
             break;
         case 's':
             options += PstackOptions::nosrc;
@@ -155,19 +155,19 @@ static int
 usage(void)
 {
     std::clog <<
-        "usage: pstack\n\t"
-        "[-<D|d> <elf object>]        dump details of ELF object (D => show DWARF info\n"
-        "[-D <elf object>]            dump details of ELF object (including DWARF info)\n\t"
-        "[-E <elf object>]            print name of executable that generated a core)\n\t"
-        "or\n\t"
-        "[-h]                         show this message\n"
-        "or\n\t"
-        "[-v]                         include verbose information to stderr\n\t"
-        "[-s]                         don't include source-level details\n\t"
-        "[-g]                         add global debug directory\n\t"
-        "[<pid>|<core>|<executable>]* list cores and pids to examine. An executable\n\t"
-        "                             will override use of in-core or in-process information\n\t"
-        "                             to predict location of the executable\n"
+        "usage: pstack\n"
+        "\t[-<D|d> <elf object>]        dump details of ELF object (D => show DWARF info\n"
+        "or\n"
+        "\t[-h]                         show this message\n"
+        "or\n"
+        "\t[-v]                         include verbose information to stderr\n"
+        "\t[-s]                         don't include source-level details\n"
+        "\t[-g]                         add global debug directory\n"
+        "\t[-a]                         show arguments to functions where possible (TODO: not finished)\n"
+        "\t[-n]                         don't try and find external debug images)\n"
+        "\t[<pid>|<core>|<executable>]* list cores and pids to examine. An executable\n"
+        "\t                             will override use of in-core or in-process information\n"
+        "\t                             to predict location of the executable\n"
         ;
     return (EX_USAGE);
 }
