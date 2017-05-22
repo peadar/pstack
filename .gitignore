@@ -7,3 +7,5 @@ tags
 ID
 **/CMakeFiles
 **/CMakeCache.txt
+**/*.o
+**/core*
