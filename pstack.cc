@@ -82,8 +82,11 @@ emain(int argc, char **argv)
     PstackOptions options;
     noDebugLibs = true;
 
-    while ((c = getopt(argc, argv, "d:D:hsvna")) != -1) {
+    while ((c = getopt(argc, argv, "d:D:hsvnag:")) != -1) {
         switch (c) {
+        case 'g':
+            globalDebugDirectories.add(optarg);
+            break;
         case 'D': {
             auto dumpobj = std::make_shared<ElfObject>(std::make_shared<FileReader>(optarg, -1));
             DwarfInfo di(ElfObject::getDebug(dumpobj));
@@ -161,6 +164,7 @@ usage(void)
         "or\n\t"
         "[-v]                         include verbose information to stderr\n\t"
         "[-s]                         don't include source-level details\n\t"
+        "[-g]                         add global debug directory\n\t"
         "[<pid>|<core>|<executable>]* list cores and pids to examine. An executable\n\t"
         "                             will override use of in-core or in-process information\n\t"
         "                             to predict location of the executable\n"

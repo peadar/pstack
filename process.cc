@@ -382,7 +382,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         DwarfEntry *de = 0;
         bool haveDwarf = false;
 
-        os << "    " << symName;
+        os << "    ";
         // Only do arg dumps if we're in debug mode for the moment.
         if (options(PstackOptions::dwarfish) && obj != 0 && (dwarf = getDwarf(obj, true)) != 0 ) {
             for (const auto &rangeset : dwarf->ranges()) {
@@ -393,11 +393,13 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         for (auto it : tu->entries) {
                             de = findEntryForFunc(objIp, it.second);
                             if (de) {
-                                symName = de->name();
-                                std::string dwarfName = de->name();
+                                if (de->name())
+                                   symName = de->name();
+                                else
+                                   obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
                                 frame->function = de;
                                 frame->dwarf = dwarf; // hold on to 'de'
-                                os << de->name() << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(" << ArgPrint(*this, frame) << ")";
+                                os << symName << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(" << ArgPrint(*this, frame) << ")";
                                 haveDwarf = true;
                                 break;
                             }

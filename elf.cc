@@ -14,6 +14,19 @@ std::ostream *debug;
 static uint32_t elf_hash(string);
 bool noDebugLibs;
 
+GlobalDebugDirectories globalDebugDirectories;
+GlobalDebugDirectories::GlobalDebugDirectories()
+{
+   add("/usr/lib/debug");
+}
+
+void
+GlobalDebugDirectories::add(const std::string &str)
+{
+   dirs.push_back(str);
+}
+
+
 ElfNoteIter
 ElfNotes::begin() const
 {
@@ -312,12 +325,26 @@ ElfObject::~ElfObject()
 {
 }
 
-
 std::shared_ptr<ElfObject>
 ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
 {
    auto sp = in->getDebug();
    return sp ? sp : in;
+}
+
+static std::shared_ptr<ElfObject>
+tryLoad(const std::string &name) {
+    // XXX: verify checksum.
+    for (auto dir : globalDebugDirectories.dirs) {
+        try {
+           auto debugObject = make_shared<ElfObject>(dir + "/" + name);
+           return debugObject;
+        }
+        catch (const std::exception &ex) {
+            continue;
+        }
+    }
+    return std::shared_ptr<ElfObject>();
 }
 
 std::shared_ptr<ElfObject>
@@ -328,19 +355,18 @@ ElfObject::getDebug()
 
     if (!debugLoaded) {
         debugLoaded = true;
-
-    if (debug) {
-        for (auto note : notes) {
-           if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
-              *debug << "GNU buildID: ";
-              auto data = note.data();
-              for (size_t i = 0; i < note.size(); ++i)
-                 *debug << std::hex << std::setw(2) << std::setfill('0') << int(data[i]);
-              *debug << "\n";
-              break;
-           }
+        if (debug) {
+            for (auto note : notes) {
+               if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
+                  *debug << "GNU buildID: ";
+                  auto data = note.data();
+                  for (size_t i = 0; i < note.size(); ++i)
+                     *debug << std::hex << std::setw(2) << std::setfill('0') << int(data[i]);
+                  *debug << "\n";
+                  break;
+               }
+            }
         }
-    }
 
         std::ostringstream stream;
         stream << io->describe();
@@ -353,16 +379,23 @@ ElfObject::getDebug()
         std::string link = io->readString(hdr->sh_offset);
 
         auto dir = dirname(oldname);
-        auto name = "/usr/lib/debug" + dir + "/" + link;
-
-        // XXX: verify checksum.
-        try {
-            debugObject = make_shared<ElfObject>(name);
-            if (debug)
-                *debug << "loaded symbols from debug image " << name << "\n";
-        }
-        catch (const std::exception &ex) {
-            return std::shared_ptr<ElfObject>();
+        debugObject = tryLoad(dir + "/" + link);
+        if (!debugObject) {
+            for (auto note : notes) {
+               if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
+                   std::ostringstream dir;
+                   dir << ".build-id/";
+                   size_t i;
+                   auto data = note.data();
+                   dir << std::hex << std::setw(2) << std::setfill('0') << int(data[0]);
+                   dir << "/";
+                   for (i = 1; i < note.size(); ++i)
+                       dir << std::hex << std::setw(2) << std::setfill('0') << int(data[i]);
+                   dir << ".debug";
+                   debugObject = tryLoad(dir.str());
+                   break;
+               }
+            }
         }
     }
     return debugObject;

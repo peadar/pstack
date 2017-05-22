@@ -317,5 +317,12 @@ enum GNUNotes {
    GNU_BUILD_ID = 3
 };
 
+class GlobalDebugDirectories {
+public:
+    std::vector<std::string> dirs;
+    void add(const std::string &);
+    GlobalDebugDirectories();
+};
+extern GlobalDebugDirectories globalDebugDirectories;
 
 #endif /* Guard. */
