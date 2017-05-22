@@ -21,13 +21,11 @@ struct StackFrame {
     Elf_Addr cfa;
     std::map<unsigned, uintmax_t> regs;
     DwarfInfo *dwarf;
-    DwarfFrameInfo *dwarfFrame;
     DwarfEntry * function;
     StackFrame()
         : ip(-1)
         , cfa(0)
         , dwarf(0)
-        , dwarfFrame(0)
         , function(0)
     {}
     void setReg(unsigned regno, uintmax_t value);
