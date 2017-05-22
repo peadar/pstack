@@ -350,12 +350,12 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                     auto dwarfUnit = dwarf->getUnit(rangeset.debugInfoOffset);
                     // find the DIE for this function
                     for (auto it : dwarfUnit->entries) {
-                        de = findEntryForFunc(objIp, it.second);
+                        de = findEntryForFunc(objIp - 1, it.second);
                         if (de) {
                             if (de->name()) {
                                symName = de->name();
                             } else {
-                               obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+                               obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
                                symName += "[nd]";
                             }
                             frame->function = de;
@@ -379,7 +379,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                 symName = "(syscall)";
             } else {
                 try {
-                    obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+                    obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
                 } catch (...) {
                     std::ostringstream str;
                     str << "unknown";

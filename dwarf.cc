@@ -912,7 +912,8 @@ const DwarfFDE *
 DwarfFrameInfo::findFDE(Elf_Addr addr) const
 {
     for (auto fde = fdeList.begin(); fde != fdeList.end(); ++fde)
-        if (fde->iloc <= addr && fde->iloc + fde->irange > addr)
+        // XXX: addr can be just past last instruction in function
+        if (fde->iloc <= addr && fde->iloc + fde->irange >= addr)
             return &(*fde);
     return 0;
 }
