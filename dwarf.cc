@@ -1137,7 +1137,7 @@ DwarfFDE::DwarfFDE(DwarfInfo*info, DWARFReader &reader, DwarfCIE *cie_, Elf_Off 
     if (cie->augmentation.size() != 0 && cie->augmentation[0] == 'z') {
         size_t alen = reader.getuleb128();
         while (alen--)
-            aug.push_back(reader.getu8());
+            augmentation.push_back(reader.getu8());
     }
     instructions = reader.getOffset();
     end = end_;

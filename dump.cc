@@ -60,6 +60,9 @@ std::ostream & operator << (std::ostream &os, const DwarfAbbreviation &abbr) {
         << " }";
 }
 
+std::ostream &operator << (std::ostream &os, const std::shared_ptr<DwarfUnit> &unit) {
+    return os << *unit;
+}
 std::ostream &operator << (std::ostream &os, const DwarfUnit &unit) {
     return os
         << " { \"length\":" <<  unit.length
@@ -260,7 +263,7 @@ operator << (std::ostream &os, const std::pair<const DwarfInfo *, const DwarfFDE
         << "{ \"cie\": " << intptr_t(dfde.second->cie)
         << ", \"loc\": " << dfde.second->iloc
         << ", \"range\": " << dfde.second->irange
-        << ", \"auglen\": " << dfde.second->aug.size()
+        << ", \"augmentation\": \"" << dfde.second->augmentation << "\""
         << ", \"instructions\": "
     ; 
     DWARFReader r(dfde.first->elf->io, dfde.second->instructions, dfde.second->end - dfde.second->instructions, ELF_BITS/8);

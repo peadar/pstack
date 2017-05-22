@@ -157,6 +157,7 @@ std::ostream &operator << (std::ostream &, const DwarfLineState &);
 std::ostream &operator << (std::ostream &, const DwarfPubname &);
 std::ostream &operator << (std::ostream &, const DwarfPubnameUnit &);
 std::ostream &operator << (std::ostream &, const DwarfUnit &);
+std::ostream &operator << (std::ostream &, const std::shared_ptr<DwarfUnit> &);
 std::ostream &operator << (std::ostream &, const Elf_auxv_t &);
 std::ostream &operator << (std::ostream &, std::shared_ptr<ElfObject> &);
 std::ostream &operator << (std::ostream &, const Elf_Phdr &);

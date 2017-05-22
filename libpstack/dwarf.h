@@ -246,7 +246,7 @@ struct DwarfFDE {
     uintmax_t irange;
     Elf_Off instructions;
     Elf_Off end;
-    std::vector<unsigned char> aug;
+    std::vector<unsigned char> augmentation;
     DwarfFDE(DwarfInfo *, DWARFReader &, DwarfCIE * , Elf_Off end);
 };
 
