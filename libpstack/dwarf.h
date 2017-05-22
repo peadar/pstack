@@ -14,7 +14,7 @@ enum DwarfHasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
 struct DwarfCIE;
 class DwarfInfo;
 class DWARFReader;
-struct DwarfLineInfo;
+class DwarfLineInfo;
 struct DwarfUnit;
 struct DwarfFrameInfo;
 struct DwarfEntry;
@@ -162,13 +162,15 @@ struct DwarfEntry {
     const DwarfUnit *unit;
     const DwarfAbbreviation *type;
     intmax_t offset;
-    std::map<DwarfAttrName, DwarfAttribute> attributes;
+    std::vector<DwarfAttribute> attributes;
 
     DwarfEntry();
 
     const DwarfAttribute *attrForName(DwarfAttrName name) const {
-        auto attr = attributes.find(name);
-        return attr != attributes.end() ? &attr->second : 0;
+       for (const auto &attr : attributes)
+          if (attr.spec->name == name)
+             return &attr;
+       return 0;
     }
 
     DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit, intmax_t offset, DwarfEntry *parent);

@@ -122,7 +122,7 @@ struct ElfSection {
     ElfSection(const ElfObject &obj_, const Elf_Shdr *shdr_) : obj(obj_), shdr(shdr_) {}
 };
 
-class ElfNoteIter;
+struct ElfNoteIter;
 
 struct ElfNotes {
    ElfNoteIter begin() const;

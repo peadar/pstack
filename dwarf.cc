@@ -677,12 +677,13 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
 {
 
     for (auto spec = type->specs.begin(); spec != type->specs.end(); ++spec)
-        attributes[spec->name] = DwarfAttribute(r, this, &(*spec));
+        attributes.push_back(DwarfAttribute(r, this, &(*spec)));
     switch (type->tag) {
     case DW_TAG_partial_unit:
     case DW_TAG_compile_unit: {
-        if (unit->dwarf->lineshdr && attributes.find(DW_AT_stmt_list) != attributes.end()) {
-            size_t stmts = dwarfAttr2Int(attributes[DW_AT_stmt_list]);
+        auto stmtsAttr = attrForName(DW_AT_stmt_list);
+        if (unit->dwarf->lineshdr && stmtsAttr) {
+            size_t stmts = dwarfAttr2Int(*stmtsAttr);
             DWARFReader r2(unit->dwarf->lineshdr, stmts, r.dwarfLen);
             unit_->lines.build(r2, unit);
         } else {
