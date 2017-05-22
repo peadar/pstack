@@ -232,6 +232,8 @@ DwarfInfo::getUnit(off_t offset)
     auto unit = unitsm.find(offset);
     if (unit != unitsm.end())
         return unit->second;
+    if (info == 0)
+        return std::shared_ptr<DwarfUnit>();
     DWARFReader r(info, offset, 0);
     unitsm[offset] = std::make_shared<DwarfUnit>(this, r);
     return unitsm[offset];
@@ -241,6 +243,8 @@ std::list<std::shared_ptr<DwarfUnit>>
 DwarfInfo::getUnits()
 {
     std::list<std::shared_ptr<DwarfUnit>> list;
+    if (info == 0)
+        return list;
     DWARFReader r(info, 0, 0);
 
     while (!r.empty()) {
