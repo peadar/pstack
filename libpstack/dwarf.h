@@ -419,7 +419,7 @@ public:
 
     DWARFReader(const ElfSection &section, Elf_Off off_, size_t dwarfLen_, size_t size = std::numeric_limits<size_t>::max())
         : off(off_ + section->sh_offset)
-        , end(section->sh_offset + std::min(section->sh_size, size))
+        , end(section->sh_offset + std::min(size_t(section->sh_size), size))
         , io(section.obj.io)
         , addrLen(ELF_BITS / 8)
         , dwarfLen(dwarfLen_)
