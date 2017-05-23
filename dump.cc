@@ -157,8 +157,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     const DwarfValue &value = attr.value;
     auto dwarf = attr.entry->unit->dwarf;
     auto elf = dwarf->elf;
-    os << "[ "
-       << "\"" << attr.spec->form << "\", ";
+    os << "[ " << *attr.spec << ",";
     switch (attr.spec->form) {
     case DW_FORM_addr:
         os << value.addr;
