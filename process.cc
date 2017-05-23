@@ -352,11 +352,19 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                     for (auto it : dwarfUnit->entries) {
                         de = findEntryForFunc(objIp - 1, it.second);
                         if (de) {
+                            const DwarfAttribute *ao;
                             if (de->name()) {
                                symName = de->name();
-                            } else {
+                            } else if ((ao = de->attrForName(DW_AT_abstract_origin)) != 0) {
+                               auto abstractOrigin = de->unit->allEntries[ao->value.ref];
+                               if (abstractOrigin->name()) {
+                                  symName = abstractOrigin->name();
+                                  symName += "[inline]";
+                               }
+                            }
+                            if (symName == "") {
                                obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
-                               symName += "[nd]";
+                               symName += "[nodwarfname]";
                             }
                             frame->function = de;
                             frame->dwarf = dwarf; // hold on to 'de'
