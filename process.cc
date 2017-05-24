@@ -302,8 +302,13 @@ operator << (std::ostream &os, const ArgPrint &ap)
                     DwarfExpressionStack fbstack;
                     addr = dwarfEvalExpr(ap.p, locationA, ap.frame, &fbstack);
                     switch (typeA->spec->form) {
-                        case DW_FORM_ref4:
+                        case DW_FORM_ref4: {
+                            auto type = child->unit->allEntries[typeA->value.ref];
+                            os << "(" << type->name() << ")";
+                            break;
+                        }
                         default:
+                            abort();
                         break;
                      }
                 }

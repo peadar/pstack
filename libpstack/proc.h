@@ -14,7 +14,11 @@ struct ps_prochandle {};
 
 class Process;
 
-typedef std::stack<Elf_Addr> DwarfExpressionStack;
+class DwarfExpressionStack : public std::stack<Elf_Addr> {
+public:
+    bool isReg;
+    DwarfExpressionStack(): isReg(false) {}
+};
 
 struct StackFrame {
     Elf_Addr ip;

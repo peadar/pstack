@@ -9,3 +9,4 @@ ID
 **/CMakeCache.txt
 **/*.o
 **/core*
+**/*core

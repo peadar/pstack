@@ -95,6 +95,7 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
 Elf_Addr
 dwarfEvalExpr(const Process &proc, DWARFReader &r, const StackFrame *frame, DwarfExpressionStack *stack)
 {
+    stack->isReg = false;
     while (!r.empty()) {
         auto op = DwarfExpressionOp(r.getu8());
         switch (op) {
@@ -274,6 +275,7 @@ dwarfEvalExpr(const Process &proc, DWARFReader &r, const StackFrame *frame, Dwar
             case DW_OP_reg20: case DW_OP_reg21: case DW_OP_reg22: case DW_OP_reg23:
             case DW_OP_reg24: case DW_OP_reg25: case DW_OP_reg26: case DW_OP_reg27:
             case DW_OP_reg28: case DW_OP_reg29: case DW_OP_reg30: case DW_OP_reg31:
+                stack->isReg = true;
                 stack->push(frame->getReg(op - DW_OP_reg0));
                 break;
             case DW_OP_regx:
