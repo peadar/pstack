@@ -166,17 +166,15 @@ struct DwarfEntry {
 
     DwarfEntry();
 
-    const DwarfAttribute *attrForName(DwarfAttrName name) const {
-       for (const auto &attr : attributes)
-          if (attr.spec->name == name)
-             return &attr;
-       return 0;
-    }
+    const DwarfAttribute *attrForName(DwarfAttrName name) const;
+    const DwarfEntry *referencedEntry(DwarfAttrName name) const;
 
     DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit, intmax_t offset, DwarfEntry *parent);
-    const char *name() const {
-        const DwarfAttribute *ent = attrForName(DW_AT_name);
-        return ent ? ent->value.string : 0;
+    std::string name() const {
+        const DwarfAttribute *attr = attrForName(DW_AT_name);
+        if (attr)
+           return attr->value.string;
+        return "";
     }
     DwarfEntry *firstChild(DwarfTag tag);
 };

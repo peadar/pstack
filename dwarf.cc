@@ -334,9 +334,7 @@ DwarfUnit::DwarfUnit(DwarfInfo *di, DWARFReader &r)
 std::string
 DwarfUnit::name() const
 {
-    const char *name = entries.begin()->second->name();
-    return name ? name : "(anon unit)";
-
+    return entries.begin()->second->name();
 }
 
 DwarfAbbreviation::DwarfAbbreviation(DWARFReader &r, intmax_t code_)
@@ -1217,4 +1215,46 @@ DwarfCIE::DwarfCIE(const DwarfInfo *info_, DWARFReader &r, Elf_Off end_)
     r.setOffset(end);
 }
 
+const DwarfEntry *
+DwarfEntry::referencedEntry(DwarfAttrName name) const
+{
+    auto attr = attrForName(name);
+    if (!attr)
+        return 0;
 
+    off_t off;
+    switch (attr->spec->form) {
+        case DW_FORM_ref_addr:
+            off = attr->value.ref - unit->offset;
+            break;
+        case DW_FORM_ref_udata:
+        case DW_FORM_ref2:
+        case DW_FORM_ref4:
+        case DW_FORM_ref8:
+            off = attr->value.ref;
+            break;
+        case DW_FORM_GNU_ref_alt:
+            return 0; // XXX: deal with this.
+        default:
+            abort();
+            break;
+    }
+    const auto &entry = unit->allEntries.find(off);
+    if (entry == unit->allEntries.end())
+        return 0;
+    return entry->second;
+}
+
+const DwarfAttribute *
+DwarfEntry::attrForName(DwarfAttrName name) const
+{
+    for (const auto &attr : attributes)
+        if (attr.spec->name == name)
+            return &attr;
+    if (name != DW_AT_abstract_origin) {
+        auto ao = referencedEntry(DW_AT_abstract_origin);
+        if (ao != 0)
+            return ao->attrForName(name);
+    }
+    return 0;
+}

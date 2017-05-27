@@ -291,10 +291,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
         const DwarfEntry *child = childEnt.second;
         switch (child->type->tag) {
             case DW_TAG_formal_parameter: {
-                const char *name = child->name();
-                if (name == 0)
-                   name = "unknown";
-
+                auto name = child->name();
                 Elf_Addr addr = 0;
                 const DwarfAttribute *locationA = child->attrForName(DW_AT_location);
                 const DwarfAttribute *typeA = child->attrForName(DW_AT_type);
@@ -357,16 +354,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                     for (auto it : dwarfUnit->entries) {
                         de = findEntryForFunc(objIp - 1, it.second);
                         if (de) {
-                            const DwarfAttribute *ao;
-                            if (de->name()) {
-                               symName = de->name();
-                            } else if ((ao = de->attrForName(DW_AT_abstract_origin)) != 0) {
-                               auto abstractOrigin = de->unit->allEntries[ao->value.ref];
-                               if (abstractOrigin->name()) {
-                                  symName = abstractOrigin->name();
-                                  symName += "[inline]";
-                               }
-                            }
+                            symName = de->name();
                             if (symName == "") {
                                obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
                                symName += "[nodwarfname]";

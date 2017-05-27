@@ -179,13 +179,13 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
         os << "\"" << value.string << "\"";
         break;
     case DW_FORM_ref_addr: {
-        auto off = attr.value.ref;
+        auto off = attr.value.ref - attr.entry->unit->offset;
         const auto &allEntries = attr.entry->unit->allEntries;
         const auto &entry = allEntries.find(off);
         if (entry != allEntries.end())
-            os << "\"ref to " << maybe(entry->second->name(), "unnamed") << " at " << off << "\"";
+            os << "\"ref to " << entry->second->name() << " at " << off << "\"";
         else
-            os << "\"HAVENOTIT@" << off << (abort(),0) << "\"";
+            os << "\"HAVENOTIT@" << off << "\"";
         break;
 
     }
@@ -197,14 +197,15 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
         const auto &allEntries = attr.entry->unit->allEntries;
         const auto &entry = allEntries.find(off);
         if (entry != allEntries.end())
-            os << "\"ref to " << maybe(entry->second->name(), "unnamed") << " at " << off << "\"";
+            os << "\"ref to " << entry->second->name() << " at " << off << "\"";
         else
             os << "\"HAVENOTIT@" << off << (abort(), 0) << "\"";
         break;
 
     }
     case DW_FORM_GNU_ref_alt: {
-                                 abort(); /*
+        os << "\"alt ref\"";
+                                 /*
         auto altDwarf = dwarf->getAltDwarf();
         auto section = altDwarf->elf->getSection(".debug_info", 0);
         auto off = attr.value.ref;
@@ -214,8 +215,8 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
             os << "\"alt ref to " << entry->second->name() << " at " << off << " in " << altDwarf->elf->io->describe() <<"\"";
         else
             os << "\"HAVENOTIT@" << off << (abort(),0) << "\"";
-        break;
         */
+        break;
     }
     case DW_FORM_exprloc:
     case DW_FORM_block1:
