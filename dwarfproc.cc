@@ -57,7 +57,7 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
                    case DW_FORM_addr:
                        endAddr = unitHigh->value.addr;
                        break;
-                   case DW_FORM_data1: case DW_FORM_data2: case DW_FORM_data4: case DW_FORM_data8:
+                   case DW_FORM_data1: case DW_FORM_data2: case DW_FORM_data4: case DW_FORM_data8: case DW_FORM_udata:
                        endAddr = unitHigh->value.sdata + unitLow->value.addr;
                        break;
                    default:

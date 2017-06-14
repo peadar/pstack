@@ -153,7 +153,6 @@ struct DwarfAttribute {
             value.block = rhs.value.block;
         return *this;
     }
-    const DwarfEntry *getRef() const;
 };
 
 struct DwarfEntry {
