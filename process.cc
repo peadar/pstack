@@ -292,22 +292,13 @@ operator << (std::ostream &os, const ArgPrint &ap)
         switch (child->type->tag) {
             case DW_TAG_formal_parameter: {
                 auto name = child->name();
-                Elf_Addr addr = 0;
                 const DwarfAttribute *locationA = child->attrForName(DW_AT_location);
-                const DwarfAttribute *typeA = child->attrForName(DW_AT_type);
-                if (locationA && typeA) {
+                const DwarfEntry *type = child->referencedEntry(DW_AT_type);
+                Elf_Addr addr = 0;
+                if (locationA && type) {
                     DwarfExpressionStack fbstack;
                     addr = dwarfEvalExpr(ap.p, locationA, ap.frame, &fbstack);
-                    switch (typeA->spec->form) {
-                        case DW_FORM_ref4: {
-                            auto type = child->unit->allEntries[typeA->value.ref];
-                            os << "(" << type->name() << ")";
-                            break;
-                        }
-                        default:
-                            abort();
-                        break;
-                     }
+                    os << "(" << type->name() << ")";
                 }
                 os << sep << name << "=@" << std::hex << addr;
                 sep = ", ";
