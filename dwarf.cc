@@ -732,19 +732,6 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
     }
 }
 
-const DwarfEntry *
-DwarfAttribute::getRef() const
-{
-    switch (spec->form) {
-        case DW_FORM_ref1:
-        case DW_FORM_ref2:
-        case DW_FORM_ref4:
-        case DW_FORM_ref8:
-        case DW_FORM_ref_udata:
-        default:
-            abort();
-    }
-}
 std::shared_ptr<DwarfInfo>
 DwarfInfo::getAltDwarf()
 {
