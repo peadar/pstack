@@ -164,8 +164,6 @@ struct DwarfEntry {
     intmax_t offset;
     std::vector<DwarfAttribute> attributes;
 
-    DwarfEntry();
-
     const DwarfAttribute *attrForName(DwarfAttrName name) const;
     const DwarfEntry *referencedEntry(DwarfAttrName name) const;
 

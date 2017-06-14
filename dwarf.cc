@@ -670,16 +670,6 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
     }
 }
 
-DwarfEntry::DwarfEntry()
-    : parent(0)
-    , unit(0)
-    , type(0)
-    , offset(-1)
-{
-
-}
-
-
 DwarfEntry *
 DwarfEntry::firstChild(DwarfTag tag)
 {
