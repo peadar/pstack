@@ -81,18 +81,21 @@ protected:
     std::shared_ptr<ElfObject> execImage;
     std::string abiPrefix;
     PathReplacementList pathReplacements;
+
 public:
-    void processAUXV(const void *data, size_t len);
-    std::shared_ptr<Reader> io;
+
     struct LoadedObject {
         Elf_Off reloc;
         std::shared_ptr<ElfObject> object;
         LoadedObject(Elf_Off reloc_, std::shared_ptr<ElfObject> object_) : reloc(reloc_), object(object_) {}
     };
     std::vector<LoadedObject> objects;
+    void processAUXV(const void *data, size_t len);
+    std::shared_ptr<Reader> io;
+
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) = 0;
     void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
-    LoadedObject findObject(Elf_Addr addr) const;
+    std::shared_ptr<ElfObject> findObject(Elf_Addr addr, Elf_Off *reloc) const;
     DwarfInfo *getDwarf(std::shared_ptr<ElfObject>, bool debug = true);
     Process(std::shared_ptr<ElfObject> obj, std::shared_ptr<Reader> mem, const PathReplacementList &prl);
     virtual void stop(pid_t lwpid) = 0;

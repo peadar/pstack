@@ -1,5 +1,6 @@
-TESTS: basic-run segv-run
+TESTS: basic-run segv-run thread-run
 CFLAGS += -g -O0
+CXXFLAGS += -g -O0
 LDFLAGS += -g
 
 all: $(TESTS)
@@ -14,13 +15,20 @@ segv-run: segv
 	-./segv
 	../d64/pstack -v ./core
 
+thread-run: thread
+	-./thread
+	../d64/pstack -v ./core
+
+
 
 
 basic: basic.o abort.o
-	$(CC) -o $@ $(LDFLAGS) $^
+	$(CC) -g -o $@ $(LDFLAGS) $^
 
 segv: segv.o abort.o
-	$(CC) -o $@ $(LDFLAGS) $^
+	$(CC) -g -o $@ $(LDFLAGS) $^
+thread: thread.o
+	$(CXX) -g -o $@ $(LDFLAGS) $^ -lpthread
 
 
 

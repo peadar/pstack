@@ -44,8 +44,13 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
     switch (attr->spec->form) {
         case DW_FORM_sec_offset: {
             auto sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
-            auto loaded = proc.findObject(frame->ip);
-            auto objIp = frame->ip - loaded.reloc;
+            Elf_Off reloc;
+            // XXX: this might be the debug dwarf, and not have the object code
+            auto obj = proc.findObject(frame->ip, &reloc);
+            if (!obj) {
+               throw Exception() << "no object for evaluating DWARF expression";
+            }
+            auto objIp = frame->ip - reloc;
             // convert this object-relative addr to a unit-relative one
             const DwarfEntry *unitEntry = attr->entry->unit->entries.begin()->second;
             auto unitLow = unitEntry->attrForName(DW_AT_low_pc);
@@ -329,14 +334,15 @@ StackFrame::getCFA(const Process &proc, const DwarfCallFrame &dcf) const
 StackFrame *
 StackFrame::unwind(Process &p)
 {
-    auto elf = p.findObject(ip);
-    Elf_Off objaddr = ip - elf.reloc; // relocate process address to object address
-
-
+    Elf_Off reloc;
+    auto elf = p.findObject(ip, &reloc);
+    if (!elf)
+       return 0;
+    Elf_Off objaddr = ip - reloc; // relocate process address to object address
     // Try and find DWARF data with debug frame information, or an eh_frame section.
     const DwarfFDE *fde = 0;
     for (bool debug : {true, false}) {
-       dwarf = p.getDwarf(elf.object, debug);
+       dwarf = p.getDwarf(elf, debug);
        if (dwarf) {
           auto frames = { dwarf->debugFrame.get(), dwarf->ehFrame.get() };
           for (auto frame : frames) {
@@ -351,7 +357,7 @@ StackFrame::unwind(Process &p)
     if (!fde)
        return 0;
 
-    DWARFReader r(elf.object->io, fde->instructions, fde->end - fde->instructions, 0);
+    DWARFReader r(elf->io, fde->instructions, fde->end - fde->instructions, 0);
 
     auto iter = dwarf->callFrameForAddr.find(objaddr);
     if (iter == dwarf->callFrameForAddr.end()) {
@@ -392,7 +398,7 @@ StackFrame::unwind(Process &p)
             case EXPRESSION: {
                 DwarfExpressionStack stack;
                 stack.push(cfa);
-                DWARFReader reader(elf.object->io, unwind.u.expression.offset, unwind.u.expression.length, 0);
+                DWARFReader reader(elf->io, unwind.u.expression.offset, unwind.u.expression.length, 0);
                 auto val = dwarfEvalExpr(p, reader, this, &stack);
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                 if (unwind.type == EXPRESSION)
