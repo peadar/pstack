@@ -114,7 +114,6 @@ mainExcept(int argc, char *argv[])
                 showaddrs = true;
                 break;
             case 'v':
-                debug = &clog;
                 verbose++;
                 break;
             case 'h':
@@ -255,7 +254,7 @@ mainExcept(int argc, char *argv[])
                }
            }
         }
-        if (debug)
+        if (verbose)
             *debug << "found " << count << " symbols in " << loaded->object->io->describe() << endl;
     }
     if (showsyms)
@@ -272,7 +271,7 @@ mainExcept(int argc, char *argv[])
         Elf_Off p;
         filesize += hdr.p_filesz;
         memsize += hdr.p_memsz;
-        if (debug) {
+        if (verbose) {
             *debug << "scan " << hex << hdr.p_vaddr <<  " to " << hdr.p_vaddr + hdr.p_memsz
                 << " (filesiz = " << hdr.p_filesz  << ", memsiz=" << hdr.p_memsz << ") ";
         }
@@ -312,11 +311,11 @@ mainExcept(int argc, char *argv[])
             }
         }
 
-        if (debug)
+        if (verbose)
             *debug << endl;
 
     }
-    if (debug)
+    if (verbose)
         *debug << "core file contains " << filesize << " out of " << memsize << " bytes of memory\n";
 
     sort(listed.begin() , listed.end() , compareSymbolsByFrequency);

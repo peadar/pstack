@@ -10,7 +10,8 @@ using std::string;
 using std::make_shared;
 using std::shared_ptr;
 
-std::ostream *debug;
+std::ostream *debug = &std::clog;
+int verbose = 0;
 static uint32_t elf_hash(string);
 bool noDebugLibs;
 
@@ -339,7 +340,7 @@ tryLoad(const std::string &name) {
     for (auto dir : globalDebugDirectories.dirs) {
         try {
            auto debugObject = make_shared<ElfObject>(dir + "/" + name);
-           if (debug)
+           if (verbose >= 2)
               *debug << "found debug object " << dir << "/" << name << "\n";
            return debugObject;
         }
@@ -358,18 +359,6 @@ ElfObject::getDebug()
 
     if (!debugLoaded) {
         debugLoaded = true;
-        if (debug) {
-            for (auto note : notes) {
-               if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
-                  *debug << "GNU buildID for " << io->describe() << ": ";
-                  auto data = note.data();
-                  for (size_t i = 0; i < note.size(); ++i)
-                     *debug << std::hex << std::setw(2) << std::setfill('0') << int(data[i]);
-                  *debug << "\n";
-                  break;
-               }
-            }
-        }
 
         std::ostringstream stream;
         stream << io->describe();
@@ -385,19 +374,19 @@ ElfObject::getDebug()
         debugObject = tryLoad(dir + "/" + link);
         if (!debugObject) {
             for (auto note : notes) {
-               if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
-                   std::ostringstream dir;
-                   dir << ".build-id/";
-                   size_t i;
-                   auto data = note.data();
-                   dir << std::hex << std::setw(2) << std::setfill('0') << int(data[0]);
-                   dir << "/";
-                   for (i = 1; i < note.size(); ++i)
-                       dir << std::hex << std::setw(2) << std::setfill('0') << int(data[i]);
-                   dir << ".debug";
-                   debugObject = tryLoad(dir.str());
-                   break;
-               }
+                if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
+                    std::ostringstream dir;
+                    dir << ".build-id/";
+                    size_t i;
+                    auto data = note.data();
+                    dir << std::hex << std::setw(2) << std::setfill('0') << int(data[0]);
+                    dir << "/";
+                    for (i = 1; i < note.size(); ++i)
+                        dir << std::hex << std::setw(2) << std::setfill('0') << int(data[i]);
+                    dir << ".debug";
+                    debugObject = tryLoad(dir.str());
+                    break;
+                }
             }
         }
     }

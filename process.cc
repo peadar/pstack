@@ -104,7 +104,7 @@ Process::load()
     the = td_ta_new(this, &agent);
     if (the != TD_OK) {
         agent = 0;
-        if (debug && the != TD_NOLIBTHREAD)
+        if (verbose && the != TD_NOLIBTHREAD)
             *debug << "failed to load thread agent: " << the << std::endl;
     }
 
@@ -148,7 +148,7 @@ Process::processAUXV(const void *datap, size_t len)
                 try {
                     auto elf = std::make_shared<ElfObject>(std::make_shared<MemReader>(vdso, dsosize));
                     addElfObject(elf, hdr - elf->getBase());
-                    if (debug)
+                    if (verbose >= 2)
                         *debug << "VDSO " << dsosize << " bytes loaded at " << elf.get() << "\n";
 
                 }
@@ -159,7 +159,7 @@ Process::processAUXV(const void *datap, size_t len)
 #ifdef AT_EXECFN
             case AT_EXECFN:
                 auto exeName = io->readString(hdr);
-                if (debug)
+                if (verbose >= 2)
                     *debug << "filename from auxv: " << exeName << "\n";
                 if (!execImage) {
                     execImage = std::make_shared<ElfObject>(exeName);
@@ -406,7 +406,7 @@ Process::addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load)
 {
     objects.push_back(LoadedObject(load, obj));
 
-    if (debug)
+    if (verbose >= 2)
         *debug
             << "object " << obj->io->describe()
             << " loaded at address " << std::hex << load
@@ -450,7 +450,7 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             if (found != std::string::npos)
                 path.replace(found, it->first.size(), it->second);
         }
-        if (debug && path != startPath)
+        if (verbose && path != startPath)
             *debug << "replaced " << startPath << " with " << path << std::endl;
 
         try {

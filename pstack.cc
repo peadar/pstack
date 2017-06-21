@@ -108,7 +108,7 @@ emain(int argc, char **argv)
             options += PstackOptions::nosrc;
             break;
         case 'v':
-            debug = &std::clog;
+            verbose++;
             break;
         case 'n':
             noDebugLibs = true;
