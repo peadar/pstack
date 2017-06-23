@@ -282,6 +282,42 @@ struct ArgPrint {
     ArgPrint(const Process &p_, const StackFrame *frame_) : p(p_), frame(frame_) {}
 };
 
+std::string
+typeName(const DwarfEntry *type)
+{
+    if (type == 0) {
+        return "void";
+    }
+    std::string name = type->name();
+    if (name != "") {
+        return name;
+    }
+    const DwarfEntry *base = type->referencedEntry(DW_AT_type);
+    std::string s, sep;
+    switch (type->type->tag) {
+        case DW_TAG_pointer_type:
+            return typeName(base) + " *";
+        case DW_TAG_const_type:
+            return "const " + typeName(base);
+        case DW_TAG_volatile_type:
+            return "volatile " + typeName(base);
+        case DW_TAG_subroutine_type:
+            s = typeName(base) + "(";
+            sep = "";
+            for (auto &arg : type->children) {
+                if (arg.second->type->tag != DW_TAG_formal_parameter)
+                    continue;
+                s += sep;
+                s += typeName(arg.second->referencedEntry(DW_AT_type));
+                sep = ", ";
+            }
+            s += ")";
+            return s;
+        default:
+            abort();
+    }
+}
+
 std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
@@ -294,12 +330,12 @@ operator << (std::ostream &os, const ArgPrint &ap)
                 const DwarfAttribute *locationA = child->attrForName(DW_AT_location);
                 const DwarfEntry *type = child->referencedEntry(DW_AT_type);
                 Elf_Addr addr = 0;
+                os << sep << name;
                 if (locationA && type) {
                     DwarfExpressionStack fbstack;
                     addr = dwarfEvalExpr(ap.p, locationA, ap.frame, &fbstack);
-                    os << "(" << type->name() << ")";
+                    os << "=" << typeName(type) << "@" << std::hex << addr;
                 }
-                os << sep << name << "=@" << std::hex << addr;
                 sep = ", ";
                 break;
             }
