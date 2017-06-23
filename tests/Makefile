@@ -8,12 +8,12 @@ all: $(TESTS)
 
 basic-run: basic
 	-./basic
-	../d64/pstack -v ./core
+	$(PSTACK_BIN) -v ./core
 
 
 segv-run: segv
 	-./segv
-	../d64/pstack -v ./core
+	$(PSTACK_BIN) -v ./core
 
 thread-run: thread
 	-./thread
