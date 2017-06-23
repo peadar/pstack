@@ -17,6 +17,7 @@ class Process;
 class DwarfExpressionStack : public std::stack<Elf_Addr> {
 public:
     bool isReg;
+    int inReg;
     DwarfExpressionStack(): isReg(false) {}
 };
 

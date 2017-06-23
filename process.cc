@@ -298,9 +298,9 @@ typeName(const DwarfEntry *type)
         case DW_TAG_pointer_type:
             return typeName(base) + " *";
         case DW_TAG_const_type:
-            return "const " + typeName(base);
+            return typeName(base) + " const";
         case DW_TAG_volatile_type:
-            return "volatile " + typeName(base);
+            return typeName(base) + " volatile";
         case DW_TAG_subroutine_type:
             s = typeName(base) + "(";
             sep = "";
@@ -313,8 +313,14 @@ typeName(const DwarfEntry *type)
             }
             s += ")";
             return s;
-        default:
-            abort();
+        case DW_TAG_reference_type:
+            return typeName(base) + "&";
+        default: {
+            std::ostringstream os;
+            os << "(unhandled tag " << type->type->tag << ")";
+            return os.str();
+        }
+
     }
 }
 
@@ -327,14 +333,19 @@ operator << (std::ostream &os, const ArgPrint &ap)
         switch (child->type->tag) {
             case DW_TAG_formal_parameter: {
                 auto name = child->name();
-                const DwarfAttribute *locationA = child->attrForName(DW_AT_location);
                 const DwarfEntry *type = child->referencedEntry(DW_AT_type);
                 Elf_Addr addr = 0;
                 os << sep << name;
-                if (locationA && type) {
-                    DwarfExpressionStack fbstack;
-                    addr = dwarfEvalExpr(ap.p, locationA, ap.frame, &fbstack);
-                    os << "=" << typeName(type) << "@" << std::hex << addr;
+                if (type) {
+                    os << "[" << typeName(type) << "]";
+                    const DwarfAttribute *locationA = child->attrForName(DW_AT_location);
+                    if (locationA) {
+                        DwarfExpressionStack fbstack;
+                        addr = dwarfEvalExpr(ap.p, locationA, ap.frame, &fbstack);
+                        os << "=" << std::hex << addr;
+                        if (fbstack.isReg)
+                           os << "{in register " << fbstack.inReg << "}";
+                    }
                 }
                 sep = ", ";
                 break;

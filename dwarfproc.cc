@@ -281,6 +281,7 @@ dwarfEvalExpr(const Process &proc, DWARFReader &r, const StackFrame *frame, Dwar
             case DW_OP_reg24: case DW_OP_reg25: case DW_OP_reg26: case DW_OP_reg27:
             case DW_OP_reg28: case DW_OP_reg29: case DW_OP_reg30: case DW_OP_reg31:
                 stack->isReg = true;
+                stack->inReg = op - DW_OP_reg0;
                 stack->push(frame->getReg(op - DW_OP_reg0));
                 break;
             case DW_OP_regx:
