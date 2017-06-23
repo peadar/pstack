@@ -2,6 +2,16 @@
 #include <sys/procfs.h>
 #include <cassert>
 
+#if ELF_BITS == 64
+#define ELF_R_SYM(a) ELF64_R_SYM(a)
+#define ELF_R_TYPE(a) ELF64_R_TYPE(a)
+#elif ELF_BITS == 32
+#define ELF_R_SYM(a) ELF32_R_SYM(a)
+#define ELF_R_TYPE(a) ELF32_R_TYPE(a)
+#else
+#error "Non-32, non-64-bit platform?"
+#endif
+
 static void dwarfDumpCFAInsns(std::ostream &os, DWARFReader &r);
 
 
@@ -525,6 +535,19 @@ operator <<(std::ostream &os, const Elf_auxv_t &a)
 }
 
 std::ostream &
+operator <<(std::ostream &os, const Elf_Rela &rela)
+{
+
+   return os
+      << "{ \"r_offset\": " << rela.r_offset
+         << ", \"r_info\": { "
+            << ", \"SYM\": " << ELF_R_SYM(rela.r_info)
+            << ", \"TYPE\": " << ELF_R_TYPE(rela.r_info)
+         << "} "
+      << "} ";
+}
+
+std::ostream &
 operator <<(std::ostream &os, const ElfSection &sec)
 {
     static const char *sectionTypeNames[] = {
@@ -581,21 +604,34 @@ operator <<(std::ostream &os, const ElfSection &sec)
         << ", \"info\":" << h->sh_info;
 
     switch (h->sh_type) {
-    case SHT_SYMTAB:
-    case SHT_DYNSYM:
-        off_t symoff = h->sh_offset;
-        off_t esym = symoff + h->sh_size;
-        os << ", \"symbols\": [";
-        std::string sep = "";
-        for (; symoff < esym; symoff += sizeof (Elf_Sym)) {
-            Elf_Sym sym;
-            o.io->readObj(symoff, &sym);
-            std::pair<const ElfSection &, const Elf_Sym *> t = std::make_pair(std::ref(sec), &sym);
-            os << sep << t;
-            sep = ",\n";
+        case SHT_SYMTAB:
+        case SHT_DYNSYM: {
+            off_t symoff = h->sh_offset;
+            off_t esym = symoff + h->sh_size;
+            os << ", \"symbols\": [";
+            std::string sep = "";
+            for (; symoff < esym; symoff += sizeof (Elf_Sym)) {
+                Elf_Sym sym;
+                o.io->readObj(symoff, &sym);
+                std::pair<const ElfSection &, const Elf_Sym *> t = std::make_pair(std::ref(sec), &sym);
+                os << sep << t;
+                sep = ",\n";
+            }
+            os << "]";
+            break;
         }
-        os << "]";
-        break;
+        case SHT_RELA: {
+            os << ", \"reloca\": [";
+            off_t off = h->sh_offset;
+            const char *sep = "";
+            for (off_t esym = off + h->sh_size; off < esym; off += sizeof (Elf_Rela)) {
+                Elf_Rela rela;
+                o.io->readObj(off, &rela);
+                os << sep << rela;
+                sep = ",\n";
+            }
+            os << "]";
+        }
     }
     return os << " }";
 }

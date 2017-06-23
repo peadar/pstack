@@ -77,6 +77,7 @@ ElfType(Word)
 ElfType(Note)
 ElfType(auxv_t)
 ElfType(Off)
+ElfType(Rela)
 
 #if ELF_BITS==64
 #define ELF_ST_TYPE ELF64_ST_TYPE
