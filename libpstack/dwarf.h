@@ -155,7 +155,9 @@ struct DwarfAttribute {
     }
 };
 
-struct DwarfEntry {
+class DwarfEntry {
+    DwarfEntry();
+public:
     DwarfEntry *parent;
     DwarfEntries children;
     const DwarfUnit *unit;
@@ -163,7 +165,6 @@ struct DwarfEntry {
     intmax_t offset;
     std::vector<DwarfAttribute> attributes;
 
-    DwarfEntry();
 
     const DwarfAttribute *attrForName(DwarfAttrName name) const;
     const DwarfEntry *referencedEntry(DwarfAttrName name) const;
