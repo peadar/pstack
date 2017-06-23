@@ -104,7 +104,7 @@ Process::load()
     the = td_ta_new(this, &agent);
     if (the != TD_OK) {
         agent = 0;
-        if (debug && the != TD_NOLIBTHREAD)
+        if (verbose && the != TD_NOLIBTHREAD)
             *debug << "failed to load thread agent: " << the << std::endl;
     }
 
@@ -148,7 +148,7 @@ Process::processAUXV(const void *datap, size_t len)
                 try {
                     auto elf = std::make_shared<ElfObject>(std::make_shared<MemReader>(vdso, dsosize));
                     addElfObject(elf, hdr - elf->getBase());
-                    if (debug)
+                    if (verbose >= 2)
                         *debug << "VDSO " << dsosize << " bytes loaded at " << elf.get() << "\n";
 
                 }
@@ -159,7 +159,7 @@ Process::processAUXV(const void *datap, size_t len)
 #ifdef AT_EXECFN
             case AT_EXECFN:
                 auto exeName = io->readString(hdr);
-                if (debug)
+                if (verbose >= 2)
                     *debug << "filename from auxv: " << exeName << "\n";
                 if (!execImage) {
                     execImage = std::make_shared<ElfObject>(exeName);
@@ -193,13 +193,12 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
         if (frame->ip == sysent) {
             symName = "(syscall)";
         } else {
-            try {
-                auto i = findObject(frame->ip);
-                fileName = i.object->io->describe();
-                objIp = frame->ip - i.reloc;
-                obj = i.object;
-                obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
-            } catch (...) {
+            Elf_Off reloc;
+            obj = findObject(frame->ip, &reloc);
+            if (obj) {
+               fileName = obj->io->describe();
+               objIp = frame->ip - reloc;
+               obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
             }
         }
 
@@ -283,6 +282,48 @@ struct ArgPrint {
     ArgPrint(const Process &p_, const StackFrame *frame_) : p(p_), frame(frame_) {}
 };
 
+std::string
+typeName(const DwarfEntry *type)
+{
+    if (type == 0) {
+        return "void";
+    }
+    std::string name = type->name();
+    if (name != "") {
+        return name;
+    }
+    const DwarfEntry *base = type->referencedEntry(DW_AT_type);
+    std::string s, sep;
+    switch (type->type->tag) {
+        case DW_TAG_pointer_type:
+            return typeName(base) + " *";
+        case DW_TAG_const_type:
+            return typeName(base) + " const";
+        case DW_TAG_volatile_type:
+            return typeName(base) + " volatile";
+        case DW_TAG_subroutine_type:
+            s = typeName(base) + "(";
+            sep = "";
+            for (auto &arg : type->children) {
+                if (arg.second->type->tag != DW_TAG_formal_parameter)
+                    continue;
+                s += sep;
+                s += typeName(arg.second->referencedEntry(DW_AT_type));
+                sep = ", ";
+            }
+            s += ")";
+            return s;
+        case DW_TAG_reference_type:
+            return typeName(base) + "&";
+        default: {
+            std::ostringstream os;
+            os << "(unhandled tag " << type->type->tag << ")";
+            return os.str();
+        }
+
+    }
+}
+
 std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
@@ -292,15 +333,20 @@ operator << (std::ostream &os, const ArgPrint &ap)
         switch (child->type->tag) {
             case DW_TAG_formal_parameter: {
                 auto name = child->name();
-                const DwarfAttribute *locationA = child->attrForName(DW_AT_location);
                 const DwarfEntry *type = child->referencedEntry(DW_AT_type);
                 Elf_Addr addr = 0;
-                if (locationA && type) {
-                    DwarfExpressionStack fbstack;
-                    addr = dwarfEvalExpr(ap.p, locationA, ap.frame, &fbstack);
-                    os << "(" << type->name() << ")";
+                os << sep << name;
+                if (type) {
+                    os << "[" << typeName(type) << "]";
+                    const DwarfAttribute *locationA = child->attrForName(DW_AT_location);
+                    if (locationA) {
+                        DwarfExpressionStack fbstack;
+                        addr = dwarfEvalExpr(ap.p, locationA, ap.frame, &fbstack);
+                        os << "=" << std::hex << addr;
+                        if (fbstack.isReg)
+                           os << "{in register " << fbstack.inReg << "}";
+                    }
                 }
-                os << sep << name << "=@" << std::hex << addr;
                 sep = ", ";
                 break;
             }
@@ -316,85 +362,86 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 {
     os << "thread: " << (void *)thread.info.ti_tid << ", lwp: " << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
     for (auto frame : thread.stack) {
-        Elf_Sym sym;
-        std::string fileName = "unknown file";
-        std::string symName;
-
-        auto i = findObject(frame->ip);
-        fileName = i.object->io->describe();
-        Elf_Addr objIp = frame->ip - i.reloc;
-        std::shared_ptr<ElfObject> obj = i.object;
-
-        DwarfInfo *dwarf = getDwarf(obj, true);
-        DwarfEntry *de = 0;
-        bool haveDwarf = false;
 
         os << "    ";
-        if (debug) {
+        if (verbose) {
               os << "[ip=" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->ip
               << ", cfa=" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa
               << "] ";
         }
 
-        std::shared_ptr<DwarfUnit> dwarfUnit;
-        for (const auto &rangeset : dwarf->ranges()) {
-            for (const auto range : rangeset.ranges) {
-                if (objIp >= range.start && objIp <= range.start + range.length) {
-                    auto dwarfUnit = dwarf->getUnit(rangeset.debugInfoOffset);
-                    // find the DIE for this function
-                    for (auto it : dwarfUnit->entries) {
-                        de = findEntryForFunc(objIp - 1, it.second);
-                        if (de) {
-                            symName = de->name();
-                            if (symName == "") {
-                               obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
-                               symName += "[nodwarfname]";
+        Elf_Sym sym;
+        std::string fileName = "unknown file";
+        std::string symName;
+
+        Elf_Off reloc;
+        auto obj = findObject(frame->ip, &reloc);
+        if (obj) {
+            fileName = obj->io->describe();
+            Elf_Addr objIp = frame->ip - reloc;
+
+            DwarfInfo *dwarf = getDwarf(obj, true);
+            DwarfEntry *de = 0;
+            bool haveDwarf = false;
+
+            std::shared_ptr<DwarfUnit> dwarfUnit;
+            for (const auto &rangeset : dwarf->ranges()) {
+                for (const auto range : rangeset.ranges) {
+                    if (objIp >= range.start && objIp <= range.start + range.length) {
+                        auto dwarfUnit = dwarf->getUnit(rangeset.debugInfoOffset);
+                        // find the DIE for this function
+                        for (auto it : dwarfUnit->entries) {
+                            de = findEntryForFunc(objIp - 1, it.second);
+                            if (de) {
+                                symName = de->name();
+                                if (symName == "") {
+                                   obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
+                                   symName += "[nodwarfname]";
+                                }
+                                frame->function = de;
+                                frame->dwarf = dwarf; // hold on to 'de'
+                                os << symName << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(";
+                                if (options(PstackOptions::doargs)) {
+                                    os << ArgPrint(*this, frame);
+                                }
+                                os << ")";
+                                haveDwarf = true;
+                                break;
                             }
-                            frame->function = de;
-                            frame->dwarf = dwarf; // hold on to 'de'
-                            os << symName << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(";
-                            if (options(PstackOptions::doargs)) {
-                                os << ArgPrint(*this, frame);
-                            }
-                            os << ")";
-                            haveDwarf = true;
-                            break;
                         }
+                        break;
                     }
-                    break;
                 }
             }
-        }
 
-        if (!haveDwarf) {
-            if (frame->ip == sysent) {
-                symName = "(syscall)";
-            } else {
-                try {
-                    obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
-                } catch (...) {
-                    std::ostringstream str;
-                    str << "unknown";
-                    if (dwarfUnit)
-                        str << "(u)";
+            if (!haveDwarf) {
+                if (frame->ip == sysent) {
+                    symName = "(syscall)";
+                } else {
+                    try {
+                        obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
+                    } catch (...) {
+                        std::ostringstream str;
+                        str << "unknown";
+                        if (dwarfUnit)
+                            str << "(u)";
 
-                    str << "@" << std::hex << frame->ip;
-                    symName = str.str();
+                        str << "@" << std::hex << frame->ip;
+                        symName = str.str();
+                    }
+                    os << symName << "+" << objIp - sym.st_value << "()*";
                 }
-                if (dwarfUnit)
-                    symName +=  "(u)";
-                os << symName << "+" << objIp - sym.st_value << "()*";
             }
-        }
-        os << " in " << fileName;
-        if (!options(PstackOptions::nosrc)) {
-            if (dwarf) {
+            os << " in " << fileName;
+            if (!options(PstackOptions::nosrc) && dwarf) {
                 auto source = dwarf->sourceFromAddr(objIp - 1);
                 for (auto ent = source.begin(); ent != source.end(); ++ent) {
                     os << " at ";
                     os << ent->first->directory << "/" << ent->first->name << ":" << std::dec << ent->second;
                 }
             }
+        } else {
+            os << "no information for frame";
         }
         os << "\n";
     }
@@ -406,7 +453,7 @@ Process::addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load)
 {
     objects.push_back(LoadedObject(load, obj));
 
-    if (debug)
+    if (verbose >= 2)
         *debug
             << "object " << obj->io->describe()
             << " loaded at address " << std::hex << load
@@ -450,7 +497,7 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             if (found != std::string::npos)
                 path.replace(found, it->first.size(), it->second);
         }
-        if (debug && path != startPath)
+        if (verbose && path != startPath)
             *debug << "replaced " << startPath << " with " << path << std::endl;
 
         try {
@@ -489,19 +536,20 @@ Process::findRDebugAddr()
     return 0;
 }
 
-
-Process::LoadedObject
-Process::findObject(Elf_Addr addr) const
+std::shared_ptr<ElfObject>
+Process::findObject(Elf_Addr addr, Elf_Off *reloc) const
 {
     for (auto i = objects.begin(); i != objects.end(); ++i) {
         auto &segments = i->object->getSegments();
         for (auto phdr = segments.begin(); phdr != segments.end(); ++ phdr) {
-            Elf_Off reloc = addr - i->reloc;
-            if (reloc >= phdr->p_vaddr && reloc < phdr->p_vaddr + phdr->p_memsz)
-                return *i;
+            Elf_Off addrReloc = addr - i->reloc;
+            if (addrReloc >= phdr->p_vaddr && addrReloc < phdr->p_vaddr + phdr->p_memsz) {
+                *reloc = i->reloc;
+                return i->object;
+            }
         }
     }
-    throw Exception() << "no loaded object at address 0x" << std::hex << addr;
+    return 0;
 }
 
 Elf_Addr
@@ -560,6 +608,6 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
         }
     }
     catch (const std::exception &ex) {
-        std::clog << "exception unwinding stack: " << ex.what() << std::endl;
+        std::clog << "warning: exception unwinding stack: " << ex.what() << std::endl;
     }
 }

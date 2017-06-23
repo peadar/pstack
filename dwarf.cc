@@ -437,8 +437,8 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
 
     auto diff = expectedEnd - r.getOffset();
     if (diff) {
-        if (debug) *debug
-                << "warning: left " << diff
+        if (verbose)
+            *debug << "warning: left " << diff
                 << " bytes in line info table of " << r.io->describe() << std::endl;
         r.skip(diff);
     }
@@ -697,7 +697,7 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
             DWARFReader r2(unit->dwarf->lineshdr, stmts, r.dwarfLen);
             unit_->lines.build(r2, unit);
         } else {
-            if (debug)
+            if (verbose)
                *debug << "warning: no line number info found" << std::endl;
         }
         break;
@@ -756,7 +756,7 @@ DwarfInfo::getAltImage()
         } else {
             path = name;
         }
-        if (debug)
+        if (verbose)
            *debug << "io: " << elf->io->describe() << ", alt path: " << name << "\n";
         altImage = std::make_shared<ElfObject>(path);
     }

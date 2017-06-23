@@ -50,6 +50,8 @@ set_target_properties(procman-shared PROPERTIES OUTPUT_NAME procman)
 if (ELF_BITS EQUAL 32)
     add_definitions("-m32")
     set_target_properties(${PSTACK_BIN} PROPERTIES LINK_FLAGS -m32)
+    set_target_properties(procman-shared PROPERTIES LINK_FLAGS -m32)
+    set_target_properties(dwelf-shared PROPERTIES LINK_FLAGS -m32)
     set_target_properties(canal PROPERTIES LINK_FLAGS -m32)
 endif()
 

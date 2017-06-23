@@ -155,7 +155,9 @@ struct DwarfAttribute {
     }
 };
 
-struct DwarfEntry {
+class DwarfEntry {
+    DwarfEntry();
+public:
     DwarfEntry *parent;
     DwarfEntries children;
     const DwarfUnit *unit;

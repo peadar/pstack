@@ -45,6 +45,7 @@ inline const E &operator << (const E &stream, const Object &o) {
 }
 
 extern std::ostream *debug;
+extern int verbose;
 class Reader {
     Reader(const Reader &);
 public:

@@ -76,7 +76,7 @@ LiveProcess::resume(lwpid_t pid)
     if (ptrace(PT_DETACH, pid, (caddr_t)1, 0) != 0)
         std::clog << "failed to detach from process " << pid << ": " << strerror(errno);
 
-    if (debug && --stopCount == 0) {
+    if (verbose >= 2 && --stopCount == 0) {
         timeval tv;
         gettimeofday(&tv, 0);
         long long secs = (tv.tv_sec - start.tv_sec) * 1000000;
@@ -96,13 +96,13 @@ public:
              * This doesn't actually work under linux: just add the LWP
              * to the list of stopped lwps.
              */
-            if (debug)
+            if (verbose)
                 *debug << "can't suspend LWP "  << thr << ": will do it later\n";
             td_thrinfo_t info;
             td_thr_get_info(thr, &info);
             proc->lwps.insert(info.ti_lid);
         } else {
-            if (debug)
+            if (verbose)
                 *debug << "suspended LWP "  << thr << "\n";
         }
     }
@@ -141,7 +141,7 @@ LiveProcess::stop(lwpid_t pid)
     if (tcb.stopCount++ != 0)
         return;
 
-    if (stopCount++ == 0 && debug)
+    if (stopCount++ == 0 && verbose)
         gettimeofday(&start, 0);
 
     if (ptrace(PT_ATTACH, pid, 0, 0) == 0) {
@@ -149,9 +149,9 @@ LiveProcess::stop(lwpid_t pid)
         pid_t waitedpid = waitpid(pid, &status, pid == this->pid ? 0 : __WCLONE);
         if (waitedpid != -1)
             return;
-        if (debug)
+        if (verbose)
             *debug << "wait failed: " << strerror(errno) << "\n";
         return;
     }
-    if (debug) *debug << "ptrace failed: " << strerror(errno) << "\n";
+    if (verbose) *debug << "ptrace failed: " << strerror(errno) << "\n";
 }
