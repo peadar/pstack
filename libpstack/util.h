@@ -119,4 +119,19 @@ template <typename T> T maybe(T val, T dflt) {
     return val ?  val : dflt;
 }
 
+class IOFlagSave {
+    std::ios &target;
+    std::ios saved;
+public:
+    IOFlagSave(std::ios &os)
+        : target(os)
+         , saved(0)
+    {
+        saved.copyfmt(target);
+    }
+    ~IOFlagSave() {
+        target.copyfmt(saved);
+    }
+};
+
 #endif // LIBPSTACK_UTIL_H

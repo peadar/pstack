@@ -348,6 +348,8 @@ tryLoad(const std::string &name) {
             continue;
         }
     }
+    if (verbose >= 2)
+        *debug << "no file found for " << name << std::endl;
     return std::shared_ptr<ElfObject>();
 }
 
@@ -382,7 +384,7 @@ ElfObject::getDebug()
                     dir << std::hex << std::setw(2) << std::setfill('0') << int(data[0]);
                     dir << "/";
                     for (i = 1; i < note.size(); ++i)
-                        dir << std::hex << std::setw(2) << std::setfill('0') << int(data[i]);
+                        dir << std::setw(2) << int(data[i]);
                     dir << ".debug";
                     debugObject = tryLoad(dir.str());
                     break;

@@ -342,6 +342,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
                     if (locationA) {
                         DwarfExpressionStack fbstack;
                         addr = dwarfEvalExpr(ap.p, locationA, ap.frame, &fbstack);
+                        IOFlagSave _(os);
                         os << "=" << std::hex << addr;
                         if (fbstack.isReg)
                            os << "{in register " << fbstack.inReg << "}";
@@ -365,6 +366,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 
         os << "    ";
         if (verbose) {
+              IOFlagSave _(os);
               os << "[ip=" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->ip
               << ", cfa=" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa
               << "] ";
@@ -453,11 +455,13 @@ Process::addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load)
 {
     objects.push_back(LoadedObject(load, obj));
 
-    if (verbose >= 2)
+    if (verbose >= 2) {
+        IOFlagSave _(*debug);
         *debug
             << "object " << obj->io->describe()
             << " loaded at address " << std::hex << load
             << ", base=" << obj->getBase() << std::endl;
+    }
 }
 
 /*
@@ -482,7 +486,8 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
         }
         /* Read the path to the file */
         if (map.l_name == 0) {
-            std::clog << "warning: no name for object loaded at " << std::hex << map.l_addr << "\n";
+            IOFlagSave _(*debug);
+            *debug << "warning: no name for object loaded at " << std::hex << map.l_addr << "\n";
             continue;
         }
         std::string path = io->readString(Elf_Off(map.l_name));

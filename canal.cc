@@ -174,6 +174,7 @@ mainExcept(int argc, char *argv[])
                         p++;
                     Elf_Off end = *p ? strtoll(p, &p, 0) : start + 1;
                     searchaddrs.push_back(make_pair(start, end));
+                    IOFlagSave _(std::clog);
                     std::clog << "push " << hex << start << ", " << end  << " (" << int(*p) << ")" << std::endl;
                 }
                 break;
@@ -272,6 +273,7 @@ mainExcept(int argc, char *argv[])
         filesize += hdr.p_filesz;
         memsize += hdr.p_memsz;
         if (verbose) {
+            IOFlagSave _(*debug);
             *debug << "scan " << hex << hdr.p_vaddr <<  " to " << hdr.p_vaddr + hdr.p_memsz
                 << " (filesiz = " << hdr.p_filesz  << ", memsiz=" << hdr.p_memsz << ") ";
         }
@@ -280,8 +282,10 @@ mainExcept(int argc, char *argv[])
             for (auto loc = hdr.p_vaddr; loc < hdr.p_vaddr + hdr.p_filesz - findstrlen; loc++) {
                 size_t rc = process->io->read(loc, findstrlen, strbuf);
                 assert(rc == findstrlen);
-                if (memcmp(strbuf, findstr, rc) == 0)
+                if (memcmp(strbuf, findstr, rc) == 0) {
+                    IOFlagSave _(cout);
                     std::cout << "0x" << hex << loc << "\n";
+                }
             }
         } else {
             for (auto loc = hdr.p_vaddr; loc < hdr.p_vaddr + hdr.p_filesz; loc += sizeof p) {
@@ -292,6 +296,7 @@ mainExcept(int argc, char *argv[])
                 if (searchaddrs.size()) {
                     for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
                         if (p >= range->first && p < range->second && (p % 4 == 0))
+                            IOFlagSave _(cout);
                             cout << "0x" << hex << loc << "\n";
                     }
                 } else {
