@@ -32,13 +32,13 @@ GlobalDebugDirectories::add(const std::string &str)
 ElfNoteIter
 ElfNotes::begin() const
 {
-   return ElfNoteIter(object, object->getSegments().begin());
+   return ElfNoteIter(object, true);
 }
 
 ElfNoteIter
 ElfNotes::end() const
 {
-   return ElfNoteIter(object, object->getSegments().end());
+   return ElfNoteIter(object, false);
 }
 
 std::string
@@ -76,8 +76,8 @@ ElfNoteDesc::size() const
 const Elf_Phdr *
 ElfObject::findHeaderForAddress(Elf_Off a) const
 {
-    for (auto &hdr : programHeaders)
-        if (hdr.p_vaddr <= a && hdr.p_vaddr + hdr.p_memsz > a && hdr.p_type == PT_LOAD)
+    for (const auto &hdr : getSegments(PT_LOAD))
+        if (hdr.p_vaddr <= a && hdr.p_vaddr + hdr.p_memsz > a)
             return &hdr;
     return 0;
 }
@@ -100,9 +100,9 @@ Elf_Addr
 ElfObject::getBase() const
 {
     auto base = std::numeric_limits<Elf_Off>::max();
-    auto &segments = getSegments();
+    auto &segments = getSegments(PT_LOAD);
     for (auto &seg : segments)
-        if (seg.p_type == PT_LOAD && Elf_Off(seg.p_vaddr) <= base)
+        if (Elf_Off(seg.p_vaddr) <= base)
             base = Elf_Off(seg.p_vaddr);
     return base;
 }
@@ -110,9 +110,8 @@ ElfObject::getBase() const
 std::string
 ElfObject::getInterpreter() const
 {
-    for (auto &seg : getSegments())
-        if (seg.p_type == PT_INTERP)
-            return io->readString(seg.p_offset);
+    for (auto &seg : getSegments(PT_INTERP))
+        return io->readString(seg.p_offset);
     return "";
 }
 
@@ -130,8 +129,9 @@ ElfObject::init(const shared_ptr<Reader> &io_)
         throw Exception() << io->describe() << ": content is not an ELF image";
 
     for (off = elfHeader.e_phoff, i = 0; i < elfHeader.e_phnum; i++) {
-        programHeaders.push_back(Elf_Phdr());
-        io->readObj(off, &programHeaders.back());
+        Elf_Phdr hdr;
+        io->readObj(off, &hdr);
+        programHeaders[hdr.p_type].push_back(hdr);
         off += elfHeader.e_phentsize;
     }
 

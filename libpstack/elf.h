@@ -139,9 +139,10 @@ public:
     typedef std::vector<Elf_Shdr> SectionHeaders;
 private:
     friend struct ElfSection;
+    friend std::ostream &operator<< (std::ostream &os, const ElfObject &obj);
     size_t fileSize;
     Elf_Ehdr elfHeader;
-    ProgramHeaders programHeaders;
+    std::map<Elf_Word, ProgramHeaders> programHeaders;
     std::unique_ptr<ElfSymHash> hash;
     void init(const std::shared_ptr<Reader> &); // want constructor chaining
     std::map<std::string, Elf_Shdr *> namedSection;
@@ -158,7 +159,14 @@ public:
     std::string getInterpreter() const;
     std::string getName() const { return name; }
     const SectionHeaders &getSections() const { return sectionHeaders; }
-    const ProgramHeaders &getSegments() const  { return programHeaders; }
+    const ProgramHeaders &getSegments(Elf_Word type) const {
+        auto it = programHeaders.find(type);
+        if (it == programHeaders.end()) {
+            static const ProgramHeaders empty;
+            return empty;
+        }
+        return it->second;
+    }
     const ElfSection getSection(const std::string &name, Elf_Word type);
     const Elf_Ehdr &getElfHeader() const { return elfHeader; }
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
@@ -255,7 +263,8 @@ public:
 
 struct ElfNoteIter {
    ElfObject *object;
-   ElfObject::ProgramHeaders::const_iterator phdrs;
+   const ElfObject::ProgramHeaders &phdrs;
+   ElfObject::ProgramHeaders::const_iterator phdrsi;
    Elf_Off noteOffset;
    Elf_Note curNote;
 
@@ -269,10 +278,10 @@ struct ElfNoteIter {
       newOff = roundup2(newOff, 4);
       newOff += curNote.n_descsz;
       newOff = roundup2(newOff, 4);
-      if (newOff >= phdrs->p_offset  + phdrs->p_filesz) {
-         ++phdrs;
-         if (!findNoteHeader())
+      if (newOff >= phdrsi->p_offset  + phdrsi->p_filesz) {
+         if (++phdrsi == phdrs.end())
             return *this;
+         noteOffset = phdrsi->p_offset;
       } else {
          noteOffset = newOff;
       }
@@ -280,34 +289,22 @@ struct ElfNoteIter {
       return *this;
    }
 
-   ElfNoteIter(ElfObject *object_, ElfObject::ProgramHeaders::const_iterator phdrs_)
+   ElfNoteIter(ElfObject *object_, bool begin)
       : object(object_)
-      , phdrs(phdrs_)
+      , phdrs(object_->getSegments(PT_NOTE))
    {
-      if (findNoteHeader())
-         readNote();
-   }
-
-   bool findNoteHeader() {
-      if (phdrs == object->getSegments().end())
-         return false;
-
-      for (; phdrs != object->getSegments().end(); phdrs++) {
-         if (phdrs->p_type == PT_NOTE) {
-            noteOffset = phdrs->p_offset;
-            return true;
-         }
-      }
-      return false;
+       phdrsi = begin ? phdrs.begin() : phdrs.end();
+       if (phdrsi != phdrs.end()) {
+           noteOffset = phdrsi->p_offset;
+           readNote();
+       }
    }
 
    void readNote() {
       object->io->readObj(noteOffset, &curNote);
    }
    bool operator == (const ElfNoteIter &rhs) const {
-      return object == rhs.object &&
-         phdrs == rhs.phdrs &&
-         (object->getSegments().end() == phdrs || noteOffset == rhs.noteOffset);
+      return &phdrs == &rhs.phdrs && phdrsi == rhs.phdrsi && noteOffset == rhs.noteOffset;
    }
    bool operator != (const ElfNoteIter &rhs) const {
       return !(*this == rhs);

@@ -265,10 +265,7 @@ mainExcept(int argc, char *argv[])
     // Now run through the corefile, searching for virtual objects.
     off_t filesize = 0;
     off_t memsize = 0;
-    auto segments = core->getSegments();
-    for (auto &hdr : segments) {
-        if (hdr.p_type != PT_LOAD)
-            continue;
+    for (auto &hdr : core->getSegments(PT_LOAD)) {
         Elf_Off p;
         filesize += hdr.p_filesz;
         memsize += hdr.p_memsz;

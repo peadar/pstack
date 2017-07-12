@@ -520,20 +520,17 @@ Elf_Addr
 Process::findRDebugAddr()
 {
     // Find DT_DEBUG in the process's dynamic section.
-    auto &segments = execImage->getSegments();
-    for (auto segment = segments.begin(); segment != segments.end(); ++segment) {
-        if (segment->p_type != PT_DYNAMIC)
-            continue;
+    for (auto &segment : execImage->getSegments(PT_DYNAMIC)) {
         Elf_Off reloc = entry - execImage->getElfHeader().e_entry;
         // the dynamic section is in the executable, but the process A/S contains
         // the modified version.
-        for (Elf_Addr dynOff = 0; dynOff < segment->p_filesz; dynOff += sizeof(Elf_Dyn)) {
+        for (Elf_Addr dynOff = 0; dynOff < segment.p_filesz; dynOff += sizeof(Elf_Dyn)) {
             Elf_Dyn dyn;
-            execImage->io->readObj(segment->p_offset + dynOff, &dyn);
+            execImage->io->readObj(segment.p_offset + dynOff, &dyn);
             if (dyn.d_tag == DT_DEBUG) {
                 // Now, we read this from the _process_ AS, not the executable - the
                 // in-memory one is changed by the linker.
-                io->readObj(segment->p_vaddr + dynOff + reloc, &dyn);
+                io->readObj(segment.p_vaddr + dynOff + reloc, &dyn);
                 return dyn.d_un.d_ptr;
             }
         }
@@ -545,10 +542,9 @@ std::shared_ptr<ElfObject>
 Process::findObject(Elf_Addr addr, Elf_Off *reloc) const
 {
     for (auto i = objects.begin(); i != objects.end(); ++i) {
-        auto &segments = i->object->getSegments();
-        for (auto phdr = segments.begin(); phdr != segments.end(); ++ phdr) {
+        for (auto &phdr : i->object->getSegments(PT_LOAD)) {
             Elf_Off addrReloc = addr - i->reloc;
-            if (addrReloc >= phdr->p_vaddr && addrReloc < phdr->p_vaddr + phdr->p_memsz) {
+            if (addrReloc >= phdr.p_vaddr && addrReloc < phdr.p_vaddr + phdr.p_memsz) {
                 *reloc = i->reloc;
                 return i->object;
             }

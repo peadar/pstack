@@ -474,25 +474,23 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
     os << "]";
 
 
-    os << ", \"segments\": " << obj.getSegments();
+    os << ", \"segments\": " << obj.programHeaders;
 
 
-    for (auto seg = obj.getSegments().begin(); seg != obj.getSegments().end(); ++seg) {
+    for (auto &seg :  obj.getSegments(PT_DYNAMIC)) {
 
-        if (seg->p_type == PT_DYNAMIC) {
-            os << ", \"dynamic\": [";
-            const char *sep = "";
-            off_t dynoff = seg->p_offset;
-            off_t edyn = dynoff + seg->p_filesz;
-            for (; dynoff < edyn; dynoff += sizeof (Elf_Dyn)) {
-                Elf_Dyn dyn;
-                obj.io->readObj(dynoff, &dyn);
-                os << sep << dyn;
-                sep = ",\n";
-            }
-            os << "]";
-            break;
+        os << ", \"dynamic\": [";
+        const char *sep = "";
+        off_t dynoff = seg.p_offset;
+        off_t edyn = dynoff + seg.p_filesz;
+        for (; dynoff < edyn; dynoff += sizeof (Elf_Dyn)) {
+            Elf_Dyn dyn;
+            obj.io->readObj(dynoff, &dyn);
+            os << sep << dyn;
+            sep = ",\n";
         }
+        os << "]";
+        break;
     }
 
     os << ", \"interpreter\": \"" << obj.getInterpreter() << "\"";

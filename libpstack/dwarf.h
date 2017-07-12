@@ -17,7 +17,7 @@ class DWARFReader;
 class DwarfLineInfo;
 struct DwarfUnit;
 struct DwarfFrameInfo;
-struct DwarfEntry;
+class DwarfEntry;
 // The DWARF Unit's allEntries map contains the underlying data for the tree.
 typedef std::map<off_t, DwarfEntry *> DwarfEntries;
 
