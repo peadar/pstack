@@ -390,7 +390,7 @@ DwarfLineState::reset(DwarfLineInfo *li)
 }
 
 static void
-dwarfStateAddRow(DwarfLineInfo *li, DwarfLineState &state)
+dwarfStateAddRow(DwarfLineInfo *li, const DwarfLineState &state)
 {
     li->matrix.push_back(state);
 }
@@ -424,7 +424,7 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
         directories.push_back(s);
     }
 
-    files.push_back(DwarfFileEntry("unknown", "unknown", 0, 0)); // index 0 is special
+    files.emplace_back(std::string("unknown"), std::string("unknown"), 0U, 0U); // index 0 is special
     for (count = 1;; count++) {
         char c;
         r.io->readObj(r.getOffset(), &c);
@@ -432,7 +432,7 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
             r.getu8(); // skip terminator.
             break;
         }
-        files.push_back(DwarfFileEntry(r, this));
+        files.emplace_back(r, this);
     }
 
     auto diff = expectedEnd - r.getOffset();

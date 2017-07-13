@@ -292,9 +292,10 @@ mainExcept(int argc, char *argv[])
                 process->io->readObj(loc, &p);
                 if (searchaddrs.size()) {
                     for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
-                        if (p >= range->first && p < range->second && (p % 4 == 0))
+                        if (p >= range->first && p < range->second && (p % 4 == 0)) {
                             IOFlagSave _(cout);
                             cout << "0x" << hex << loc << "\n";
+                        }
                     }
                 } else {
                     auto found = lower_bound(listed.begin(), listed.end(), p);

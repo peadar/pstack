@@ -156,7 +156,8 @@ struct DwarfAttribute {
 };
 
 class DwarfEntry {
-    DwarfEntry();
+    DwarfEntry() = delete;
+    DwarfEntry(const DwarfEntry &) = delete;
 public:
     DwarfEntry *parent;
     DwarfEntries children;
@@ -183,17 +184,21 @@ enum FIType {
     FI_EH_FRAME
 };
 
-struct DwarfFileEntry {
+class DwarfFileEntry {
+    DwarfFileEntry() = delete;
+    // copy-constructable.
+public:
     std::string name;
     std::string directory;
     unsigned lastMod;
     unsigned length;
     DwarfFileEntry(const std::string &name_, std::string dir_, unsigned lastMod_, unsigned length_);
     DwarfFileEntry(DWARFReader &r, DwarfLineInfo *info);
-    DwarfFileEntry() {}
 };
 
-struct DwarfLineState {
+class DwarfLineState {
+    DwarfLineState() = delete;
+public:
     uintmax_t addr;
     const DwarfFileEntry *file;
     unsigned line;
@@ -208,18 +213,21 @@ struct DwarfLineState {
 };
 
 class DwarfLineInfo {
+    DwarfLineInfo(const DwarfLineInfo &) = delete;
 public:
+    DwarfLineInfo() {}
     int default_is_stmt;
     uint8_t opcode_base;
     std::vector<int> opcode_lengths;
     std::vector<std::string> directories;
     std::vector<DwarfFileEntry> files;
     std::vector<DwarfLineState> matrix;
-    DwarfLineInfo() {}
     void build(DWARFReader &, const DwarfUnit *);
 };
 
 struct DwarfUnit {
+    DwarfUnit() = delete;
+    DwarfUnit(const DwarfUnit &) = delete;
     mutable std::map<off_t, DwarfEntry *> allEntries;
     DwarfInfo *dwarf;
     off_t offset;
@@ -234,7 +242,6 @@ struct DwarfUnit {
     DwarfLineInfo lines;
     DwarfUnit(DwarfInfo *, DWARFReader &);
     std::string name() const;
-    DwarfUnit() : dwarf(0), offset(-1) {}
 };
 
 struct DwarfFDE {
