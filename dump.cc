@@ -545,6 +545,30 @@ operator <<(std::ostream &os, const Elf_Rela &rela)
       << "} ";
 }
 
+
+const struct sh_flag_names {
+    const char *name;
+    unsigned value;
+} sh_flag_names[] = {
+#define SHF_FLAG(f) { .name = #f, .value = f },
+    SHF_FLAG(SHF_WRITE)
+    SHF_FLAG(SHF_ALLOC)
+    SHF_FLAG(SHF_EXECINSTR)
+    SHF_FLAG(SHF_MERGE)
+    SHF_FLAG(SHF_STRINGS)
+    SHF_FLAG(SHF_INFO_LINK)
+    SHF_FLAG(SHF_LINK_ORDER)
+    SHF_FLAG(SHF_OS_NONCONFORMING)
+    SHF_FLAG(SHF_GROUP)
+    SHF_FLAG(SHF_TLS)
+    SHF_FLAG(SHF_COMPRESSED)
+    SHF_FLAG(SHF_MASKOS)
+    SHF_FLAG(SHF_MASKPROC)
+    SHF_FLAG(SHF_ORDERED)
+    SHF_FLAG(SHF_EXCLUDE)
+    { .name = 0, .value = 0 }
+};
+
 std::ostream &
 operator <<(std::ostream &os, const ElfSection &sec)
 {
@@ -577,22 +601,14 @@ operator <<(std::ostream &os, const ElfSection &sec)
     else
         os << h->sh_type;
 
-    std::string sep = "";
-
     os << ", \"flags\": " << "[";
-    if (h->sh_flags & SHF_WRITE) {
-        os << sep << "\"write\"";
-        sep = ", ";
-    }
 
-    if (h->sh_flags & SHF_ALLOC) {
-        os << sep << "\"alloc\"";
-        sep = ", ";
-    }
-
-    if (h->sh_flags & SHF_WRITE) {
-        os << sep << "\"exec\"";
-        sep = ", ";
+    std::string sep = "";
+    for (auto i = sh_flag_names; i->name; ++i) {
+        if (h->sh_flags & i->value) {
+            os << sep << "\"" << i->name << "\"";
+            sep = ", ";
+        }
     }
     os
         << "]"
