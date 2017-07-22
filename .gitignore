@@ -10,3 +10,5 @@ ID
 **/*.o
 **/core*
 **/*core
+.vscode
+build
