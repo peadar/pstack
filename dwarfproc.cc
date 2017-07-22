@@ -24,21 +24,19 @@ StackFrame::getCoreRegs(CoreRegisters &core) const
 #undef REGMAP
 }
 
-
 void
 StackFrame::getFrameBase(const Process &p, intmax_t offset, DwarfExpressionStack *stack) const
 {
-
    const DwarfAttribute *attr;
    if (!function || (attr = function->attrForName(DW_AT_frame_base)) == 0) {
       stack->push(0);
       return;
    }
-   stack->push(dwarfEvalExpr(p, attr, this, stack) + offset);
+   stack->push(stack->eval(p, attr, this) + offset);
 }
 
 Elf_Addr
-dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame *frame, DwarfExpressionStack *stack)
+DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, const StackFrame *frame)
 {
     DwarfInfo *dwarf = attr->entry->unit->dwarf;
     switch (attr->spec->form) {
@@ -82,7 +80,7 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
                 auto len = r.getuint(2);
                 if (unitIp >= start && unitIp < end) {
                     DWARFReader exr(r, r.getOffset(), Elf_Word(len));
-                    return dwarfEvalExpr(proc, exr, frame, stack);
+                    return eval(proc, exr, frame);
                 }
                 r.skip(len);
             }
@@ -90,7 +88,7 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
         case DW_FORM_exprloc: {
             auto &block = attr->value.block;
             DWARFReader r(dwarf->elf->io, block.offset, block.length, 0);
-            return dwarfEvalExpr(proc, r, frame, stack);
+            return eval(proc, r, frame);
         }
         default:
             abort();
@@ -98,51 +96,46 @@ dwarfEvalExpr(const Process &proc, const DwarfAttribute *attr, const StackFrame 
 }
 
 Elf_Addr
-dwarfEvalExpr(const Process &proc, DWARFReader &r, const StackFrame *frame, DwarfExpressionStack *stack)
+DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *frame)
 {
-    stack->isReg = false;
+    isReg = false;
     while (!r.empty()) {
         auto op = DwarfExpressionOp(r.getu8());
         switch (op) {
             case DW_OP_deref: {
-                intmax_t addr = stack->top(); stack->pop();
+                intmax_t addr = poptop();
                 Elf_Addr value;
                 proc.io->readObj(addr, &value);
-                stack->push((intmax_t)(intptr_t)value);
+                push((intmax_t)(intptr_t)value);
                 break;
             }
 
             case DW_OP_const2s: {
-                stack->push(int16_t(r.getu16()));
+                push(int16_t(r.getu16()));
                 break;
             }
 
             case DW_OP_const4u: {
-                stack->push(r.getu32());
+                push(r.getu32());
                 break;
             }
 
             case DW_OP_const4s: {
-                stack->push(int32_t(r.getu32()));
+                push(int32_t(r.getu32()));
                 break;
             }
 
             case DW_OP_minus: {
-                Elf_Addr top = stack->top();
-                stack->pop();
-                Elf_Addr second = stack->top();
-                stack->pop();
-                top = -top;
-                stack->push(second + top);
+                Elf_Addr tos = poptop();
+                Elf_Addr second = poptop();
+                push(second - tos);
                 break;
             }
 
             case DW_OP_plus: {
-                Elf_Addr top = stack->top();
-                stack->pop();
-                Elf_Addr second = stack->top();
-                stack->pop();
-                stack->push(second + top);
+                Elf_Addr tos = poptop();
+                Elf_Addr second = poptop();
+                push(second + tos);
                 break;
             }
 
@@ -155,7 +148,7 @@ dwarfEvalExpr(const Process &proc, DWARFReader &r, const StackFrame *frame, Dwar
             case DW_OP_breg24: case DW_OP_breg25: case DW_OP_breg26: case DW_OP_breg27:
             case DW_OP_breg28: case DW_OP_breg29: case DW_OP_breg30: case DW_OP_breg31: {
                 Elf_Off offset = r.getsleb128();
-                stack->push(frame->getReg(op - DW_OP_breg0) + offset);
+                push(frame->getReg(op - DW_OP_breg0) + offset);
                 break;
             }
 
@@ -166,109 +159,89 @@ dwarfEvalExpr(const Process &proc, DWARFReader &r, const StackFrame *frame, Dwar
             case DW_OP_lit20: case DW_OP_lit21: case DW_OP_lit22: case DW_OP_lit23: case DW_OP_lit24:
             case DW_OP_lit25: case DW_OP_lit26: case DW_OP_lit27: case DW_OP_lit28: case DW_OP_lit29:
             case DW_OP_lit30: case DW_OP_lit31:
-                stack->push(op - DW_OP_lit0);
+                push(op - DW_OP_lit0);
                 break;
 
             case DW_OP_and: {
-                Elf_Addr lhs = stack->top();
-                stack->pop();
-                Elf_Addr rhs = stack->top();
-                stack->pop();
-                stack->push(lhs & rhs);
+                Elf_Addr lhs = poptop();
+                Elf_Addr rhs = poptop();
+                push(lhs & rhs);
                 break;
             }
 
             case DW_OP_or: {
-                Elf_Addr lhs = stack->top();
-                stack->pop();
-                Elf_Addr rhs = stack->top();
-                stack->pop();
-                stack->push(lhs | rhs);
+                Elf_Addr lhs = poptop();
+                Elf_Addr rhs = poptop();
+                push(lhs | rhs);
                 break;
             }
 
             case DW_OP_le: {
-                Elf_Addr rhs = stack->top();
-                stack->pop();
-                Elf_Addr lhs = stack->top();
-                stack->pop();
-                stack->push(lhs <= rhs);
+                Elf_Addr rhs = poptop();
+                Elf_Addr lhs = poptop();
+                push(lhs <= rhs);
                 break;
             }
 
             case DW_OP_ge: {
-                Elf_Addr rhs = stack->top();
-                stack->pop();
-                Elf_Addr lhs = stack->top();
-                stack->pop();
-                stack->push(lhs >= rhs);
+                Elf_Addr rhs = poptop();
+                Elf_Addr lhs = poptop();
+                push(lhs >= rhs);
                 break;
             }
 
             case DW_OP_eq: {
-                Elf_Addr rhs = stack->top();
-                stack->pop();
-                Elf_Addr lhs = stack->top();
-                stack->pop();
-                stack->push(lhs == rhs);
+                Elf_Addr rhs = poptop();
+                Elf_Addr lhs = poptop();
+                push(lhs == rhs);
                 break;
             }
 
             case DW_OP_lt: {
-                Elf_Addr rhs = stack->top();
-                stack->pop();
-                Elf_Addr lhs = stack->top();
-                stack->pop();
-                stack->push(lhs < rhs);
+                Elf_Addr rhs = poptop();
+                Elf_Addr lhs = poptop();
+                push(lhs < rhs);
                 break;
             }
 
             case DW_OP_gt: {
-                Elf_Addr rhs = stack->top();
-                stack->pop();
-                Elf_Addr lhs = stack->top();
-                stack->pop();
-                stack->push(lhs > rhs);
+                Elf_Addr rhs = poptop();
+                Elf_Addr lhs = poptop();
+                push(lhs > rhs);
                 break;
             }
 
             case DW_OP_ne: {
-                Elf_Addr rhs = stack->top();
-                stack->pop();
-                Elf_Addr lhs = stack->top();
-                stack->pop();
-                stack->push(lhs != rhs);
+                Elf_Addr rhs = poptop();
+                Elf_Addr lhs = poptop();
+                push(lhs != rhs);
                 break;
             }
 
             case DW_OP_shl: {
-                Elf_Addr rhs = stack->top();
-                stack->pop();
-                Elf_Addr lhs = stack->top();
-                stack->pop();
-                stack->push(lhs << rhs);
+                Elf_Addr rhs = poptop();
+                Elf_Addr lhs = poptop();
+                push(lhs << rhs);
                 break;
             }
 
             case DW_OP_shr: {
-                Elf_Addr rhs = stack->top();
-                stack->pop();
-                Elf_Addr lhs = stack->top();
-                stack->pop();
-                stack->push(lhs >> rhs);
+                Elf_Addr rhs = poptop();
+                Elf_Addr lhs = poptop();
+                push(lhs >> rhs);
                 break;
             }
             case DW_OP_addr: {
                 auto value = r.getuint(r.addrLen);
-                stack->push(value);
+                push(value);
                 break;
             }
             case DW_OP_call_frame_cfa:
-               stack->push(frame->cfa);
+               push(frame->cfa);
                break;
             case DW_OP_fbreg:
                // Yuk - find DW_AT_frame_base, and offset from that.
-               frame->getFrameBase(proc, r.getsleb128(), stack);
+               frame->getFrameBase(proc, r.getsleb128(), this);
                break;
 
             // XXX: this is wrong - this indicates an object contained in a register, not a location contained in a register.
@@ -280,18 +253,18 @@ dwarfEvalExpr(const Process &proc, DWARFReader &r, const StackFrame *frame, Dwar
             case DW_OP_reg20: case DW_OP_reg21: case DW_OP_reg22: case DW_OP_reg23:
             case DW_OP_reg24: case DW_OP_reg25: case DW_OP_reg26: case DW_OP_reg27:
             case DW_OP_reg28: case DW_OP_reg29: case DW_OP_reg30: case DW_OP_reg31:
-                stack->isReg = true;
-                stack->inReg = op - DW_OP_reg0;
-                stack->push(frame->getReg(op - DW_OP_reg0));
+                isReg = true;
+                inReg = op - DW_OP_reg0;
+                push(frame->getReg(op - DW_OP_reg0));
                 break;
             case DW_OP_regx:
-                stack->push(frame->getReg(r.getsleb128()));
+                push(frame->getReg(r.getsleb128()));
                 break;
 
             case DW_OP_entry_value: case DW_OP_GNU_entry_value: {
                 auto len = r.getuleb128();
                 DWARFReader r2(r, r.getOffset(), len);
-                stack->push(dwarfEvalExpr(proc, r2, frame, stack));
+                push(eval(proc, r2, frame));
                 break;
             }
 
@@ -303,9 +276,7 @@ dwarfEvalExpr(const Process &proc, DWARFReader &r, const StackFrame *frame, Dwar
                 return -1;
         }
     }
-    intmax_t rv = stack->top();
-    stack->pop();
-    return rv;
+    return poptop();
 }
 
 Elf_Addr
@@ -326,7 +297,7 @@ StackFrame::getCFA(const Process &proc, const DwarfCallFrame &dcf) const
         case EXPRESSION: {
             DwarfExpressionStack stack;
             DWARFReader r(dwarf->elf->io, dcf.cfaValue.u.expression.offset, dcf.cfaValue.u.expression.length, 0);
-            return dwarfEvalExpr(proc, r, this, &stack);
+            return stack.eval(proc, r, this);
         }
     }
     return -1;
@@ -400,7 +371,7 @@ StackFrame::unwind(Process &p)
                 DwarfExpressionStack stack;
                 stack.push(cfa);
                 DWARFReader reader(elf->io, unwind.u.expression.offset, unwind.u.expression.length, 0);
-                auto val = dwarfEvalExpr(p, reader, this, &stack);
+                auto val = stack.eval(p, reader, this);
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                 if (unwind.type == EXPRESSION)
                     p.io->readObj(val, &val);

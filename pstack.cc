@@ -64,17 +64,10 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
     return os;
 }
 
-static void
-doPstack(Process &proc, const PstackOptions &options)
-{
-    proc.load();
-    pstack(proc, std::cout, options);
-}
-
 int
 emain(int argc, char **argv)
 {
-    int error, i, c;
+    int i, c;
     pid_t pid;
     std::string execFile;
     std::shared_ptr<ElfObject> exec;
@@ -121,33 +114,36 @@ emain(int argc, char **argv)
     if (optind == argc)
         return usage();
 
-    for (error = 0, i = optind; i < argc; i++) {
+    for (i = optind; i < argc; i++) {
         pid = atoi(argv[i]);
         if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
             // It's a file: should be ELF, treat core and exe differently
             auto obj = std::make_shared<ElfObject>(std::make_shared<FileReader>(argv[i]));
             if (obj->getElfHeader().e_type == ET_CORE) {
                 CoreProcess proc(exec, obj, PathReplacementList());
-                doPstack(proc, options);
+                proc.load();
+                pstack(proc, std::cout, options);
             } else {
                 exec = obj;
             }
         } else {
             LiveProcess proc(exec, pid, PathReplacementList());
-            doPstack(proc, options);
+            proc.load();
+            pstack(proc, std::cout, options);
         }
     }
-    return (error);
+    return 0;
 }
 
 int
 main(int argc, char **argv)
 {
     try {
-        emain(argc, argv);
+        return emain(argc, argv);
     }
     catch (std::exception &ex) {
         std::clog << "error: " << ex.what() << std::endl;
+        return EX_SOFTWARE;
     }
 }
 

@@ -58,7 +58,7 @@ DWARFReader::getu32()
     unsigned char q[4];
     io->readObj(off, q, 4);
     off += sizeof q;
-    return q[0] | q[1] << 8 | q[2] << 16 | q[3] << 24;
+    return q[0] | q[1] << 8 | q[2] << 16 | uint32_t(q[3] << 24);
 }
 
 uint16_t

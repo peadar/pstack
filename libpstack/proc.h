@@ -13,12 +13,16 @@ extern "C" {
 struct ps_prochandle {};
 
 class Process;
+struct StackFrame;
 
 class DwarfExpressionStack : public std::stack<Elf_Addr> {
 public:
     bool isReg;
     int inReg;
+    Elf_Addr poptop() { Elf_Addr tos = top(); pop(); return tos; }
     DwarfExpressionStack(): isReg(false) {}
+    Elf_Addr eval(const Process &, DWARFReader &r, const StackFrame *frame);
+    Elf_Addr eval(const Process &, const DwarfAttribute *, const StackFrame *);
 };
 
 struct StackFrame {
@@ -112,9 +116,6 @@ public:
     ~Process();
     virtual void load();
 };
-
-Elf_Addr dwarfEvalExpr(const Process &proc, DWARFReader &r, const StackFrame *frame, DwarfExpressionStack *stack);
-Elf_Addr dwarfEvalExpr(const Process &, const DwarfAttribute *, const StackFrame *, DwarfExpressionStack *stack);
 
 template <typename T> int
 threadListCb(const td_thrhandle_t *thr, void *v)

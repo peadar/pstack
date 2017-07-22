@@ -341,7 +341,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
                     const DwarfAttribute *locationA = child->attrForName(DW_AT_location);
                     if (locationA) {
                         DwarfExpressionStack fbstack;
-                        addr = dwarfEvalExpr(ap.p, locationA, ap.frame, &fbstack);
+                        addr = fbstack.eval(ap.p, locationA, ap.frame);
                         IOFlagSave _(os);
                         os << "=" << std::hex << addr;
                         if (fbstack.isReg)
