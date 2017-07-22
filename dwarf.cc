@@ -568,19 +568,19 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
         break;
 
     case DW_FORM_data1:
-        value.sdata = r.getu8();
+        value.udata = r.getu8();
         break;
 
     case DW_FORM_data2:
-        value.sdata = r.getu16();
+        value.udata = r.getu16();
         break;
 
     case DW_FORM_data4:
-        value.sdata = r.getu32();
+        value.udata = r.getu32();
         break;
 
     case DW_FORM_data8:
-        value.sdata = r.getuint(8);
+        value.udata = r.getuint(8);
         break;
 
     case DW_FORM_sdata:
@@ -713,7 +713,7 @@ void
 DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *parent)
 {
     while (!r.empty()) {
-        intmax_t offset = r.getOffset() - this->offset;
+        intmax_t offset = r.getOffset();
         intmax_t code = r.getuleb128();
         if (code == 0)
             return;
@@ -1202,13 +1202,13 @@ DwarfEntry::referencedEntry(DwarfAttrName name) const
     off_t off;
     switch (attr->spec->form) {
         case DW_FORM_ref_addr:
-            off = attr->value.ref - unit->offset;
+            off = attr->value.ref + unit->dwarf->info.shdr->sh_offset;
             break;
         case DW_FORM_ref_udata:
         case DW_FORM_ref2:
         case DW_FORM_ref4:
         case DW_FORM_ref8:
-            off = attr->value.ref;
+            off = attr->value.ref + unit->offset;
             break;
         case DW_FORM_GNU_ref_alt:
             return 0; // XXX: deal with this.
@@ -1217,9 +1217,17 @@ DwarfEntry::referencedEntry(DwarfAttrName name) const
             break;
     }
     const auto &entry = unit->allEntries.find(off);
-    if (entry == unit->allEntries.end())
-        return 0;
-    return entry->second;
+    if (entry != unit->allEntries.end())
+        return entry->second;
+    // Lets look in the parent
+    for (auto u : unit->dwarf->getUnits()) {
+        if (u.get() == unit)
+            continue;
+        const auto &entry = u->allEntries.find(off);
+        if (entry != u->allEntries.end())
+            return entry->second;
+    }
+    return 0;
 }
 
 const DwarfAttribute *

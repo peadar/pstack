@@ -172,14 +172,16 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_addr:
         os << value.addr;
         break;
+
+    case DW_FORM_sdata:
+        os << value.sdata;
+        break;
+
     case DW_FORM_data1:
     case DW_FORM_data2:
     case DW_FORM_data4:
     case DW_FORM_data8:
     case DW_FORM_sec_offset:
-    case DW_FORM_sdata:
-        os << value.sdata;
-        break;
     case DW_FORM_udata:
         os << value.udata;
         break;
@@ -188,30 +190,17 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_strp:
         os << "\"" << value.string << "\"";
         break;
-    case DW_FORM_ref_addr: {
-        auto off = attr.value.ref - attr.entry->unit->offset;
-        const auto &allEntries = attr.entry->unit->allEntries;
-        const auto &entry = allEntries.find(off);
-        if (entry != allEntries.end())
-            os << "\"ref to " << entry->second->name() << " at " << off << "\"";
-        else
-            os << "\"HAVENOTIT@" << off << "\"";
-        break;
-
-    }
+    case DW_FORM_ref_addr:
     case DW_FORM_ref2:
     case DW_FORM_ref4:
     case DW_FORM_ref8:
     case DW_FORM_ref_udata: {
-        auto off = attr.value.ref;
-        const auto &allEntries = attr.entry->unit->allEntries;
-        const auto &entry = allEntries.find(off);
-        if (entry != allEntries.end())
-            os << "\"ref to " << entry->second->name() << " at " << off << "\"";
+        const auto entry = attr.entry->referencedEntry(attr.spec->name);
+        if (entry)
+            os << "\"ref to " << entry->name() << " at " << entry->offset << "\"";
         else
-            os << "\"HAVENOTIT@" << off << (abort(), 0) << "\"";
+            os << "\"HAVENOTIT@" << value.addr <<  " + " << attr.entry->unit->offset << " = "  << (value.addr + attr.entry->unit->offset)   << "\"";
         break;
-
     }
     case DW_FORM_GNU_ref_alt: {
         os << "\"alt ref\"";
