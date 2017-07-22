@@ -537,7 +537,7 @@ operator <<(std::ostream &os, const Elf_Rela &rela)
 
 const struct sh_flag_names {
     const char *name;
-    unsigned value;
+    Elf_Word value;
 } sh_flag_names[] = {
 #define SHF_FLAG(f) { .name = #f, .value = f },
     SHF_FLAG(SHF_WRITE)
@@ -550,11 +550,13 @@ const struct sh_flag_names {
     SHF_FLAG(SHF_OS_NONCONFORMING)
     SHF_FLAG(SHF_GROUP)
     SHF_FLAG(SHF_TLS)
+#ifdef SHF_COMPRESSED
     SHF_FLAG(SHF_COMPRESSED)
+#endif
     SHF_FLAG(SHF_MASKOS)
     SHF_FLAG(SHF_MASKPROC)
     SHF_FLAG(SHF_ORDERED)
-    SHF_FLAG(SHF_EXCLUDE)
+    SHF_FLAG((Elf_Word)SHF_EXCLUDE)
     { .name = 0, .value = 0 }
 };
 
