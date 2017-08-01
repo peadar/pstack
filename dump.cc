@@ -245,7 +245,6 @@ operator <<(std::ostream &os, const std::pair<const DwarfInfo *, const DwarfCIE 
         << ", \"codeAlign\":" << dcie.second->codeAlign
         << ", \"dataAlign\": " << dcie.second->dataAlign
         << ", \"return address reg\": " << dcie.second->rar
-        << ", \"augsize\": " <<  dcie.second->augSize
         << ", \"instrlen\": " << dcie.second->end - dcie.second->instructions
         << ", \"instructions\": ";
    ;

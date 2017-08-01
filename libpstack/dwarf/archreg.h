@@ -1,25 +1,7 @@
 /* Maps from DWARF register numbers to pt_regs fields for each architecture. */
 #ifdef __i386__
-#if defined(__FreeBSD__)
-
-REGMAP(1, ptr.r_eax)
-REGMAP(2, ptr.r_ecx)
-REGMAP(3, ptr.r_ebx)
-REGMAP(4, ptr.r_esp)
-REGMAP(5, ptr.r_ebp)
-REGMAP(6, ptr.r_esi)
-REGMAP(7, ptr.r_edi)
-REGMAP(8, ptr.r_eip)
-REGMAP(9, ptr.r_eflags)
-REGMAP(10, ptr.r_cs)
-REGMAP(11, ptr.r_ss)
-REGMAP(12, ptr.r_ds)
-REGMAP(13, ptr.r_es)
-REGMAP(14, ptr.r_fs)
-REGMAP(15, ptr.r_gs)
-
-#elif defined(__linux__)
-
+#define IPREG 8
+#define CFA_RESTORE_REGNO 4
 REGMAP(1, eax)
 REGMAP(2, ecx)
 REGMAP(3, ebx)
@@ -34,28 +16,11 @@ REGMAP(11, xss)
 REGMAP(12, xds)
 REGMAP(13, xes)
 REGMAP(14, xfs)
-
-/* REGMAP(15, ptr.xgs) */
-#else
-#error "don't grok pt_regs for your system"
 #endif
-
-/*
- * GCC doesn't emit code to unwind the SP properly, and DWARF 2 doesn't
- * really give the operations to do it in the general case (in the event
- * the SP isn't stored anywhere on stack.)  The DWARF spec suggests that
- * the CFA is the value of the stack pointer at the call site, so for
- * architectures where this is correct, we define the CFA_RESTORE_REGNO
- * to point to the register that the CFA should be inserted into after the
- * rest of the unwind is carried out.
- */
-
-#define CFA_RESTORE_REGNO 4
-#endif
-
 
 #ifdef __amd64__
-
+#define CFA_RESTORE_REGNO 7
+#define IPREG 16
 REGMAP(0, rax)
 REGMAP(1, rdx)
 REGMAP(2, rcx)
@@ -116,6 +81,27 @@ REGMAP(54, fs)
 REGMAP(55, gs)
 REGMAP(58, fs_base)
 REGMAP(59, gs_base)
-#define CFA_RESTORE_REGNO 7
+#endif
 
+#ifdef __ARM_ARCH
+#define IPREG 15
+#define CFA_RESTORE_REGNO 13
+REGMAP(0, regs[0])
+REGMAP(1, regs[1])
+REGMAP(2, regs[2])
+REGMAP(3, regs[3])
+REGMAP(4, regs[4])
+REGMAP(5, regs[5])
+REGMAP(6, regs[6])
+REGMAP(7, regs[7])
+REGMAP(8, regs[8])
+REGMAP(9, regs[9])
+REGMAP(10, regs[10])
+REGMAP(11, regs[11])
+REGMAP(12, regs[12])
+REGMAP(13, regs[13])
+REGMAP(14, regs[14])
+REGMAP(15, regs[15])
+REGMAP(16, regs[16])
+REGMAP(17, regs[17])
 #endif

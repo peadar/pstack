@@ -8,35 +8,12 @@
 #include <link.h>
 #include <unistd.h>
 #include <libpstack/ps_callback.h>
+#define REGMAP(a,b)
+#include "libpstack/dwarf/archreg.h"
+
 #include <libpstack/proc.h>
 #include <libpstack/dwarf.h>
 #include <libpstack/dump.h>
-
-typedef struct regs ptrace_regs;
-
-#ifdef __FreeBSD__
-#ifdef __i386__
-#define REG(regs, reg) (regs.r_e##reg)
-#endif
-
-#ifdef __amd64__
-#define REG(regs, reg) (regs.r_r##reg)
-#endif
-#endif
-
-
-#ifdef __linux__
-typedef struct user_regs_struct  elf_regs;
-#if defined(__PPC)
-#define REG(regs, reg) ((regs).n##reg)
-#elif defined(__i386__)
-#define REG(regs, reg) ((regs).e##reg)
-#else
-#define REG(regs, reg) ((regs).r##reg)
-#endif
-#else
-#error "not linux?"
-#endif
 
 static size_t gMaxFrames = 1024; /* max number of frames to read */
 
@@ -183,8 +160,7 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
         << ", \"stack\": [ ";
 
     const char *frameSep = "";
-    for (auto frameI = thread.stack.begin(); frameI != thread.stack.end(); ++frameI) {
-        auto frame = *frameI;
+    for (auto &frame : thread.stack) {
         Elf_Addr objIp = 0;
         std::shared_ptr<ElfObject> obj;
         Elf_Sym sym;
@@ -597,8 +573,8 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
         auto prevFrame = new StackFrame();
 
         // Set up the first frame using the machine context registers
-        prevFrame->ip = REG(regs, ip);
         prevFrame->setCoreRegs(regs);
+        prevFrame->ip = prevFrame->getReg(IPREG); // use the IP address in current frame
 
         StackFrame *frame;
         for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++, prevFrame = frame) {

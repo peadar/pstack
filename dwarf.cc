@@ -923,7 +923,7 @@ DwarfCallFrame::DwarfCallFrame()
 {
     cfaReg = 0;
     cfaValue.type = UNDEF;
-#define REGMAP(number, field) registers[number].type = UNDEF;
+#define REGMAP(number, field) registers[number].type = SAME;
 #include <libpstack/dwarf/archreg.h>
 #undef REGMAP
 #ifdef CFA_RESTORE_REGNO
@@ -1136,7 +1136,6 @@ DwarfCIE::DwarfCIE(const DwarfInfo *info_, DWARFReader &r, Elf_Off end_)
 
     // Get augmentations...
 
-    augSize = 0;
 #if 1 || ELF_BITS == 32
     addressEncoding = DW_EH_PE_udata4;
 #elif ELF_BITS == 64
@@ -1145,48 +1144,42 @@ DwarfCIE::DwarfCIE(const DwarfInfo *info_, DWARFReader &r, Elf_Off end_)
     #error "no default address encoding"
 #endif
 
-    std::string::iterator it = augmentation.begin();
-    if (it != augmentation.end()) {
-        if (*it == 'z') {
-            augSize = r.getuleb128();
-            Elf_Off endaugdata = r.getOffset() + augSize;
-            bool earlyExit = false;
-            while (++it != augmentation.end()) {
-                switch (*it) {
-                    case 'P': {
-                        unsigned char encoding = r.getu8();
-                        personality = info->decodeAddress(r, encoding);
-                        break;
-                    }
-                    case 'L':
-                        lsdaEncoding = r.getu8();
-                        break;
-                    case 'R':
-                        addressEncoding = r.getu8();
-                        break;
-                    case 'S':
-                        isSignalHandler = true;
-                        break;
-                    case '\0':
-                        break;
-                    default:
-                        std::clog << "unknown augmentation '" << *it << "' in " << augmentation << std::endl;
-                        // The augmentations are in order, so we can't make any sense of the remaining data in the
-                        // augmentation block
-                        earlyExit = true;
-                        break;
-                }
-                if (earlyExit)
-                    break;
-            }
-            if (r.getOffset() != endaugdata) {
-                std::clog << "warning: " << endaugdata - r.getOffset()
-                    << " bytes of augmentation ignored" << std::endl;
-                r.setOffset(endaugdata);
-            }
-        } else {
-            std::clog << "augmentation without length delimiter: " << augmentation << std::endl;
+    bool earlyExit = false;
+    Elf_Off endaugdata = r.getOffset();
+    for (auto aug : augmentation) {
+        switch (aug) {
+            case 'z':
+                endaugdata = r.getuleb128();
+                endaugdata += r.getOffset();
+                break;
+            case 'P':
+                personality = info->decodeAddress(r, r.getu8());
+                break;
+            case 'L':
+                lsdaEncoding = r.getu8();
+                break;
+            case 'R':
+                addressEncoding = r.getu8();
+                break;
+            case 'S':
+                isSignalHandler = true;
+                break;
+            case '\0':
+                break;
+            default:
+                std::clog << "unknown augmentation '" << aug << "' in " << augmentation << std::endl;
+                // The augmentations are in order, so we can't make any sense of the remaining data in the
+                // augmentation block
+                earlyExit = true;
+                break;
         }
+        if (earlyExit)
+            break;
+    }
+    if (r.getOffset() != endaugdata) {
+        std::clog << "warning: " << endaugdata - r.getOffset()
+            << " bytes of augmentation ignored" << std::endl;
+        r.setOffset(endaugdata);
     }
     instructions = r.getOffset();
     r.setOffset(end);

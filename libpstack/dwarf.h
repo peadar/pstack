@@ -297,7 +297,6 @@ struct DwarfCIE {
     Elf_Off instructions;
     Elf_Off end;
     uintmax_t personality;
-    unsigned long augSize;
     std::string augmentation;
     DwarfCIE(const DwarfInfo *, DWARFReader &, Elf_Off);
     DwarfCIE() {}

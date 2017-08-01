@@ -284,6 +284,7 @@ StackFrame::getCFA(const Process &proc, const DwarfCallFrame &dcf) const
 {
     switch (dcf.cfaValue.type) {
         case SAME:
+            return getReg(dcf.cfaReg);
         case VAL_OFFSET:
         case VAL_EXPRESSION:
         case REG:
@@ -324,12 +325,14 @@ StackFrame::unwind(Process &p)
                     break;
              }
           }
+          if (fde)
+              break;
        }
     }
     if (!fde)
        return 0;
 
-    DWARFReader r(elf->io, fde->instructions, fde->end - fde->instructions, 0);
+    DWARFReader r(dwarf->elf->io, fde->instructions, fde->end - fde->instructions, 0);
 
     auto iter = dwarf->callFrameForAddr.find(objaddr);
     if (iter == dwarf->callFrameForAddr.end()) {

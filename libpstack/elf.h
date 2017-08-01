@@ -35,11 +35,13 @@ extern bool noDebugLibs;
 
 #include <tuple>
 #include <string>
+#include <sys/ptrace.h>
 #include <list>
 #include <vector>
 #include <map>
 #include <memory>
 #include <elf.h>
+#include <sys/procfs.h>
 #include <libpstack/util.h>
 
 
@@ -215,8 +217,12 @@ public:
     bool findSymbol(Elf_Sym &sym, const std::string &name);
 };
 
-const char *pad(size_t size);
-#ifdef __PPC
+// These are the architecture specific types representing the NT_PRSTATUS registers.
+#if defined(__ARM_ARCH)
+struct CoreRegisters {
+	elf_gregset_t regs;
+};
+#elif defined(__PPC)
 typedef struct pt_regs CoreRegisters;
 #else
 typedef struct user_regs_struct CoreRegisters;
