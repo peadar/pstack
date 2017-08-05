@@ -2,9 +2,10 @@
 #include <iostream>
 #include <iomanip>
 #include <unistd.h>
-#include <libpstack/util.h>
-#include <libpstack/elf.h>
 #include <algorithm>
+
+#include "libpstack/util.h"
+#include "libpstack/elf.h"
 
 using std::string;
 using std::make_shared;
@@ -45,7 +46,7 @@ std::string
 ElfNoteDesc::name() const
 {
    char *buf = new char[note.n_namesz + 1];
-   object->io->readObj(offset + sizeof note, buf, note.n_namesz);
+   io->readObj(sizeof note, buf, note.n_namesz);
    buf[note.n_namesz] = 0;
    std::string s = buf;
    delete[] buf;
@@ -57,8 +58,7 @@ ElfNoteDesc::data() const
 {
    if (databuf == 0) {
       databuf = new unsigned char[note.n_descsz];
-      object->io->readObj(roundup2(offset + sizeof note + note.n_namesz, 4),
-            databuf, note.n_descsz);
+      io->readObj(roundup2(sizeof note + note.n_namesz, 4), databuf, note.n_descsz);
    }
    return databuf;
 }
@@ -148,8 +148,11 @@ ElfObject::init(const shared_ptr<Reader> &io_)
             namedSection[name] = &h;
         }
         auto tab = getSection(".hash", SHT_HASH);
-        if (tab)
-            hash.reset(new ElfSymHash(tab));
+        if (tab) {
+            auto syms = getSection(tab->sh_link);
+            auto strings = getSection(syms->sh_link);
+            hash.reset(new ElfSymHash(tab, syms, strings));
+        }
     } else {
         hash = 0;
     }
@@ -159,8 +162,8 @@ std::pair<const Elf_Sym, const string>
 SymbolIterator::operator *()
 {
         Elf_Sym sym;
-        io->readObj(off, &sym);
-        string name = io->readString(sym.st_name + stroff);
+        sec->symbols.io->readObj(off, &sym);
+        string name = sec->strings.io->readString(sym.st_name);
         return std::make_pair(sym, name);
 }
 
@@ -186,7 +189,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
         const auto symSection = getSection(sectionNames[i], SHT_NULL);
         if (symSection == 0 || symSection->sh_type == SHT_NOBITS)
             continue;
-        SymbolSection syms(symSection);
+        SymbolSection syms(*this, symSection);
         for (auto syminfo : syms) {
             auto &candidate = syminfo.first;
             if (candidate.st_shndx >= sectionHeaders.size())
@@ -222,23 +225,30 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
 }
 
 const ElfSection
-ElfObject::getSection(const std::string &name, Elf_Word type)
+ElfObject::getSection(const std::string &name, Elf_Word type) const
 {
 
     auto s = namedSection.find(name);
     return ElfSection(*this, s != namedSection.end() && (s->second->sh_type == type || type == SHT_NULL) ? s->second : 0);
 }
 
+const ElfSection
+ElfObject::getSection(Elf_Word idx) const
+{
+    return ElfSection(*this, &sectionHeaders[idx]);
+}
+
+
 SymbolSection
 ElfObject::getSymbols(const std::string &table)
 {
-    return SymbolSection(getSection(table, SHT_NULL));
+    return SymbolSection(*this, getSection(table, SHT_NULL));
 }
 
 bool
-linearSymSearch(ElfSection &section, const string &name, Elf_Sym &sym)
+ElfObject::linearSymSearch(ElfSection &section, const string &name, Elf_Sym &sym)
 {
-    SymbolSection sec(section);
+    SymbolSection sec(*this, section);
     for (const auto &info : sec) {
         if (name == info.second) {
             sym = info.first;
@@ -248,19 +258,19 @@ linearSymSearch(ElfSection &section, const string &name, Elf_Sym &sym)
     return false;
 }
 
-ElfSymHash::ElfSymHash(ElfSection &hash_)
+ElfSymHash::ElfSymHash(ElfSection &hash_, ElfSection &syms_, ElfSection &strings_)
     : hash(hash_)
-    , syms(hash.obj, hash.getLink())
+    , syms(syms_)
+    , strings(strings_)
 {
     // read the hash table into local memory.
     size_t words = hash->sh_size / sizeof (Elf_Word);
     data.resize(words);
-    hash.obj.io->readObj(hash->sh_offset, &data[0], words);
+    hash.io->readObj(0, &data[0], words);
     nbucket = data[0];
     nchain = data[1];
     buckets = &data[0] + 2;
     chains = buckets + nbucket;
-    strings = syms.getLink()->sh_offset;
 }
 
 bool
@@ -269,8 +279,8 @@ ElfSymHash::findSymbol(Elf_Sym &sym, const string &name)
     uint32_t bucket = elf_hash(name) % nbucket;
     for (Elf_Word i = buckets[bucket]; i != STN_UNDEF; i = chains[i]) {
         Elf_Sym candidate;
-        syms.obj.io->readObj(syms->sh_offset + i * sizeof candidate, &candidate);
-        string candidateName = syms.obj.io->readString(strings + candidate.st_name);
+        syms.io->readObj(i * sizeof candidate, &candidate);
+        string candidateName = strings.io->readString(candidate.st_name);
         if (candidateName == name) {
             sym = candidate;
             return true;
@@ -411,7 +421,11 @@ elf_hash(string name)
     return (h);
 }
 
-const Elf_Shdr *ElfSection::getLink() const
+ElfSection::ElfSection(const ElfObject &obj_, const Elf_Shdr *shdr_)
+    : shdr(shdr_)
 {
-    return &obj.sectionHeaders[shdr->sh_link];
+    if (shdr)
+        io = std::make_shared<OffsetReader>(obj_.getio(), shdr->sh_offset, shdr->sh_size);
+    else
+        io = std::make_shared<NullReader>();
 }

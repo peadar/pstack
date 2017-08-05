@@ -172,7 +172,7 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
             Elf_Off reloc;
             obj = findObject(frame->ip, &reloc);
             if (obj) {
-               fileName = obj->io->describe();
+               fileName = obj->getio()->describe();
                objIp = frame->ip - reloc;
                obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
             }
@@ -355,7 +355,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         Elf_Off reloc;
         auto obj = findObject(frame->ip, &reloc);
         if (obj) {
-            fileName = obj->io->describe();
+            fileName = obj->getio()->describe();
             Elf_Addr objIp = frame->ip - reloc;
 
             DwarfInfo *dwarf = getDwarf(obj, true);
@@ -434,7 +434,7 @@ Process::addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load)
     if (verbose >= 2) {
         IOFlagSave _(*debug);
         *debug
-            << "object " << obj->io->describe()
+            << "object " << obj->getio()->describe()
             << " loaded at address " << std::hex << load
             << ", base=" << obj->getBase() << std::endl;
     }
@@ -502,7 +502,7 @@ Process::findRDebugAddr()
         // the modified version.
         for (Elf_Addr dynOff = 0; dynOff < segment.p_filesz; dynOff += sizeof(Elf_Dyn)) {
             Elf_Dyn dyn;
-            execImage->io->readObj(segment.p_offset + dynOff, &dyn);
+            execImage->getio()->readObj(segment.p_offset + dynOff, &dyn);
             if (dyn.d_tag == DT_DEBUG) {
                 // Now, we read this from the _process_ AS, not the executable - the
                 // in-memory one is changed by the linker.

@@ -75,7 +75,6 @@ public:
     std::string describe() const { return name; }
 };
 
-
 class CacheReader : public Reader {
     struct CacheEnt {
         std::string value;
@@ -113,6 +112,37 @@ public:
     MemReader(char *, size_t);
     std::string describe() const;
 };
+
+class NullReader : public Reader {
+public:
+    virtual size_t read(off_t, size_t, char *) const {
+        throw Exception() << " read from null reader";
+    }
+    std::string describe() const {
+        return "empty reader";
+    }
+};
+
+class OffsetReader : public Reader {
+    std::shared_ptr<Reader> upstream;
+    off_t offset;
+    off_t length;
+public:
+    virtual size_t read(off_t off, size_t count, char *ptr) const {
+        if (off + off_t(count) > length)
+            throw Exception() << "read past end of object " << describe();
+        return upstream->read(off + offset, count, ptr);
+    }
+    OffsetReader(std::shared_ptr<Reader> upstream_, off_t offset_, off_t length_)
+        : upstream(upstream_), offset(offset_), length(length_) {}
+    std::string describe() const {
+        std::ostringstream os;
+        os << upstream->describe() << "[" << offset << "," << offset + length << "]";
+        return os.str();
+    }
+};
+
+
 std::string linkResolve(std::string name);
 
 template <typename T> T maybe(T val, T dflt) {

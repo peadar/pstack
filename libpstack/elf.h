@@ -43,6 +43,7 @@ extern bool noDebugLibs;
 #include <elf.h>
 #include <sys/procfs.h>
 #include <libpstack/util.h>
+#include <limits>
 
 
 /*
@@ -109,20 +110,13 @@ enum NoteIter {
     NOTE_DONE
 };
 
-template<typename T, typename... Args>
-std::unique_ptr<T> make_unique(Args&&... args)
-{
-    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
-}
-
 struct ElfSection {
-    const ElfObject &obj;
     const Elf_Shdr *shdr;
-    const Elf_Shdr *getLink() const;
-    operator bool() const { return shdr != 0; }
+    std::shared_ptr<Reader> io;
     const Elf_Shdr *operator -> () const { return shdr; }
     const Elf_Shdr *operator = (const Elf_Shdr *shdr_) { shdr = shdr_; return shdr; }
-    ElfSection(const ElfObject &obj_, const Elf_Shdr *shdr_) : obj(obj_), shdr(shdr_) {}
+    operator bool() const { return shdr != nullptr; }
+    ElfSection(const ElfObject &obj_, const Elf_Shdr *shdr_);
 };
 
 struct ElfNoteIter;
@@ -134,14 +128,14 @@ struct ElfNotes {
    ElfNotes(ElfObject *object_) : object(object_) {}
 };
 
-bool linearSymSearch(ElfSection &hdr, const std::string &name, Elf_Sym &);
 class ElfObject {
 public:
     typedef std::vector<Elf_Phdr> ProgramHeaders;
     typedef std::vector<Elf_Shdr> SectionHeaders;
+    bool linearSymSearch(ElfSection &hdr, const std::string &name, Elf_Sym &);
 private:
-    friend struct ElfSection;
     friend std::ostream &operator<< (std::ostream &os, const ElfObject &obj);
+    std::shared_ptr<Reader> io; // IO for the ELF image.
     size_t fileSize;
     Elf_Ehdr elfHeader;
     std::map<Elf_Word, ProgramHeaders> programHeaders;
@@ -156,10 +150,10 @@ public:
     static std::shared_ptr<ElfObject> getDebug(std::shared_ptr<ElfObject> &);
     SymbolSection getSymbols(const std::string &table);
     SectionHeaders sectionHeaders;
-    std::shared_ptr<Reader> io; // IO for the ELF image.
     Elf_Off getBase() const; // lowest address of a PT_LOAD segment.
     std::string getInterpreter() const;
     std::string getName() const { return name; }
+    const ElfSection getSection(Elf_Word idx) const;
     const SectionHeaders &getSections() const { return sectionHeaders; }
     const ProgramHeaders &getSegments(Elf_Word type) const {
         auto it = programHeaders.find(type);
@@ -169,7 +163,7 @@ public:
         }
         return it->second;
     }
-    const ElfSection getSection(const std::string &name, Elf_Word type);
+    const ElfSection getSection(const std::string &name, Elf_Word type) const;
     const Elf_Ehdr &getElfHeader() const { return elfHeader; }
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(const std::string &name, Elf_Sym &sym);
@@ -179,41 +173,41 @@ public:
     const Elf_Phdr *findHeaderForAddress(Elf_Off) const;
     bool findDebugInfo();
     ElfNotes notes;
+    std::shared_ptr<Reader> getio() const { return io; }
 };
 
 // Helpful for iterating over symbol sections.
 struct SymbolIterator {
-    std::shared_ptr<Reader> io;
+    SymbolSection *sec;
     off_t off;
-    off_t stroff;
-    SymbolIterator(std::shared_ptr<Reader> io_, off_t off_, off_t stroff_) : io(io_), off(off_), stroff(stroff_) {}
+    SymbolIterator(SymbolSection *sec_, off_t off_) : sec(sec_), off(off_) {}
     bool operator != (const SymbolIterator &rhs) { return rhs.off != off; }
     SymbolIterator &operator++ () { off += sizeof (Elf_Sym); return *this; }
     std::pair<const Elf_Sym, const std::string> operator *();
 };
 
 struct SymbolSection {
-    const ElfSection section;
-    off_t stroff;
-    SymbolIterator begin() { return SymbolIterator(section && section.shdr ? section.obj.io : std::shared_ptr<Reader>((Reader *)0), section ? section->sh_offset : 0, stroff); }
-    SymbolIterator end() { return SymbolIterator(section && section.shdr ? section.obj.io : std::shared_ptr<Reader>((Reader *)0), section ? section->sh_offset + section->sh_size : 0, stroff); }
-    SymbolSection(const ElfSection &section_)
-        : section(section_)
-        , stroff(section.shdr ? section_.getLink()->sh_offset : -1)
+    const ElfSection symbols;
+    const ElfSection strings;
+    SymbolIterator begin() { return SymbolIterator(this, 0); }
+    SymbolIterator end() { return SymbolIterator(this, symbols->sh_size); }
+    SymbolSection(ElfObject &elf, const ElfSection &symbols_)
+        : symbols(symbols_)
+        , strings(elf.getSection(symbols->sh_link))
     {}
 };
 
 class ElfSymHash {
     ElfSection hash;
     ElfSection syms;
-    off_t strings;
+    ElfSection strings;
     Elf_Word nbucket;
     Elf_Word nchain;
     std::vector<Elf_Word> data;
     const Elf_Word *chains;
     const Elf_Word *buckets;
 public:
-    ElfSymHash(ElfSection &);
+    ElfSymHash(ElfSection &hash, ElfSection &syms, ElfSection &strings_);
     bool findSymbol(Elf_Sym &sym, const std::string &name);
 };
 
@@ -228,23 +222,14 @@ typedef struct pt_regs CoreRegisters;
 typedef struct user_regs_struct CoreRegisters;
 #endif
 
-std::ostream& operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr &, const Elf_Sym &> &t);
-std::ostream& operator<< (std::ostream &os, const std::pair<const ElfObject *, const Elf_Shdr &> &p);
-std::ostream& operator<< (std::ostream &os, const Elf_Phdr &h);
-std::ostream& operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr &, const Elf_Sym &> &t);
-std::ostream& operator<< (std::ostream &os, const Elf_Dyn &d);
-std::ostream& operator<< (std::ostream &os, const ElfObject &obj);
-
 class ElfNoteDesc {
    Elf_Note note;
-   ElfObject *object;
-   off_t offset;
+   std::shared_ptr<Reader> io;
    mutable unsigned char *databuf;
 public:
    ElfNoteDesc(const ElfNoteDesc &rhs)
       : note(rhs.note)
-      , object(rhs.object)
-      , offset(rhs.offset)
+      , io(rhs.io)
       , databuf(0)
    {
       if (rhs.databuf) {
@@ -256,10 +241,9 @@ public:
    const unsigned char *data() const;
    size_t size() const;
    int type()  const { return note.n_type; }
-   ElfNoteDesc(ElfObject *o, const Elf_Note &n, size_t off)
+   ElfNoteDesc(const Elf_Note &n, std::shared_ptr<Reader> io_)
       : note(n)
-      , object(o)
-      , offset(off)
+      , io(io_)
       , databuf(0)
    {}
    ~ElfNoteDesc() {
@@ -268,53 +252,59 @@ public:
 };
 
 struct ElfNoteIter {
-   ElfObject *object;
-   const ElfObject::ProgramHeaders &phdrs;
-   ElfObject::ProgramHeaders::const_iterator phdrsi;
-   Elf_Off noteOffset;
-   Elf_Note curNote;
+    ElfObject *object;
+    const ElfObject::ProgramHeaders &phdrs;
+    ElfObject::ProgramHeaders::const_iterator phdrsi;
+    Elf_Off offset;
+    Elf_Note curNote;
+    std::shared_ptr<Reader> io;
 
-   ElfNoteDesc operator *() {
-      return ElfNoteDesc(object, curNote, noteOffset);
-   }
+    ElfNoteDesc operator *() {
+        return ElfNoteDesc(curNote, std::make_shared<OffsetReader>(io, offset, std::numeric_limits<off_t>::max()));
+    }
 
-   ElfNoteIter &operator++() {
-      auto newOff = noteOffset;
-      newOff += sizeof curNote + curNote.n_namesz;
-      newOff = roundup2(newOff, 4);
-      newOff += curNote.n_descsz;
-      newOff = roundup2(newOff, 4);
-      if (newOff >= phdrsi->p_offset  + phdrsi->p_filesz) {
-         if (++phdrsi == phdrs.end())
-            return *this;
-         noteOffset = phdrsi->p_offset;
-      } else {
-         noteOffset = newOff;
-      }
-      readNote();
-      return *this;
-   }
+    void startSection() {
+        offset = 0;
+        io = std::make_shared<OffsetReader>(object->getio(), off_t(phdrsi->p_offset), off_t(phdrsi->p_filesz));
+    }
 
-   ElfNoteIter(ElfObject *object_, bool begin)
-      : object(object_)
-      , phdrs(object_->getSegments(PT_NOTE))
-   {
-       phdrsi = begin ? phdrs.begin() : phdrs.end();
-       if (phdrsi != phdrs.end()) {
-           noteOffset = phdrsi->p_offset;
-           readNote();
-       }
-   }
+    ElfNoteIter &operator++() {
+        auto newOff = offset;
+        newOff += sizeof curNote + curNote.n_namesz;
+        newOff = roundup2(newOff, 4);
+        newOff += curNote.n_descsz;
+        newOff = roundup2(newOff, 4);
+        if (newOff >= phdrsi->p_filesz) {
+            if (++phdrsi == phdrs.end())
+                return *this;
+            startSection();
+        } else {
+            offset = newOff;
+        }
+        readNote();
+        return *this;
+    }
 
-   void readNote() {
-      object->io->readObj(noteOffset, &curNote);
-   }
-   bool operator == (const ElfNoteIter &rhs) const {
-      return &phdrs == &rhs.phdrs && phdrsi == rhs.phdrsi && noteOffset == rhs.noteOffset;
-   }
-   bool operator != (const ElfNoteIter &rhs) const {
-      return !(*this == rhs);
-   }
+    ElfNoteIter(ElfObject *object_, bool begin)
+        : object(object_)
+          , phdrs(object_->getSegments(PT_NOTE))
+    {
+        phdrsi = begin ? phdrs.begin() : phdrs.end();
+        if (phdrsi != phdrs.end()) {
+            startSection();
+            readNote();
+        }
+    }
+
+    void readNote() {
+        io->readObj(offset, &curNote);
+    }
+    bool operator == (const ElfNoteIter &rhs) const {
+        return &phdrs == &rhs.phdrs && phdrsi == rhs.phdrsi && offset == rhs.offset;
+    }
+    bool operator != (const ElfNoteIter &rhs) const {
+        return !(*this == rhs);
+    }
 };
 
 enum GNUNotes {
@@ -328,5 +318,18 @@ public:
     GlobalDebugDirectories();
 };
 extern GlobalDebugDirectories globalDebugDirectories;
+
+std::ostream& operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr &, const Elf_Sym &> &t);
+std::ostream& operator<< (std::ostream &os, const std::pair<const ElfObject *, const Elf_Shdr &> &p);
+std::ostream& operator<< (std::ostream &os, const Elf_Phdr &h);
+std::ostream& operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr &, const Elf_Sym &> &t);
+std::ostream& operator<< (std::ostream &os, const Elf_Dyn &d);
+std::ostream& operator<< (std::ostream &os, const ElfObject &obj);
+
+template<typename T, typename... Args>
+std::unique_ptr<T> make_unique(Args&&... args)
+{
+    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
 
 #endif /* Guard. */

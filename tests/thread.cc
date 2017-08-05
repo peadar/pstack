@@ -20,10 +20,14 @@ entry(void *arg)
 int
 main(int argc, char *argv[])
 {
+   pthread_attr_t attrs;
+   pthread_attr_init(&attrs);
+   pthread_attr_setscope(&attrs, PTHREAD_SCOPE_SYSTEM);
+
    std::vector<pthread_t> thr;
    for (int i = 0; i < 10; i++) {
       pthread_t tid;
-      pthread_create(&tid, 0, entry, &i);
+      pthread_create(&tid, &attrs, entry, &i);
    }
    for (;;) {
       pthread_mutex_lock(&l);

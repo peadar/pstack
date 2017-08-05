@@ -231,6 +231,7 @@ struct DwarfUnit {
     mutable std::map<off_t, DwarfEntry *> allEntries;
     DwarfInfo *dwarf;
     off_t offset;
+    size_t dwarfLen;
     void decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *parent);
     uint32_t length;
     uint16_t version;
@@ -251,7 +252,7 @@ struct DwarfFDE {
     Elf_Off instructions;
     Elf_Off end;
     std::vector<unsigned char> augmentation;
-    DwarfFDE(DwarfInfo *, DWARFReader &, DwarfCIE * , Elf_Off end);
+    DwarfFDE(DwarfFrameInfo *, DWARFReader &, DwarfCIE * , Elf_Off end);
 };
 
 #define MAXREG 128
@@ -286,7 +287,7 @@ struct DwarfCallFrame {
 };
 
 struct DwarfCIE {
-    const DwarfInfo *info;
+    const DwarfFrameInfo *frameInfo;
     uint8_t version;
     uint8_t addressEncoding;
     unsigned char lsdaEncoding;
@@ -298,20 +299,24 @@ struct DwarfCIE {
     Elf_Off end;
     uintmax_t personality;
     std::string augmentation;
-    DwarfCIE(const DwarfInfo *, DWARFReader &, Elf_Off);
+    DwarfCIE(const DwarfFrameInfo *, DWARFReader &, Elf_Off);
     DwarfCIE() {}
     DwarfCallFrame execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr);
 };
 
 struct DwarfFrameInfo {
     const DwarfInfo *dwarf;
+    ElfSection section;
     FIType type;
     std::map<Elf_Addr, DwarfCIE> cies;
     std::list<DwarfFDE> fdeList;
-    DwarfFrameInfo(DwarfInfo *, DWARFReader &, FIType type);
+    DwarfFrameInfo(DwarfInfo *, ElfSection &section, FIType type);
+    DwarfFrameInfo() = delete;
+    DwarfFrameInfo(const DwarfFrameInfo &) = delete;
     Elf_Addr decodeCIEFDEHdr(DWARFReader &, Elf_Addr &id, off_t start, DwarfCIE **);
     const DwarfFDE *findFDE(Elf_Addr) const;
     bool isCIE(Elf_Off id);
+    intmax_t decodeAddress(DWARFReader &, int encoding) const;
 };
 
 class DwarfInfo {
@@ -339,7 +344,6 @@ public:
     std::unique_ptr<DwarfFrameInfo> debugFrame;
     std::unique_ptr<DwarfFrameInfo> ehFrame;
     DwarfInfo(std::shared_ptr<ElfObject> object);
-    intmax_t decodeAddress(DWARFReader &, int encoding) const;
     std::vector<std::pair<const DwarfFileEntry *, int>> sourceFromAddr(uintmax_t addr);
     ~DwarfInfo();
 };
@@ -400,42 +404,37 @@ class DWARFReader {
 public:
     std::shared_ptr<Reader> io;
     unsigned addrLen;
-    size_t dwarfLen; // 8 => 64-bit. 4 => 32-bit.
-
-    DWARFReader(std::shared_ptr<Reader> io_, Elf_Off off_, Elf_Word size_, size_t dwarfLen_)
-        : off(off_)
-        , end(off_ + size_)
-        , io(io_)
-        , addrLen(ELF_BITS / 8)
-        , dwarfLen(dwarfLen_)
-    {
-    }
 
     DWARFReader(DWARFReader &rhs, Elf_Off off_, Elf_Word size_)
         : off(off_)
         , end(off_ + size_)
         , io(rhs.io)
         , addrLen(ELF_BITS / 8)
-        , dwarfLen(rhs.dwarfLen)
     {
     }
 
-    DWARFReader(const ElfSection &section, Elf_Off off_, size_t dwarfLen_, size_t size = std::numeric_limits<size_t>::max())
-        : off(off_ + section->sh_offset)
-        , end(section->sh_offset + std::min(size_t(section->sh_size), size))
-        , io(section.obj.io)
+    DWARFReader(const ElfSection &section, Elf_Off off_, size_t size = std::numeric_limits<size_t>::max())
+        : off(off_)
+        , end(off_ + std::min(size_t(section->sh_size) - off, size))
+        , io(section.io)
         , addrLen(ELF_BITS / 8)
-        , dwarfLen(dwarfLen_)
     {
     }
+
+    DWARFReader(const ElfSection &section)
+        : off(0)
+        , end(section->sh_size)
+        , io(section.io)
+        , addrLen(ELF_BITS / 8)
+    {
+    }
+
 
     uint32_t getu32();
     uint16_t getu16();
     uint8_t getu8();
     int8_t gets8();
     uintmax_t getuint(int size);
-    uintmax_t getfmtuint() { return getuint(dwarfLen); }
-    uintmax_t getfmtint() { return getint(dwarfLen); }
     intmax_t getint(int size);
     uintmax_t getuleb128();
     intmax_t getsleb128();
