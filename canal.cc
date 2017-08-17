@@ -247,7 +247,7 @@ mainExcept(int argc, char *argv[])
                        listed.push_back(ListedSymbol((*sym).first,
                                 loaded->reloc,
                                 (*sym).second,
-                                loaded->object->io->describe()));
+                                loaded->object->getio()->describe()));
                        if (verbose > 1 || showsyms)
                           std::cout << (*sym).second << "\n";
                        count++;
@@ -256,7 +256,7 @@ mainExcept(int argc, char *argv[])
            }
         }
         if (verbose)
-            *debug << "found " << count << " symbols in " << loaded->object->io->describe() << endl;
+            *debug << "found " << count << " symbols in " << loaded->object->getio()->describe() << endl;
     }
     if (showsyms)
        exit(0);

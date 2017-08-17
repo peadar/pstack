@@ -17,7 +17,7 @@ segv-run: segv
 
 thread-run: thread
 	-./thread
-	../d64/pstack -v ./core
+	$(PSTACK_BIN) -v ./core
 
 
 

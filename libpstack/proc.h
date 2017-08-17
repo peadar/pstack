@@ -31,11 +31,13 @@ struct StackFrame {
     std::map<unsigned, uintmax_t> regs;
     DwarfInfo *dwarf;
     DwarfEntry * function;
+    DwarfFrameInfo *frameInfo;
     StackFrame()
         : ip(-1)
         , cfa(0)
         , dwarf(0)
         , function(0)
+        , frameInfo(0)
     {}
     void setReg(unsigned regno, uintmax_t value);
     uintmax_t getReg(unsigned regno) const;

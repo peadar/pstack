@@ -1,7 +1,7 @@
 #include <iostream>
-#include <libpstack/elf.h>
-#include <libpstack/dwarf.h>
-#include <libpstack/proc.h>
+#include "libpstack/elf.h"
+#include "libpstack/dwarf.h"
+#include "libpstack/proc.h"
 
 CoreProcess::CoreProcess(
         std::shared_ptr<ElfObject> exe,
@@ -29,7 +29,7 @@ CoreProcess::load()
 
 std::string CoreReader::describe() const
 {
-    return p->coreImage->io->describe();
+    return p->coreImage->getio()->describe();
 }
 
 static size_t
@@ -39,7 +39,7 @@ readFromHdr(std::shared_ptr<ElfObject> obj, const Elf_Phdr *hdr, Elf_Off addr, c
     if (off < hdr->p_filesz) {
         // some of the data is in the file: read min of what we need and // that.
         Elf_Off fileSize = std::min(hdr->p_filesz - off, size);
-        rv = obj->io->read(hdr->p_offset + off, fileSize, ptr);
+        rv = obj->getio()->read(hdr->p_offset + off, fileSize, ptr);
         if (rv != fileSize)
             throw Exception() << "unexpected short read in core file";
         off += rv;

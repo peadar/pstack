@@ -22,13 +22,6 @@ the vtables found in the symbol table. This can give a quick-and-dirty histogram
 of live objects by type for finding memory leaks.
 
 ## TODO
-* Support compressed sections
-   * Newer debug objects have SHF_COMPRESSED sections, and need to be uncompressed.
-   * General idea for what to do:
-        1. create sub IO-readers for sections from the object's IO reader,
-           and use those rather than the objects.
-        2. support a compressed reader that gets pushed on top of that
-           for sections with the SHF_COMPRESSED flag
 * Support GNU_ref_alt
    * dwz creates these
 * Read memory contents for arg printing

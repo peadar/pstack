@@ -237,7 +237,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
 }
 
 std::ostream &
-operator <<(std::ostream &os, const std::pair<const DwarfInfo *, const DwarfCIE *> &dcie)
+operator <<(std::ostream &os, const std::pair<const DwarfFrameInfo *, const DwarfCIE *> &dcie)
 {
     os
         << "{ \"version\": " << int(dcie.second->version)
@@ -247,15 +247,14 @@ operator <<(std::ostream &os, const std::pair<const DwarfInfo *, const DwarfCIE 
         << ", \"return address reg\": " << dcie.second->rar
         << ", \"instrlen\": " << dcie.second->end - dcie.second->instructions
         << ", \"instructions\": ";
-   ;
-   DWARFReader r(dcie.first->elf->io, dcie.second->instructions, dcie.second->end - dcie.second->instructions, ELF_BITS / 8);
+    ;
+    DWARFReader r(dcie.first->section, dcie.second->instructions, dcie.second->end - dcie.second->instructions);
     dwarfDumpCFAInsns(os, r);
-    return os
-        << " }";
+    return os << " }";
 }
 
 std::ostream &
-operator << (std::ostream &os, const std::pair<const DwarfInfo *, const DwarfFDE *> &dfde )
+operator << (std::ostream &os, const std::pair<const DwarfFrameInfo *, const DwarfFDE *> &dfde )
 {
     os
         << "{ \"cie\": " << intptr_t(dfde.second->cie)
@@ -264,7 +263,7 @@ operator << (std::ostream &os, const std::pair<const DwarfInfo *, const DwarfFDE
         << ", \"augmentation\": \"" << dfde.second->augmentation << "\""
         << ", \"instructions\": "
     ; 
-    DWARFReader r(dfde.first->elf->io, dfde.second->instructions, dfde.second->end - dfde.second->instructions, ELF_BITS/8);
+    DWARFReader r(dfde.first->section, dfde.second->instructions, dfde.second->end - dfde.second->instructions);
     dwarfDumpCFAInsns(os, r);
     return os << "}";
 }
@@ -277,15 +276,14 @@ operator << (std::ostream &os, const DwarfFrameInfo &info)
     const char *sep = "";
     for (auto cieent = info.cies.begin(); cieent != info.cies.end(); ++cieent) {
         const DwarfCIE &cie  = cieent->second;
-        os << sep << std::make_pair(info.dwarf, &cie);
+        os << sep << std::make_pair(&info, &cie);
         sep = ",\n";
     }
     os << "], \"fdelist\": [";
 
     sep = "";
     for (auto fde = info.fdeList.begin(); fde != info.fdeList.end(); ++ fde) {
-        const std::pair<const DwarfInfo *, const DwarfFDE *> p = std::make_pair(info.dwarf, &(*fde));
-        os << sep << p;
+        os << sep << std::make_pair(&info, &(*fde));
         sep = ",\n";
     }
     return os << " ] }";
@@ -560,7 +558,7 @@ const struct sh_flag_names {
 };
 
 std::ostream &
-operator <<(std::ostream &os, const ElfSection &sec)
+operator <<(std::ostream &os, const std::pair<const ElfObject &, const ElfSection &> &objsec)
 {
     static const char *sectionTypeNames[] = {
         "SHT_NULL",
@@ -577,47 +575,47 @@ operator <<(std::ostream &os, const ElfSection &sec)
         "SHT_DYNSYM",
     };
 
-    auto &o = sec.obj;
-    const Elf_Shdr *h = sec.shdr;
-    const Elf_Shdr *strs = o.getElfHeader().e_shstrndx == SHN_UNDEF ?  0 : &o.sectionHeaders[o.getElfHeader().e_shstrndx];
+    auto &o = objsec.first;
+    auto sec = objsec.second;
+    auto strs = o.getSection(o.getElfHeader().e_shstrndx);
 
-    os << "{ \"size\":" << h->sh_size;
+    os << "{ \"size\":" << sec->sh_size;
     if (strs)
-        os << ", \"name\": \"" << o.io->readString(strs->sh_offset + h->sh_name) << "\"";
+        os << ", \"name\": \"" << strs.io->readString(sec->sh_name) << "\"";
 
     os << ", \"type\": ";
-    if (h->sh_type <= SHT_DYNSYM)
-        os << "\"" << sectionTypeNames[h->sh_type] << "\"";
+    if (sec->sh_type <= SHT_DYNSYM)
+        os << "\"" << sectionTypeNames[sec->sh_type] << "\"";
     else
-        os << h->sh_type;
+        os << sec->sh_type;
 
     os << ", \"flags\": " << "[";
 
     std::string sep = "";
     for (auto i = sh_flag_names; i->name; ++i) {
-        if (h->sh_flags & i->value) {
+        if (sec->sh_flags & i->value) {
             os << sep << "\"" << i->name << "\"";
             sep = ", ";
         }
     }
     os
         << "]"
-        << ", \"address\": " << h->sh_addr
-        << ", \"offset\": " << h->sh_offset
-        << ", \"link\":" << h->sh_link
-        << ", \"info\":" << h->sh_info;
+        << ", \"address\": " << sec->sh_addr
+        << ", \"offset\": " << sec->sh_offset
+        << ", \"link\":" << sec->sh_link
+        << ", \"info\":" << sec->sh_info;
 
-    switch (h->sh_type) {
+    switch (sec->sh_type) {
         case SHT_SYMTAB:
         case SHT_DYNSYM: {
-            off_t symoff = h->sh_offset;
-            off_t esym = symoff + h->sh_size;
+            off_t symoff = 0;
+            off_t esym = sec->sh_size;
             os << ", \"symbols\": [";
             std::string sep = "";
             for (; symoff < esym; symoff += sizeof (Elf_Sym)) {
                 Elf_Sym sym;
-                o.io->readObj(symoff, &sym);
-                std::pair<const ElfSection &, const Elf_Sym *> t = std::make_pair(std::ref(sec), &sym);
+                sec.io->readObj(symoff, &sym);
+                std::tuple<const ElfObject &, const ElfSection &, const Elf_Sym *> t = std::make_tuple(std::ref(o), std::ref(sec), &sym);
                 os << sep << t;
                 sep = ",\n";
             }
@@ -626,11 +624,11 @@ operator <<(std::ostream &os, const ElfSection &sec)
         }
         case SHT_RELA: {
             os << ", \"reloca\": [";
-            off_t off = h->sh_offset;
+            off_t off = 0;
             const char *sep = "";
-            for (off_t esym = off + h->sh_size; off < esym; off += sizeof (Elf_Rela)) {
+            for (off_t esym = sec->sh_size; off < esym; off += sizeof (Elf_Rela)) {
                 Elf_Rela rela;
-                o.io->readObj(off, &rela);
+                sec.io->readObj(off, &rela);
                 os << sep << rela;
                 sep = ",\n";
             }
@@ -694,7 +692,7 @@ operator<< (std::ostream &os, const Elf_Phdr &h)
  * Debug output of an Elf symbol.
  */
 std::ostream &
-operator<< (std::ostream &os, std::pair<const ElfSection &, const Elf_Sym *> &t)
+operator<< (std::ostream &os, std::tuple<const ElfObject &, const ElfSection &, const Elf_Sym *> &t)
 {
     static const char *bindingNames[] = {
         "STB_LOCAL",
@@ -733,11 +731,12 @@ operator<< (std::ostream &os, std::pair<const ElfSection &, const Elf_Sym *> &t)
         "STT_HIPROC"
     };
 
-    auto sec = t.first;
-    const Elf_Sym *s = t.second;
+    auto &obj = std::get<0>(t);
+    auto &sec = std::get<1>(t);
+    auto s = std::get<2>(t);
+    auto symStrings = obj.getSection(sec->sh_link);
 
-    off_t symStrings = sec.getLink()->sh_offset;
-    return os << "{ \"name\": \"" << sec.obj.io->readString(symStrings + s->st_name) << "\""
+    return os << "{ \"name\": \"" << symStrings.io->readString(s->st_name) << "\""
        << ", \"value\": " << s->st_value
        << ", \"size\": " << s->st_size
        << ", \"info\": " << (int)s->st_info

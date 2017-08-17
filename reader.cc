@@ -48,8 +48,9 @@ FileReader::FileReader(string name_, int file_)
         throw Exception() << "cannot open file '" << name_ << "': " << strerror(errno);
 }
 
-MemReader::MemReader(char *data_, size_t len_)
-    : data(data_), len(len_)
+MemReader::MemReader(size_t len_, char *data_)
+    : len(len_)
+    , data(data_)
 {
 }
 
