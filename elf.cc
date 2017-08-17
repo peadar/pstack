@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <unistd.h>
 #include <algorithm>
+#include <zlib.h>
 
 #include "libpstack/util.h"
 #include "libpstack/elf.h"
@@ -421,11 +422,78 @@ elf_hash(string name)
     return (h);
 }
 
+struct inflateCtx {
+    char *uncompressed;
+    std::shared_ptr<Reader> output;
+    std::shared_ptr<Reader> input;
+    off_t outputOffset;
+    off_t inputOffset;
+    z_stream stream;
+    unsigned char window[32 * 1024];
+    unsigned char xferbuf[4096];
+    inflateCtx(const Elf_Chdr &hdr, std::shared_ptr<Reader> inputBuf);
+    ~inflateCtx();
+    void inflate();
+};
+
+extern "C" {
+
+static unsigned incb(void *arg, z_const unsigned char **ptr)
+{
+    inflateCtx *ctx = (inflateCtx *)arg;
+    *ptr = ctx->xferbuf;
+    size_t amount = ctx->input->read(ctx->inputOffset, sizeof ctx->xferbuf, (char *)ctx->xferbuf);
+    ctx->inputOffset += amount;
+    return amount;
+}
+
+static int outcb(void *arg, unsigned char *ptr, unsigned amount)
+{
+    inflateCtx *ctx = (inflateCtx *)arg;
+    memcpy(ctx->uncompressed + ctx->outputOffset, ptr, amount);
+    ctx->outputOffset += amount;
+    return 0;
+}
+
+}
+
+void inflateCtx::inflate()
+{
+    inflateBack(&stream, incb, this, outcb, this);
+}
+
+inflateCtx::~inflateCtx()
+{
+   inflateBackEnd(&stream);
+}
+
+inflateCtx::inflateCtx(const Elf_Chdr &hdr, std::shared_ptr<Reader> inputBuf)
+    : uncompressed(new char[hdr.ch_size])
+    , output(std::make_shared<AllocMemReader>(hdr.ch_size, uncompressed))
+    , input(inputBuf)
+    , outputOffset(0)
+    , inputOffset(sizeof hdr)
+{
+    memset(&stream, 0, sizeof stream);
+    if (inflateBackInit(&stream, 15, window) != 0)
+       throw Exception() << "inflateBackInit failed";
+}
+
 ElfSection::ElfSection(const ElfObject &obj_, const Elf_Shdr *shdr_)
     : shdr(shdr_)
 {
-    if (shdr)
-        io = std::make_shared<OffsetReader>(obj_.getio(), shdr->sh_offset, shdr->sh_size);
-    else
+    if (shdr) {
+        auto rawIo = std::make_shared<OffsetReader>(obj_.getio(), shdr->sh_offset, shdr->sh_size);
+        if (shdr_->sh_flags & SHF_COMPRESSED) {
+            Elf_Chdr chdr;
+            rawIo->readObj(0, &chdr);
+            inflateCtx ctx(chdr, rawIo);
+            ctx.inflate();
+            io = ctx.output;
+        } else {
+            io = rawIo;
+        }
+    } else {
         io = std::make_shared<NullReader>();
+    }
 }

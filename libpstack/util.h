@@ -105,12 +105,21 @@ public:
 };
 
 class MemReader : public Reader {
-    char *data;
+protected:
     size_t len;
+    char *data;
 public:
     virtual size_t read(off_t off, size_t count, char *ptr) const;
-    MemReader(char *, size_t);
+    MemReader(size_t, char *);
     std::string describe() const;
+};
+
+class AllocMemReader : public MemReader {
+   char *buf;
+public:
+   AllocMemReader(size_t s, char *buf_) : MemReader(s, buf_), buf(buf_) {}
+   ~AllocMemReader() { delete[] buf; }
+
 };
 
 class NullReader : public Reader {
@@ -129,8 +138,10 @@ class OffsetReader : public Reader {
     off_t length;
 public:
     virtual size_t read(off_t off, size_t count, char *ptr) const {
+        if (off > length)
+           throw Exception() << "read past end of object " << describe();
         if (off + off_t(count) > length)
-            throw Exception() << "read past end of object " << describe();
+           count = length - off;
         return upstream->read(off + offset, count, ptr);
     }
     OffsetReader(std::shared_ptr<Reader> upstream_, off_t offset_, off_t length_)

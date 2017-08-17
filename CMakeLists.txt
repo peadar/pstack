@@ -42,9 +42,10 @@ add_library(procman-shared SHARED ${procmansrc})
 
 target_link_libraries(procman-shared dwelf-shared)
 target_link_libraries(procman-static dwelf-static)
-target_link_libraries(${PSTACK_BIN} dwelf-static procman-static "-lthread_db")
-target_link_libraries(canal dwelf-static procman-static "-lthread_db")
-target_link_libraries(procman-shared "-lthread_db")
+target_link_libraries(${PSTACK_BIN} dwelf-static procman-static "-lthread_db -lz")
+target_link_libraries(${PSTACK_BIN} dwelf-static procman-static "-lthread_db -lz")
+target_link_libraries(canal dwelf-static procman-static "-lthread_db -lz")
+target_link_libraries(procman-shared "-lthread_db -lz")
 
 set_target_properties(dwelf-shared PROPERTIES VERSION 1.0.0 SOVERSION 1)
 set_target_properties(procman-shared PROPERTIES VERSION 1.0.0 SOVERSION 1)

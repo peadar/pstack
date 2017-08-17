@@ -123,7 +123,7 @@ Process::processAUXV(const void *datap, size_t len)
                 // read as much of the header as we can.
                 dsosize = io->read(hdr, dsosize, vdso);
                 try {
-                    auto elf = std::make_shared<ElfObject>(std::make_shared<MemReader>(vdso, dsosize));
+                    auto elf = std::make_shared<ElfObject>(std::make_shared<MemReader>(dsosize, vdso));
                     addElfObject(elf, hdr - elf->getBase());
                     if (verbose >= 2)
                         *debug << "VDSO " << dsosize << " bytes loaded at " << elf.get() << "\n";
