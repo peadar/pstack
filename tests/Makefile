@@ -8,16 +8,16 @@ all: $(TESTS)
 
 basic-run: basic
 	-./basic
-	$(PSTACK_BIN) -v ./core
+	$(PSTACK_BIN) -a -v ./core
 
 
 segv-run: segv
 	-./segv
-	$(PSTACK_BIN) -v ./core
+	$(PSTACK_BIN) -a -v ./core
 
 thread-run: thread
 	-./thread
-	$(PSTACK_BIN) -v ./core
+	$(PSTACK_BIN) -a -v ./core
 
 
 

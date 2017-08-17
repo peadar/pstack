@@ -198,7 +198,7 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
     }
 
     if (debug_frame && ! noDebugLibs) {
-        DWARFReader reader(debug_frame, 0, 0);
+        DWARFReader reader(debug_frame);
         try {
             debugFrame = make_unique<DwarfFrameInfo>(this, debug_frame, FI_DEBUG_FRAME);
         }
@@ -217,7 +217,7 @@ std::list<DwarfPubnameUnit> &
 DwarfInfo::pubnames()
 {
     if (pubnamesh) {
-        DWARFReader r(pubnamesh, 0, 0);
+        DWARFReader r(pubnamesh);
         while (!r.empty())
             pubnameUnits.push_back(DwarfPubnameUnit(r));
         pubnamesh = 0;
@@ -233,7 +233,7 @@ DwarfInfo::getUnit(off_t offset)
         return unit->second;
     if (info == 0)
         return std::shared_ptr<DwarfUnit>();
-    DWARFReader r(info, offset, 0);
+    DWARFReader r(info, offset);
     unitsm[offset] = std::make_shared<DwarfUnit>(this, r);
     return unitsm[offset];
 }
@@ -244,7 +244,7 @@ DwarfInfo::getUnits()
     std::list<std::shared_ptr<DwarfUnit>> list;
     if (info == 0)
         return list;
-    DWARFReader r(info, 0, 0);
+    DWARFReader r(info);
 
     while (!r.empty()) {
        auto off = r.getOffset();
@@ -265,7 +265,7 @@ std::list<DwarfARangeSet> &
 DwarfInfo::ranges()
 {
     if (arangesh) {
-        DWARFReader r(arangesh, 0, 0);
+        DWARFReader r(arangesh);
         while (!r.empty())
             aranges.push_back(DwarfARangeSet(r));
         arangesh = 0;
@@ -320,7 +320,7 @@ DwarfUnit::DwarfUnit(DwarfInfo *di, DWARFReader &r)
     version = r.getu16();
 
     off_t off = r.getuint(dwarfLen);
-    DWARFReader abbR(di->abbrev, off, std::numeric_limits<size_t>::max());
+    DWARFReader abbR(di->abbrev, off);
     r.addrLen = addrlen = r.getu8();
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
