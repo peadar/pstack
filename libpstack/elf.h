@@ -67,6 +67,23 @@ class ElfObject;
 #define ElfType2(type, bits) ElfTypeForBits(type, bits, _)
 #define ElfType(type) ElfType2(type, ELF_BITS)
 
+#ifndef SHF_COMPRESSED
+#define SHF_COMPRESSED (1<<11)
+typedef struct {
+   Elf32_Word ch_type;
+   Elf32_Word ch_size;
+   Elf32_Word ch_addralign;
+} Elf32_Chdr;
+
+typedef struct {
+   Elf64_Word ch_type;
+   Elf64_Word ch_size;
+   Elf64_Word ch_addralign;
+} Elf64_Chdr;
+#endif
+
+
+
 typedef Elf32_Nhdr Elf32_Note;
 typedef Elf64_Nhdr Elf64_Note;
 
