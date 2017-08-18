@@ -139,7 +139,7 @@ Process::processAUXV(const void *datap, size_t len)
                 if (verbose >= 2)
                     *debug << "filename from auxv: " << exeName << "\n";
                 if (!execImage) {
-                    execImage = std::make_shared<ElfObject>(exeName);
+                    execImage = std::make_shared<ElfObject>(loadFile(exeName));
                     if (!entry)
                        entry = execImage->getElfHeader().e_entry;
                 }
@@ -493,7 +493,7 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             *debug << "replaced " << startPath << " with " << path << std::endl;
 
         try {
-            addElfObject(std::make_shared<ElfObject>(path), Elf_Addr(map.l_addr));
+            addElfObject(std::make_shared<ElfObject>(loadFile(path)), Elf_Addr(map.l_addr));
         }
         catch (const std::exception &e) {
             std::clog << "warning: can't load text for '" << path << "' at " <<

@@ -179,3 +179,10 @@ CacheReader::readString(off_t offset) const
     }
     return entry.value;
 }
+
+std::shared_ptr<Reader>
+loadFile(const std::string &path)
+{
+    return std::make_shared<CacheReader>(
+        std::make_shared<FileReader>(path));
+}

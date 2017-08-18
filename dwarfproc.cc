@@ -84,6 +84,8 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
                 }
                 r.skip(len);
             }
+            abort();
+
         }
         case DW_FORM_exprloc: {
             auto &block = attr->value.block;

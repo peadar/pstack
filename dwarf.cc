@@ -305,8 +305,9 @@ DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
     while (r.getOffset() < next) {
         uintmax_t start = r.getuint(addrlen);
         uintmax_t length = r.getuint(addrlen);
-        if (start == 0 && length == 0)
+/*        if (start == 0 && length == 0)
             break;
+            */
         ranges.push_back(DwarfARange(start, length));
     }
 }
@@ -417,7 +418,7 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
     for (size_t i = 1; i < opcode_base; ++i)
         opcode_lengths[i] = r.getu8();
 
-    directories.push_back("(compiler CWD)");
+    directories.push_back(".");
     int count;
     for (count = 0;; count++) {
         std::string s = r.getstring();
@@ -760,7 +761,7 @@ DwarfInfo::getAltImage()
         }
         if (verbose)
            *debug << "io: " << elf->getio()->describe() << ", alt path: " << name << "\n";
-        altImage = std::make_shared<ElfObject>(path);
+        altImage = std::make_shared<ElfObject>(loadFile(path));
     }
     return altImage;
 }

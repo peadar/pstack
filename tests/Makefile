@@ -5,11 +5,9 @@ LDFLAGS += -gdwarf
 
 all: $(TESTS)
 
-
 basic-run: basic
 	-./basic
 	$(PSTACK_BIN) -v ./core
-
 
 segv-run: segv
 	-./segv
@@ -18,9 +16,6 @@ segv-run: segv
 thread-run: thread
 	-./thread
 	$(PSTACK_BIN) -v ./core
-
-
-
 
 basic: basic.o abort.o
 	$(CC) -g -o $@ $(LDFLAGS) $^

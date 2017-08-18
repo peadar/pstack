@@ -173,7 +173,6 @@ public:
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(const std::string &name, Elf_Sym &sym);
     ElfObject(std::shared_ptr<Reader>);
-    ElfObject(const std::string &name);
     ~ElfObject();
     const Elf_Phdr *findHeaderForAddress(Elf_Off) const;
     bool findDebugInfo();

@@ -195,7 +195,7 @@ mainExcept(int argc, char *argv[])
     }
 
     if (argc - optind >= 2) {
-        exec = make_shared<ElfObject>(argv[optind]);
+        exec = make_shared<ElfObject>(loadFile(argv[optind]));
         optind++;
     }
 
@@ -210,7 +210,7 @@ mainExcept(int argc, char *argv[])
        std::clog << "attaching to live process" << std::endl;
        process = make_shared<LiveProcess>(exec, pid, pathReplacements);
     } else {
-       core = make_shared<ElfObject>(argv[optind]);
+       core = make_shared<ElfObject>(loadFile(argv[optind]));
        process = make_shared<CoreProcess>(exec, core, pathReplacements);
     }
     process->load();

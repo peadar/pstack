@@ -81,14 +81,14 @@ emain(int argc, char **argv)
             globalDebugDirectories.add(optarg);
             break;
         case 'D': {
-            auto dumpobj = std::make_shared<ElfObject>(std::make_shared<FileReader>(optarg, -1));
+            auto dumpobj = std::make_shared<ElfObject>(loadFile(optarg));
             DwarfInfo di(ElfObject::getDebug(dumpobj));
             std::cout << di;
             return 0;
         }
         case 'd': {
             /* Undocumented option to dump image contents */
-            std::cout << ElfObject(std::make_shared<FileReader>(optarg, -1));
+            std::cout << ElfObject(loadFile(optarg));
             return 0;
         }
         case 'h':
@@ -118,7 +118,9 @@ emain(int argc, char **argv)
         pid = atoi(argv[i]);
         if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
             // It's a file: should be ELF, treat core and exe differently
-            auto obj = std::make_shared<ElfObject>(std::make_shared<FileReader>(argv[i]));
+
+            auto obj = std::make_shared<ElfObject>(loadFile(argv[i]));
+
             if (obj->getElfHeader().e_type == ET_CORE) {
                 CoreProcess proc(exec, obj, PathReplacementList());
                 proc.load();

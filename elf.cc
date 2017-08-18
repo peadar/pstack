@@ -83,13 +83,6 @@ ElfObject::findHeaderForAddress(Elf_Off a) const
     return 0;
 }
 
-ElfObject::ElfObject(const string &name_)
-    : name(name_)
-    , notes(this)
-{
-    init(make_shared<CacheReader>(make_shared<FileReader>(name)));
-}
-
 ElfObject::ElfObject(shared_ptr<Reader> io_)
    : notes(this)
 {
@@ -350,7 +343,7 @@ tryLoad(const std::string &name) {
     // XXX: verify checksum.
     for (auto dir : globalDebugDirectories.dirs) {
         try {
-           auto debugObject = make_shared<ElfObject>(dir + "/" + name);
+           auto debugObject = make_shared<ElfObject>(loadFile((dir + "/" + name).c_str()));
            if (verbose >= 2)
               *debug << "found debug object " << dir << "/" << name << "\n";
            return debugObject;

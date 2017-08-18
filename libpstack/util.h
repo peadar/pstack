@@ -65,6 +65,8 @@ public:
     virtual std::string readString(off_t offset) const;
 };
 
+
+
 class FileReader : public Reader {
     std::string name;
     int file;
@@ -83,7 +85,7 @@ class CacheReader : public Reader {
     };
     std::shared_ptr<Reader> upstream;
     mutable std::unordered_map<off_t, CacheEnt> stringCache;
-    static const size_t PAGESIZE = 1024;
+    static const size_t PAGESIZE = 4096;
     static const size_t MAXPAGES = 16;
     class Page {
         Page();
@@ -174,5 +176,6 @@ public:
         target.copyfmt(saved);
     }
 };
+std::shared_ptr<Reader> loadFile(const std::string &path);
 
 #endif // LIBPSTACK_UTIL_H
