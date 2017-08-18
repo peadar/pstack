@@ -324,7 +324,9 @@ class DwarfInfo {
     std::list<DwarfARangeSet> aranges;
     std::map<Elf_Off, std::shared_ptr<DwarfUnit>> unitsm;
 
+public:
     std::shared_ptr<const ElfSection> info;
+private:
     std::shared_ptr<const ElfSection> debstr;
     std::shared_ptr<const ElfSection> pubnamesh;
     std::shared_ptr<const ElfSection> arangesh;
