@@ -7,15 +7,15 @@ all: $(TESTS)
 
 basic-run: basic
 	-./basic
-	$(PSTACK_BIN) -v ./core
+	$(PSTACK_BIN) -av ./core
 
 segv-run: segv
 	-./segv
-	$(PSTACK_BIN) -v ./core
+	$(PSTACK_BIN) -av ./core
 
 thread-run: thread
 	-./thread
-	$(PSTACK_BIN) -v ./core
+	$(PSTACK_BIN) -va ./core
 
 basic: basic.o abort.o
 	$(CC) -g -o $@ $(LDFLAGS) $^

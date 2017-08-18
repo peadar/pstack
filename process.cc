@@ -300,6 +300,117 @@ typeName(const DwarfEntry *type)
     }
 }
 
+
+
+struct RemoteValue {
+    const Process &p;
+    const Elf_Addr addr;
+    const DwarfEntry *type;
+    RemoteValue(const Process &p_, Elf_Addr addr_, const DwarfEntry *type_)
+        : p(p_)
+        , addr(addr_)
+        , type(type_)
+    {}
+};
+
+    std::ostream &
+operator << (std::ostream &os, const RemoteValue &rv)
+{
+    if (rv.addr == 0)
+       return os << "(null)";
+    auto type = rv.type;
+    while (type->type->tag == DW_TAG_typedef)
+       type = type->referencedEntry(DW_AT_type);
+
+
+    auto size = type->attrForName(DW_AT_byte_size);
+    std::vector<char> buf;
+    if (size) {
+        buf.resize(size->value.udata);
+        auto rc = rv.p.io->read(rv.addr, size->value.udata, &buf[0]);
+        if (rc != size->value.udata) {
+            return os << "<error reading " << size->value.udata << " bytes from " << rv.addr << ", got " << rc << ">";
+        }
+    }
+
+    IOFlagSave _(os);
+    switch (type->type->tag) {
+        case DW_TAG_base_type: {
+            if (size == 0) {
+                os << "unrepresentable(1)";
+            }
+            auto encoding = type->attrForName(DW_AT_encoding);
+            switch (encoding->value.udata) {
+                case DW_ATE_address:
+                    os << *(void **)&buf[0];
+                    break;
+                case DW_ATE_boolean:
+                    for (size_t i = 0;; ++i) {
+                        if (i == size->value.udata) {
+                            os << "false";
+                            break;
+                        }
+                        if (buf[i] != 0) {
+                            os << "true";
+                            break;
+                        }
+                    }
+                    break;
+
+                case DW_ATE_signed:
+                    switch (size->value.udata) {
+                        case sizeof (int8_t):
+                            os << *(int8_t *)&buf[0];
+                            break;
+                        case sizeof (int16_t):
+                            os << *(int16_t *)&buf[0];
+                            break;
+                        case sizeof (int32_t):
+                            os << *(int32_t *)&buf[0];
+                            break;
+                        case sizeof (int64_t):
+                            os << *(int64_t *)&buf[0];
+                            break;
+                    }
+                    break;
+
+                case DW_ATE_unsigned:
+                    switch (size->value.udata) {
+                        case sizeof (uint8_t):
+                            os << *(uint8_t *)&buf[0];
+                            break;
+                        case sizeof (uint16_t):
+                            os << *(uint16_t *)&buf[0];
+                            break;
+                        case sizeof (uint32_t):
+                            os << *(uint32_t *)&buf[0];
+                            break;
+                        case sizeof (uint64_t):
+                            os << *(int64_t *)&buf[0];
+                            break;
+                        default:
+                            abort();
+                    }
+
+                default:
+                    abort();
+            }
+            break;
+        }
+        case DW_TAG_pointer_type: {
+            if (size == 0) {
+               buf.resize(sizeof (void *));
+               rv.p.io->read(rv.addr, sizeof (void **), &buf[0]);
+            }
+            os << *(void **)&buf[0];
+            break;
+        }
+        default:
+            abort();
+    }
+    return os;
+}
+
 std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
@@ -313,15 +424,18 @@ operator << (std::ostream &os, const ArgPrint &ap)
                 Elf_Addr addr = 0;
                 os << sep << name;
                 if (type) {
-                    os << "[" << typeName(type) << "]";
                     const DwarfAttribute *locationA = child->attrForName(DW_AT_location);
                     if (locationA) {
                         DwarfExpressionStack fbstack;
                         addr = fbstack.eval(ap.p, locationA, ap.frame);
-                        IOFlagSave _(os);
-                        os << "=" << std::hex << addr;
-                        if (fbstack.isReg)
+                        os << "=";
+                        if (fbstack.isReg) {
+                           IOFlagSave _(os);
+                           os << std::hex << addr;
                            os << "{in register " << fbstack.inReg << "}";
+                        } else {
+                           os << RemoteValue(ap.p, addr, type);
+                        }
                     }
                 }
                 sep = ", ";
