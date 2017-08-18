@@ -87,6 +87,8 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
             abort();
 
         }
+        case DW_FORM_block1:
+        case DW_FORM_block:
         case DW_FORM_exprloc: {
             auto &block = attr->value.block;
             DWARFReader r(dwarf->info, block.offset, block.length);
@@ -109,6 +111,16 @@ DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame
                 Elf_Addr value;
                 proc.io->readObj(addr, &value);
                 push((intmax_t)(intptr_t)value);
+                break;
+            }
+
+            case DW_OP_consts: {
+                push(r.getsleb128());
+                break;
+            }
+
+            case DW_OP_constu: {
+                push(r.getuleb128());
                 break;
             }
 

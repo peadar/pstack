@@ -271,7 +271,7 @@ struct DwarfRegisterUnwind {
     enum DwarfRegisterType type;
     union {
         uintmax_t same;
-        uintmax_t offset;
+        intmax_t offset;
         uintmax_t reg;
         DwarfBlock expression;
         uintmax_t arch;
@@ -313,7 +313,7 @@ struct DwarfFrameInfo {
     DwarfFrameInfo(DwarfInfo *, std::shared_ptr<const ElfSection> section, FIType type);
     DwarfFrameInfo() = delete;
     DwarfFrameInfo(const DwarfFrameInfo &) = delete;
-    Elf_Addr decodeCIEFDEHdr(DWARFReader &, Elf_Addr &id, off_t start, DwarfCIE **);
+    Elf_Addr decodeCIEFDEHdr(DWARFReader &, Elf_Addr &id, FIType, DwarfCIE **);
     const DwarfFDE *findFDE(Elf_Addr) const;
     bool isCIE(Elf_Off id);
     intmax_t decodeAddress(DWARFReader &, int encoding) const;

@@ -320,7 +320,10 @@ DwarfUnit::DwarfUnit(DwarfInfo *di, DWARFReader &r)
     Elf_Off nextoff = r.getOffset() + length;
     version = r.getu16();
 
-    off_t off = r.getuint(dwarfLen);
+    if (version <= 2) // DWARF Version 2 uses the architecture's address size.
+       dwarfLen = ELF_BITS / 8;
+
+    off_t off = r.getuint(version <= 2 ? 4 : dwarfLen);
     DWARFReader abbR(di->abbrev, off);
     r.addrLen = addrlen = r.getu8();
     uintmax_t code;
@@ -699,10 +702,13 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
             size_t stmts = dwarfAttr2Int(*stmtsAttr);
             DWARFReader r2(unit->dwarf->lineshdr, stmts);
             unit_->lines.build(r2, unit);
-        } else {
-            if (verbose)
-               *debug << "warning: no line number info found" << std::endl;
         }
+#if 0
+        else {
+            if (verbose)
+               *debug << "warning: no line number info found in " << r.io->describe() <<  "/" << name() << " (stmts=" << stmtsAttr << ", hdr=" << unit->dwarf->lineshdr << std::endl;
+        }
+#endif
         break;
     }
     default: // not otherwise interested for the mo.
@@ -835,7 +841,7 @@ DWARFReader::getlength(size_t *addrLen)
 }
 
 Elf_Off
-DwarfFrameInfo::decodeCIEFDEHdr(DWARFReader &r, Elf_Addr &id, off_t start, DwarfCIE **ciep)
+DwarfFrameInfo::decodeCIEFDEHdr(DWARFReader &r, Elf_Addr &id, enum FIType type, DwarfCIE **ciep)
 {
     size_t addrLen;
     Elf_Off length = r.getlength(&addrLen);
@@ -846,7 +852,7 @@ DwarfFrameInfo::decodeCIEFDEHdr(DWARFReader &r, Elf_Addr &id, off_t start, Dwarf
     Elf_Off idoff = r.getOffset();
     id = r.getuint(addrLen);
     if (!isCIE(id) && ciep) {
-        auto ciei = cies.find(start == 0 ? idoff - id : id + start);
+        auto ciei = cies.find(type == FI_EH_FRAME ? idoff - id : id);
         *ciep = ciei != cies.end() ? &ciei->second : 0;
     }
     return idoff + length;
@@ -868,11 +874,10 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, std::shared_ptr<const ElfSection
 
     // decode in 2 passes: first for CIE, then for FDE
     off_t start = reader.getOffset();
-    off_t decodeStart = type == FI_DEBUG_FRAME ? start : 0;
     off_t nextoff;
     for (; !reader.empty();  reader.setOffset(nextoff)) {
         size_t cieoff = reader.getOffset();
-        nextoff = decodeCIEFDEHdr(reader, cieid, decodeStart, 0);
+        nextoff = decodeCIEFDEHdr(reader, cieid, type, 0);
         if (nextoff == 0)
             break;
         if (isCIE(cieid))
@@ -881,14 +886,11 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, std::shared_ptr<const ElfSection
     reader.setOffset(start);
     for (reader.setOffset(start); !reader.empty(); reader.setOffset(nextoff)) {
         DwarfCIE *cie;
-        nextoff = decodeCIEFDEHdr(reader, cieid, decodeStart, &cie);
+        nextoff = decodeCIEFDEHdr(reader, cieid, type, &cie);
         if (nextoff == 0)
             break;
-        if (!isCIE(cieid)) {
-            if (cie == 0)
-                throw Exception() << "invalid frame information in " << reader.io->describe();
+        if (!isCIE(cieid))
             fdeList.push_back(DwarfFDE(this, reader, cie, nextoff));
-        }
     }
 }
 
@@ -1071,7 +1073,7 @@ DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr)
 
             case DW_CFA_def_cfa_offset_sf:
                 frame.cfaValue.type = OFFSET;
-                frame.cfaValue.u.offset = r.getuleb128() * dataAlign;
+                frame.cfaValue.u.offset = r.getsleb128() * dataAlign;
                 break;
 
             case DW_CFA_val_expression: {
@@ -1156,7 +1158,7 @@ DwarfCIE::DwarfCIE(const DwarfFrameInfo *fi, DWARFReader &r, Elf_Off end_)
 
     // Get augmentations...
 
-#if 1 || ELF_BITS == 32
+#if ELF_BITS == 32
     addressEncoding = DW_EH_PE_udata4;
 #elif ELF_BITS == 64
     addressEncoding = DW_EH_PE_udata8;

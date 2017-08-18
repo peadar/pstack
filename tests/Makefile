@@ -1,7 +1,7 @@
 TESTS: basic-run segv-run thread-run
-CFLAGS += -gdwarf -O0
-CXXFLAGS += -gdwarf -O0
-LDFLAGS += -gdwarf
+CFLAGS += -g -O0
+CXXFLAGS += -g -O0
+LDFLAGS += -g
 
 all: $(TESTS)
 

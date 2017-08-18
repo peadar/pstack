@@ -391,6 +391,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
                         default:
                             abort();
                     }
+                    break;
 
                 default:
                     abort();
