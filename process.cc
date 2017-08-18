@@ -377,6 +377,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             }
 
 
+            std::string sigmsg = frame->fde && frame->fde->cie->isSignalHandler ?  "[signal handler]" : "";
             std::shared_ptr<DwarfUnit> dwarfUnit;
             for (auto u : units) {
                 // find the DIE for this function
@@ -386,11 +387,13 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         symName = de->name();
                         if (symName == "") {
                             obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
-                            symName += "[nodwarfname]";
+                            if (symName == "")
+                                symName = "<unknown>";
+                            symName += "%";
                         }
                         frame->function = de;
                         frame->dwarf = dwarf; // hold on to 'de'
-                        os << symName << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(";
+                        os << symName << sigmsg << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(";
                         if (options(PstackOptions::doargs)) {
                             os << ArgPrint(*this, frame);
                         }
@@ -404,23 +407,13 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             }
 
             if (!dwarfUnit) {
-                if (frame->ip == sysent) {
-                    symName = "(syscall)";
-                } else {
-                    try {
-                        obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
-                    } catch (...) {
-                        std::ostringstream str;
-                        str << "unknown";
-                        if (dwarfUnit)
-                            str << "(u)";
-
-                        str << "@" << std::hex << frame->ip;
-                        symName = str.str();
-                    }
-                    os << symName << "+" << objIp - sym.st_value << "()*";
-                }
+                obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
+                if (symName != "")
+                    os << symName << sigmsg << "!+" << objIp - sym.st_value << "()";
+                else
+                    os << "unknown@" << std::hex << frame->ip << std::dec << sigmsg << "()";
             }
+
             os << " in " << fileName;
             if (!options(PstackOptions::nosrc) && dwarf) {
                 auto source = dwarf->sourceFromAddr(objIp - 1);

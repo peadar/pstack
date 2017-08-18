@@ -32,12 +32,14 @@ struct StackFrame {
     DwarfInfo *dwarf;
     DwarfEntry * function;
     DwarfFrameInfo *frameInfo;
+    const DwarfFDE *fde;
     StackFrame()
         : ip(-1)
         , cfa(0)
         , dwarf(0)
         , function(0)
         , frameInfo(0)
+        , fde(0)
     {}
     void setReg(unsigned regno, uintmax_t value);
     uintmax_t getReg(unsigned regno) const;

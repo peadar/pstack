@@ -315,7 +315,6 @@ StackFrame::unwind(Process &p)
        return 0;
     Elf_Off objaddr = ip - reloc; // relocate process address to object address
     // Try and find DWARF data with debug frame information, or an eh_frame section.
-    const DwarfFDE *fde = 0;
     for (bool debug : {true, false}) {
        dwarf = p.getDwarf(elf, debug);
        if (dwarf) {
