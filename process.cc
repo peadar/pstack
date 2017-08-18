@@ -342,10 +342,10 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 
         os << "    ";
         if (verbose) {
-              IOFlagSave _(os);
-              os << "[ip=" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->ip
-              << ", cfa=" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa
-              << "] ";
+            IOFlagSave _(os);
+            os << "[ip=" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->ip
+                << ", cfa=" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa
+                << "] ";
         }
 
         Elf_Sym sym;
@@ -360,39 +360,50 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 
             DwarfInfo *dwarf = getDwarf(obj, true);
             DwarfEntry *de = 0;
-            bool haveDwarf = false;
+
+            std::list<std::shared_ptr<DwarfUnit>> units;
+            if (dwarf->hasRanges()) {
+                for (const auto &rangeset : dwarf->ranges()) {
+                    for (const auto range : rangeset.ranges) {
+                        if (objIp >= range.start && objIp <= range.start + range.length) {
+                            units.push_back(dwarf->getUnit(rangeset.debugInfoOffset));
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // no ranges - try each dwarf unit in turn. (This seems to happen for single-unit exe's only, so it's no big loss)
+                units = dwarf->getUnits();
+            }
+
 
             std::shared_ptr<DwarfUnit> dwarfUnit;
-            for (const auto &rangeset : dwarf->ranges()) {
-                for (const auto range : rangeset.ranges) {
-                    if (objIp >= range.start && objIp <= range.start + range.length) {
-                        auto dwarfUnit = dwarf->getUnit(rangeset.debugInfoOffset);
-                        // find the DIE for this function
-                        for (auto it : dwarfUnit->entries) {
-                            de = findEntryForFunc(objIp - 1, it.second);
-                            if (de) {
-                                symName = de->name();
-                                if (symName == "") {
-                                   obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
-                                   symName += "[nodwarfname]";
-                                }
-                                frame->function = de;
-                                frame->dwarf = dwarf; // hold on to 'de'
-                                os << symName << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(";
-                                if (options(PstackOptions::doargs)) {
-                                    os << ArgPrint(*this, frame);
-                                }
-                                os << ")";
-                                haveDwarf = true;
-                                break;
-                            }
+            for (auto u : units) {
+                // find the DIE for this function
+                for (auto it : u->entries) {
+                    de = findEntryForFunc(objIp - 1, it.second);
+                    if (de) {
+                        symName = de->name();
+                        if (symName == "") {
+                            obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
+                            symName += "[nodwarfname]";
                         }
+                        frame->function = de;
+                        frame->dwarf = dwarf; // hold on to 'de'
+                        os << symName << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(";
+                        if (options(PstackOptions::doargs)) {
+                            os << ArgPrint(*this, frame);
+                        }
+                        os << ")";
+                        dwarfUnit = u;
                         break;
                     }
                 }
+                if (dwarfUnit)
+                    break;
             }
 
-            if (!haveDwarf) {
+            if (!dwarfUnit) {
                 if (frame->ip == sysent) {
                     symName = "(syscall)";
                 } else {

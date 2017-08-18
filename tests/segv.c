@@ -16,16 +16,16 @@ void g()
     pause();
 }
 
-void f()
+void f(int argc, char *argv[])
 {
     g();
     pause();
 }
 
 int
-main()
+main(int argc, char *argv[])
 {
     signal(SIGSEGV, sigsegv);
-    f();
+    f(argc, argv);
     return 0;
 }

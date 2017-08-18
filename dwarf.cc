@@ -178,8 +178,8 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
 {
     // want these first: other sections refer into this.
     if (debstr) {
-        debugStrings = new char[debstr->shdr->sh_size];
-        debstr->io->readObj(0, debugStrings, debstr->shdr->sh_size);
+        debugStrings = new char[debstr->getSize()];
+        debstr->io->readObj(0, debugStrings, debstr->getSize());
     } else {
         debugStrings = 0;
     }
@@ -740,9 +740,9 @@ DwarfInfo::getAltImage()
         altImageLoaded = true;
         auto section = elf->getSection(".gnu_debugaltlink", 0);
         char name[1024];
-        assert(section->shdr->sh_size < sizeof name);
-        name[section->shdr->sh_size] = 0;
-        section->io->read(0, section->shdr->sh_size, name);
+        assert(section->getSize() < sizeof name);
+        name[section->getSize()] = 0;
+        section->io->read(0, section->getSize(), name);
         char *path;
         if (name[0] != '/') {
             // Not relative - prefix it with dirname of the image
@@ -807,7 +807,7 @@ DwarfFrameInfo::decodeAddress(DWARFReader &f, int encoding) const
     case 0:
         break;
     case DW_EH_PE_pcrel:
-        base += offset + dwarf->elf->getBase() + section->shdr->sh_offset;
+        base += offset + dwarf->elf->getBase() + (*section)->sh_offset;
         break;
     }
     return base;
@@ -905,21 +905,33 @@ std::vector<std::pair<const DwarfFileEntry *, int>>
 DwarfInfo::sourceFromAddr(uintmax_t addr)
 {
     std::vector<std::pair<const DwarfFileEntry *, int>> info;
-    auto &rangelist = ranges();
-    for (auto rs = rangelist.begin(); rs != rangelist.end(); ++rs) {
-        for (auto r = rs->ranges.begin(); r != rs->ranges.end(); ++r) {
-            if (r->start <= addr && r->start + r->length > addr) {
-                const auto u = getUnit(rs->debugInfoOffset);
-                for (auto i = u->lines.matrix.begin(); i != u->lines.matrix.end(); ++i) {
-                    if (i->end_sequence)
-                        continue;
-                    auto next = i+1;
-                    if (i->addr <= addr && next->addr > addr)
-                        info.push_back(std::make_pair(i->file, i->line));
+    std::list<std::shared_ptr<DwarfUnit>> units;
+
+    if (hasRanges()) {
+        auto &rangelist = ranges();
+        for (auto &rs : rangelist) {
+            for (auto r = rs.ranges.begin(); r != rs.ranges.end(); ++r) {
+                if (r->start <= addr && r->start + r->length > addr) {
+                    units.push_back(getUnit(rs.debugInfoOffset));
+                    break;
+
                 }
             }
         }
+    } else {
+        units = getUnits();
     }
+
+    for (auto unit : units) {
+        for (auto i = unit->lines.matrix.begin(); i != unit->lines.matrix.end(); ++i) {
+            if (i->end_sequence)
+                continue;
+            auto next = i+1;
+            if (i->addr <= addr && next->addr > addr)
+                info.push_back(std::make_pair(i->file, i->line));
+        }
+    }
+
     return info;
 }
 

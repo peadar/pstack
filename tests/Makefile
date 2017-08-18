@@ -1,23 +1,23 @@
 TESTS: basic-run segv-run thread-run
-CFLAGS += -g -O0
-CXXFLAGS += -g -O0
-LDFLAGS += -g
+CFLAGS += -gdwarf -O0
+CXXFLAGS += -gdwarf -O0
+LDFLAGS += -gdwarf
 
 all: $(TESTS)
 
 
 basic-run: basic
 	-./basic
-	$(PSTACK_BIN) -a -v ./core
+	$(PSTACK_BIN) -v ./core
 
 
 segv-run: segv
 	-./segv
-	$(PSTACK_BIN) -a -v ./core
+	$(PSTACK_BIN) -v ./core
 
 thread-run: thread
 	-./thread
-	$(PSTACK_BIN) -a -v ./core
+	$(PSTACK_BIN) -v ./core
 
 
 

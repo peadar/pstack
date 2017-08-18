@@ -454,7 +454,7 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
     os << ", \"sections\": [";
     const char *sep = "";
     for (auto &i : obj.getSections()) {
-        os << sep << *obj.getSection(&i);
+        os << sep << std::make_pair(std::ref(obj), i);
         sep = ",\n";
     }
     os << "]";
@@ -578,38 +578,40 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
     auto &o = objsec.first;
     auto sec = objsec.second;
     auto strs = o.getSection(o.getElfHeader().e_shstrndx);
+    const Elf_Shdr &sh = **sec;
 
-    os << "{ \"size\":" << sec->shdr->sh_size;
+    os << "{ \"size\":" << sh.sh_size;
+    os << "{ \"uncompressedSize\":" << sec->getSize();
     if (strs)
-        os << ", \"name\": \"" << strs->io->readString(sec->shdr->sh_name) << "\"";
+        os << ", \"name\": \"" << strs->io->readString(sh.sh_name) << "\"";
 
     os << ", \"type\": ";
-    if (sec->shdr->sh_type <= SHT_DYNSYM)
-        os << "\"" << sectionTypeNames[sec->shdr->sh_type] << "\"";
+    if (sh.sh_type <= SHT_DYNSYM)
+        os << "\"" << sectionTypeNames[sh.sh_type] << "\"";
     else
-        os << sec->shdr->sh_type;
+        os << sh.sh_type;
 
     os << ", \"flags\": " << "[";
 
     std::string sep = "";
     for (auto i = sh_flag_names; i->name; ++i) {
-        if (sec->shdr->sh_flags & i->value) {
+        if (sh.sh_flags & i->value) {
             os << sep << "\"" << i->name << "\"";
             sep = ", ";
         }
     }
     os
         << "]"
-        << ", \"address\": " << sec->shdr->sh_addr
-        << ", \"offset\": " << sec->shdr->sh_offset
-        << ", \"link\":" << sec->shdr->sh_link
-        << ", \"info\":" << sec->shdr->sh_info;
+        << ", \"address\": " << sh.sh_addr
+        << ", \"offset\": " << sh.sh_offset
+        << ", \"link\":" << sh.sh_link
+        << ", \"info\":" << sh.sh_info;
 
-    switch (sec->shdr->sh_type) {
+    switch (sh.sh_type) {
         case SHT_SYMTAB:
         case SHT_DYNSYM: {
             off_t symoff = 0;
-            off_t esym = sec->shdr->sh_size;
+            off_t esym = sec->getSize();
             os << ", \"symbols\": [";
             std::string sep = "";
             for (; symoff < esym; symoff += sizeof (Elf_Sym)) {
@@ -626,7 +628,7 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
             os << ", \"reloca\": [";
             off_t off = 0;
             const char *sep = "";
-            for (off_t esym = sec->shdr->sh_size; off < esym; off += sizeof (Elf_Rela)) {
+            for (off_t esym = sec->getSize(); off < esym; off += sizeof (Elf_Rela)) {
                 Elf_Rela rela;
                 sec->io->readObj(off, &rela);
                 os << sep << rela;
@@ -734,7 +736,7 @@ operator<< (std::ostream &os, std::tuple<const ElfObject &, std::shared_ptr<cons
     auto &obj = std::get<0>(t);
     auto &sec = std::get<1>(t);
     auto s = std::get<2>(t);
-    auto symStrings = obj.getSection(sec->shdr->sh_link);
+    auto symStrings = obj.getSection((*sec)->sh_link);
 
     return os << "{ \"name\": \"" << symStrings->io->readString(s->st_name) << "\""
        << ", \"value\": " << s->st_value

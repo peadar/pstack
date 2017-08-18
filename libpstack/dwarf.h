@@ -323,29 +323,34 @@ class DwarfInfo {
     std::list<DwarfPubnameUnit> pubnameUnits;
     std::list<DwarfARangeSet> aranges;
     std::map<Elf_Off, std::shared_ptr<DwarfUnit>> unitsm;
-public:
-    std::shared_ptr<const ElfSection> info, debstr, pubnamesh, arangesh, debug_frame;
+
+    std::shared_ptr<const ElfSection> info;
+    std::shared_ptr<const ElfSection> debstr;
+    std::shared_ptr<const ElfSection> pubnamesh;
+    std::shared_ptr<const ElfSection> arangesh;
+    std::shared_ptr<const ElfSection> debug_frame;
     std::shared_ptr<ElfObject> altImage;
     std::shared_ptr<DwarfInfo> altDwarf;
     bool altImageLoaded;
+public:
+    char *debugStrings;
 
     std::shared_ptr<ElfObject> getAltImage();
     std::shared_ptr<DwarfInfo> getAltDwarf();
     std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
     std::shared_ptr<const ElfSection> abbrev, lineshdr;
-    // interesting shdrs from the exe.
+
     std::shared_ptr<ElfObject> elf;
     std::list<DwarfARangeSet> &ranges();
     std::list<DwarfPubnameUnit> &pubnames();
     std::shared_ptr<DwarfUnit> getUnit(off_t offset);
     std::list<std::shared_ptr<DwarfUnit>> getUnits();
-    char *debugStrings;
-    off_t lines;
     std::unique_ptr<DwarfFrameInfo> debugFrame;
     std::unique_ptr<DwarfFrameInfo> ehFrame;
     DwarfInfo(std::shared_ptr<ElfObject> object);
     std::vector<std::pair<const DwarfFileEntry *, int>> sourceFromAddr(uintmax_t addr);
     ~DwarfInfo();
+    bool hasRanges() { return arangesh || aranges.size() != 0; }
 };
 
 const DwarfAbbreviation *dwarfUnitGetAbbrev(const DwarfUnit *unit, intmax_t code);
@@ -415,7 +420,7 @@ public:
 
     DWARFReader(std::shared_ptr<const ElfSection> section, Elf_Off off_, size_t size = std::numeric_limits<size_t>::max())
         : off(off_)
-        , end(off_ + std::min(size_t(section->shdr->sh_size) - off, size))
+        , end(off_ + std::min(size_t(section->getSize()) - off, size))
         , io(section->io)
         , addrLen(ELF_BITS / 8)
     {
@@ -423,7 +428,7 @@ public:
 
     DWARFReader(std::shared_ptr<const ElfSection> section)
         : off(0)
-        , end(section->shdr->sh_size)
+        , end(section->getSize())
         , io(section->io)
         , addrLen(ELF_BITS / 8)
     {

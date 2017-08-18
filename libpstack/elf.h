@@ -111,12 +111,15 @@ enum NoteIter {
     NOTE_DONE
 };
 
-struct ElfSection {
-    const Elf_Shdr *shdr;
-    size_t realLength;
+class ElfSection {
+    Elf_Shdr shdr;
+    off_t size;
+public:
+    size_t getSize() const { return size; }
+    const Elf_Shdr *operator ->() const { return &shdr; }
+    const Elf_Shdr &operator *() const { return shdr; }
     std::shared_ptr<Reader> io;
-    operator bool() const { return shdr != nullptr; }
-    ElfSection(const ElfObject &obj_, const Elf_Shdr *shdr_);
+    ElfSection(const ElfObject &obj_, off_t offset);
     ElfSection() = delete;
     ElfSection(const ElfSection &) = delete;
 };
@@ -133,9 +136,8 @@ struct ElfNotes {
 class ElfObject {
 public:
     typedef std::vector<Elf_Phdr> ProgramHeaders;
-    typedef std::vector<Elf_Shdr> SectionHeaders;
+    typedef std::vector<std::shared_ptr<ElfSection>> SectionHeaders;
 private:
-    mutable std::map<const Elf_Shdr *, std::shared_ptr<ElfSection>> elfSections;
     friend std::ostream &operator<< (std::ostream &os, const ElfObject &obj);
     std::shared_ptr<Reader> io; // IO for the ELF image.
     size_t fileSize;
@@ -143,11 +145,11 @@ private:
     std::map<Elf_Word, ProgramHeaders> programHeaders;
     std::unique_ptr<ElfSymHash> hash;
     void init(const std::shared_ptr<Reader> &); // want constructor chaining
-    std::map<std::string, Elf_Shdr *> namedSection;
+    std::map<std::string, std::shared_ptr<ElfSection>> namedSection;
+
     std::string name;
     bool debugLoaded;
     std::shared_ptr<ElfObject> debugObject;
-    std::shared_ptr<const ElfSection> getSection(const Elf_Shdr *idx) const;
 public:
     std::shared_ptr<ElfObject> getDebug();
     static std::shared_ptr<ElfObject> getDebug(std::shared_ptr<ElfObject> &);
@@ -194,10 +196,10 @@ struct SymbolSection {
     std::shared_ptr<const ElfSection> symbols;
     std::shared_ptr<const ElfSection> strings;
     SymbolIterator begin() { return SymbolIterator(this, 0); }
-    SymbolIterator end() { return SymbolIterator(this, symbols->shdr->sh_size); }
+    SymbolIterator end() { return SymbolIterator(this, symbols->getSize()); }
     SymbolSection(ElfObject &elf, std::shared_ptr<const ElfSection> symbols_)
         : symbols(symbols_)
-        , strings(elf.getSection(symbols->shdr->sh_link))
+        , strings(elf.getSection((*symbols)->sh_link))
     {}
 };
 
