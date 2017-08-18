@@ -113,11 +113,12 @@ enum NoteIter {
 
 struct ElfSection {
     const Elf_Shdr *shdr;
+    size_t realLength;
     std::shared_ptr<Reader> io;
-    const Elf_Shdr *operator -> () const { return shdr; }
-    const Elf_Shdr *operator = (const Elf_Shdr *shdr_) { shdr = shdr_; return shdr; }
     operator bool() const { return shdr != nullptr; }
     ElfSection(const ElfObject &obj_, const Elf_Shdr *shdr_);
+    ElfSection() = delete;
+    ElfSection(const ElfSection &) = delete;
 };
 
 struct ElfNoteIter;
@@ -133,8 +134,8 @@ class ElfObject {
 public:
     typedef std::vector<Elf_Phdr> ProgramHeaders;
     typedef std::vector<Elf_Shdr> SectionHeaders;
-    bool linearSymSearch(ElfSection &hdr, const std::string &name, Elf_Sym &);
 private:
+    mutable std::map<const Elf_Shdr *, std::shared_ptr<ElfSection>> elfSections;
     friend std::ostream &operator<< (std::ostream &os, const ElfObject &obj);
     std::shared_ptr<Reader> io; // IO for the ELF image.
     size_t fileSize;
@@ -146,6 +147,7 @@ private:
     std::string name;
     bool debugLoaded;
     std::shared_ptr<ElfObject> debugObject;
+    std::shared_ptr<const ElfSection> getSection(const Elf_Shdr *idx) const;
 public:
     std::shared_ptr<ElfObject> getDebug();
     static std::shared_ptr<ElfObject> getDebug(std::shared_ptr<ElfObject> &);
@@ -154,7 +156,7 @@ public:
     Elf_Off getBase() const; // lowest address of a PT_LOAD segment.
     std::string getInterpreter() const;
     std::string getName() const { return name; }
-    const ElfSection getSection(Elf_Word idx) const;
+    std::shared_ptr<const ElfSection> getSection(Elf_Word idx) const;
     const SectionHeaders &getSections() const { return sectionHeaders; }
     const ProgramHeaders &getSegments(Elf_Word type) const {
         auto it = programHeaders.find(type);
@@ -164,7 +166,7 @@ public:
         }
         return it->second;
     }
-    const ElfSection getSection(const std::string &name, Elf_Word type) const;
+    std::shared_ptr<const ElfSection> getSection(const std::string &name, Elf_Word type) const;
     const Elf_Ehdr &getElfHeader() const { return elfHeader; }
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(const std::string &name, Elf_Sym &sym);
@@ -175,6 +177,7 @@ public:
     bool findDebugInfo();
     ElfNotes notes;
     std::shared_ptr<Reader> getio() const { return io; }
+    bool linearSymSearch(std::shared_ptr<const ElfSection> hdr, const std::string &name, Elf_Sym &);
 };
 
 // Helpful for iterating over symbol sections.
@@ -188,27 +191,27 @@ struct SymbolIterator {
 };
 
 struct SymbolSection {
-    const ElfSection symbols;
-    const ElfSection strings;
+    std::shared_ptr<const ElfSection> symbols;
+    std::shared_ptr<const ElfSection> strings;
     SymbolIterator begin() { return SymbolIterator(this, 0); }
-    SymbolIterator end() { return SymbolIterator(this, symbols->sh_size); }
-    SymbolSection(ElfObject &elf, const ElfSection &symbols_)
+    SymbolIterator end() { return SymbolIterator(this, symbols->shdr->sh_size); }
+    SymbolSection(ElfObject &elf, std::shared_ptr<const ElfSection> symbols_)
         : symbols(symbols_)
-        , strings(elf.getSection(symbols->sh_link))
+        , strings(elf.getSection(symbols->shdr->sh_link))
     {}
 };
 
 class ElfSymHash {
-    ElfSection hash;
-    ElfSection syms;
-    ElfSection strings;
+    std::shared_ptr<const ElfSection> hash;
+    std::shared_ptr<const ElfSection> syms;
+    std::shared_ptr<const ElfSection> strings;
     Elf_Word nbucket;
     Elf_Word nchain;
     std::vector<Elf_Word> data;
     const Elf_Word *chains;
     const Elf_Word *buckets;
 public:
-    ElfSymHash(ElfSection &hash, ElfSection &syms, ElfSection &strings_);
+    ElfSymHash(std::shared_ptr<const ElfSection> &hash, std::shared_ptr<const ElfSection> &syms, std::shared_ptr<const ElfSection> &strings_);
     bool findSymbol(Elf_Sym &sym, const std::string &name);
 };
 

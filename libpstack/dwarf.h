@@ -306,11 +306,11 @@ struct DwarfCIE {
 
 struct DwarfFrameInfo {
     const DwarfInfo *dwarf;
-    ElfSection section;
+    std::shared_ptr<const ElfSection> section;
     FIType type;
     std::map<Elf_Addr, DwarfCIE> cies;
     std::list<DwarfFDE> fdeList;
-    DwarfFrameInfo(DwarfInfo *, ElfSection &section, FIType type);
+    DwarfFrameInfo(DwarfInfo *, std::shared_ptr<const ElfSection> section, FIType type);
     DwarfFrameInfo() = delete;
     DwarfFrameInfo(const DwarfFrameInfo &) = delete;
     Elf_Addr decodeCIEFDEHdr(DWARFReader &, Elf_Addr &id, off_t start, DwarfCIE **);
@@ -324,7 +324,7 @@ class DwarfInfo {
     std::list<DwarfARangeSet> aranges;
     std::map<Elf_Off, std::shared_ptr<DwarfUnit>> unitsm;
 public:
-    ElfSection info, debstr, pubnamesh, arangesh, debug_frame;
+    std::shared_ptr<const ElfSection> info, debstr, pubnamesh, arangesh, debug_frame;
     std::shared_ptr<ElfObject> altImage;
     std::shared_ptr<DwarfInfo> altDwarf;
     bool altImageLoaded;
@@ -332,7 +332,7 @@ public:
     std::shared_ptr<ElfObject> getAltImage();
     std::shared_ptr<DwarfInfo> getAltDwarf();
     std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
-    const ElfSection abbrev, lineshdr;
+    std::shared_ptr<const ElfSection> abbrev, lineshdr;
     // interesting shdrs from the exe.
     std::shared_ptr<ElfObject> elf;
     std::list<DwarfARangeSet> &ranges();
@@ -413,18 +413,18 @@ public:
     {
     }
 
-    DWARFReader(const ElfSection &section, Elf_Off off_, size_t size = std::numeric_limits<size_t>::max())
+    DWARFReader(std::shared_ptr<const ElfSection> section, Elf_Off off_, size_t size = std::numeric_limits<size_t>::max())
         : off(off_)
-        , end(off_ + std::min(size_t(section->sh_size) - off, size))
-        , io(section.io)
+        , end(off_ + std::min(size_t(section->shdr->sh_size) - off, size))
+        , io(section->io)
         , addrLen(ELF_BITS / 8)
     {
     }
 
-    DWARFReader(const ElfSection &section)
+    DWARFReader(std::shared_ptr<const ElfSection> section)
         : off(0)
-        , end(section->sh_size)
-        , io(section.io)
+        , end(section->shdr->sh_size)
+        , io(section->io)
         , addrLen(ELF_BITS / 8)
     {
     }

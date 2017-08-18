@@ -178,8 +178,8 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
 {
     // want these first: other sections refer into this.
     if (debstr) {
-        debugStrings = new char[debstr->sh_size];
-        debstr.io->readObj(0, debugStrings, debstr->sh_size);
+        debugStrings = new char[debstr->shdr->sh_size];
+        debstr->io->readObj(0, debugStrings, debstr->shdr->sh_size);
     } else {
         debugStrings = 0;
     }
@@ -738,11 +738,11 @@ DwarfInfo::getAltImage()
 {
     if (!altImageLoaded) {
         altImageLoaded = true;
-        auto shdr = elf->getSection(".gnu_debugaltlink", 0);
+        auto section = elf->getSection(".gnu_debugaltlink", 0);
         char name[1024];
-        assert(shdr->sh_size < sizeof name);
-        name[shdr->sh_size] = 0;
-        shdr.io->read(0, shdr->sh_size, name);
+        assert(section->shdr->sh_size < sizeof name);
+        name[section->shdr->sh_size] = 0;
+        section->io->read(0, section->shdr->sh_size, name);
         char *path;
         if (name[0] != '/') {
             // Not relative - prefix it with dirname of the image
@@ -807,7 +807,7 @@ DwarfFrameInfo::decodeAddress(DWARFReader &f, int encoding) const
     case 0:
         break;
     case DW_EH_PE_pcrel:
-        base += offset + dwarf->elf->getBase() + section.shdr->sh_offset;
+        base += offset + dwarf->elf->getBase() + section->shdr->sh_offset;
         break;
     }
     return base;
@@ -857,7 +857,7 @@ DwarfFrameInfo::isCIE(Elf_Addr cieid)
     return (type == FI_DEBUG_FRAME && cieid == 0xffffffff) || (type == FI_EH_FRAME && cieid == 0);
 }
 
-DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, ElfSection &section_, enum FIType type_)
+DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, std::shared_ptr<const ElfSection> section_, enum FIType type_)
     : dwarf(info)
     , section(section_)
     , type(type_)

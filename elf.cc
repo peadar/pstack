@@ -150,8 +150,8 @@ ElfObject::init(const shared_ptr<Reader> &io_)
         }
         auto tab = getSection(".hash", SHT_HASH);
         if (tab) {
-            auto syms = getSection(tab->sh_link);
-            auto strings = getSection(syms->sh_link);
+            auto syms = getSection(tab->shdr->sh_link);
+            auto strings = getSection(syms->shdr->sh_link);
             hash.reset(new ElfSymHash(tab, syms, strings));
         }
     } else {
@@ -163,8 +163,8 @@ std::pair<const Elf_Sym, const string>
 SymbolIterator::operator *()
 {
         Elf_Sym sym;
-        sec->symbols.io->readObj(off, &sym);
-        string name = sec->strings.io->readString(sym.st_name);
+        sec->symbols->io->readObj(off, &sym);
+        string name = sec->strings->io->readString(sym.st_name);
         return std::make_pair(sym, name);
 }
 
@@ -188,7 +188,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
     Elf_Addr lowest = 0;
     for (size_t i = 0; sectionNames[i] && !exact; i++) {
         const auto symSection = getSection(sectionNames[i], SHT_NULL);
-        if (symSection == 0 || symSection->sh_type == SHT_NOBITS)
+        if (symSection == 0 || symSection->shdr->sh_type == SHT_NOBITS)
             continue;
         SymbolSection syms(*this, symSection);
         for (auto syminfo : syms) {
@@ -225,20 +225,30 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
     return lowest != 0;
 }
 
-const ElfSection
+std::shared_ptr<const ElfSection>
 ElfObject::getSection(const std::string &name, Elf_Word type) const
 {
 
     auto s = namedSection.find(name);
-    return ElfSection(*this, s != namedSection.end() && (s->second->sh_type == type || type == SHT_NULL) ? s->second : 0);
+    if (s == namedSection.end() || (s->second->sh_type != type && type != SHT_NULL))
+        return std::shared_ptr<const ElfSection>(nullptr);
+    return getSection(s->second);
 }
 
-const ElfSection
+std::shared_ptr<const ElfSection>
+ElfObject::getSection(const Elf_Shdr *s) const
+{
+    auto &es = elfSections[s];
+    if (es == 0)
+        es = std::make_shared<ElfSection>(*this, s);
+    return es;
+}
+
+std::shared_ptr<const ElfSection>
 ElfObject::getSection(Elf_Word idx) const
 {
-    return ElfSection(*this, &sectionHeaders[idx]);
+    return getSection(&sectionHeaders[idx]);
 }
-
 
 SymbolSection
 ElfObject::getSymbols(const std::string &table)
@@ -247,7 +257,7 @@ ElfObject::getSymbols(const std::string &table)
 }
 
 bool
-ElfObject::linearSymSearch(ElfSection &section, const string &name, Elf_Sym &sym)
+ElfObject::linearSymSearch(std::shared_ptr<const ElfSection> section, const string &name, Elf_Sym &sym)
 {
     SymbolSection sec(*this, section);
     for (const auto &info : sec) {
@@ -259,15 +269,15 @@ ElfObject::linearSymSearch(ElfSection &section, const string &name, Elf_Sym &sym
     return false;
 }
 
-ElfSymHash::ElfSymHash(ElfSection &hash_, ElfSection &syms_, ElfSection &strings_)
+ElfSymHash::ElfSymHash(std::shared_ptr<const ElfSection> &hash_, std::shared_ptr<const ElfSection> &syms_, std::shared_ptr<const ElfSection> &strings_)
     : hash(hash_)
     , syms(syms_)
     , strings(strings_)
 {
     // read the hash table into local memory.
-    size_t words = hash->sh_size / sizeof (Elf_Word);
+    size_t words = hash->shdr->sh_size / sizeof (Elf_Word);
     data.resize(words);
-    hash.io->readObj(0, &data[0], words);
+    hash->io->readObj(0, &data[0], words);
     nbucket = data[0];
     nchain = data[1];
     buckets = &data[0] + 2;
@@ -280,8 +290,8 @@ ElfSymHash::findSymbol(Elf_Sym &sym, const string &name)
     uint32_t bucket = elf_hash(name) % nbucket;
     for (Elf_Word i = buckets[bucket]; i != STN_UNDEF; i = chains[i]) {
         Elf_Sym candidate;
-        syms.io->readObj(i * sizeof candidate, &candidate);
-        string candidateName = strings.io->readString(candidate.st_name);
+        syms->io->readObj(i * sizeof candidate, &candidate);
+        string candidateName = strings->io->readString(candidate.st_name);
         if (candidateName == name) {
             sym = candidate;
             return true;
@@ -380,8 +390,8 @@ ElfObject::getDebug()
         auto hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
         if (hdr == 0)
             return std::shared_ptr<ElfObject>();
-        std::vector<char> buf(hdr->sh_size);
-        std::string link = io->readString(hdr->sh_offset);
+        std::vector<char> buf(hdr->shdr->sh_size);
+        std::string link = io->readString(hdr->shdr->sh_offset);
 
         auto dir = dirname(oldname);
         debugObject = tryLoad(dir + "/" + link);
@@ -485,6 +495,8 @@ ElfSection::ElfSection(const ElfObject &obj_, const Elf_Shdr *shdr_)
     if (shdr) {
         auto rawIo = std::make_shared<OffsetReader>(obj_.getio(), shdr->sh_offset, shdr->sh_size);
         if (shdr_->sh_flags & SHF_COMPRESSED) {
+           if (verbose >= 2)
+              *debug << "decompressing section " << rawIo->describe() << "\n";
             Elf_Chdr chdr;
             rawIo->readObj(0, &chdr);
             inflateCtx ctx(chdr, rawIo);

@@ -454,7 +454,7 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
     os << ", \"sections\": [";
     const char *sep = "";
     for (auto &i : obj.getSections()) {
-        os << sep << ElfSection(obj, &i);
+        os << sep << *obj.getSection(&i);
         sep = ",\n";
     }
     os << "]";
@@ -558,7 +558,7 @@ const struct sh_flag_names {
 };
 
 std::ostream &
-operator <<(std::ostream &os, const std::pair<const ElfObject &, const ElfSection &> &objsec)
+operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr<const ElfSection>> objsec)
 {
     static const char *sectionTypeNames[] = {
         "SHT_NULL",
@@ -579,44 +579,44 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, const ElfSectio
     auto sec = objsec.second;
     auto strs = o.getSection(o.getElfHeader().e_shstrndx);
 
-    os << "{ \"size\":" << sec->sh_size;
+    os << "{ \"size\":" << sec->shdr->sh_size;
     if (strs)
-        os << ", \"name\": \"" << strs.io->readString(sec->sh_name) << "\"";
+        os << ", \"name\": \"" << strs->io->readString(sec->shdr->sh_name) << "\"";
 
     os << ", \"type\": ";
-    if (sec->sh_type <= SHT_DYNSYM)
-        os << "\"" << sectionTypeNames[sec->sh_type] << "\"";
+    if (sec->shdr->sh_type <= SHT_DYNSYM)
+        os << "\"" << sectionTypeNames[sec->shdr->sh_type] << "\"";
     else
-        os << sec->sh_type;
+        os << sec->shdr->sh_type;
 
     os << ", \"flags\": " << "[";
 
     std::string sep = "";
     for (auto i = sh_flag_names; i->name; ++i) {
-        if (sec->sh_flags & i->value) {
+        if (sec->shdr->sh_flags & i->value) {
             os << sep << "\"" << i->name << "\"";
             sep = ", ";
         }
     }
     os
         << "]"
-        << ", \"address\": " << sec->sh_addr
-        << ", \"offset\": " << sec->sh_offset
-        << ", \"link\":" << sec->sh_link
-        << ", \"info\":" << sec->sh_info;
+        << ", \"address\": " << sec->shdr->sh_addr
+        << ", \"offset\": " << sec->shdr->sh_offset
+        << ", \"link\":" << sec->shdr->sh_link
+        << ", \"info\":" << sec->shdr->sh_info;
 
-    switch (sec->sh_type) {
+    switch (sec->shdr->sh_type) {
         case SHT_SYMTAB:
         case SHT_DYNSYM: {
             off_t symoff = 0;
-            off_t esym = sec->sh_size;
+            off_t esym = sec->shdr->sh_size;
             os << ", \"symbols\": [";
             std::string sep = "";
             for (; symoff < esym; symoff += sizeof (Elf_Sym)) {
                 Elf_Sym sym;
-                sec.io->readObj(symoff, &sym);
-                std::tuple<const ElfObject &, const ElfSection &, const Elf_Sym *> t = std::make_tuple(std::ref(o), std::ref(sec), &sym);
-                os << sep << t;
+                sec->io->readObj(symoff, &sym);
+                auto r = std::make_tuple(std::ref(o), sec, (const Elf_Sym *)&sym);
+                os << sep << r;
                 sep = ",\n";
             }
             os << "]";
@@ -626,9 +626,9 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, const ElfSectio
             os << ", \"reloca\": [";
             off_t off = 0;
             const char *sep = "";
-            for (off_t esym = sec->sh_size; off < esym; off += sizeof (Elf_Rela)) {
+            for (off_t esym = sec->shdr->sh_size; off < esym; off += sizeof (Elf_Rela)) {
                 Elf_Rela rela;
-                sec.io->readObj(off, &rela);
+                sec->io->readObj(off, &rela);
                 os << sep << rela;
                 sep = ",\n";
             }
@@ -692,7 +692,7 @@ operator<< (std::ostream &os, const Elf_Phdr &h)
  * Debug output of an Elf symbol.
  */
 std::ostream &
-operator<< (std::ostream &os, std::tuple<const ElfObject &, const ElfSection &, const Elf_Sym *> &t)
+operator<< (std::ostream &os, std::tuple<const ElfObject &, std::shared_ptr<const ElfSection>, const Elf_Sym *> &t)
 {
     static const char *bindingNames[] = {
         "STB_LOCAL",
@@ -734,9 +734,9 @@ operator<< (std::ostream &os, std::tuple<const ElfObject &, const ElfSection &, 
     auto &obj = std::get<0>(t);
     auto &sec = std::get<1>(t);
     auto s = std::get<2>(t);
-    auto symStrings = obj.getSection(sec->sh_link);
+    auto symStrings = obj.getSection(sec->shdr->sh_link);
 
-    return os << "{ \"name\": \"" << symStrings.io->readString(s->st_name) << "\""
+    return os << "{ \"name\": \"" << symStrings->io->readString(s->st_name) << "\""
        << ", \"value\": " << s->st_value
        << ", \"size\": " << s->st_size
        << ", \"info\": " << (int)s->st_info
