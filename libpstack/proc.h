@@ -145,9 +145,7 @@ class LiveReader : public FileReader {
 public:
     static std::shared_ptr<Reader> procfile(pid_t, const std::string &base);
     virtual std::string describe() const {
-        std::ostringstream os;
-        os << base << " for process pid " << pid;
-        return os.str();
+        return linkResolve(procname(pid, base));
     }
     LiveReader(pid_t pid_, const std::string &base_) : FileReader(procname(pid_, base_)), pid(pid_), base(base_) {}
 };

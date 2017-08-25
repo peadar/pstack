@@ -16,8 +16,6 @@ linkResolve(string name)
         if (rc == -1)
             break;
         buf[rc] = 0;
-        std::clog << "resolve " << name << " to " << buf << std::endl;
-
         if (buf[0] != '/') {
             auto lastSlash = name.rfind('/');
             name = lastSlash == string::npos ? string(buf) : name.substr(0, lastSlash + 1) + string(buf);
