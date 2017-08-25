@@ -298,35 +298,6 @@ ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
     return symtab && linearSymSearch(symtab, name, sym);
 }
 
-/*
- * Get the data and length from a specific "note" in the ELF file
- */
-#ifdef __FreeBSD__
-/*
- * Try to work out the name of the executable from a core file
- * XXX: This is not particularly useful, because the pathname appears to get
- * stripped.
- */
-static enum NoteIter
-elfImageNote(void *cookie, const char *name, u_int32_t type,
-        const void *data, size_t len)
-{
-    const char **exename;
-    const prpsinfo_t *psinfo;
-
-    exename = (const char **)cookie;
-    psinfo = (const prpsinfo_t *)data;
-
-    if (!strcmp(name, "FreeBSD") && type == NT_PRPSINFO &&
-        psinfo->pr_version == PRPSINFO_VERSION) {
-        *exename = psinfo->pr_fname;
-        return NOTE_DONE;
-    }
-    return NOTE_CONTIN;
-}
-
-#endif
-
 ElfObject::~ElfObject()
 {
 }

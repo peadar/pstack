@@ -122,12 +122,6 @@ roundup2(size_t val, size_t align)
 class ElfSymHash;
 struct SymbolSection;
 
-enum NoteIter {
-    NOTE_CONTIN,
-    NOTE_ERROR,
-    NOTE_DONE
-};
-
 class ElfSection {
     Elf_Shdr shdr;
     off_t size;
