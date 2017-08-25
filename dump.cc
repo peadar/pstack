@@ -581,7 +581,7 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
     const Elf_Shdr &sh = **sec;
 
     os << "{ \"size\":" << sh.sh_size;
-    os << "{ \"uncompressedSize\":" << sec->getSize();
+    os << ", \"uncompressedSize\":" << sec->getSize();
     if (strs)
         os << ", \"name\": \"" << strs->io->readString(sh.sh_name) << "\"";
 
