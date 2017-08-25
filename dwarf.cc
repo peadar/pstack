@@ -342,6 +342,13 @@ DwarfUnit::name() const
     return entries.begin()->second->name();
 }
 
+DwarfUnit::~DwarfUnit()
+{
+   // Delete all DwarfEntry's for this unit
+   for (auto e : allEntries)
+      delete e.second;
+}
+
 DwarfAbbreviation::DwarfAbbreviation(DWARFReader &r, intmax_t code_)
     : code(code_)
 {

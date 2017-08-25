@@ -228,7 +228,7 @@ public:
 struct DwarfUnit {
     DwarfUnit() = delete;
     DwarfUnit(const DwarfUnit &) = delete;
-    mutable std::map<off_t, DwarfEntry *> allEntries;
+    DwarfEntries allEntries;
     DwarfInfo *dwarf;
     off_t offset;
     size_t dwarfLen;
@@ -243,6 +243,7 @@ struct DwarfUnit {
     DwarfLineInfo lines;
     DwarfUnit(DwarfInfo *, DWARFReader &);
     std::string name() const;
+    ~DwarfUnit();
 };
 
 struct DwarfFDE {
