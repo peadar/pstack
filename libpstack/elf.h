@@ -291,8 +291,10 @@ struct ElfNoteIter {
         newOff += curNote.n_descsz;
         newOff = roundup2(newOff, 4);
         if (newOff >= phdrsi->p_filesz) {
-            if (++phdrsi == phdrs.end())
+            if (++phdrsi == phdrs.end()) {
+                offset = 0;
                 return *this;
+            }
             startSection();
         } else {
             offset = newOff;
@@ -303,7 +305,8 @@ struct ElfNoteIter {
 
     ElfNoteIter(ElfObject *object_, bool begin)
         : object(object_)
-          , phdrs(object_->getSegments(PT_NOTE))
+        , phdrs(object_->getSegments(PT_NOTE))
+        , offset(0)
     {
         phdrsi = begin ? phdrs.begin() : phdrs.end();
         if (phdrsi != phdrs.end()) {
