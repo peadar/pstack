@@ -407,7 +407,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
             break;
         }
         default:
-            abort();
+            os << "<unprintable type " << type->type->tag << ">";
     }
     return os;
 }

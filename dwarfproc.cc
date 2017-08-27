@@ -258,7 +258,6 @@ DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame
                frame->getFrameBase(proc, r.getsleb128(), this);
                break;
 
-            // XXX: this is wrong - this indicates an object contained in a register, not a location contained in a register.
             case DW_OP_reg0: case DW_OP_reg1: case DW_OP_reg2: case DW_OP_reg3:
             case DW_OP_reg4: case DW_OP_reg5: case DW_OP_reg6: case DW_OP_reg7:
             case DW_OP_reg8: case DW_OP_reg9: case DW_OP_reg10: case DW_OP_reg11:
