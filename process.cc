@@ -243,7 +243,7 @@ findEntryForFunc(Elf_Addr address, DwarfEntry *entry)
 
       default:
          for (auto &child : entry->children) {
-            auto descendent = findEntryForFunc(address, child.second);
+            auto descendent = findEntryForFunc(address, child);
             if (descendent)
                return descendent;
          }
@@ -281,10 +281,10 @@ typeName(const DwarfEntry *type)
             s = typeName(base) + "(";
             sep = "";
             for (auto &arg : type->children) {
-                if (arg.second->type->tag != DW_TAG_formal_parameter)
+                if (arg->type->tag != DW_TAG_formal_parameter)
                     continue;
                 s += sep;
-                s += typeName(arg.second->referencedEntry(DW_AT_type));
+                s += typeName(arg->referencedEntry(DW_AT_type));
                 sep = ", ";
             }
             s += ")";
@@ -416,8 +416,7 @@ std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
     const char *sep = "";
-    for (auto &childEnt : ap.frame->function->children) {
-        const DwarfEntry *child = childEnt.second;
+    for (auto child : ap.frame->function->children) {
         switch (child->type->tag) {
             case DW_TAG_formal_parameter: {
                 auto name = child->name();
@@ -497,7 +496,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             for (auto u : units) {
                 // find the DIE for this function
                 for (auto it : u->entries) {
-                    de = findEntryForFunc(objIp - 1, it.second);
+                    de = findEntryForFunc(objIp - 1, it);
                     if (de) {
                         symName = de->name();
                         if (symName == "") {

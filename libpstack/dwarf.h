@@ -19,7 +19,7 @@ struct DwarfUnit;
 struct DwarfFrameInfo;
 class DwarfEntry;
 // The DWARF Unit's allEntries map contains the underlying data for the tree.
-typedef std::map<off_t, DwarfEntry *> DwarfEntries;
+typedef std::list<DwarfEntry *> DwarfEntries;
 
 
 
@@ -228,7 +228,7 @@ public:
 struct DwarfUnit {
     DwarfUnit() = delete;
     DwarfUnit(const DwarfUnit &) = delete;
-    DwarfEntries allEntries;
+    std::map<off_t, DwarfEntry *> allEntries;
     DwarfInfo *dwarf;
     off_t offset;
     size_t dwarfLen;

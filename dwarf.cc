@@ -339,7 +339,7 @@ DwarfUnit::DwarfUnit(DwarfInfo *di, DWARFReader &r)
 std::string
 DwarfUnit::name() const
 {
-    return entries.begin()->second->name();
+    return (*entries.begin())->name();
 }
 
 DwarfUnit::~DwarfUnit()
@@ -687,8 +687,8 @@ DwarfEntry *
 DwarfEntry::firstChild(DwarfTag tag)
 {
    for (auto &ent : children)
-      if (ent.second->type->tag == tag)
-         return ent.second;
+      if (ent->type->tag == tag)
+         return ent;
    return 0;
 }
 
@@ -733,8 +733,9 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
         intmax_t code = r.getuleb128();
         if (code == 0)
             return;
-        allEntries[offset] = new DwarfEntry(r, code, this, offset, parent);
-        entries[offset] = allEntries[offset];
+        auto e = new DwarfEntry(r, code, this, offset, parent);
+        allEntries[offset] = e;
+        entries.push_back(e);
     }
 }
 

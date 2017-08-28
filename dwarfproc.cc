@@ -50,7 +50,7 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
             }
             auto objIp = frame->ip - reloc;
             // convert this object-relative addr to a unit-relative one
-            const DwarfEntry *unitEntry = attr->entry->unit->entries.begin()->second;
+            const DwarfEntry *unitEntry = *attr->entry->unit->entries.begin();
             auto unitLow = unitEntry->attrForName(DW_AT_low_pc);
 #ifndef NDEBUG
             auto unitHigh = unitEntry->attrForName(DW_AT_high_pc);
