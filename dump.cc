@@ -1,4 +1,5 @@
 #include <libpstack/dump.h>
+#include <unordered_map>
 #include <sys/procfs.h>
 #include <cassert>
 

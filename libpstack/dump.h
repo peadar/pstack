@@ -106,6 +106,17 @@ template <typename K, typename V> std::ostream &operator << (std::ostream &os, c
     return os << " }";
 }
 
+template <typename K, typename V> std::ostream &operator << (std::ostream &os, const std::unordered_map<K, V> &entries) {
+    os << "{ ";
+    std::string sep = "";
+    for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
+        os << sep << " \"" << entry->first << "\": " << entry->second;
+        sep = ",\n";
+    }
+    return os << " }";
+}
+
+
 template <typename K, typename V> std::ostream &operator << (std::ostream &os,
 const std::map<K, std::unique_ptr<V>> &entries) {
     os << "{ ";

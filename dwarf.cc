@@ -161,7 +161,7 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
         offset = r.getu32();
         if (offset == 0)
             break;
-        pubnames.push_back(DwarfPubname(r, offset));
+        pubnames.emplace_back(r, offset);
     }
 }
 
@@ -219,7 +219,7 @@ DwarfInfo::pubnames()
     if (pubnamesh) {
         DWARFReader r(pubnamesh);
         while (!r.empty())
-            pubnameUnits.push_back(DwarfPubnameUnit(r));
+            pubnameUnits.emplace_back(r);
         pubnamesh = 0;
     }
     return pubnameUnits;
@@ -267,7 +267,7 @@ DwarfInfo::ranges()
     if (arangesh) {
         DWARFReader r(arangesh);
         while (!r.empty())
-            aranges.push_back(DwarfARangeSet(r));
+            aranges.emplace_back(r);
         arangesh = 0;
     }
     return aranges;
@@ -305,10 +305,7 @@ DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
     while (r.getOffset() < next) {
         uintmax_t start = r.getuint(addrlen);
         uintmax_t length = r.getuint(addrlen);
-/*        if (start == 0 && length == 0)
-            break;
-            */
-        ranges.push_back(DwarfARange(start, length));
+        ranges.emplace_back(start, length);
     }
 }
 
@@ -328,7 +325,9 @@ DwarfUnit::DwarfUnit(DwarfInfo *di, DWARFReader &r)
     r.addrLen = addrlen = r.getu8();
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
-        abbreviations[DwarfTag(code)] = DwarfAbbreviation(abbR, code);
+        abbreviations.emplace( std::piecewise_construct,
+                std::forward_as_tuple(DwarfTag(code)),
+                std::forward_as_tuple(abbR, code));
 
     DWARFReader entriesR(r, r.getOffset(), nextoff - r.getOffset());
     assert(nextoff <= r.getLimit());
@@ -360,7 +359,7 @@ DwarfAbbreviation::DwarfAbbreviation(DWARFReader &r, intmax_t code_)
         form = r.getuleb128();
         if (name == 0 && form == 0)
             break;
-        specs.push_back(DwarfAttributeSpec(DwarfAttrName(name), DwarfForm(form)));
+        specs.emplace_back(DwarfAttrName(name), DwarfForm(form));
     }
 }
 
@@ -699,8 +698,11 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
     , offset(offset_)
 {
 
-    for (auto spec = type->specs.begin(); spec != type->specs.end(); ++spec)
-        attributes.push_back(DwarfAttribute(r, this, &(*spec)));
+    for (auto spec = type->specs.begin(); spec != type->specs.end(); ++spec) {
+        attributes.emplace(std::piecewise_construct,
+                std::forward_as_tuple(spec->name),
+                std::forward_as_tuple(r, this, &(*spec)));
+    }
     switch (type->tag) {
     case DW_TAG_partial_unit:
     case DW_TAG_compile_unit: {
@@ -889,7 +891,9 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, std::shared_ptr<const ElfSection
         if (nextoff == 0)
             break;
         if (isCIE(cieid))
-            cies[cieoff] = DwarfCIE(this, reader, nextoff);
+            cies.emplace(std::piecewise_construct,
+                    std::forward_as_tuple(cieoff),
+                    std::forward_as_tuple(this, reader, nextoff));
     }
     reader.setOffset(start);
     for (reader.setOffset(start); !reader.empty(); reader.setOffset(nextoff)) {
@@ -1256,9 +1260,9 @@ DwarfEntry::referencedEntry(DwarfAttrName name) const
 const DwarfAttribute *
 DwarfEntry::attrForName(DwarfAttrName name) const
 {
-    for (const auto &attr : attributes)
-        if (attr.spec->name == name)
-            return &attr;
+    auto it = attributes.find(name);
+    if (it != attributes.end())
+        return &it->second;
     if (name != DW_AT_abstract_origin) {
         auto ao = referencedEntry(DW_AT_abstract_origin);
         if (ao != 0)
