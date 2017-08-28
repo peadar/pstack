@@ -232,7 +232,7 @@ public:
 struct DwarfUnit {
     DwarfUnit() = delete;
     DwarfUnit(const DwarfUnit &) = delete;
-    std::map<off_t, DwarfEntry *> allEntries;
+    std::map<off_t, DwarfEntry> allEntries;
     DwarfInfo *dwarf;
     off_t offset;
     size_t dwarfLen;

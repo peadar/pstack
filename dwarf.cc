@@ -349,9 +349,6 @@ DwarfUnit::name() const
 
 DwarfUnit::~DwarfUnit()
 {
-   // Delete all DwarfEntry's for this unit
-   for (auto e : allEntries)
-      delete e.second;
 }
 
 DwarfAbbreviation::DwarfAbbreviation(DWARFReader &r, intmax_t code_)
@@ -748,9 +745,11 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
         intmax_t code = r.getuleb128();
         if (code == 0)
             return;
-        auto e = new DwarfEntry(r, code, this, offset, parent);
-        allEntries[offset] = e;
-        entries.push_back(e);
+
+        auto inserted = allEntries.emplace(std::piecewise_construct,
+                    std::forward_as_tuple(offset),
+                    std::forward_as_tuple(r, code, this, offset, parent));
+        entries.push_back(&inserted.first->second);
     }
 }
 
@@ -1264,14 +1263,14 @@ DwarfEntry::referencedEntry(DwarfAttrName name) const
     }
     const auto &entry = unit->allEntries.find(off);
     if (entry != unit->allEntries.end())
-        return entry->second;
+        return &entry->second;
     // Lets look in the parent
     for (auto u : unit->dwarf->getUnits()) {
         if (u.get() == unit)
             continue;
         const auto &entry = u->allEntries.find(off);
         if (entry != u->allEntries.end())
-            return entry->second;
+            return &entry->second;
     }
     return 0;
 }
