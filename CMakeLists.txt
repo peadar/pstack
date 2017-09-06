@@ -29,11 +29,14 @@ set(procmansrc dead.cc live.cc process.cc proc_service.cc dwarfproc.cc procdump.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_definitions("-DELF_BITS=${ELF_BITS}")
+add_definitions("-D_FORTIFY_SOURCE=2")
 add_definitions("-D_FILE_OFFSET_BITS=64")
 add_definitions("-D_LARGEFILE_SOURCE")
 
 add_executable(canal canal.cc)
 add_executable(${PSTACK_BIN} pstack.cc)
+
+find_library(LIBZ NAMES z PATHS (/usr/lib /usr/local/lib))
 
 add_library(dwelf-static STATIC ${dwelfsrc})
 add_library(dwelf-shared SHARED ${dwelfsrc})
