@@ -1,0 +1,122 @@
+[
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.    -std=c++11 -Wall -Wextra -o CMakeFiles/dwelf-static.dir/dwarf.cc.o -c /home/peadar/scm/pstack/dwarf.cc",
+  "file": "/home/peadar/scm/pstack/dwarf.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.    -std=c++11 -Wall -Wextra -o CMakeFiles/dwelf-static.dir/elf.cc.o -c /home/peadar/scm/pstack/elf.cc",
+  "file": "/home/peadar/scm/pstack/elf.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.    -std=c++11 -Wall -Wextra -o CMakeFiles/dwelf-static.dir/reader.cc.o -c /home/peadar/scm/pstack/reader.cc",
+  "file": "/home/peadar/scm/pstack/reader.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.    -std=c++11 -Wall -Wextra -o CMakeFiles/dwelf-static.dir/util.cc.o -c /home/peadar/scm/pstack/util.cc",
+  "file": "/home/peadar/scm/pstack/util.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.    -std=c++11 -Wall -Wextra -o CMakeFiles/dwelf-static.dir/dump.cc.o -c /home/peadar/scm/pstack/dump.cc",
+  "file": "/home/peadar/scm/pstack/dump.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.    -std=c++11 -Wall -Wextra -o CMakeFiles/canal.dir/canal.cc.o -c /home/peadar/scm/pstack/canal.cc",
+  "file": "/home/peadar/scm/pstack/canal.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -Ddwelf_shared_EXPORTS -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.  -fPIC   -std=c++11 -Wall -Wextra -o CMakeFiles/dwelf-shared.dir/dwarf.cc.o -c /home/peadar/scm/pstack/dwarf.cc",
+  "file": "/home/peadar/scm/pstack/dwarf.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -Ddwelf_shared_EXPORTS -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.  -fPIC   -std=c++11 -Wall -Wextra -o CMakeFiles/dwelf-shared.dir/elf.cc.o -c /home/peadar/scm/pstack/elf.cc",
+  "file": "/home/peadar/scm/pstack/elf.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -Ddwelf_shared_EXPORTS -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.  -fPIC   -std=c++11 -Wall -Wextra -o CMakeFiles/dwelf-shared.dir/reader.cc.o -c /home/peadar/scm/pstack/reader.cc",
+  "file": "/home/peadar/scm/pstack/reader.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -Ddwelf_shared_EXPORTS -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.  -fPIC   -std=c++11 -Wall -Wextra -o CMakeFiles/dwelf-shared.dir/util.cc.o -c /home/peadar/scm/pstack/util.cc",
+  "file": "/home/peadar/scm/pstack/util.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -Ddwelf_shared_EXPORTS -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.  -fPIC   -std=c++11 -Wall -Wextra -o CMakeFiles/dwelf-shared.dir/dump.cc.o -c /home/peadar/scm/pstack/dump.cc",
+  "file": "/home/peadar/scm/pstack/dump.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.    -std=c++11 -Wall -Wextra -o CMakeFiles/pstack.dir/pstack.cc.o -c /home/peadar/scm/pstack/pstack.cc",
+  "file": "/home/peadar/scm/pstack/pstack.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.    -std=c++11 -Wall -Wextra -o CMakeFiles/procman-static.dir/dead.cc.o -c /home/peadar/scm/pstack/dead.cc",
+  "file": "/home/peadar/scm/pstack/dead.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.    -std=c++11 -Wall -Wextra -o CMakeFiles/procman-static.dir/live.cc.o -c /home/peadar/scm/pstack/live.cc",
+  "file": "/home/peadar/scm/pstack/live.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.    -std=c++11 -Wall -Wextra -o CMakeFiles/procman-static.dir/process.cc.o -c /home/peadar/scm/pstack/process.cc",
+  "file": "/home/peadar/scm/pstack/process.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.    -std=c++11 -Wall -Wextra -o CMakeFiles/procman-static.dir/proc_service.cc.o -c /home/peadar/scm/pstack/proc_service.cc",
+  "file": "/home/peadar/scm/pstack/proc_service.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.    -std=c++11 -Wall -Wextra -o CMakeFiles/procman-static.dir/dwarfproc.cc.o -c /home/peadar/scm/pstack/dwarfproc.cc",
+  "file": "/home/peadar/scm/pstack/dwarfproc.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.    -std=c++11 -Wall -Wextra -o CMakeFiles/procman-static.dir/procdump.cc.o -c /home/peadar/scm/pstack/procdump.cc",
+  "file": "/home/peadar/scm/pstack/procdump.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -Dprocman_shared_EXPORTS -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.  -fPIC   -std=c++11 -Wall -Wextra -o CMakeFiles/procman-shared.dir/dead.cc.o -c /home/peadar/scm/pstack/dead.cc",
+  "file": "/home/peadar/scm/pstack/dead.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -Dprocman_shared_EXPORTS -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.  -fPIC   -std=c++11 -Wall -Wextra -o CMakeFiles/procman-shared.dir/live.cc.o -c /home/peadar/scm/pstack/live.cc",
+  "file": "/home/peadar/scm/pstack/live.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -Dprocman_shared_EXPORTS -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.  -fPIC   -std=c++11 -Wall -Wextra -o CMakeFiles/procman-shared.dir/process.cc.o -c /home/peadar/scm/pstack/process.cc",
+  "file": "/home/peadar/scm/pstack/process.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -Dprocman_shared_EXPORTS -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.  -fPIC   -std=c++11 -Wall -Wextra -o CMakeFiles/procman-shared.dir/proc_service.cc.o -c /home/peadar/scm/pstack/proc_service.cc",
+  "file": "/home/peadar/scm/pstack/proc_service.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -Dprocman_shared_EXPORTS -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.  -fPIC   -std=c++11 -Wall -Wextra -o CMakeFiles/procman-shared.dir/dwarfproc.cc.o -c /home/peadar/scm/pstack/dwarfproc.cc",
+  "file": "/home/peadar/scm/pstack/dwarfproc.cc"
+},
+{
+  "directory": "/home/peadar/scm/pstack/t",
+  "command": "/usr/bin/c++   -DELF_BITS=64 -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -Dprocman_shared_EXPORTS -I/usr/include/python2.7 -I/home/peadar/scm/pstack/.  -fPIC   -std=c++11 -Wall -Wextra -o CMakeFiles/procman-shared.dir/procdump.cc.o -c /home/peadar/scm/pstack/procdump.cc",
+  "file": "/home/peadar/scm/pstack/procdump.cc"
+}
+]

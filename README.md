@@ -34,3 +34,6 @@ of live objects by type for finding memory leaks.
 * This actually works on ARM (i.e., raspi), but needs debug_frame. Apparently,
   ARM has its own magical sections for storing unwind information that it might
   be worth implementing.
+* Provide an option (or by default) to enumerate LWPs rather than relying on
+  libthread_db. At least chrome seems to have a problem with libthread_db,
+  and so do things written in non-C languages like golang
