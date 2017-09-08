@@ -1,3 +1,4 @@
+// vim: expandtab:ts=4:sw=4
 #include <stack>
 #include <libgen.h>
 #include <sstream>
@@ -873,9 +874,11 @@ DwarfFrameInfo::decodeCIEFDEHdr(DWARFReader &r, Elf_Addr &id, enum FIType type, 
 
     Elf_Off idoff = r.getOffset();
     id = r.getuint(addrLen);
-    if (!isCIE(id) && ciep) {
-        auto ciei = cies.find(type == FI_EH_FRAME ? idoff - id : id);
-        *ciep = ciei != cies.end() ? &ciei->second : 0;
+    if (!isCIE(id)) {
+        if (ciep) {
+            auto ciei = cies.find(type == FI_EH_FRAME ? idoff - id : id);
+            *ciep = ciei != cies.end() ? &ciei->second : 0;
+        }
     }
     return idoff + length;
 }
@@ -913,7 +916,7 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, std::shared_ptr<const ElfSection
     }
     reader.setOffset(start);
     for (reader.setOffset(start); !reader.empty(); reader.setOffset(nextoff)) {
-        DwarfCIE *cie;
+        DwarfCIE *cie = 0;
         nextoff = decodeCIEFDEHdr(reader, cieid, type, &cie);
         if (nextoff == 0)
             break;
