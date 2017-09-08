@@ -325,9 +325,14 @@ DwarfUnit::DwarfUnit(DwarfInfo *di, DWARFReader &r)
     r.addrLen = addrlen = r.getu8();
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
+#ifdef NOTYET
         abbreviations.emplace( std::piecewise_construct,
                 std::forward_as_tuple(DwarfTag(code)),
                 std::forward_as_tuple(abbR, code));
+#else
+        abbreviations[DwarfTag(code)] = DwarfAbbreviation(abbR, code);
+#endif
+
 
     DWARFReader entriesR(r, r.getOffset(), nextoff - r.getOffset());
     assert(nextoff <= r.getLimit());
@@ -699,10 +704,17 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
 {
 
     for (auto spec = type->specs.begin(); spec != type->specs.end(); ++spec) {
+
+#ifdef NOTYET
         attributes.emplace(std::piecewise_construct,
                 std::forward_as_tuple(spec->name),
                 std::forward_as_tuple(r, this, &(*spec)));
+#else
+        attributes[spec->name] = DwarfAttribute(r, this, &(*spec));
+#endif
+
     }
+
     switch (type->tag) {
     case DW_TAG_partial_unit:
     case DW_TAG_compile_unit: {
@@ -891,9 +903,13 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, std::shared_ptr<const ElfSection
         if (nextoff == 0)
             break;
         if (isCIE(cieid))
+#ifdef NOTYET
             cies.emplace(std::piecewise_construct,
                     std::forward_as_tuple(cieoff),
                     std::forward_as_tuple(this, reader, nextoff));
+#else
+            cies[cieoff] = DwarfCIE(this, reader, nextoff);
+#endif
     }
     reader.setOffset(start);
     for (reader.setOffset(start); !reader.empty(); reader.setOffset(nextoff)) {

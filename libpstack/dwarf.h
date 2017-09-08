@@ -164,7 +164,11 @@ public:
     const DwarfUnit *unit;
     const DwarfAbbreviation *type;
     intmax_t offset;
+#ifdef NOTYET
     std::unordered_map<DwarfAttrName, DwarfAttribute> attributes;
+#else
+    std::map<DwarfAttrName, DwarfAttribute> attributes;
+#endif
 
     const DwarfAttribute *attrForName(DwarfAttrName name) const;
     const DwarfEntry *referencedEntry(DwarfAttrName name) const;

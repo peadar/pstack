@@ -261,7 +261,7 @@ operator << (std::ostream &os, const std::pair<const DwarfFrameInfo *, const Dwa
         << "{ \"cie\": " << intptr_t(dfde.second->cie)
         << ", \"loc\": " << dfde.second->iloc
         << ", \"range\": " << dfde.second->irange
-        << ", \"augmentation\": \"" << dfde.second->augmentation << "\""
+        //<< ", \"augmentation\": \"" << dfde.second->augmentation << "\""
         << ", \"instructions\": "
     ; 
     DWARFReader r(dfde.first->section, dfde.second->instructions, dfde.second->end - dfde.second->instructions);
