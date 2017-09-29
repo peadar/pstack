@@ -36,14 +36,15 @@ add_executable(canal canal.cc)
 add_executable(${PSTACK_BIN} pstack.cc)
 
 find_library(LIBZ NAMES z PATHS (/usr/lib /usr/local/lib))
+find_library(LZMA NAMES llzma PATHS (/usr/lib /usr/local/lib))
 
 add_library(dwelf-static STATIC ${dwelfsrc})
 add_library(dwelf-shared SHARED ${dwelfsrc})
 add_library(procman-static STATIC ${procmansrc})
 add_library(procman-shared SHARED ${procmansrc})
 
-target_link_libraries(dwelf-shared "-lz")
-target_link_libraries(dwelf-static "-lz")
+target_link_libraries(dwelf-shared -lz -llzma)
+target_link_libraries(dwelf-static -lz -llzma)
 target_link_libraries(procman-shared dwelf-shared "-lthread_db")
 target_link_libraries(procman-static dwelf-static "-lthread_db")
 target_link_libraries(${PSTACK_BIN} dwelf-static procman-static)
