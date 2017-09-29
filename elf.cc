@@ -138,6 +138,10 @@ ElfObject::init(const shared_ptr<Reader> &io_)
         for (auto &h : sectionHeaders) {
             auto name = sshdr->io->readString((*h)->sh_name);
             namedSection[name] = h;
+            // The .gnu_debugdata section is special - convert it's IO reader here.
+            if (name == ".gnu_debugdata")
+                debugData = std::make_shared<ElfObject>(
+                      std::make_shared<LzmaReader>(h->io, h->getSize()));
         }
         auto tab = getSection(".hash", SHT_HASH);
         if (tab) {
@@ -213,7 +217,9 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
             }
         }
     }
-    return lowest != 0;
+    if (exact || debugData == nullptr)
+       return exact;
+    return debugData->findSymbolByAddress(addr, type, sym, name);
 }
 
 std::shared_ptr<const ElfSection>
@@ -291,10 +297,17 @@ ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
     if (hash && hash->findSymbol(sym, name))
         return true;
     auto dyn = getSection(".dynsym", SHT_DYNSYM);
+
     if (dyn && linearSymSearch(dyn, name, sym))
         return true;
     auto symtab = getSection(".symtab", SHT_SYMTAB);
-    return symtab && linearSymSearch(symtab, name, sym);
+
+    if (symtab && linearSymSearch(symtab, name, sym))
+       return true;
+
+    if (debugData)
+       return debugData->findSymbolByName(name, sym);
+    return false;
 }
 
 ElfObject::~ElfObject()

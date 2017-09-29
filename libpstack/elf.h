@@ -149,6 +149,7 @@ public:
     typedef std::vector<Elf_Phdr> ProgramHeaders;
     typedef std::vector<std::shared_ptr<ElfSection>> SectionHeaders;
 private:
+    std::shared_ptr<ElfObject> debugData;
     friend std::ostream &operator<< (std::ostream &os, const ElfObject &obj);
     std::shared_ptr<Reader> io; // IO for the ELF image.
     size_t fileSize;
