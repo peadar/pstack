@@ -510,7 +510,7 @@ operator <<(std::ostream &os, const Elf_auxv_t &a)
         << "{ \"a_type\": ";
     switch (a.a_type) {
 #define AUX_TYPE(name, value) case value: os << "\"" << #name << "\""; break;
-#include "elf/aux.h"
+#include "libpstack/elf/aux.h"
     default: os << a.a_type; break;
 #undef AUX_TYPE
     }
