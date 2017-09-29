@@ -37,3 +37,5 @@ of live objects by type for finding memory leaks.
 * Provide an option (or by default) to enumerate LWPs rather than relying on
   libthread_db. At least chrome seems to have a problem with libthread_db,
   and so do things written in non-C languages like golang
+* Support gnu_debugdata/minidebug - this is an LZMA-compressed reduced debug info.
+  I'm not even sure if its DWARF or a symbol table yet.

@@ -117,11 +117,19 @@ public:
 };
 
 class AllocMemReader : public MemReader {
-   char *buf;
+   AllocMemReader(const AllocMemReader &) = delete;
+   AllocMemReader() = delete;
 public:
-   AllocMemReader(size_t s, char *buf_) : MemReader(s, buf_), buf(buf_) {}
-   ~AllocMemReader() { delete[] buf; }
+   AllocMemReader(size_t s, char *buf_) : MemReader(s, buf_) {}
+   ~AllocMemReader() { delete[] data; }
+};
 
+class InflateReader : public MemReader {
+   InflateReader(const AllocMemReader &) = delete;
+   InflateReader() = delete;
+public:
+   InflateReader(size_t uncompressed_size, std::shared_ptr<Reader> downstream);
+   ~InflateReader() { delete[] data; }
 };
 
 class NullReader : public Reader {

@@ -358,6 +358,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
                     break;
 
                 case DW_ATE_signed:
+                case DW_ATE_signed_char:
                     switch (size->value.udata) {
                         case sizeof (int8_t):
                             os << *(int8_t *)&buf[0];
@@ -375,6 +376,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
                     break;
 
                 case DW_ATE_unsigned:
+                case DW_ATE_unsigned_char:
                     switch (size->value.udata) {
                         case sizeof (uint8_t):
                             os << *(uint8_t *)&buf[0];
