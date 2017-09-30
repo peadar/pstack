@@ -151,7 +151,6 @@ public:
 private:
     std::shared_ptr<ElfObject> debugData;
     friend std::ostream &operator<< (std::ostream &os, const ElfObject &obj);
-    std::shared_ptr<Reader> io; // IO for the ELF image.
     size_t fileSize;
     Elf_Ehdr elfHeader;
     std::map<Elf_Word, ProgramHeaders> programHeaders;
@@ -159,17 +158,16 @@ private:
     void init(const std::shared_ptr<Reader> &); // want constructor chaining
     std::map<std::string, std::shared_ptr<ElfSection>> namedSection;
 
-    std::string name;
     bool debugLoaded;
     std::shared_ptr<ElfObject> debugObject;
 public:
+    std::shared_ptr<Reader> io; // IO for the ELF image.
     std::shared_ptr<ElfObject> getDebug();
     static std::shared_ptr<ElfObject> getDebug(std::shared_ptr<ElfObject> &);
     SymbolSection getSymbols(const std::string &table);
     SectionHeaders sectionHeaders;
     Elf_Off getBase() const; // lowest address of a PT_LOAD segment.
     std::string getInterpreter() const;
-    std::string getName() const { return name; }
     std::shared_ptr<const ElfSection> getSection(Elf_Word idx) const;
     const SectionHeaders &getSections() const { return sectionHeaders; }
     const ProgramHeaders &getSegments(Elf_Word type) const {
@@ -189,7 +187,6 @@ public:
     const Elf_Phdr *findHeaderForAddress(Elf_Off) const;
     bool findDebugInfo();
     ElfNotes notes;
-    std::shared_ptr<Reader> getio() const { return io; }
     bool linearSymSearch(std::shared_ptr<const ElfSection> hdr, const std::string &name, Elf_Sym &);
 };
 
@@ -282,7 +279,7 @@ struct ElfNoteIter {
 
     void startSection() {
         offset = 0;
-        io = std::make_shared<OffsetReader>(object->getio(), off_t(phdrsi->p_offset), off_t(phdrsi->p_filesz));
+        io = std::make_shared<OffsetReader>(object->io, off_t(phdrsi->p_offset), off_t(phdrsi->p_filesz));
     }
 
     ElfNoteIter &operator++() {

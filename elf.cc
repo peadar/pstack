@@ -91,7 +91,6 @@ ElfObject::findHeaderForAddress(Elf_Off a) const
 ElfObject::ElfObject(shared_ptr<Reader> io_)
    : notes(this)
 {
-    name = io_->describe();
     init(io_);
 }
 
@@ -125,7 +124,7 @@ ElfObject::init(const shared_ptr<Reader> &io_)
 
     /* Validate the ELF header */
     if (!IS_ELF(elfHeader) || elfHeader.e_ident[EI_VERSION] != EV_CURRENT)
-        throw Exception() << io->describe() << ": content is not an ELF image";
+        throw Exception() << *io << ": content is not an ELF image";
 
     for (off = elfHeader.e_phoff, i = 0; i < elfHeader.e_phnum; i++) {
         Elf_Phdr hdr;
@@ -361,17 +360,12 @@ ElfObject::getDebug()
     if (!debugLoaded) {
         debugLoaded = true;
 
-        std::ostringstream stream;
-        stream << io->describe();
-        std::string oldname = stream.str();
-
         auto hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
         if (hdr == 0)
             return std::shared_ptr<ElfObject>();
-        std::vector<char> buf(hdr->getSize());
         std::string link = hdr->io->readString(0);
 
-        auto dir = dirname(oldname);
+        auto dir = dirname(stringify(*io));
         debugObject = tryLoad(dir + "/" + link);
         if (!debugObject) {
             for (auto note : notes) {
@@ -412,8 +406,8 @@ elf_hash(string name)
 
 ElfSection::ElfSection(const ElfObject &obj_, off_t off)
 {
-    obj_.getio()->readObj(off, &shdr);
-    auto rawIo = std::make_shared<OffsetReader>(obj_.getio(), shdr.sh_offset, shdr.sh_size);
+    obj_.io->readObj(off, &shdr);
+    auto rawIo = std::make_shared<OffsetReader>(obj_.io, shdr.sh_offset, shdr.sh_size);
     if (shdr.sh_flags & SHF_COMPRESSED) {
 #ifdef WITH_ZLIB
         Elf_Chdr chdr;
@@ -424,7 +418,7 @@ ElfSection::ElfSection(const ElfObject &obj_, off_t off)
         size = chdr.ch_size;
 #else
         std::clog <<"warning: no support configured for compressed debug info in "
-           << obj_.getio()->describe() << std::endl;
+           << obj_.io << std::endl;
         size = 0;
 #endif
     } else {

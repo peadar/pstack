@@ -205,17 +205,6 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     }
     case DW_FORM_GNU_ref_alt: {
         os << "\"alt ref\"";
-                                 /*
-        auto altDwarf = dwarf->getAltDwarf();
-        auto section = altDwarf->elf->getSection(".debug_info", 0);
-        auto off = attr.value.ref;
-        const auto &allEntries = altDwarf->allEntries;
-        const auto &entry = allEntries.find(off);
-        if (entry != allEntries.end())
-            os << "\"alt ref to " << entry->second->name() << " at " << off << " in " << altDwarf->elf->io->describe() <<"\"";
-        else
-            os << "\"HAVENOTIT@" << off << (abort(),0) << "\"";
-        */
         break;
     }
     case DW_FORM_exprloc:

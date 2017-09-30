@@ -45,37 +45,74 @@ inline const E &operator << (const E &stream, const Object &o) {
     return stream;
 }
 
+template <typename T> void stringifyImpl(std::ostringstream &os, const T&obj)
+{
+    os << obj;
+}
+
+
+template <typename T> std::string stringify(const T&obj)
+{
+    std::ostringstream os;
+    stringifyImpl(os, obj);
+    return os.str();
+}
+
+template <typename T, typename... More> void stringifyImpl(std::ostringstream &os, const T&obj, More... more)
+{
+    os << obj;
+    stringifyImpl(os, more...);
+}
+
+
+template <typename T, typename... More> std::string stringify(const T&obj, More... more)
+{
+    std::ostringstream stream;
+    stringifyImpl(stream, obj, more...);
+    return stream.str();
+}
+
 extern std::ostream *debug;
+
 extern int verbose;
 class Reader {
     Reader(const Reader &);
 public:
     Reader() {}
-    template <typename Obj> void
-    readObj(off_t offset, Obj *object, size_t count = 1) const {
-        if (count != 0) {
-            size_t rc = read(offset, count * sizeof *object, (char *)object);
-            if (rc != count * sizeof *object)
-                throw Exception() << "incomplete object read from " << describe()
-                   << " at offset " << offset
-                   << " for " << count << " bytes";
-        }
-    }
+    template <typename Obj> void readObj(off_t offset, Obj *object, size_t count = 1) const;
     virtual size_t read(off_t off, size_t count, char *ptr) const = 0;
-    virtual std::string describe() const = 0;
+    virtual void describe(std::ostream &os) const = 0;
     virtual std::string readString(off_t offset) const;
+    virtual off_t size() const = 0;
 };
 
+static inline std::ostream &operator << (std::ostream &os, const Reader &reader)
+{
+    reader.describe(os);
+    return os;
+}
 
+template <typename Obj> void
+Reader::readObj(off_t offset, Obj *object, size_t count) const
+{
+    if (count == 0)
+        return;
+    size_t rc = read(offset, count * sizeof *object, (char *)object);
+    if (rc != count * sizeof *object)
+        throw Exception() << "incomplete object read from " << *this
+           << " at offset " << offset
+           << " for " << count << " bytes";
+}
 
 class FileReader : public Reader {
     std::string name;
     int file;
     bool openfile(int &file, std::string name_);
 public:
-    virtual size_t read(off_t off, size_t count, char *ptr) const;
+    virtual size_t read(off_t off, size_t count, char *ptr) const override ;
     FileReader(std::string name, int fd = -1);
-    std::string describe() const { return name; }
+    void describe(std::ostream &os) const  override { os << name; }
+    off_t size() const override;
 };
 
 class CacheReader : public Reader {
@@ -100,11 +137,16 @@ class CacheReader : public Reader {
     mutable std::list<Page *> pages;
     Page *getPage(off_t offset) const;
 public:
-    virtual size_t read(off_t off, size_t count, char *ptr) const;
-    virtual std::string describe() const { return upstream->describe(); }
+    virtual size_t read(off_t off, size_t count, char *ptr) const override;
+    virtual void describe(std::ostream &os) const override {
+        // this must be the same as the underlying stream: we sometimes rely on the
+        // FileReader's filename
+        os << *upstream;
+    }
     CacheReader(std::shared_ptr<Reader> upstream);
-    std::string readString(off_t absoff) const;
+    std::string readString(off_t absoff) const override;
     ~CacheReader();
+    off_t size() const override { return upstream->size(); }
 };
 
 class MemReader : public Reader {
@@ -112,9 +154,10 @@ protected:
     size_t len;
     char *data;
 public:
-    virtual size_t read(off_t off, size_t count, char *ptr) const;
+    virtual size_t read(off_t off, size_t count, char *ptr) const override;
     MemReader(size_t, char *);
-    std::string describe() const;
+    void describe(std::ostream &) const override;
+    off_t size() const override { return len; }
 };
 
 class AllocMemReader : public MemReader {
@@ -128,12 +171,13 @@ public:
 
 class NullReader : public Reader {
 public:
-    virtual size_t read(off_t, size_t, char *) const {
+    virtual size_t read(off_t, size_t, char *) const override {
         throw Exception() << " read from null reader";
     }
-    std::string describe() const {
-        return "empty reader";
+    void describe(std::ostream &os) const override {
+        os << "empty reader";
     }
+    off_t size() const override { return 0; }
 };
 
 class OffsetReader : public Reader {
@@ -141,22 +185,20 @@ class OffsetReader : public Reader {
     off_t offset;
     off_t length;
 public:
-    virtual size_t read(off_t off, size_t count, char *ptr) const {
+    virtual size_t read(off_t off, size_t count, char *ptr) const override {
         if (off > length)
-           throw Exception() << "read past end of object " << describe();
+           throw Exception() << "read past end of object " << *this;
         if (off + off_t(count) > length)
            count = length - off;
         return upstream->read(off + offset, count, ptr);
     }
     OffsetReader(std::shared_ptr<Reader> upstream_, off_t offset_, off_t length_)
         : upstream(upstream_), offset(offset_), length(length_) {}
-    std::string describe() const {
-        std::ostringstream os;
-        os << upstream->describe() << "[" << offset << "," << offset + length << "]";
-        return os.str();
+    void describe(std::ostream &os) const override {
+        os << *upstream << "[" << offset << "," << offset + length << "]";
     }
+    off_t size() const override { return length; }
 };
-
 
 std::string linkResolve(std::string name);
 

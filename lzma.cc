@@ -89,12 +89,10 @@ LzmaReader::read(off_t offset, size_t size, char *data) const
     return startSize - size;
 }
 
-std::string
-LzmaReader::describe() const
+void
+LzmaReader::describe(std::ostream &os) const
 {
-    std::ostringstream os;
-    os << "lzma compressed " << upstream->describe();
-    return os.str();
+    os << "lzma compressed " << *upstream;
 }
 
 LzmaReader::~LzmaReader()

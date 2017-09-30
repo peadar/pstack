@@ -19,7 +19,7 @@ InflateReader::InflateReader(size_t inflatedSize, std::shared_ptr<Reader> inputB
     bool eof = false;
     size_t inputOffset = 0;
     if (verbose >= 2)
-        *debug << "inflating" << inputBuf->describe() << "...";
+        *debug << "inflating" << *inputBuf << "...";
     for (bool done = false; !done; ) {
         if (stream.avail_in == 0 && !eof) {
             // keep the input buffer full

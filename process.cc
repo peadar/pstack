@@ -118,15 +118,11 @@ Process::processAUXV(const void *datap, size_t len)
                 break;
             }
             case AT_SYSINFO_EHDR: {
-                size_t dsosize = getpagesize() * 2; // XXXX: page size is not enough. What is?
-                vdso = new char[dsosize];
-                // read as much of the header as we can.
-                dsosize = io->read(hdr, dsosize, vdso);
                 try {
-                    auto elf = std::make_shared<ElfObject>(std::make_shared<MemReader>(dsosize, vdso));
+                    auto elf = std::make_shared<ElfObject>(std::make_shared<OffsetReader>(io, hdr, 65536));
                     addElfObject(elf, hdr - elf->getBase());
                     if (verbose >= 2)
-                        *debug << "VDSO " << dsosize << " bytes loaded at " << elf.get() << "\n";
+                        *debug << "VDSO " << *elf->io << " loaded\n";
 
                 }
                 catch (...) {
@@ -172,9 +168,9 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
             Elf_Off reloc;
             obj = findObject(frame->ip, &reloc);
             if (obj) {
-               fileName = obj->getio()->describe();
-               objIp = frame->ip - reloc;
-               obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+                fileName = stringify(*obj->io);
+                objIp = frame->ip - reloc;
+                obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
             }
         }
 
@@ -292,9 +288,7 @@ typeName(const DwarfEntry *type)
         case DW_TAG_reference_type:
             return typeName(base) + "&";
         default: {
-            std::ostringstream os;
-            os << "(unhandled tag " << type->type->tag << ")";
-            return os.str();
+            return stringify("(unhandled tag ", type->type->tag, ")");
         }
 
     }
@@ -471,7 +465,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         Elf_Off reloc;
         auto obj = findObject(frame->ip, &reloc);
         if (obj) {
-            fileName = obj->getio()->describe();
+            fileName = stringify(*obj->io);
             Elf_Addr objIp = frame->ip - reloc;
 
             DwarfInfo *dwarf = getDwarf(obj, true);
@@ -554,7 +548,7 @@ Process::addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load)
     if (verbose >= 2) {
         IOFlagSave _(*debug);
         *debug
-            << "object " << obj->getio()->describe()
+            << "object " << *obj->io
             << " loaded at address " << std::hex << load
             << ", base=" << obj->getBase() << std::endl;
     }
@@ -622,7 +616,7 @@ Process::findRDebugAddr()
         // the modified version.
         for (Elf_Addr dynOff = 0; dynOff < segment.p_filesz; dynOff += sizeof(Elf_Dyn)) {
             Elf_Dyn dyn;
-            execImage->getio()->readObj(segment.p_offset + dynOff, &dyn);
+            execImage->io->readObj(segment.p_offset + dynOff, &dyn);
             if (dyn.d_tag == DT_DEBUG) {
                 // Now, we read this from the _process_ AS, not the executable - the
                 // in-memory one is changed by the linker.
@@ -657,7 +651,7 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
     for (auto i = objects.begin(); i != objects.end(); ++i) {
         auto obj = i->object;
         if (objectName != 0) {
-            auto objname = obj->getName();
+            auto objname = stringify(*obj->io);
             auto p = objname.rfind('/');
             if (p != std::string::npos)
                 objname = objname.substr(p + 1, std::string::npos);

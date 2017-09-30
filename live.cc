@@ -12,9 +12,7 @@
 std::string
 LiveReader::procname(pid_t pid, const std::string &base)
 {
-    std::ostringstream ss;
-    ss << "/proc/" << pid << "/" << base;
-    return ss.str();
+    return stringify("/proc/", pid, "/", base);
 }
 
 LiveProcess::LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid_, const PathReplacementList &repls)

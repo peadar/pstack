@@ -21,8 +21,8 @@ public:
     LzmaReader(std::shared_ptr<Reader> downstream, size_t len);
     ~LzmaReader();
     size_t read(off_t, size_t, char *) const override;
-    std::string describe() const;
-    off_t size() const;
+    void describe(std::ostream &) const override;
+    off_t size() const override;
 };
 
 #endif

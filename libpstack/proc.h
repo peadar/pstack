@@ -53,7 +53,9 @@ struct StackFrame {
 struct ThreadStack {
     td_thrinfo_t info;
     std::vector<StackFrame *> stack;
-    ThreadStack() {}
+    ThreadStack() {
+        memset(&info, 0, sizeof info);
+    }
     ~ThreadStack() {
         for (auto i = stack.begin(); i != stack.end(); ++i)
             delete *i;
@@ -116,7 +118,7 @@ public:
     std::ostream &dumpStackText(std::ostream &, const ThreadStack &, const PstackOptions &);
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &);
     template <typename T> void listThreads(const T &);
-    Elf_Addr findNamedSymbol(const char *objectName, const char *symbolName) const;
+    Elf_Addr findNamedSymbol(const char *objName, const char *symbolName) const;
     ~Process();
     virtual void load();
 };
@@ -144,8 +146,8 @@ class LiveReader : public FileReader {
     static std::string procname(pid_t, const std::string &base);
 public:
     static std::shared_ptr<Reader> procfile(pid_t, const std::string &base);
-    virtual std::string describe() const {
-        return linkResolve(procname(pid, base));
+    virtual void describe(std::ostream &os) const override {
+        os << linkResolve(procname(pid, base));
     }
     LiveReader(pid_t pid_, const std::string &base_) : FileReader(procname(pid_, base_)), pid(pid_), base(base_) {}
 };
@@ -174,10 +176,11 @@ class CoreProcess;
 class CoreReader : public Reader {
     CoreProcess *p;
 protected:
-    virtual size_t read(off_t offset, size_t count, char *ptr) const;
+    virtual size_t read(off_t offset, size_t count, char *ptr) const override;
 public:
     CoreReader (CoreProcess *p);
-    std::string describe() const;
+    virtual void describe(std::ostream &os) const override;
+    off_t size() const override { return std::numeric_limits<off_t>::max(); }
 };
 
 class CoreProcess : public Process {

@@ -223,7 +223,7 @@ mainExcept(int argc, char *argv[])
 
     if (showloaded) {
         for (auto loaded = process->objects.begin(); loaded != process->objects.end(); ++loaded)
-            std::cout << loaded->object->getName() << "\n";
+            std::cout << *loaded->object->io << "\n";
         exit(0);
     }
 
@@ -243,11 +243,10 @@ mainExcept(int argc, char *argv[])
         for (auto &syms : symtabs) {
            for (auto sym = syms.begin(); sym != syms.end(); ++sym) {
                for (auto &pattern : patterns) {
-                   if (globmatch(pattern, (*sym).second)) {
+                   auto &name = (*sym).second;
+                   if (globmatch(pattern, name)) {
                        listed.push_back(ListedSymbol((*sym).first,
-                                loaded->reloc,
-                                (*sym).second,
-                                loaded->object->getio()->describe()));
+                                loaded->reloc, name, stringify(*loaded->object->io)));
                        if (verbose > 1 || showsyms)
                           std::cout << (*sym).second << "\n";
                        count++;
@@ -256,7 +255,7 @@ mainExcept(int argc, char *argv[])
            }
         }
         if (verbose)
-            *debug << "found " << count << " symbols in " << loaded->object->getio()->describe() << endl;
+            *debug << "found " << count << " symbols in " << *loaded->object->io << endl;
     }
     if (showsyms)
        exit(0);

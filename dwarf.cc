@@ -191,8 +191,7 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
         }
         catch (const Exception &ex) {
             ehFrame = 0;
-            std::clog << "can't decode .eh_frame for "
-                << obj->getio()->describe() << ": " << ex.what() << "\n";
+            std::clog << "can't decode .eh_frame for " << *obj->io << ": " << ex.what() << "\n";
         }
     } else {
         ehFrame = 0;
@@ -205,8 +204,8 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
         }
         catch (const Exception &ex) {
             debugFrame = 0;
-            std::clog << "can't decode .debug_frame for "
-                << obj->getio()->describe() << ": " << ex.what() << "\n";
+            std::clog << "can't decode .debug_frame for " << *obj->io << ": "
+                << ex.what() << "\n";
         }
     } else {
         debugFrame = 0;
@@ -454,7 +453,7 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
     if (diff) {
         if (verbose)
             *debug << "warning: left " << diff
-                << " bytes in line info table of " << r.io->describe() << std::endl;
+                << " bytes in line info table of " << *r.io << std::endl;
         r.skip(diff);
     }
 
@@ -722,12 +721,6 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
             DWARFReader r2(unit->dwarf->lineshdr, stmts);
             unit_->lines.build(r2, unit);
         }
-#if 0
-        else {
-            if (verbose)
-               *debug << "warning: no line number info found in " << r.io->describe() <<  "/" << name() << " (stmts=" << stmtsAttr << ", hdr=" << unit->dwarf->lineshdr << std::endl;
-        }
-#endif
         break;
     }
     default: // not otherwise interested for the mo.
@@ -775,10 +768,8 @@ DwarfInfo::getAltImage()
         char *path;
         if (name[0] != '/') {
             // Not relative - prefix it with dirname of the image
-            std::ostringstream os;
-            os << elf->getio()->describe();
             char absbuf[1024];
-            strncpy(absbuf, os.str().c_str(), sizeof absbuf);
+            strncpy(absbuf, stringify(*elf->io).c_str(), sizeof absbuf);
             dirname(absbuf);
             strncat(absbuf, "/", sizeof absbuf - 1);
             strncat(absbuf, "/", sizeof absbuf - 1);
@@ -788,7 +779,7 @@ DwarfInfo::getAltImage()
             path = name;
         }
         if (verbose)
-           *debug << "io: " << elf->getio()->describe() << ", alt path: " << name << "\n";
+           *debug << "io: " << *elf->io << ", alt path: " << name << "\n";
         altImage = std::make_shared<ElfObject>(loadFile(path));
     }
     return altImage;

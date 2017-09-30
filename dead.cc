@@ -27,9 +27,9 @@ CoreProcess::load()
     Process::load();
 }
 
-std::string CoreReader::describe() const
+void CoreReader::describe(std::ostream &os) const
 {
-    return p->coreImage->getio()->describe();
+    os << *p->coreImage->io;
 }
 
 static size_t
@@ -39,7 +39,7 @@ readFromHdr(std::shared_ptr<ElfObject> obj, const Elf_Phdr *hdr, Elf_Off addr, c
     if (off < hdr->p_filesz) {
         // some of the data is in the file: read min of what we need and // that.
         Elf_Off fileSize = std::min(hdr->p_filesz - off, size);
-        rv = obj->getio()->read(hdr->p_offset + off, fileSize, ptr);
+        rv = obj->io->read(hdr->p_offset + off, fileSize, ptr);
         if (rv != fileSize)
             throw Exception() << "unexpected short read in core file";
         off += rv;

@@ -63,10 +63,10 @@ MemReader::read(off_t off, size_t count, char *ptr) const
     return rc;
 }
 
-string
-MemReader::describe() const
+void
+MemReader::describe(std::ostream &os) const
 {
-    return "from memory image";
+    os << "in-memory image";
 }
 
 string
@@ -91,7 +91,7 @@ FileReader::read(off_t off, size_t count, char *ptr) const
         throw Exception()
             << "read " << count
             << " at " << off
-            << " on " << describe()
+            << " on " << *this
             << " failed: " << strerror(errno);
     return rc;
 }
