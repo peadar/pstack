@@ -4,19 +4,16 @@
 #ifndef LIBPSTACK_UTIL_H
 #define LIBPSTACK_UTIL_H
 
-
 #include <exception>
 #include <limits>
 #include <vector>
 #include <list>
 #include <memory>
-#include <map>
 #include <sstream>
 #include <stdio.h>
 #include <string>
 #include <string.h>
 #include <unordered_map>
-#include "lzma.h"
 
 std::string dirname(const std::string &);
 
@@ -126,30 +123,6 @@ class AllocMemReader : public MemReader {
 public:
    AllocMemReader(size_t s, char *buf_) : MemReader(s, buf_) {}
    ~AllocMemReader() { delete[] data; }
-};
-
-class InflateReader : public MemReader {
-   InflateReader(const AllocMemReader &) = delete;
-   InflateReader() = delete;
-public:
-   InflateReader(size_t uncompressed_size, std::shared_ptr<Reader> downstream);
-   ~InflateReader() { delete[] data; }
-};
-
-class LzmaReader : public Reader {
-    LzmaReader(const LzmaReader &) = delete;
-    LzmaReader() = delete;
-    lzma_index *index;
-    uint64_t memlimit = std::numeric_limits<uint64_t>::max();
-    size_t pos = 0;
-    std::shared_ptr<Reader> upstream;
-    mutable std::map<off_t, std::vector<unsigned char>> lzBlocks;
-    public:
-    LzmaReader(std::shared_ptr<Reader> downstream, size_t len);
-    ~LzmaReader();
-    size_t read(off_t, size_t, char *) const override;
-    std::string describe() const;
-    off_t size() const;
 };
 
 

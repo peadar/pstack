@@ -6,6 +6,12 @@
 
 #include "libpstack/util.h"
 #include "libpstack/elf.h"
+#ifdef WITH_ZLIB
+#include "libpstack/inflatereader.h"
+#endif
+#ifdef WITH_LZMA
+#include "libpstack/lzmareader.h"
+#endif
 
 using std::string;
 using std::make_shared;
@@ -138,10 +144,16 @@ ElfObject::init(const shared_ptr<Reader> &io_)
         for (auto &h : sectionHeaders) {
             auto name = sshdr->io->readString((*h)->sh_name);
             namedSection[name] = h;
-            // The .gnu_debugdata section is special - convert it's IO reader here.
+            // .gnu_debugdata is a separate LZMA-compressed ELF image with just
+            // a symbol table.
             if (name == ".gnu_debugdata")
+#ifdef WITH_LZMA
                 debugData = std::make_shared<ElfObject>(
                       std::make_shared<LzmaReader>(h->io, h->getSize()));
+#else
+                std::clog << "warning: no compiled support for LZMA - "
+                      "can't decode debug data in " << io->describe() << "\n";
+#endif
         }
         auto tab = getSection(".hash", SHT_HASH);
         if (tab) {
@@ -403,12 +415,18 @@ ElfSection::ElfSection(const ElfObject &obj_, off_t off)
     obj_.getio()->readObj(off, &shdr);
     auto rawIo = std::make_shared<OffsetReader>(obj_.getio(), shdr.sh_offset, shdr.sh_size);
     if (shdr.sh_flags & SHF_COMPRESSED) {
+#ifdef WITH_ZLIB
         Elf_Chdr chdr;
         rawIo->readObj(0, &chdr);
         io = std::make_shared<InflateReader>(chdr.ch_size,
               std::make_shared<OffsetReader>(rawIo,
                  sizeof chdr, shdr.sh_size - sizeof chdr));
         size = chdr.ch_size;
+#else
+        std::clog <<"warning: no support configured for compressed debug info in "
+           << obj_.getio()->describe() << std::endl;
+        size = 0;
+#endif
     } else {
         io = rawIo;
         size = shdr.sh_size;
