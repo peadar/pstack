@@ -151,7 +151,7 @@ ElfObject::init(const shared_ptr<Reader> &io_)
                       std::make_shared<LzmaReader>(h->io, h->getSize()));
 #else
                 std::clog << "warning: no compiled support for LZMA - "
-                      "can't decode debug data in " << io->describe() << "\n";
+                      "can't decode debug data in " << *io << "\n";
 #endif
         }
         auto tab = getSection(".hash", SHT_HASH);
