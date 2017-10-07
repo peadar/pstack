@@ -167,15 +167,15 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
 }
 
 DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
-    : info(obj->getSection(".debug_info", SHT_PROGBITS))
-    , debstr(obj->getSection(".debug_str", SHT_PROGBITS))
+    : debstr(obj->getSection(".debug_str", SHT_PROGBITS))
     , pubnamesh(obj->getSection(".debug_pubnames", SHT_PROGBITS))
     , arangesh(obj->getSection(".debug_aranges", SHT_PROGBITS))
     , debug_frame(obj->getSection(".debug_frame", SHT_PROGBITS))
     , altImageLoaded(false)
+    , info(obj->getSection(".debug_info", SHT_PROGBITS))
+    , elf(obj)
     , abbrev(obj->getSection(".debug_abbrev", SHT_PROGBITS))
     , lineshdr(obj->getSection(".debug_line", SHT_PROGBITS))
-    , elf(obj)
 {
     // want these first: other sections refer into this.
     if (debstr) {
@@ -684,15 +684,6 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
     }
 }
 
-DwarfEntry *
-DwarfEntry::firstChild(DwarfTag tag)
-{
-   for (auto &ent : children)
-      if (ent->type->tag == tag)
-         return ent;
-   return 0;
-}
-
 DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t offset_, DwarfEntry *parent_)
     : parent(parent_)
     , unit(unit_)
@@ -739,10 +730,15 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
         if (code == 0)
             return;
 
+#ifdef NOTYET
         auto inserted = allEntries.emplace(std::piecewise_construct,
                     std::forward_as_tuple(offset),
                     std::forward_as_tuple(r, code, this, offset, parent));
         entries.push_back(&inserted.first->second);
+#else
+        auto inserted = allEntries[offset] = std::make_shared<DwarfEntry>(r, code, this, offset, parent);
+        entries.push_back(inserted.get());
+#endif
     }
 }
 
@@ -1254,14 +1250,14 @@ DwarfEntry::referencedEntry(DwarfAttrName name) const
     }
     const auto &entry = unit->allEntries.find(off);
     if (entry != unit->allEntries.end())
-        return &entry->second;
+        return entry->second.get();
     // Lets look in the parent
     for (auto u : unit->dwarf->getUnits()) {
         if (u.get() == unit)
             continue;
         const auto &entry = u->allEntries.find(off);
         if (entry != u->allEntries.end())
-            return &entry->second;
+            return entry->second.get();
     }
     return 0;
 }
