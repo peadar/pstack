@@ -67,7 +67,7 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 
         Elf_Off zeroes = 0;
         // Locate "remoteAddr" in the core file
-        auto hdr = obj->findHeaderForAddress(remoteAddr);
+        auto hdr = obj->getSegmentForAddress(remoteAddr);
         if (hdr) {
             // The start address appears in the core (or is defaulted from it)
             size_t rc = readFromHdr(obj, hdr, remoteAddr, ptr, size, &zeroes);
@@ -83,7 +83,7 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
         obj.reset();
         Elf_Off reloc;
         for (auto i = p->objects.begin(); i != p->objects.end(); ++i) {
-            hdr = i->object->findHeaderForAddress(remoteAddr - i->reloc);
+            hdr = i->object->getSegmentForAddress(remoteAddr - i->reloc);
             if (hdr) {
                 obj = i->object;
                 reloc = i->reloc;

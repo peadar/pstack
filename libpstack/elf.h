@@ -148,46 +148,49 @@ class ElfObject {
 public:
     typedef std::vector<Elf_Phdr> ProgramHeaders;
     typedef std::vector<std::shared_ptr<ElfSection>> SectionHeaders;
-private:
-    std::shared_ptr<ElfObject> debugData;
-    friend std::ostream &operator<< (std::ostream &os, const ElfObject &obj);
-    size_t fileSize;
-    Elf_Ehdr elfHeader;
-    std::map<Elf_Word, ProgramHeaders> programHeaders;
-    std::unique_ptr<ElfSymHash> hash;
-    void init(const std::shared_ptr<Reader> &); // want constructor chaining
-    std::map<std::string, std::shared_ptr<ElfSection>> namedSection;
 
-    bool debugLoaded;
-    std::shared_ptr<ElfObject> debugObject;
-public:
-    std::shared_ptr<Reader> io; // IO for the ELF image.
-    std::shared_ptr<ElfObject> getDebug();
-    static std::shared_ptr<ElfObject> getDebug(std::shared_ptr<ElfObject> &);
-    SymbolSection getSymbols(const std::string &table);
-    SectionHeaders sectionHeaders;
-    Elf_Off getBase() const; // lowest address of a PT_LOAD segment.
-    std::string getInterpreter() const;
-    std::shared_ptr<const ElfSection> getSection(Elf_Word idx) const;
-    const SectionHeaders &getSections() const { return sectionHeaders; }
-    const ProgramHeaders &getSegments(Elf_Word type) const {
-        auto it = programHeaders.find(type);
-        if (it == programHeaders.end()) {
-            static const ProgramHeaders empty;
-            return empty;
-        }
-        return it->second;
-    }
-    std::shared_ptr<const ElfSection> getSection(const std::string &name, Elf_Word type) const;
-    const Elf_Ehdr &getElfHeader() const { return elfHeader; }
-    bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
-    bool findSymbolByName(const std::string &name, Elf_Sym &sym);
+    // construct/destruct. Note you will generally need to use make_shared to
+    // create an ElfObject
     ElfObject(std::shared_ptr<Reader>);
     ~ElfObject();
-    const Elf_Phdr *findHeaderForAddress(Elf_Off) const;
-    bool findDebugInfo();
+
+    // Accessing sections.
+    std::shared_ptr<const ElfSection> getSection(Elf_Word idx) const;
+    std::shared_ptr<const ElfSection> getSection(const std::string &name, Elf_Word type) const;
+
+    // Accessing segments.
+    const ProgramHeaders &getSegments(Elf_Word type) const;
+
+    // Accessing symbols
+    SymbolSection getSymbols(const std::string &table);
+    bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
+    bool findSymbolByName(const std::string &name, Elf_Sym &sym);
+
+    std::shared_ptr<Reader> io; // IO for the ELF image.
+
+    // Gets linked debug object.
+    static std::shared_ptr<ElfObject> getDebug(std::shared_ptr<ElfObject> &);
+
+    // Misc operations
+    Elf_Off getBase() const; // lowest address of a PT_LOAD segment.
+    std::string getInterpreter() const;
+    const Elf_Ehdr &getElfHeader() const { return elfHeader; }
+    const Elf_Phdr *getSegmentForAddress(Elf_Off) const;
     ElfNotes notes;
-    bool linearSymSearch(std::shared_ptr<const ElfSection> hdr, const std::string &name, Elf_Sym &);
+
+private:
+    // Elf header, section headers, program headers.
+    Elf_Ehdr elfHeader;
+    SectionHeaders sectionHeaders;
+    std::map<std::string, std::shared_ptr<ElfSection>> namedSection;
+    std::map<Elf_Word, ProgramHeaders> programHeaders;
+
+    std::shared_ptr<ElfObject> debugData; // symbol table data as extracted from .gnu.debugdata
+    std::unique_ptr<ElfSymHash> hash; // Symbol hash table.
+    std::shared_ptr<ElfObject> debugObject; // (DWARF) debug object as per .gnu_debuglink/other.
+
+    bool debugLoaded; // We've at least attempted to load debugObject: don't try again
+    friend std::ostream &operator<< (std::ostream &os, const ElfObject &obj);
 };
 
 // Helpful for iterating over symbol sections.
@@ -209,6 +212,7 @@ struct SymbolSection {
         : symbols(symbols_)
         , strings(elf.getSection((*symbols)->sh_link))
     {}
+    bool linearSearch(const std::string &name, Elf_Sym &);
 };
 
 class ElfSymHash {
