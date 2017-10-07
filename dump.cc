@@ -1,4 +1,5 @@
 #include <libpstack/dump.h>
+#include <set>
 #include <unordered_map>
 #include <sys/procfs.h>
 #include <cassert>
@@ -570,10 +571,19 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
     auto strs = o.getSection(o.getElfHeader().e_shstrndx);
     const Elf_Shdr &sh = **sec;
 
+    static std::set<std::string> textContent = {
+        ".gnu_debugaltlink",
+        ".gnu_debuglink",
+        ".comment",
+    };
+
     os << "{ \"size\":" << sh.sh_size;
     os << ", \"uncompressedSize\":" << sec->getSize();
-    if (strs)
-        os << ", \"name\": \"" << strs->io->readString(sh.sh_name) << "\"";
+    std::string secName;
+    if (strs) {
+        secName = strs->io->readString(sh.sh_name);
+        os << ", \"name\": \"" << secName << "\"";
+    }
 
     os << ", \"type\": ";
     if (sh.sh_type <= SHT_DYNSYM)
@@ -625,8 +635,17 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
                 sep = ",\n";
             }
             os << "]";
+            break;
         }
     }
+
+    if (textContent.find(secName) != textContent.end()) {
+        char buf[1024];
+        auto count = sec->io->read(0, std::min(sizeof buf - 1, sh.sh_size), buf);
+        buf[count] = 0;
+        os << ", \"content\": \"" << buf << "\"";
+    }
+
     return os << " }";
 }
 
