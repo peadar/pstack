@@ -48,6 +48,7 @@ std::ostream &operator << (std::ostream &os, const DwarfLineInfo &lines) {
 std::ostream & operator << (std::ostream &os, const DwarfEntry &entry) {
     os
         << "{ \"type\": \"" << entry.type->tag << "\""
+        << ", \"offset\": " << entry.offset
         << ", \"attributes\": " << entry.attributes;
 
     if (entry.type->hasChildren)
@@ -169,7 +170,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     const DwarfValue &value = attr.value;
     auto dwarf = attr.entry->unit->dwarf;
     auto elf = dwarf->elf;
-    os << "[ " << *attr.spec << ",";
+    os << "{ \"form\": \"" << attr.spec->form << "\", \"value\":";
     switch (attr.spec->form) {
     case DW_FORM_addr:
         os << value.addr;
@@ -204,10 +205,9 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
             os << "\"HAVENOTIT@" << value.addr <<  " + " << attr.entry->unit->offset << " = "  << (value.addr + attr.entry->unit->offset)   << "\"";
         break;
     }
-    case DW_FORM_GNU_ref_alt: {
-        os << "\"alt ref\"";
+    case DW_FORM_GNU_ref_alt:
+        os << value.addr;
         break;
-    }
     case DW_FORM_exprloc:
     case DW_FORM_block1:
     case DW_FORM_block2:
@@ -223,7 +223,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
         break;
     default: os << "\"unknown DWARF form " << attr.spec->form << "\"";
     }
-    os << " ] ";
+    os << " } ";
     return os;
 }
 
