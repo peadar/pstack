@@ -38,7 +38,7 @@ StackFrame::getFrameBase(const Process &p, intmax_t offset, DwarfExpressionStack
 Elf_Addr
 DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, const StackFrame *frame)
 {
-    DwarfInfo *dwarf = attr->entry->unit->dwarf;
+    const DwarfInfo *dwarf = attr->entry->unit->dwarf;
     switch (attr->spec->form) {
         case DW_FORM_sec_offset: {
             auto sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);

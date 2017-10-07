@@ -1,99 +1,57 @@
 cmake_minimum_required(VERSION 2.8.11)
-project(pstack CXX)
-add_definitions("-std=c++11 -Wall -Wextra")
+project(pstack C CXX)
 
-include_directories("/usr/include/python2.7/")
-include_directories(".")
+math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
+set(PSTACK_BIN "pstack" CACHE STRING "Name of the 'pstack' binary")
+set(ELF_BITS ${PLATFORM_BITS} CACHE STRING "32 or 64 - set to 32 to build 32-bit binary on 64-bit platform")
+set(LIBTYPE "STATIC" CACHE STRING "Build libraries as STATIC or SHARED")
 
-if(NOT PSTACK_BIN)
-   SET(PSTACK_BIN pstack)
-endif(NOT PSTACK_BIN)
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib") # Update RPATH in binaries when installed
 
-if(NOT ELF_BITS)
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-  SET(ELF_BITS 64)
-endif(CMAKE_SIZEOF_VOID_P EQUAL 8)
-if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-  SET(ELF_BITS 32)
-endif(CMAKE_SIZEOF_VOID_P EQUAL 4)
-endif(NOT ELF_BITS)
-
-if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND ELF_BITS EQUAL 32)
-  SET(_32_ON_64 1)
-else()
-  SET(_32_ON_64 0)
-endif()
-
-find_library(LIBZ NAMES z PATHS (/usr/lib /usr/local/lib))
-find_library(LZMA NAMES lzma PATHS (/usr/lib /usr/local/lib))
 find_library(LTHREADDB NAMES thread_db PATHS (/usr/lib /usr/local/lib))
+find_package(LibLZMA)
+find_package(ZLIB)
 
-if (LZMA STREQUAL "LZMA-NOTFOUND")
-   message(WARNING "No LZMA library found - won't grok .gnu_debugdata - ${LZMA}")
-   set(lzmasrc)
-else()
-   message(STATUS "Using LZMA library ${LZMA}")
-   add_definitions("-DWITH_LZMA")
-   set(lzmasrc lzma.cc)
+if(PLATFORM_BITS EQUAL 64 AND ELF_BITS EQUAL 32)
+    # we want a 32-bit binary in a 64-bit build environment: use -m32 everywhere
+    add_definitions("-m32")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -m32")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -m32")
 endif()
 
-if (LIBZ STREQUAL "LIBZ-NOTFOUND")
-   message(WARNING "No ZLIB library found - won't understand compressed debug info - ${LIBZ}")
-   set(inflatesrc)
-else()
-   message(STATUS "Using ZLIB library ${LIBZ}")
-   add_definitions("-DWITH_ZLIB")
-   set(inflatesrc inflate.cc)
-endif()
-
-set(dwelfsrc dwarf.cc elf.cc reader.cc util.cc dump.cc ${inflatesrc} ${lzmasrc})
-set(procmansrc dead.cc live.cc process.cc proc_service.cc dwarfproc.cc procdump.cc)
+add_definitions("-std=c++11 -Wall -Wextra -DELF_BITS=${ELF_BITS} -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_definitions("-DELF_BITS=${ELF_BITS}")
-add_definitions("-D_FILE_OFFSET_BITS=64")
-add_definitions("-D_LARGEFILE_SOURCE")
+if (ZLIB_FOUND)
+   set(inflatesrc inflate.cc)
+   add_definitions("-DWITH_ZLIB")
+endif()
+
+if (LIBLZMA_FOUND)
+   set(lzmasrc lzma.cc)
+   add_definitions("-DWITH_LZMA")
+endif()
+
+# Make sure to use the local libpstack headers rather than what's installed.
+include_directories("." ${LIBLZMA_INCLUDES} ${ZLIB_INCLUDES})
+
+add_library(dwelf ${LIBTYPE} dwarf.cc elf.cc reader.cc util.cc dump.cc
+   ${inflatesrc} ${lzmasrc})
+add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc
+   dwarfproc.cc procdump.cc ${stubsrc})
 
 add_executable(canal canal.cc)
 add_executable(${PSTACK_BIN} pstack.cc)
 
-add_library(dwelf-static STATIC ${dwelfsrc})
-add_library(dwelf-shared SHARED ${dwelfsrc})
-add_library(procman-static STATIC ${procmansrc})
-add_library(procman-shared SHARED ${procmansrc})
+target_link_libraries(dwelf ${LIBLZMA_LIBRARIES} ${ZLIB_LIBRARIES})
+target_link_libraries(procman ${LTHREADDB} dwelf)
+target_link_libraries(${PSTACK_BIN} dwelf procman)
+target_link_libraries(canal dwelf procman)
 
-if (NOT LZMA STREQUAL "LZMA-NOTFOUND")
-   target_link_libraries(dwelf-shared ${LZMA})
-   target_link_libraries(dwelf-static ${LZMA})
-endif()
-
-if (NOT LIBZ STREQUAL "LIBZ-NOTFOUND")
-   target_link_libraries(dwelf-shared ${LIBZ})
-   target_link_libraries(dwelf-static ${LIBZ})
-endif()
-
-target_link_libraries(procman-shared dwelf-shared ${LTHREADDB})
-target_link_libraries(procman-static dwelf-static ${LTHREADDB})
-
-target_link_libraries(${PSTACK_BIN} dwelf-static procman-static)
-target_link_libraries(canal dwelf-static procman-static)
-
-set_target_properties(dwelf-shared PROPERTIES VERSION 1.0.0 SOVERSION 1)
-set_target_properties(procman-shared PROPERTIES VERSION 1.0.0 SOVERSION 1)
-set_target_properties(dwelf-static PROPERTIES OUTPUT_NAME dwelf)
-set_target_properties(dwelf-shared PROPERTIES OUTPUT_NAME dwelf)
-set_target_properties(procman-static PROPERTIES OUTPUT_NAME procman)
-set_target_properties(procman-shared PROPERTIES OUTPUT_NAME procman)
-
-if (_32_ON_64 EQUAL 1)
-    add_definitions("-m32")
-    set_target_properties(${PSTACK_BIN} PROPERTIES LINK_FLAGS -m32)
-    set_target_properties(procman-shared PROPERTIES LINK_FLAGS -m32)
-    set_target_properties(dwelf-shared PROPERTIES LINK_FLAGS -m32)
-    set_target_properties(canal PROPERTIES LINK_FLAGS -m32)
-endif()
+set_target_properties(dwelf PROPERTIES VERSION 1.0.0 SOVERSION 1)
+set_target_properties(procman PROPERTIES VERSION 1.0.0 SOVERSION 1)
 
 install(TARGETS ${PSTACK_BIN} canal DESTINATION bin)
-install(TARGETS dwelf-static dwelf-shared procman-static procman-shared DESTINATION lib)
+install(TARGETS dwelf procman DESTINATION lib)
 install(DIRECTORY libpstack DESTINATION include)
 install(CODE "execute_process (COMMAND setcap cap_sys_ptrace+ep ${CMAKE_INSTALL_PREFIX}/bin/${PSTACK_BIN})")

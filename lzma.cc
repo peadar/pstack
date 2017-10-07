@@ -2,21 +2,9 @@
 #include <libpstack/lzmareader.h>
 #include <lzma.h>
 
-static void *
-allocLzma(void *, size_t members, size_t size)
-{
-    return calloc(members, size);
-}
-
-static void
-freeLzma(void *, void *p)
-{
-    free(p);
-}
-
 static lzma_allocator allocator = {
-   allocLzma,
-   freeLzma,
+   [] ( void *, size_t m, size_t s ) {  return calloc(m, s); },
+   [] ( void *, void *p ) {  free(p); },
    0
 };
 
@@ -39,6 +27,8 @@ LzmaReader::LzmaReader(std::shared_ptr<Reader> inputBuf, size_t end)
            &pos, options.backward_size);
    if (rc != LZMA_OK)
        throw Exception() << "can't decode index buffer";
+   if (verbose >= 2)
+      *debug << "lzma inflate: " << *this << "\n";
 }
 
 off_t
@@ -69,7 +59,6 @@ LzmaReader::read(off_t offset, size_t size, char *data) const
             int rc = lzma_block_header_decode(&block, &allocator, &compressed[0]);
             if (rc != LZMA_OK)
                 throw Exception() << "can't decode block header: " << rc;
-
             uncompressed.resize(iter.block.uncompressed_size);
             size_t compressed_pos = block.header_size;
             size_t uncompressed_pos = 0;

@@ -151,7 +151,7 @@ ElfObject::init(const shared_ptr<Reader> &io_)
                       std::make_shared<LzmaReader>(h->io, h->getSize()));
 #else
                 std::clog << "warning: no compiled support for LZMA - "
-                      "can't decode debug data in " << io->describe() << "\n";
+                      "can't decode debug data in " << *io << "\n";
 #endif
         }
         auto tab = getSection(".hash", SHT_HASH);
@@ -216,7 +216,9 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
                     name = syminfo.second;
                     return true;
                 }
-            } else if (lowest < candidate.st_value) {
+            }
+#if 0
+            else if (lowest < candidate.st_value) {
                 /*
                  * No size, but hold on to it as a possibility. We'll return
                  * the symbol with the highest value not aabove the required
@@ -226,6 +228,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
                 name = syminfo.second;
                 lowest = candidate.st_value;
             }
+#endif
         }
     }
     if (exact || debugData == nullptr)

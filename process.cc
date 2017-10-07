@@ -449,14 +449,16 @@ std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options)
 {
     os << "thread: " << (void *)thread.info.ti_tid << ", lwp: " << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
+    int frameNo = 0;
     for (auto frame : thread.stack) {
 
-        os << "    ";
-        if (verbose) {
+        {
             IOFlagSave _(os);
-            os << "[ip=" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->ip
-                << ", cfa=" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa
-                << "] ";
+            os << "#" << std::left << std::dec << std::setw(2) << std::setfill(' ') << frameNo++ << " ";
+            os << std::right << std::hex << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->ip;
+            if (verbose)
+                os << "/" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa;
+            os << " ";
         }
 
         Elf_Sym sym;
@@ -470,7 +472,6 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             Elf_Addr objIp = frame->ip - reloc;
 
             DwarfInfo *dwarf = getDwarf(obj, true);
-            DwarfEntry *de = 0;
 
             std::list<std::shared_ptr<DwarfUnit>> units;
             if (dwarf->hasRanges()) {
@@ -493,6 +494,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             for (auto u : units) {
                 // find the DIE for this function
                 for (auto it : u->entries) {
+                    DwarfEntry *de = 0;
                     de = findEntryForFunc(objIp - 1, it);
                     if (de) {
                         symName = de->name();
@@ -504,7 +506,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         }
                         frame->function = de;
                         frame->dwarf = dwarf; // hold on to 'de'
-                        os << symName << sigmsg << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(";
+                        os << "in " << symName << sigmsg << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(";
                         if (options(PstackOptions::doargs)) {
                             os << ArgPrint(*this, frame);
                         }
@@ -520,17 +522,17 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             if (!dwarfUnit) {
                 obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
                 if (symName != "")
-                    os << symName << sigmsg << "!+" << objIp - sym.st_value << "()";
+                    os << "in " << symName << sigmsg << "!+" << objIp - sym.st_value << "()";
                 else
-                    os << "unknown@" << std::hex << frame->ip << std::dec << sigmsg << "()";
+                    os << "in <unknown>" << sigmsg << "()";
             }
 
-            os << " in " << fileName;
+            os << " at " << fileName;
             if (!options(PstackOptions::nosrc) && dwarf) {
                 auto source = dwarf->sourceFromAddr(objIp - 1);
-                for (auto ent = source.begin(); ent != source.end(); ++ent) {
+                for (auto ent : source) {
                     os << " at ";
-                    os << ent->first->directory << "/" << ent->first->name << ":" << std::dec << ent->second;
+                    os << ent.first->directory << "/" << ent.first->name << ":" << std::dec << ent.second;
                 }
             }
         } else {

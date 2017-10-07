@@ -1,4 +1,5 @@
 #include <libpstack/dump.h>
+#include <set>
 #include <unordered_map>
 #include <sys/procfs.h>
 #include <cassert>
@@ -47,6 +48,7 @@ std::ostream &operator << (std::ostream &os, const DwarfLineInfo &lines) {
 std::ostream & operator << (std::ostream &os, const DwarfEntry &entry) {
     os
         << "{ \"type\": \"" << entry.type->tag << "\""
+        << ", \"offset\": " << entry.offset
         << ", \"attributes\": " << entry.attributes;
 
     if (entry.type->hasChildren)
@@ -168,7 +170,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     const DwarfValue &value = attr.value;
     auto dwarf = attr.entry->unit->dwarf;
     auto elf = dwarf->elf;
-    os << "[ " << *attr.spec << ",";
+    os << "{ \"form\": \"" << attr.spec->form << "\", \"value\":";
     switch (attr.spec->form) {
     case DW_FORM_addr:
         os << value.addr;
@@ -195,16 +197,18 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_ref2:
     case DW_FORM_ref4:
     case DW_FORM_ref8:
+    case DW_FORM_GNU_ref_alt:
     case DW_FORM_ref_udata: {
         const auto entry = attr.entry->referencedEntry(attr.spec->name);
-        if (entry)
-            os << "\"ref to " << entry->name() << " at " << entry->offset << "\"";
+        if (entry) {
+           os << " { \"file\": \"" << *entry->unit->dwarf->elf->io << "\"";
+           os << " , \"offset\": " << entry->offset;
+           if (entry->name() != "")
+              os << " , \"name\": \"" << entry->name() << "\"";
+           os << " }";
+        }
         else
-            os << "\"HAVENOTIT@" << value.addr <<  " + " << attr.entry->unit->offset << " = "  << (value.addr + attr.entry->unit->offset)   << "\"";
-        break;
-    }
-    case DW_FORM_GNU_ref_alt: {
-        os << "\"alt ref\"";
+            os << "null";
         break;
     }
     case DW_FORM_exprloc:
@@ -222,7 +226,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
         break;
     default: os << "\"unknown DWARF form " << attr.spec->form << "\"";
     }
-    os << " ] ";
+    os << " } ";
     return os;
 }
 
@@ -570,10 +574,19 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
     auto strs = o.getSection(o.getElfHeader().e_shstrndx);
     const Elf_Shdr &sh = **sec;
 
+    static std::set<std::string> textContent = {
+        ".gnu_debugaltlink",
+        ".gnu_debuglink",
+        ".comment",
+    };
+
     os << "{ \"size\":" << sh.sh_size;
     os << ", \"uncompressedSize\":" << sec->getSize();
-    if (strs)
-        os << ", \"name\": \"" << strs->io->readString(sh.sh_name) << "\"";
+    std::string secName;
+    if (strs) {
+        secName = strs->io->readString(sh.sh_name);
+        os << ", \"name\": \"" << secName << "\"";
+    }
 
     os << ", \"type\": ";
     if (sh.sh_type <= SHT_DYNSYM)
@@ -625,8 +638,17 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
                 sep = ",\n";
             }
             os << "]";
+            break;
         }
     }
+
+    if (textContent.find(secName) != textContent.end()) {
+        char buf[1024];
+        auto count = sec->io->read(0, std::min(sizeof buf - 1, sh.sh_size), buf);
+        buf[count] = 0;
+        os << ", \"content\": \"" << buf << "\"";
+    }
+
     return os << " }";
 }
 
