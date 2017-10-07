@@ -14,11 +14,17 @@
 
 #include <sstream>
 #include <iostream>
+#include <memory>
 
 #include <libpstack/elf.h>
 #include <libpstack/dwarf.h>
 
 extern int gVerbose;
+
+
+// Multiple ELF objects may refer to the same ELF object for .gnu_debugaltref
+// Cache them here.
+static std::map<std::string, std::weak_ptr<DwarfInfo>> altRefCache;
 
 uintmax_t
 DWARFReader::getuint(int len)
@@ -167,11 +173,11 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
 }
 
 DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
-    : debstr(obj->getSection(".debug_str", SHT_PROGBITS))
+    : altImageLoaded(false)
+    , debstr(obj->getSection(".debug_str", SHT_PROGBITS))
     , pubnamesh(obj->getSection(".debug_pubnames", SHT_PROGBITS))
     , arangesh(obj->getSection(".debug_aranges", SHT_PROGBITS))
     , debug_frame(obj->getSection(".debug_frame", SHT_PROGBITS))
-    , altImageLoaded(false)
     , info(obj->getSection(".debug_info", SHT_PROGBITS))
     , elf(obj)
     , abbrev(obj->getSection(".debug_abbrev", SHT_PROGBITS))
@@ -239,7 +245,7 @@ DwarfInfo::getUnit(off_t offset)
 }
 
 std::list<std::shared_ptr<DwarfUnit>>
-DwarfInfo::getUnits()
+DwarfInfo::getUnits() const
 {
     std::list<std::shared_ptr<DwarfUnit>> list;
     if (info == 0)
@@ -309,7 +315,7 @@ DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
     }
 }
 
-DwarfUnit::DwarfUnit(DwarfInfo *di, DWARFReader &r)
+DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
     : dwarf(di)
     , offset(r.getOffset())
 {
@@ -568,7 +574,7 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
     switch (spec->form) {
 
     case DW_FORM_GNU_strp_alt: {
-        DwarfInfo *info = entry->unit->dwarf;
+        const DwarfInfo *info = entry->unit->dwarf;
         value.string = info->getAltDwarf()->debugStrings + r.getint(entry->unit->dwarfLen);
         break;
     }
@@ -742,43 +748,44 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
     }
 }
 
-std::shared_ptr<DwarfInfo>
-DwarfInfo::getAltDwarf()
+static std::string
+getAltImageName(std::shared_ptr<ElfObject> elf)
 {
-    if (!altDwarf) {
-        altDwarf = std::make_shared<DwarfInfo>(getAltImage());
+    auto section = elf->getSection(".gnu_debugaltlink", 0);
+    char name[1024];
+    assert(section->getSize() < sizeof name);
+    name[section->getSize()] = 0;
+    section->io->read(0, section->getSize(), name);
+    char *path;
+    if (name[0] != '/') {
+        // Not relative - prefix it with dirname of the image
+        char absbuf[1024];
+        strncpy(absbuf, stringify(*elf->io).c_str(), sizeof absbuf);
+        dirname(absbuf);
+        strncat(absbuf, "/", sizeof absbuf - 1);
+        strncat(absbuf, "/", sizeof absbuf - 1);
+        strncat(absbuf, name, sizeof absbuf - 1);
+        path = absbuf;
+    } else {
+        path = name;
     }
-    return altDwarf;
+    return path;
 }
 
-std::shared_ptr<ElfObject>
-DwarfInfo::getAltImage()
+std::shared_ptr<DwarfInfo>
+DwarfInfo::getAltDwarf() const
 {
     if (!altImageLoaded) {
-        altImageLoaded = true;
-        auto section = elf->getSection(".gnu_debugaltlink", 0);
-        char name[1024];
-        assert(section->getSize() < sizeof name);
-        name[section->getSize()] = 0;
-        section->io->read(0, section->getSize(), name);
-        char *path;
-        if (name[0] != '/') {
-            // Not relative - prefix it with dirname of the image
-            char absbuf[1024];
-            strncpy(absbuf, stringify(*elf->io).c_str(), sizeof absbuf);
-            dirname(absbuf);
-            strncat(absbuf, "/", sizeof absbuf - 1);
-            strncat(absbuf, "/", sizeof absbuf - 1);
-            strncat(absbuf, name, sizeof absbuf - 1);
-            path = absbuf;
-        } else {
-            path = name;
+        auto path = getAltImageName(elf);
+        altDwarf = altRefCache[path].lock();
+        if (altDwarf == 0) {
+            altRefCache[path] = altDwarf = std::make_shared<DwarfInfo>(
+                    std::make_shared<ElfObject>(
+                        loadFile(path)));
         }
-        if (verbose)
-           *debug << "io: " << *elf->io << ", alt path: " << name << "\n";
-        altImage = std::make_shared<ElfObject>(loadFile(path));
+        altImageLoaded = true;
     }
-    return altImage;
+    return altDwarf;
 }
 
 intmax_t
@@ -1232,6 +1239,7 @@ DwarfEntry::referencedEntry(DwarfAttrName name) const
         return 0;
 
     off_t off;
+    const DwarfInfo *refDwarf = this->unit->dwarf;
     switch (attr->spec->form) {
         case DW_FORM_ref_addr:
             off = attr->value.ref;
@@ -1242,17 +1250,26 @@ DwarfEntry::referencedEntry(DwarfAttrName name) const
         case DW_FORM_ref8:
             off = attr->value.ref + unit->offset;
             break;
-        case DW_FORM_GNU_ref_alt:
-            return 0; // XXX: deal with this.
+        case DW_FORM_GNU_ref_alt: {
+            auto dwarf = unit->dwarf->getAltDwarf();
+            if (!dwarf)
+                return 0; // XXX: deal with this.
+            refDwarf = dwarf.get(); // our dwarf object will continue to hold a reference to the alt dwarf.
+            off = attr->value.ref;
+            break;
+        }
         default:
             abort();
             break;
     }
     const auto &entry = unit->allEntries.find(off);
-    if (entry != unit->allEntries.end())
+
+    // Try this unit first (if we're dealing with the same DwarfInfo)
+    if (refDwarf == this->unit->dwarf && entry != unit->allEntries.end())
         return entry->second.get();
-    // Lets look in the parent
-    for (auto u : unit->dwarf->getUnits()) {
+
+    // Nope - try other units.
+    for (auto u : refDwarf->getUnits()) {
         if (u.get() == unit)
             continue;
         const auto &entry = u->allEntries.find(off);

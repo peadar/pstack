@@ -232,7 +232,7 @@ struct DwarfUnit {
     DwarfUnit() = delete;
     DwarfUnit(const DwarfUnit &) = delete;
     std::map<off_t, std::shared_ptr<DwarfEntry>> allEntries;
-    DwarfInfo *dwarf;
+    const DwarfInfo *dwarf;
     off_t offset;
     size_t dwarfLen;
     void decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *parent);
@@ -244,7 +244,7 @@ struct DwarfUnit {
     const unsigned char *lineInfo;
     DwarfEntries entries;
     DwarfLineInfo lines;
-    DwarfUnit(DwarfInfo *, DWARFReader &);
+    DwarfUnit(const DwarfInfo *, DWARFReader &);
     std::string name() const;
     ~DwarfUnit();
 };
@@ -326,14 +326,17 @@ struct DwarfFrameInfo {
 class DwarfInfo {
     std::list<DwarfPubnameUnit> pubnameUnits;
     std::list<DwarfARangeSet> aranges;
-    std::map<Elf_Off, std::shared_ptr<DwarfUnit>> unitsm;
+
+    // These are mutable so we can lazy-eval them when getters are called, and
+    // maintain logical constness.
+    mutable std::map<Elf_Off, std::shared_ptr<DwarfUnit>> unitsm;
+    mutable std::shared_ptr<DwarfInfo> altDwarf;
+    mutable bool altImageLoaded;
+
     std::shared_ptr<const ElfSection> debstr;
     std::shared_ptr<const ElfSection> pubnamesh;
     std::shared_ptr<const ElfSection> arangesh;
     std::shared_ptr<const ElfSection> debug_frame;
-    std::shared_ptr<ElfObject> altImage;
-    std::shared_ptr<DwarfInfo> altDwarf;
-    bool altImageLoaded;
 public:
     std::shared_ptr<const ElfSection> info;
     char *debugStrings;
@@ -344,12 +347,12 @@ public:
     std::shared_ptr<const ElfSection> abbrev;
     std::shared_ptr<const ElfSection> lineshdr;
 
-    std::shared_ptr<ElfObject> getAltImage();
-    std::shared_ptr<DwarfInfo> getAltDwarf();
+    std::shared_ptr<ElfObject> getAltImage() const;
+    std::shared_ptr<DwarfInfo> getAltDwarf() const;
     std::list<DwarfARangeSet> &ranges();
     std::list<DwarfPubnameUnit> &pubnames();
     std::shared_ptr<DwarfUnit> getUnit(off_t offset);
-    std::list<std::shared_ptr<DwarfUnit>> getUnits();
+    std::list<std::shared_ptr<DwarfUnit>> getUnits() const;
     DwarfInfo(std::shared_ptr<ElfObject> object);
     std::vector<std::pair<const DwarfFileEntry *, int>> sourceFromAddr(uintmax_t addr);
     ~DwarfInfo();

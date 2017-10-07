@@ -197,17 +197,20 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_ref2:
     case DW_FORM_ref4:
     case DW_FORM_ref8:
+    case DW_FORM_GNU_ref_alt:
     case DW_FORM_ref_udata: {
         const auto entry = attr.entry->referencedEntry(attr.spec->name);
-        if (entry)
-            os << "\"ref to " << entry->name() << " at " << entry->offset << "\"";
+        if (entry) {
+           os << " { \"file\": \"" << *entry->unit->dwarf->elf->io << "\"";
+           os << " , \"offset\": " << entry->offset;
+           if (entry->name() != "")
+              os << " , \"name\": \"" << entry->name() << "\"";
+           os << " }";
+        }
         else
-            os << "\"HAVENOTIT@" << value.addr <<  " + " << attr.entry->unit->offset << " = "  << (value.addr + attr.entry->unit->offset)   << "\"";
+            os << "null";
         break;
     }
-    case DW_FORM_GNU_ref_alt:
-        os << value.addr;
-        break;
     case DW_FORM_exprloc:
     case DW_FORM_block1:
     case DW_FORM_block2:
