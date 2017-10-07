@@ -125,7 +125,8 @@ Process::processAUXV(const void *datap, size_t len)
                         *debug << "VDSO " << *elf->io << " loaded\n";
 
                 }
-                catch (...) {
+                catch (const std::exception &ex) {
+                    std::clog << "warning: failed to load DSO: " << ex.what() << "\n";
                 }
                 break;
             }
