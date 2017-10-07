@@ -196,9 +196,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
     static const char *sectionNames[] = {
         ".symtab", ".dynsym", 0
     };
-    bool exact = false;
-    Elf_Addr lowest = 0;
-    for (size_t i = 0; sectionNames[i] && !exact; i++) {
+    for (size_t i = 0; sectionNames[i]; i++) {
         const auto symSection = getSection(sectionNames[i], SHT_NULL);
         if (symSection == 0 || (*symSection)->sh_type == SHT_NOBITS)
             continue;
@@ -207,39 +205,23 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
             auto &candidate = syminfo.first;
             if (candidate.st_shndx >= sectionHeaders.size())
                 continue;
-            auto shdr = sectionHeaders[candidate.st_shndx];
-            if (!((*shdr)->sh_flags & SHF_ALLOC))
-                continue;
             if (type != STT_NOTYPE && ELF_ST_TYPE(candidate.st_info) != type)
                 continue;
             if (candidate.st_value > addr)
                 continue;
-            if (candidate.st_size) {
-                // symbol has a size: we can check if our address lies within it.
-                if (candidate.st_size + candidate.st_value > addr) {
-                    // yep: return this one.
-                    sym = candidate;
-                    name = syminfo.second;
-                    return true;
-                }
-            }
-#if 0
-            else if (lowest < candidate.st_value) {
-                /*
-                 * No size, but hold on to it as a possibility. We'll return
-                 * the symbol with the highest value not aabove the required
-                 * value
-                 */
-                sym = candidate;
-                name = syminfo.second;
-                lowest = candidate.st_value;
-            }
-#endif
+            if (candidate.st_size + candidate.st_value <= addr)
+                continue;
+            auto shdr = sectionHeaders[candidate.st_shndx];
+            if (!((*shdr)->sh_flags & SHF_ALLOC))
+                continue;
+            sym = candidate;
+            name = syminfo.second;
+            return true;
         }
     }
-    if (exact || debugData == nullptr)
-       return exact;
-    return debugData->findSymbolByAddress(addr, type, sym, name);
+    if (debugData)
+        return debugData->findSymbolByAddress(addr, type, sym, name);
+    return false;;
 }
 
 std::shared_ptr<const ElfSection>
@@ -345,16 +327,12 @@ tryLoad(const std::string &name) {
     for (auto dir : globalDebugDirectories.dirs) {
         try {
            auto debugObject = make_shared<ElfObject>(loadFile((dir + "/" + name).c_str()));
-           if (verbose >= 2)
-              *debug << "found debug object " << dir << "/" << name << "\n";
            return debugObject;
         }
         catch (const std::exception &ex) {
             continue;
         }
     }
-    if (verbose >= 2)
-        *debug << "no file found for " << name << std::endl;
     return std::shared_ptr<ElfObject>();
 }
 
@@ -368,12 +346,12 @@ ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
         in->debugLoaded = true;
 
         auto hdr = in->getSection(".gnu_debuglink", SHT_PROGBITS);
-        if (hdr == 0)
-            return in;
-        std::string link = hdr->io->readString(0);
+        if (hdr) {
+            std::string link = hdr->io->readString(0);
+            auto dir = dirname(stringify(*in->io));
+            in->debugObject = tryLoad(dir + "/" + link);
+        }
 
-        auto dir = dirname(stringify(*in->io));
-        in->debugObject = tryLoad(dir + "/" + link);
         if (!in->debugObject) {
             for (auto note : in->notes) {
                 if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
@@ -391,6 +369,8 @@ ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
                 }
             }
         }
+        if (in->debugObject && verbose >= 2)
+            *debug << "found debug object " << *in->debugObject->io << " for " << *in->io << "\n";
     }
     return in->debugObject ? in->debugObject : in;
 }
