@@ -27,6 +27,8 @@ LzmaReader::LzmaReader(std::shared_ptr<Reader> inputBuf, size_t end)
            &pos, options.backward_size);
    if (rc != LZMA_OK)
        throw Exception() << "can't decode index buffer";
+   if (verbose >= 2)
+      *debug << "lzma inflate: " << *this << "\n";
 }
 
 off_t

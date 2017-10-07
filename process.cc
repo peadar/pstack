@@ -471,7 +471,6 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             Elf_Addr objIp = frame->ip - reloc;
 
             DwarfInfo *dwarf = getDwarf(obj, true);
-            DwarfEntry *de = 0;
 
             std::list<std::shared_ptr<DwarfUnit>> units;
             if (dwarf->hasRanges()) {
@@ -494,6 +493,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             for (auto u : units) {
                 // find the DIE for this function
                 for (auto it : u->entries) {
+                    DwarfEntry *de = 0;
                     de = findEntryForFunc(objIp - 1, it);
                     if (de) {
                         symName = de->name();
