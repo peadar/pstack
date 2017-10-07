@@ -447,7 +447,7 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
 
     os << ", \"sections\": [";
     const char *sep = "";
-    for (auto &i : obj.getSections()) {
+    for (auto &i : obj.sectionHeaders) {
         os << sep << std::make_pair(std::ref(obj), i);
         sep = ",\n";
     }

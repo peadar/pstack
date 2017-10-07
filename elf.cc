@@ -75,46 +75,8 @@ ElfNoteDesc::size() const
    return note.n_descsz;
 }
 
-/*
- * Parse out an ELF file into an ElfObject structure.
- */
-
-const Elf_Phdr *
-ElfObject::findHeaderForAddress(Elf_Off a) const
-{
-    for (const auto &hdr : getSegments(PT_LOAD))
-        if (hdr.p_vaddr <= a && hdr.p_vaddr + hdr.p_memsz > a)
-            return &hdr;
-    return 0;
-}
-
 ElfObject::ElfObject(shared_ptr<Reader> io_)
    : notes(this)
-{
-    init(io_);
-}
-
-Elf_Addr
-ElfObject::getBase() const
-{
-    auto base = std::numeric_limits<Elf_Off>::max();
-    auto &segments = getSegments(PT_LOAD);
-    for (auto &seg : segments)
-        if (Elf_Off(seg.p_vaddr) <= base)
-            base = Elf_Off(seg.p_vaddr);
-    return base;
-}
-
-std::string
-ElfObject::getInterpreter() const
-{
-    for (auto &seg : getSegments(PT_INTERP))
-        return io->readString(seg.p_offset);
-    return "";
-}
-
-void
-ElfObject::init(const shared_ptr<Reader> &io_)
 {
     debugLoaded = false;
     io = io_;
@@ -163,6 +125,50 @@ ElfObject::init(const shared_ptr<Reader> &io_)
     } else {
         hash = 0;
     }
+}
+
+
+/*
+ * Parse out an ELF file into an ElfObject structure.
+ */
+
+const Elf_Phdr *
+ElfObject::getSegmentForAddress(Elf_Off a) const
+{
+    for (const auto &hdr : getSegments(PT_LOAD))
+        if (hdr.p_vaddr <= a && hdr.p_vaddr + hdr.p_memsz > a)
+            return &hdr;
+    return 0;
+}
+
+const ElfObject::ProgramHeaders &
+ElfObject::getSegments(Elf_Word type) const
+{
+    auto it = programHeaders.find(type);
+    if (it == programHeaders.end()) {
+        static const ProgramHeaders empty;
+        return empty;
+    }
+    return it->second;
+}
+
+Elf_Addr
+ElfObject::getBase() const
+{
+    auto base = std::numeric_limits<Elf_Off>::max();
+    auto &segments = getSegments(PT_LOAD);
+    for (auto &seg : segments)
+        if (Elf_Off(seg.p_vaddr) <= base)
+            base = Elf_Off(seg.p_vaddr);
+    return base;
+}
+
+std::string
+ElfObject::getInterpreter() const
+{
+    for (auto &seg : getSegments(PT_INTERP))
+        return io->readString(seg.p_offset);
+    return "";
 }
 
 std::pair<const Elf_Sym, const string>
@@ -255,14 +261,14 @@ ElfObject::getSection(Elf_Word idx) const
 SymbolSection
 ElfObject::getSymbols(const std::string &table)
 {
-    return SymbolSection(*this, getSection(table, SHT_NULL));
+    ElfObject *elf = debugData ? debugData.get() : this;
+    return SymbolSection(*this, elf->getSection(table, SHT_NULL));
 }
 
 bool
-ElfObject::linearSymSearch(std::shared_ptr<const ElfSection> section, const string &name, Elf_Sym &sym)
+SymbolSection::linearSearch(const string &name, Elf_Sym &sym)
 {
-    SymbolSection sec(*this, section);
-    for (const auto &info : sec) {
+    for (const auto &info : *this) {
         if (name == info.second) {
             sym = info.first;
             return true;
@@ -308,31 +314,29 @@ ElfSymHash::findSymbol(Elf_Sym &sym, const string &name)
 bool
 ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
 {
+    if (debugData)
+        return debugData->findSymbolByName(name, sym);
+
     if (hash && hash->findSymbol(sym, name))
         return true;
-    auto dyn = getSection(".dynsym", SHT_DYNSYM);
 
-    if (dyn && linearSymSearch(dyn, name, sym))
-        return true;
-    auto symtab = getSection(".symtab", SHT_SYMTAB);
+    {
+        SymbolSection sect = getSymbols(".dynsym");
+        if (sect.linearSearch(name, sym))
+            return true;
+    }
 
-    if (symtab && linearSymSearch(symtab, name, sym))
-       return true;
+    {
+        SymbolSection sect = getSymbols(".symtab");
+        if (sect.linearSearch(name, sym))
+            return true;
+    }
 
-    if (debugData)
-       return debugData->findSymbolByName(name, sym);
     return false;
 }
 
 ElfObject::~ElfObject()
 {
-}
-
-std::shared_ptr<ElfObject>
-ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
-{
-   auto sp = in->getDebug();
-   return sp ? sp : in;
 }
 
 static std::shared_ptr<ElfObject>
@@ -355,23 +359,23 @@ tryLoad(const std::string &name) {
 }
 
 std::shared_ptr<ElfObject>
-ElfObject::getDebug()
+ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
 {
     if (noDebugLibs)
         return std::shared_ptr<ElfObject>();
 
-    if (!debugLoaded) {
-        debugLoaded = true;
+    if (!in->debugLoaded) {
+        in->debugLoaded = true;
 
-        auto hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
+        auto hdr = in->getSection(".gnu_debuglink", SHT_PROGBITS);
         if (hdr == 0)
-            return std::shared_ptr<ElfObject>();
+            return in;
         std::string link = hdr->io->readString(0);
 
-        auto dir = dirname(stringify(*io));
-        debugObject = tryLoad(dir + "/" + link);
-        if (!debugObject) {
-            for (auto note : notes) {
+        auto dir = dirname(stringify(*in->io));
+        in->debugObject = tryLoad(dir + "/" + link);
+        if (!in->debugObject) {
+            for (auto note : in->notes) {
                 if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
                     std::ostringstream dir;
                     dir << ".build-id/";
@@ -382,13 +386,13 @@ ElfObject::getDebug()
                     for (i = 1; i < note.size(); ++i)
                         dir << std::setw(2) << int(data[i]);
                     dir << ".debug";
-                    debugObject = tryLoad(dir.str());
+                    in->debugObject = tryLoad(dir.str());
                     break;
                 }
             }
         }
     }
-    return debugObject;
+    return in->debugObject ? in->debugObject : in;
 }
 
 /*
