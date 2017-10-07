@@ -423,7 +423,7 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
 
     uint16_t version = r.getu16();
     (void)version;
-    Elf_Off header_length = r.getuint(unit->dwarfLen);
+    Elf_Off header_length = r.getuint(unit->version > 2 ? unit->dwarfLen: 4);
     Elf_Off expectedEnd = header_length + r.getOffset();
     int min_insn_length = r.getu8();
     default_is_stmt = r.getu8();
