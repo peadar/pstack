@@ -340,7 +340,7 @@ std::shared_ptr<ElfObject>
 ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
 {
     if (noDebugLibs)
-        return std::shared_ptr<ElfObject>();
+        return in;
 
     if (!in->debugLoaded) {
         in->debugLoaded = true;
