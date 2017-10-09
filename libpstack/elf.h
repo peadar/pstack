@@ -207,10 +207,10 @@ struct SymbolSection {
     std::shared_ptr<const ElfSection> symbols;
     std::shared_ptr<const ElfSection> strings;
     SymbolIterator begin() { return SymbolIterator(this, 0); }
-    SymbolIterator end() { return SymbolIterator(this, symbols->getSize()); }
+    SymbolIterator end() { return SymbolIterator(this, symbols ? symbols->getSize() : 0); }
     SymbolSection(ElfObject &elf, std::shared_ptr<const ElfSection> symbols_)
         : symbols(symbols_)
-        , strings(elf.getSection((*symbols)->sh_link))
+        , strings(symbols ? elf.getSection((*symbols)->sh_link) : 0)
     {}
     bool linearSearch(const std::string &name, Elf_Sym &);
 };
