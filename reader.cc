@@ -1,9 +1,11 @@
 #include <libpstack/util.h>
+#include <unistd.h>
 #include <stdint.h>
 #include <unistd.h>
 #include <iostream>
 #include <fcntl.h>
 #include <assert.h>
+#include <sys/stat.h>
 
 using std::string;
 
@@ -26,6 +28,17 @@ linkResolve(string name)
     }
     return name;
 }
+
+off_t
+FileReader::size() const
+{
+    struct stat buf;
+    int rc = fstat(file, &buf);
+    if (rc == -1)
+        throw Exception() << "fstat failed: can't find size of file: " << strerror(errno);
+    return buf.st_size;
+}
+
 
 bool
 FileReader::openfile(int &file, std::string name_)
