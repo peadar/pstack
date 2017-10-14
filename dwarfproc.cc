@@ -413,13 +413,13 @@ StackFrame::unwind(Process &p)
 }
 
 void
-StackFrame::setReg(unsigned regno, uintmax_t regval)
+StackFrame::setReg(unsigned regno, cpureg_t regval)
 {
     regs[regno] = regval;
 }
 
 
-uintmax_t
+cpureg_t
 StackFrame::getReg(unsigned regno) const
 {
     auto i = regs.find(regno);

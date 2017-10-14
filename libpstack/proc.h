@@ -25,10 +25,13 @@ public:
     Elf_Addr eval(const Process &, const DwarfAttribute *, const StackFrame *);
 };
 
+// this works for i386 and x86_64 - might need to change for other archs.
+typedef unsigned long cpureg_t;
+
 struct StackFrame {
     Elf_Addr ip;
     Elf_Addr cfa;
-    std::map<unsigned, uintmax_t> regs;
+    std::map<unsigned, cpureg_t> regs;
     DwarfInfo *dwarf;
     DwarfEntry * function;
     DwarfFrameInfo *frameInfo;
@@ -41,8 +44,8 @@ struct StackFrame {
         , frameInfo(0)
         , fde(0)
     {}
-    void setReg(unsigned regno, uintmax_t value);
-    uintmax_t getReg(unsigned regno) const;
+    void setReg(unsigned regno, cpureg_t value);
+    cpureg_t getReg(unsigned regno) const;
     Elf_Addr getCFA(const Process &proc, const DwarfCallFrame &cfi) const;
     StackFrame *unwind(Process &p);
     void setCoreRegs(const CoreRegisters &core);
