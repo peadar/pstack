@@ -120,10 +120,9 @@ union DwarfValue {
     uintmax_t addr;
     uintmax_t udata;
     intmax_t sdata;
-    uintmax_t ref;
     const char *string;
     DwarfBlock block;
-    char flag;
+    bool flag;
 };
 
 struct DwarfAttribute {

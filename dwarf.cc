@@ -383,7 +383,7 @@ dwarfAttr2Int(const DwarfAttribute &attr)
     case DW_FORM_udata:
         return attr.value.sdata;
     case DW_FORM_sec_offset:
-        return attr.value.ref;
+        return attr.value.addr;
     default:
         abort();
     }
@@ -580,7 +580,7 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
     }
 
     case DW_FORM_GNU_ref_alt:
-        value.ref = r.getint(entry->unit->dwarfLen);
+        value.addr = r.getuint(entry->unit->dwarfLen);
         break;
 
     case DW_FORM_addr:
@@ -612,7 +612,7 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
         break;
 
     case DW_FORM_ref_udata:
-        value.ref = r.getuleb128();
+        value.addr = r.getuleb128();
         break;
 
     case DW_FORM_strp:
@@ -620,23 +620,23 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
         break;
 
     case DW_FORM_ref1:
-        value.ref = r.getu8();
+        value.addr = r.getu8();
         break;
 
     case DW_FORM_ref2:
-        value.ref = r.getu16();
+        value.addr = r.getu16();
         break;
 
     case DW_FORM_ref4:
-        value.ref = r.getu32();
+        value.addr = r.getu32();
         break;
 
     case DW_FORM_ref_addr:
-        value.ref = r.getuint(entry->unit->dwarfLen);
+        value.addr = r.getuint(entry->unit->dwarfLen);
         break;
 
     case DW_FORM_ref8:
-        value.ref = r.getuint(8);
+        value.addr = r.getuint(8);
         break;
 
     case DW_FORM_string:
@@ -669,19 +669,19 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
         break;
 
     case DW_FORM_flag:
-        value.flag = r.getu8();
+        value.flag = r.getu8() != 0;
         break;
 
     case DW_FORM_flag_present:
-        value.flag = 1;
+        value.flag = true;
         break;
 
     case DW_FORM_sec_offset:
-        value.ref = r.getint(entry->unit->dwarfLen);
+        value.addr = r.getint(entry->unit->dwarfLen);
         break;
 
     case DW_FORM_ref_sig8:
-        value.ref = r.getu8();
+        value.addr = r.getu8();
         break;
 
     default:
@@ -1242,20 +1242,20 @@ DwarfEntry::referencedEntry(DwarfAttrName name) const
     const DwarfInfo *refDwarf = this->unit->dwarf;
     switch (attr->spec->form) {
         case DW_FORM_ref_addr:
-            off = attr->value.ref;
+            off = attr->value.addr;
             break;
         case DW_FORM_ref_udata:
         case DW_FORM_ref2:
         case DW_FORM_ref4:
         case DW_FORM_ref8:
-            off = attr->value.ref + unit->offset;
+            off = attr->value.addr + unit->offset;
             break;
         case DW_FORM_GNU_ref_alt: {
             auto dwarf = unit->dwarf->getAltDwarf();
             if (!dwarf)
                 return 0; // XXX: deal with this.
             refDwarf = dwarf.get(); // our dwarf object will continue to hold a reference to the alt dwarf.
-            off = attr->value.ref;
+            off = attr->value.addr;
             break;
         }
         default:
