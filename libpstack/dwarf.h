@@ -332,11 +332,10 @@ class DwarfInfo {
     mutable std::shared_ptr<DwarfInfo> altDwarf;
     mutable bool altImageLoaded;
 
-    std::shared_ptr<const ElfSection> debstr;
     std::shared_ptr<const ElfSection> pubnamesh;
     std::shared_ptr<const ElfSection> arangesh;
-    std::shared_ptr<const ElfSection> debug_frame;
 public:
+    // XXX: info is public because "block" DwarfAttributes need to read from it.
     std::shared_ptr<const ElfSection> info;
     char *debugStrings;
     std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
@@ -345,7 +344,6 @@ public:
     std::unique_ptr<DwarfFrameInfo> ehFrame;
     std::shared_ptr<const ElfSection> abbrev;
     std::shared_ptr<const ElfSection> lineshdr;
-
     std::shared_ptr<ElfObject> getAltImage() const;
     std::shared_ptr<DwarfInfo> getAltDwarf() const;
     std::list<DwarfARangeSet> &ranges();

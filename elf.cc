@@ -182,12 +182,6 @@ SymbolIterator::operator *()
 
 /*
  * Find the symbol that represents a particular address.
- * If we fail to find a symbol whose virtual range includes our target address
- * we will accept a symbol with the highest address less than or equal to our
- * target. This allows us to match the dynamic "stubs" in code.
- * A side-effect is a few false-positives: A stripped, dynamically linked,
- * executable will typically report functions as being "_init", because it is
- * the only symbol in the image, and it has no size.
  */
 bool
 ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &name)
@@ -326,7 +320,7 @@ tryLoad(const std::string &name) {
     // XXX: verify checksum.
     for (auto dir : globalDebugDirectories.dirs) {
         try {
-           auto debugObject = make_shared<ElfObject>(loadFile((dir + "/" + name).c_str()));
+           auto debugObject = make_shared<ElfObject>(loadFile((dir + "/" + name)));
            return debugObject;
         }
         catch (const std::exception &ex) {

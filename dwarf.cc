@@ -174,49 +174,36 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
 
 DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
     : altImageLoaded(false)
-    , debstr(obj->getSection(".debug_str", SHT_PROGBITS))
     , pubnamesh(obj->getSection(".debug_pubnames", SHT_PROGBITS))
     , arangesh(obj->getSection(".debug_aranges", SHT_PROGBITS))
-    , debug_frame(obj->getSection(".debug_frame", SHT_PROGBITS))
     , info(obj->getSection(".debug_info", SHT_PROGBITS))
     , elf(obj)
     , abbrev(obj->getSection(".debug_abbrev", SHT_PROGBITS))
     , lineshdr(obj->getSection(".debug_line", SHT_PROGBITS))
 {
     // want these first: other sections refer into this.
+    auto debstr = obj->getSection(".debug_str", SHT_PROGBITS);
     if (debstr) {
         debugStrings = new char[debstr->getSize()];
         debstr->io->readObj(0, debugStrings, debstr->getSize());
     } else {
         debugStrings = 0;
     }
-    auto eh_frame = obj->getSection(".eh_frame", SHT_PROGBITS);
-    if (eh_frame) {
-        try {
-            ehFrame = make_unique<DwarfFrameInfo>(this, eh_frame, FI_EH_FRAME);
+    auto f = [this, &obj](const char *name, FIType ftype) {
+        auto section = obj->getSection(name, SHT_PROGBITS);
+        if (section) {
+            try {
+                return make_unique<DwarfFrameInfo>(this, section, ftype);
+            }
+            catch (const Exception &ex) {
+                std::clog << "can't decode " << name << " for " << *obj->io << ": " << ex.what() << "\n";
+            }
         }
-        catch (const Exception &ex) {
-            ehFrame = 0;
-            std::clog << "can't decode .eh_frame for " << *obj->io << ": " << ex.what() << "\n";
-        }
-    } else {
-        ehFrame = 0;
-    }
+        return std::unique_ptr<DwarfFrameInfo>();
+    };
 
-    if (debug_frame && ! noDebugLibs) {
-        DWARFReader reader(debug_frame);
-        try {
-            debugFrame = make_unique<DwarfFrameInfo>(this, debug_frame, FI_DEBUG_FRAME);
-        }
-        catch (const Exception &ex) {
-            debugFrame = 0;
-            std::clog << "can't decode .debug_frame for " << *obj->io << ": "
-                << ex.what() << "\n";
-        }
-    } else {
-        debugFrame = 0;
-    }
-
+    ehFrame = f(".eh_frame", FI_EH_FRAME);
+    debugFrame = f(".debug_frame", FI_DEBUG_FRAME);
 }
 
 std::list<DwarfPubnameUnit> &

@@ -35,13 +35,6 @@ PstackOptions::operator () (PstackOption opt) const
     return values[opt];
 }
 
-template <typename T> static void
-delall(T &container)
-{
-    for (auto i = container.begin(); i != container.end(); ++i)
-        delete *i;
-}
-
 Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_, const PathReplacementList &prl)
     : entry(0)
     , vdso(0)
@@ -308,7 +301,7 @@ struct RemoteValue {
     {}
 };
 
-    std::ostream &
+std::ostream &
 operator << (std::ostream &os, const RemoteValue &rv)
 {
     if (rv.addr == 0)
