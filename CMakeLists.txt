@@ -4,13 +4,8 @@ project(pstack C CXX)
 math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 set(PSTACK_BIN "pstack" CACHE STRING "Name of the 'pstack' binary")
 set(ELF_BITS ${PLATFORM_BITS} CACHE STRING "32 or 64 - set to 32 to build 32-bit binary on 64-bit platform")
+
 set(LIBTYPE "STATIC" CACHE STRING "Build libraries as STATIC or SHARED")
-
-set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib") # Update RPATH in binaries when installed
-
-find_library(LTHREADDB NAMES thread_db PATHS (/usr/lib /usr/local/lib))
-find_package(LibLZMA)
-find_package(ZLIB)
 
 if(PLATFORM_BITS EQUAL 64 AND ELF_BITS EQUAL 32)
     # we want a 32-bit binary in a 64-bit build environment: use -m32 everywhere
@@ -18,6 +13,12 @@ if(PLATFORM_BITS EQUAL 64 AND ELF_BITS EQUAL 32)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -m32")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -m32")
 endif()
+
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib") # Update RPATH in binaries when installed
+
+find_library(LTHREADDB NAMES thread_db PATHS (/usr/lib /usr/local/lib))
+find_package(LibLZMA)
+find_package(ZLIB)
 
 add_definitions("-std=c++11 -Wall -Wextra -DELF_BITS=${ELF_BITS} -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
