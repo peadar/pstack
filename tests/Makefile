@@ -1,7 +1,8 @@
-TESTS: basic-run segv-run thread-run
+TESTS: basic-run segv-run thread-run badfp-run
 CFLAGS += -g -O0
 CXXFLAGS += -g -O0
 LDFLAGS += -g
+PSTACK_BIN ?= ../d64/pstack
 
 all: $(TESTS)
 
@@ -13,6 +14,11 @@ segv-run: segv
 	-./segv
 	$(PSTACK_BIN) -av ./core
 
+badfp-run: badfp
+	-./badfp
+	$(PSTACK_BIN) -av ./core
+
+
 thread-run: thread
 	-./thread
 	$(PSTACK_BIN) -va ./core
@@ -20,6 +26,8 @@ thread-run: thread
 basic: basic.o abort.o
 	$(CC) -g -o $@ $(LDFLAGS) $^
 
+badfp: badfp.o
+	$(CC) -g -o $@ $(LDFLAGS) $^
 segv: segv.o abort.o
 	$(CC) -g -o $@ $(LDFLAGS) $^
 thread: thread.o

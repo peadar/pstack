@@ -323,7 +323,7 @@ StackFrame::unwind(Process &p)
     Elf_Off reloc;
     auto elf = p.findObject(ip, &reloc);
     if (!elf)
-       return 0;
+       throw Exception() << "no image for instruction address " << std::hex << ip;
     Elf_Off objaddr = ip - reloc; // relocate process address to object address
     // Try and find DWARF data with debug frame information, or an eh_frame section.
     for (bool debug : {true, false}) {
@@ -344,7 +344,7 @@ StackFrame::unwind(Process &p)
        }
     }
     if (!fde)
-       return 0;
+       throw Exception() << "no FDE for instruction address " << std::hex << ip << " in " << *elf->io;
 
     DWARFReader r(frameInfo->section, fde->instructions, fde->end - fde->instructions);
 

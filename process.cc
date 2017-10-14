@@ -681,6 +681,7 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
     stack.clear();
     try {
         auto prevFrame = new StackFrame();
+        auto startFrame = prevFrame;
 
         // Set up the first frame using the machine context registers
         prevFrame->setCoreRegs(regs);
@@ -689,7 +690,24 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
         StackFrame *frame;
         for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++, prevFrame = frame) {
             stack.push_back(prevFrame);
-            frame = prevFrame->unwind(p);
+            try {
+               frame = prevFrame->unwind(p);
+            }
+            catch (const std::exception &ex) {
+#if defined(__amd64__) || defined(__i386__) // Hail Mary stack unwinding if we can't use DWARF
+               // If the first frame fails to unwind, it might be a crash calling an invalid address.
+               // pop the instruction pointer off the stack, and try again.
+               if (prevFrame == startFrame) {
+                  frame = new StackFrame();
+                  *frame = *prevFrame;
+                  auto sp = prevFrame->getReg(SPREG);
+                  auto in = p.io->read(sp, sizeof frame->ip, (char *)&frame->ip);
+                  if (in == sizeof frame->ip)
+                     frame->setReg(SPREG, sp + sizeof frame->ip);
+               } else
+#endif
+                  throw;
+            }
             if (!frame)
                 break;
         }

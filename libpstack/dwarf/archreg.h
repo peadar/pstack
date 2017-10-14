@@ -1,6 +1,7 @@
 /* Maps from DWARF register numbers to pt_regs fields for each architecture. */
 #ifdef __i386__
 #define IPREG 8
+#define SPREG 4
 #define CFA_RESTORE_REGNO 4
 REGMAP(1, eax)
 REGMAP(2, ecx)
@@ -21,6 +22,7 @@ REGMAP(14, xfs)
 #ifdef __amd64__
 #define CFA_RESTORE_REGNO 7
 #define IPREG 16
+#define SPREG 7
 REGMAP(0, rax)
 REGMAP(1, rdx)
 REGMAP(2, rcx)
