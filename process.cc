@@ -143,8 +143,6 @@ Process::processAUXV(const void *datap, size_t len)
 std::ostream &
 Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
 {
-
-
     os << "{ \"ti_tid\": " << thread.info.ti_tid
         << ", \"ti_type\": " << thread.info.ti_type
         << ", \"stack\": [ ";

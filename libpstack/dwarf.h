@@ -230,17 +230,15 @@ public:
 struct DwarfUnit {
     DwarfUnit() = delete;
     DwarfUnit(const DwarfUnit &) = delete;
-    std::map<off_t, std::shared_ptr<DwarfEntry>> allEntries;
+    std::map<DwarfTag, DwarfAbbreviation> abbreviations;
+    std::map<off_t, std::unique_ptr<DwarfEntry>> allEntries;
     const DwarfInfo *dwarf;
     off_t offset;
     size_t dwarfLen;
     void decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *parent);
     uint32_t length;
     uint16_t version;
-    std::map<DwarfTag, DwarfAbbreviation> abbreviations;
     uint8_t addrlen;
-    const unsigned char *entryPtr;
-    const unsigned char *lineInfo;
     DwarfEntries entries;
     DwarfLineInfo lines;
     DwarfUnit(const DwarfInfo *, DWARFReader &);

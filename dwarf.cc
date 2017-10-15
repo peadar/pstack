@@ -684,14 +684,14 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
     , offset(offset_)
 {
 
-    for (auto spec = type->specs.begin(); spec != type->specs.end(); ++spec) {
+    for (auto &spec : type->specs) {
 
 #ifdef NOTYET
         attributes.emplace(std::piecewise_construct,
                 std::forward_as_tuple(spec->name),
                 std::forward_as_tuple(r, this, &(*spec)));
 #else
-        attributes[spec->name] = DwarfAttribute(r, this, &(*spec));
+        attributes[spec.name] = DwarfAttribute(r, this, &spec);
 #endif
 
     }
@@ -729,8 +729,9 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
                     std::forward_as_tuple(r, code, this, offset, parent));
         entries.push_back(&inserted.first->second);
 #else
-        auto inserted = allEntries[offset] = std::make_shared<DwarfEntry>(r, code, this, offset, parent);
-        entries.push_back(inserted.get());
+        DwarfEntry *entry = new DwarfEntry(r, code, this, offset, parent);
+        allEntries[offset].reset(entry);
+        entries.push_back(entry);
 #endif
     }
 }
