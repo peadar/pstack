@@ -75,8 +75,9 @@ ElfNoteDesc::size() const
    return note.n_descsz;
 }
 
-ElfObject::ElfObject(shared_ptr<Reader> io_)
+ElfObject::ElfObject(ImageCache &cache, shared_ptr<Reader> io_)
    : notes(this)
+   , imageCache(cache)
 {
     debugLoaded = false;
     io = io_;
@@ -109,7 +110,7 @@ ElfObject::ElfObject(shared_ptr<Reader> io_)
             // a symbol table.
             if (name == ".gnu_debugdata")
 #ifdef WITH_LZMA
-                debugData = std::make_shared<ElfObject>(
+                debugData = std::make_shared<ElfObject>(imageCache,
                       std::make_shared<LzmaReader>(h->io, h->getSize()));
 #else
                 std::clog << "warning: no compiled support for LZMA - "
@@ -315,21 +316,6 @@ ElfObject::~ElfObject()
 {
 }
 
-static std::shared_ptr<ElfObject>
-tryLoad(const std::string &name) {
-    // XXX: verify checksum.
-    for (auto dir : globalDebugDirectories.dirs) {
-        try {
-           auto debugObject = make_shared<ElfObject>(loadFile((dir + "/" + name)));
-           return debugObject;
-        }
-        catch (const std::exception &ex) {
-            continue;
-        }
-    }
-    return std::shared_ptr<ElfObject>();
-}
-
 std::shared_ptr<ElfObject>
 ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
 {
@@ -343,7 +329,7 @@ ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
         if (hdr) {
             std::string link = hdr->io->readString(0);
             auto dir = dirname(stringify(*in->io));
-            in->debugObject = tryLoad(dir + "/" + link);
+            in->debugObject = in->imageCache.getDebugImage(dir + "/" + link);
         }
 
         if (!in->debugObject) {
@@ -358,7 +344,7 @@ ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
                     for (i = 1; i < note.size(); ++i)
                         dir << std::setw(2) << int(data[i]);
                     dir << ".debug";
-                    in->debugObject = tryLoad(dir.str());
+                    in->debugObject = in->imageCache.getDebugImage(dir.str());
                     break;
                 }
             }
@@ -407,3 +393,65 @@ ElfSection::ElfSection(const ElfObject &obj_, off_t off)
         size = shdr.sh_size;
     }
 }
+
+std::shared_ptr<ElfObject>
+ImageCache::getImageForName(const std::string &name) {
+    bool found;
+    auto res = getImageIfLoaded(name, found);
+    if (found)
+        return res;
+
+    auto &item = cache[name];
+    item = std::make_shared<ElfObject>(*this, loadFile(name));
+    return item;
+}
+
+ImageCache::ImageCache() : elfHits(0), elfLookups(0) {}
+ImageCache::~ImageCache() {
+    if (verbose >= 2) {
+        *debug << "ELF image cache: lookups: " << elfLookups << ", hits=" << elfHits << std::endl;
+        for (auto &items : cache) {
+            if (items.second)
+                *debug << "\t" << *items.second->io << std::endl;
+            else
+                *debug << "\t" << "NEGATIVE: " << items.first << std::endl;
+        }
+    }
+}
+
+std::shared_ptr<ElfObject>
+ImageCache::getImageIfLoaded(const std::string &name, bool &found)
+{
+    elfLookups++;
+    auto it = cache.find(name);
+    if (it != cache.end()) {
+        elfHits++;
+        found = true;
+        return it->second;
+    }
+    found = false;
+    return std::shared_ptr<ElfObject>();
+}
+
+
+std::shared_ptr<ElfObject>
+ImageCache::getDebugImage(const std::string &name) {
+    // XXX: verify checksum.
+    for (auto dir : globalDebugDirectories.dirs) {
+        bool found;
+        auto img = getImageIfLoaded(dir + "/" + name, found);
+        if (found)
+            return img;
+    }
+    for (auto dir : globalDebugDirectories.dirs) {
+        try {
+           return getImageForName(dir + "/" + name);
+        }
+        catch (const std::exception &ex) {
+            continue;
+        }
+    }
+    return std::shared_ptr<ElfObject>();
+}
+
+

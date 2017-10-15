@@ -87,6 +87,7 @@ operator <<(ostream &os, const Usage &)
 int
 mainExcept(int argc, char *argv[])
 {
+    DwarfImageCache imageCache;
     std::vector<std::string> patterns;
     shared_ptr<ElfObject> exec;
     shared_ptr<ElfObject> core;
@@ -195,7 +196,7 @@ mainExcept(int argc, char *argv[])
     }
 
     if (argc - optind >= 2) {
-        exec = make_shared<ElfObject>(loadFile(argv[optind]));
+        exec = imageCache.getImageForName(argv[optind]);
         optind++;
     }
 
@@ -205,13 +206,14 @@ mainExcept(int argc, char *argv[])
     }
 
     pid_t pid = 0;
+    DwarfImageCache cache;
     std::istringstream(argv[optind]) >> pid;
     if (pid != 0 && kill(pid, 0) == 0) {
        std::clog << "attaching to live process" << std::endl;
-       process = make_shared<LiveProcess>(exec, pid, pathReplacements);
+       process = make_shared<LiveProcess>(exec, pid, pathReplacements, cache);
     } else {
-       core = make_shared<ElfObject>(loadFile(argv[optind]));
-       process = make_shared<CoreProcess>(exec, core, pathReplacements);
+       core = make_shared<ElfObject>(cache, loadFile(argv[optind]));
+       process = make_shared<CoreProcess>(exec, core, pathReplacements, cache);
     }
     process->load();
     if (searchaddrs.size()) {

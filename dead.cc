@@ -6,8 +6,10 @@
 CoreProcess::CoreProcess(
         std::shared_ptr<ElfObject> exe,
         std::shared_ptr<ElfObject> core,
-        const PathReplacementList &pathReplacements_)
-    : Process(exe, std::make_shared<CoreReader>(this), pathReplacements_)
+        const PathReplacementList &pathReplacements_,
+        DwarfImageCache &imageCache
+        )
+    : Process(exe, std::make_shared<CoreReader>(this), pathReplacements_, imageCache)
     , coreImage(core)
 {
 }

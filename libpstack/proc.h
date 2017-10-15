@@ -32,7 +32,7 @@ struct StackFrame {
     Elf_Addr ip;
     Elf_Addr cfa;
     std::map<unsigned, cpureg_t> regs;
-    DwarfInfo *dwarf;
+    std::shared_ptr<DwarfInfo> dwarf;
     DwarfEntry * function;
     DwarfFrameInfo *frameInfo;
     const DwarfFDE *fde;
@@ -85,10 +85,9 @@ class Process : public ps_prochandle {
     Elf_Addr findRDebugAddr();
     Elf_Off entry; // entrypoint of process.
     void loadSharedObjects(Elf_Addr);
-    char *vdso;
     bool isStatic;
     Elf_Addr sysent; // for AT_SYSINFO
-    std::map<std::shared_ptr<ElfObject>, DwarfInfo *> dwarf;
+    DwarfImageCache &imageCache;
 
 protected:
     td_thragent_t *agent;
@@ -110,8 +109,8 @@ public:
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) = 0;
     void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
     std::shared_ptr<ElfObject> findObject(Elf_Addr addr, Elf_Off *reloc) const;
-    DwarfInfo *getDwarf(std::shared_ptr<ElfObject>, bool debug = true);
-    Process(std::shared_ptr<ElfObject> obj, std::shared_ptr<Reader> mem, const PathReplacementList &prl);
+    std::shared_ptr<DwarfInfo> getDwarf(std::shared_ptr<ElfObject>, bool debug = true);
+    Process(std::shared_ptr<ElfObject> obj, std::shared_ptr<Reader> mem, const PathReplacementList &prl, DwarfImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
 
@@ -165,7 +164,7 @@ class LiveProcess : public Process {
     std::set<pid_t> lwps; // lwps we could not suspend.
     friend class StopLWP;
 public:
-    LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid, const PathReplacementList &repls);
+    LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid, const PathReplacementList &repls, DwarfImageCache &cache);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg);
     virtual void stop(pid_t lwpid);
     virtual void resume(pid_t lwpid);
@@ -190,7 +189,7 @@ class CoreProcess : public Process {
     std::shared_ptr<ElfObject> coreImage;
     friend class CoreReader;
 public:
-    CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<ElfObject> core, const PathReplacementList &);
+    CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<ElfObject> core, const PathReplacementList &, DwarfImageCache &);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg);
     virtual void stop(lwpid_t);
     virtual void resume(lwpid_t);

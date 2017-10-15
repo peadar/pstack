@@ -60,6 +60,7 @@ extern bool noDebugLibs;
 
 #define ELF_WORDSIZE ((ELF_BITS)/8)
 
+class ImageCache;
 class ElfObject;
 #ifndef __FreeBSD__
 
@@ -151,7 +152,7 @@ public:
 
     // construct/destruct. Note you will generally need to use make_shared to
     // create an ElfObject
-    ElfObject(std::shared_ptr<Reader>);
+    ElfObject(ImageCache &imageCache, std::shared_ptr<Reader>);
     ~ElfObject();
 
     // Accessing sections.
@@ -181,6 +182,7 @@ public:
 private:
     // Elf header, section headers, program headers.
     Elf_Ehdr elfHeader;
+    ImageCache &imageCache;
     SectionHeaders sectionHeaders;
     std::map<std::string, std::shared_ptr<ElfSection>> namedSection;
     std::map<Elf_Word, ProgramHeaders> programHeaders;
@@ -352,5 +354,17 @@ std::unique_ptr<T> make_unique(Args&&... args)
 {
     return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 }
+
+class ImageCache {
+    std::map<std::string, std::shared_ptr<ElfObject>> cache;
+    int elfHits;
+    int elfLookups;
+public:
+    ImageCache();
+    ~ImageCache();
+    std::shared_ptr<ElfObject> getImageForName(const std::string &name);
+    std::shared_ptr<ElfObject> getImageIfLoaded(const std::string &name, bool &found);
+    std::shared_ptr<ElfObject> getDebugImage(const std::string &name);
+};
 
 #endif /* Guard. */

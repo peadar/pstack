@@ -35,11 +35,11 @@ PstackOptions::operator () (PstackOption opt) const
     return values[opt];
 }
 
-Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_, const PathReplacementList &prl)
+Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_, const PathReplacementList &prl, DwarfImageCache &cache)
     : entry(0)
-    , vdso(0)
     , isStatic(false)
     , sysent(0)
+    , imageCache(cache)
     , agent(0)
     , execImage(exec)
     , pathReplacements(prl)
@@ -80,16 +80,12 @@ Process::load()
 
 }
 
-DwarfInfo *
+std::shared_ptr<DwarfInfo>
 Process::getDwarf(std::shared_ptr<ElfObject> elf, bool debug)
 {
     if (debug)
         elf = ElfObject::getDebug(elf);
-
-    auto &info = dwarf[elf];
-    if (info == 0)
-        info = new DwarfInfo(elf);
-    return info;
+    return imageCache.getDwarf(elf);
 }
 
 void
@@ -112,7 +108,7 @@ Process::processAUXV(const void *datap, size_t len)
             }
             case AT_SYSINFO_EHDR: {
                 try {
-                    auto elf = std::make_shared<ElfObject>(std::make_shared<OffsetReader>(io, hdr, 65536));
+                    auto elf = std::make_shared<ElfObject>(imageCache, std::make_shared<OffsetReader>(io, hdr, 65536));
                     addElfObject(elf, hdr - elf->getBase());
                     if (verbose >= 2)
                         *debug << "VDSO " << *elf->io << " loaded\n";
@@ -129,7 +125,7 @@ Process::processAUXV(const void *datap, size_t len)
                 if (verbose >= 2)
                     *debug << "filename from auxv: " << exeName << "\n";
                 if (!execImage) {
-                    execImage = std::make_shared<ElfObject>(loadFile(exeName));
+                    execImage = imageCache.getImageForName(exeName);
                     if (!entry)
                        entry = execImage->getElfHeader().e_entry;
                 }
@@ -462,7 +458,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             fileName = stringify(*obj->io);
             Elf_Addr objIp = frame->ip - reloc;
 
-            DwarfInfo *dwarf = getDwarf(obj, true);
+            std::shared_ptr<DwarfInfo> dwarf = getDwarf(obj, true);
 
             std::list<std::shared_ptr<DwarfUnit>> units;
             if (dwarf->hasRanges()) {
@@ -590,7 +586,7 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             *debug << "replaced " << startPath << " with " << path << std::endl;
 
         try {
-            addElfObject(std::make_shared<ElfObject>(loadFile(path)), Elf_Addr(map.l_addr));
+            addElfObject(imageCache.getImageForName(path), Elf_Addr(map.l_addr));
         }
         catch (const std::exception &e) {
             std::clog << "warning: can't load text for '" << path << "' at " <<
@@ -668,9 +664,6 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
 Process::~Process()
 {
     td_ta_delete(agent);
-    for (auto i = dwarf.begin(); i != dwarf.end(); ++i)
-        delete i->second;
-    delete[] vdso;
 }
 
 void

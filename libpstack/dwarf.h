@@ -321,6 +321,17 @@ struct DwarfFrameInfo {
     intmax_t decodeAddress(DWARFReader &, int encoding) const;
 };
 
+class DwarfImageCache : public ImageCache {
+    int dwarfHits;
+    int dwarfLookups;
+    std::map<std::shared_ptr<ElfObject>, std::shared_ptr<DwarfInfo>> dwarfCache;
+public:
+    std::shared_ptr<DwarfInfo> getDwarf(const std::string &filename);
+    std::shared_ptr<DwarfInfo> getDwarf(std::shared_ptr<ElfObject> o);
+    DwarfImageCache();
+    ~DwarfImageCache();
+};
+
 class DwarfInfo {
     std::list<DwarfPubnameUnit> pubnameUnits;
     std::list<DwarfARangeSet> aranges;
@@ -330,7 +341,7 @@ class DwarfInfo {
     mutable std::map<Elf_Off, std::shared_ptr<DwarfUnit>> unitsm;
     mutable std::shared_ptr<DwarfInfo> altDwarf;
     mutable bool altImageLoaded;
-
+    DwarfImageCache &imageCache;
     std::shared_ptr<const ElfSection> pubnamesh;
     std::shared_ptr<const ElfSection> arangesh;
 public:
@@ -349,7 +360,7 @@ public:
     std::list<DwarfPubnameUnit> &pubnames();
     std::shared_ptr<DwarfUnit> getUnit(off_t offset);
     std::list<std::shared_ptr<DwarfUnit>> getUnits() const;
-    DwarfInfo(std::shared_ptr<ElfObject> object);
+    DwarfInfo(std::shared_ptr<ElfObject>, DwarfImageCache &);
     std::vector<std::pair<const DwarfFileEntry *, int>> sourceFromAddr(uintmax_t addr);
     ~DwarfInfo();
     bool hasRanges() { return arangesh || aranges.size() != 0; }

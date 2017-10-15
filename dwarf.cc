@@ -172,8 +172,9 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
     }
 }
 
-DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj)
+DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj, DwarfImageCache &cache_)
     : altImageLoaded(false)
+    , imageCache(cache_)
     , pubnamesh(obj->getSection(".debug_pubnames", SHT_PROGBITS))
     , arangesh(obj->getSection(".debug_aranges", SHT_PROGBITS))
     , info(obj->getSection(".debug_info", SHT_PROGBITS))
@@ -768,8 +769,7 @@ DwarfInfo::getAltDwarf() const
         altDwarf = altRefCache[path].lock();
         if (altDwarf == 0) {
             altRefCache[path] = altDwarf = std::make_shared<DwarfInfo>(
-                    std::make_shared<ElfObject>(
-                        loadFile(path)));
+                    imageCache.getImageForName(path), imageCache);
         }
         altImageLoaded = true;
     }
@@ -1280,3 +1280,31 @@ DwarfEntry::attrForName(DwarfAttrName name) const
     }
     return 0;
 }
+
+std::shared_ptr<DwarfInfo>
+DwarfImageCache::getDwarf(const std::string &filename)
+{
+    return getDwarf(getImageForName(filename));
+}
+
+std::shared_ptr<DwarfInfo>
+DwarfImageCache::getDwarf(std::shared_ptr<ElfObject> object)
+{
+    auto it = dwarfCache.find(object);
+    dwarfLookups++;
+    if (it != dwarfCache.end()) {
+        dwarfHits++;
+        return it->second;
+    }
+
+    auto dwarf = std::make_shared<DwarfInfo>(object, *this);
+    dwarfCache[object] = dwarf;
+    return dwarf;
+}
+DwarfImageCache::DwarfImageCache() : dwarfHits(0), dwarfLookups(0) {}
+DwarfImageCache::~DwarfImageCache() {
+    if (verbose >= 2)
+        *debug << "DWARF image cache: lookups: " << dwarfLookups << ", hits=" << dwarfHits << std::endl;
+}
+
+

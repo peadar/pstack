@@ -71,6 +71,7 @@ emain(int argc, char **argv)
     pid_t pid;
     std::string execFile;
     std::shared_ptr<ElfObject> exec;
+    DwarfImageCache imageCache;
 
     PstackOptions options;
     noDebugLibs = false;
@@ -81,14 +82,14 @@ emain(int argc, char **argv)
             globalDebugDirectories.add(optarg);
             break;
         case 'D': {
-            auto dumpobj = std::make_shared<ElfObject>(loadFile(optarg));
-            DwarfInfo di(ElfObject::getDebug(dumpobj));
+            auto dumpobj = std::make_shared<ElfObject>(imageCache, loadFile(optarg));
+            DwarfInfo di(ElfObject::getDebug(dumpobj), imageCache);
             std::cout << di;
             return 0;
         }
         case 'd': {
             /* Undocumented option to dump image contents */
-            std::cout << ElfObject(loadFile(optarg));
+            std::cout << ElfObject(imageCache, loadFile(optarg));
             return 0;
         }
         case 'h':
@@ -119,17 +120,18 @@ emain(int argc, char **argv)
         if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
             // It's a file: should be ELF, treat core and exe differently
 
-            auto obj = std::make_shared<ElfObject>(loadFile(argv[i]));
+            // Don't put cores in the cache
+            auto obj = std::make_shared<ElfObject>(imageCache, loadFile(argv[i]));
 
             if (obj->getElfHeader().e_type == ET_CORE) {
-                CoreProcess proc(exec, obj, PathReplacementList());
+                CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
                 proc.load();
                 pstack(proc, std::cout, options);
             } else {
                 exec = obj;
             }
         } else {
-            LiveProcess proc(exec, pid, PathReplacementList());
+            LiveProcess proc(exec, pid, PathReplacementList(), imageCache);
             proc.load();
             pstack(proc, std::cout, options);
         }

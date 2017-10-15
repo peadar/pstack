@@ -15,10 +15,9 @@ LiveReader::procname(pid_t pid, const std::string &base)
     return stringify("/proc/", pid, "/", base);
 }
 
-LiveProcess::LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid_, const PathReplacementList &repls)
-    : Process(ex ? ex : std::make_shared<ElfObject>(
-            std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "exe"))),
-            std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")), repls)
+LiveProcess::LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid_, const PathReplacementList &repls, DwarfImageCache &imageCache)
+    : Process(ex ? ex : std::make_shared<ElfObject>(imageCache, std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "exe"))),
+            std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")), repls, imageCache)
     , pid(pid_)
     , stopCount(0)
 {
