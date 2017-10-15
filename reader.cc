@@ -52,12 +52,17 @@ FileReader::openfile(int &file, std::string name_)
     return false;
 }
 
-FileReader::FileReader(string name_, int file_)
+FileReader::FileReader(const string &name_)
     : name(name_)
-    , file(file_)
+    , file(-1)
 {
-    if (file == -1 && !openfile(file, name_))
+    if (!openfile(file, name_))
         throw Exception() << "cannot open file '" << name_ << "': " << strerror(errno);
+}
+
+FileReader::~FileReader()
+{
+    ::close(file);
 }
 
 MemReader::MemReader(size_t len_, char *data_)

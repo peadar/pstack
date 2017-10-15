@@ -107,10 +107,12 @@ Reader::readObj(off_t offset, Obj *object, size_t count) const
 class FileReader : public Reader {
     std::string name;
     int file;
+    bool closeOnDone;
     bool openfile(int &file, std::string name_);
 public:
     virtual size_t read(off_t off, size_t count, char *ptr) const override ;
-    FileReader(std::string name, int fd = -1);
+    FileReader(const std::string &name);
+    ~FileReader();
     void describe(std::ostream &os) const  override { os << name; }
     off_t size() const override;
 };
