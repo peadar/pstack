@@ -187,6 +187,9 @@ class OffsetReader : public Reader {
     off_t offset;
     off_t length;
 public:
+    std::string readString(off_t absoff) const override {
+        return upstream->readString(absoff + offset);
+    }
     virtual size_t read(off_t off, size_t count, char *ptr) const override {
         if (off > length)
            throw Exception() << "read past end of object " << *this;

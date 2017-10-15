@@ -88,7 +88,7 @@ MemReader::describe(std::ostream &os) const
 }
 
 string
-Reader:: readString(off_t offset) const
+Reader::readString(off_t offset) const
 {
     char c;
     string res;
