@@ -57,6 +57,7 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
      * resume at this point - maybe a bit optimistic if a shared library gets
      * unloaded while we print stuff out, but worth the risk, normally.
      */
+    os << "process: " << *proc.io << "\n";
     for (auto s = threadLister.threadStacks.begin(); s != threadLister.threadStacks.end(); ++s) {
         proc.dumpStackText(os, *s, options);
         os << "\n";
