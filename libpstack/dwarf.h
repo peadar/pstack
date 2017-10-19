@@ -439,23 +439,76 @@ public:
     {
     }
 
-    DWARFReader(std::shared_ptr<const ElfSection> section)
-        : off(0)
-        , end(section->getSize())
-        , io(section->io)
-        , addrLen(ELF_BITS / 8)
-    {
+    uint32_t getu32() {
+        unsigned char q[4];
+        io->readObj(off, q, 4);
+        off += sizeof q;
+        return q[0] | q[1] << 8 | q[2] << 16 | uint32_t(q[3] << 24);
+    }
+    uint16_t getu16() {
+        unsigned char q[2];
+        io->readObj(off, q, 2);
+        off += sizeof q;
+        return q[0] | q[1] << 8;
+    }
+    uint8_t getu8() {
+        unsigned char q;
+        io->readObj(off, &q, 1);
+        off++;
+        return q;
+    }
+    int8_t gets8() {
+        int8_t q;
+        io->readObj(off, &q, 1);
+        off += 1;
+        return q;
+    }
+    uintmax_t getuint(int len) {
+        uintmax_t rc = 0;
+        int i;
+        uint8_t bytes[16];
+        if (len > 16)
+            throw Exception() << "can't deal with ints of size " << len;
+        io->readObj(off, bytes, len);
+        off += len;
+        uint8_t *p = bytes + len;
+        for (i = 1; i <= len; i++)
+            rc = rc << 8 | p[-i];
+        return rc;
+    }
+    intmax_t getint(int len) {
+        intmax_t rc;
+        int i;
+        uint8_t bytes[16];
+        if (len > 16 || len < 1)
+            throw Exception() << "can't deal with ints of size " << len;
+        io->readObj(off, bytes, len);
+        off += len;
+        uint8_t *p = bytes + len;
+        rc = (p[-1] & 0x80) ? -1 : 0;
+        for (i = 1; i <= len; i++)
+            rc = rc << 8 | p[-i];
+        return rc;
+    }
+    uintmax_t getuleb128() {
+        int shift;
+        bool isSigned;
+        return getuleb128shift(&shift, isSigned);
+    }
+    intmax_t getsleb128() {
+        int shift;
+        bool isSigned;
+        intmax_t result = (intmax_t) getuleb128shift(&shift, isSigned);
+        if (isSigned)
+            result |= - ((uintmax_t)1 << shift);
+        return result;
     }
 
-    uint32_t getu32();
-    uint16_t getu16();
-    uint8_t getu8();
-    int8_t gets8();
-    uintmax_t getuint(int size);
-    intmax_t getint(int size);
-    uintmax_t getuleb128();
-    intmax_t getsleb128();
-    std::string getstring();
+    std::string getstring() {
+        std::string s = io->readString(off);
+        off += s.size() + 1;
+        return s;
+    }
     Elf_Off getOffset() { return off; }
     Elf_Off getLimit() { return end; }
     void setOffset(Elf_Off off_) { off = off_; }

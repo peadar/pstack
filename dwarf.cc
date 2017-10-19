@@ -21,97 +21,6 @@
 
 extern int gVerbose;
 
-
-// Multiple ELF objects may refer to the same ELF object for .gnu_debugaltref
-// Cache them here.
-static std::map<std::string, std::weak_ptr<DwarfInfo>> altRefCache;
-
-uintmax_t
-DWARFReader::getuint(int len)
-{
-    uintmax_t rc = 0;
-    int i;
-    uint8_t bytes[16];
-    if (len > 16)
-        throw Exception() << "can't deal with ints of size " << len;
-    io->readObj(off, bytes, len);
-    off += len;
-    uint8_t *p = bytes + len;
-    for (i = 1; i <= len; i++)
-        rc = rc << 8 | p[-i];
-    return rc;
-}
-
-intmax_t
-DWARFReader::getint(int len)
-{
-    intmax_t rc;
-    int i;
-    uint8_t bytes[16];
-    if (len > 16 || len < 1)
-        throw Exception() << "can't deal with ints of size " << len;
-    io->readObj(off, bytes, len);
-    off += len;
-    uint8_t *p = bytes + len;
-    rc = (p[-1] & 0x80) ? -1 : 0;
-    for (i = 1; i <= len; i++)
-        rc = rc << 8 | p[-i];
-    return rc;
-}
-
-uint32_t
-DWARFReader::getu32()
-{
-    unsigned char q[4];
-    io->readObj(off, q, 4);
-    off += sizeof q;
-    return q[0] | q[1] << 8 | q[2] << 16 | uint32_t(q[3] << 24);
-}
-
-uint16_t
-DWARFReader::getu16()
-{
-    unsigned char q[2];
-    io->readObj(off, q, 2);
-    off += sizeof q;
-    return q[0] | q[1] << 8;
-}
-
-uint8_t
-DWARFReader::getu8()
-{
-    unsigned char q;
-    io->readObj(off, &q, 1);
-    off++;
-    return q;
-}
-
-int8_t
-DWARFReader::gets8()
-{
-    int8_t q;
-    io->readObj(off, &q, 1);
-    off += 1;
-    return q;
-}
-
-std::string
-DWARFReader::getstring()
-{
-    std::ostringstream s;
-    for (size_t len = 0;; ++len) {
-        char c;
-        io->readObj(off, &c);
-        off += 1;
-        if (c == 0)
-            break;
-        s << c;
-        if (len > 2000)
-            abort();
-    }
-    return s.str();
-}
-
 uintmax_t
 DWARFReader::getuleb128shift(int *shift, bool &isSigned)
 {
@@ -127,26 +36,6 @@ DWARFReader::getuleb128shift(int *shift, bool &isSigned)
     isSigned = (byte & 0x40) != 0;
     return result;
 }
-
-uintmax_t
-DWARFReader::getuleb128()
-{
-    int shift;
-    bool isSigned;
-    return getuleb128shift(&shift, isSigned);
-}
-
-intmax_t
-DWARFReader::getsleb128()
-{
-    int shift;
-    bool isSigned;
-    intmax_t result = (intmax_t) getuleb128shift(&shift, isSigned);
-    if (isSigned)
-        result |= - ((uintmax_t)1 << shift);
-    return result;
-}
-
 
 DwarfPubname::DwarfPubname(DWARFReader &r, uint32_t offset)
     : offset(offset)
