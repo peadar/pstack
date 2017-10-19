@@ -654,12 +654,7 @@ std::shared_ptr<DwarfInfo>
 DwarfInfo::getAltDwarf() const
 {
     if (!altImageLoaded) {
-        auto path = getAltImageName(elf);
-        altDwarf = altRefCache[path].lock();
-        if (altDwarf == 0) {
-            altRefCache[path] = altDwarf = std::make_shared<DwarfInfo>(
-                    imageCache.getImageForName(path), imageCache);
-        }
+        altDwarf = imageCache.getDwarf(getAltImageName(elf));
         altImageLoaded = true;
     }
     return altDwarf;
