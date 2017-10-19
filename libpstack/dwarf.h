@@ -422,6 +422,15 @@ public:
     std::shared_ptr<Reader> io;
     unsigned addrLen;
 
+
+
+    DWARFReader(std::shared_ptr<const ElfSection> section)
+            : off(0)
+            , end(section->getSize())
+            , io(section->io)
+            , addrLen(ELF_BITS / 8)
+        {}
+
     DWARFReader(DWARFReader &rhs, Elf_Off off_, Elf_Word size_)
         : off(off_)
         , end(off_ + size_)
