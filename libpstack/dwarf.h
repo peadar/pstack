@@ -9,6 +9,7 @@
 #include <string>
 
 #include <stack>
+#include <assert.h>
 
 enum DwarfHasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
 struct DwarfCIE;
@@ -427,28 +428,11 @@ public:
     std::shared_ptr<Reader> io;
     unsigned addrLen;
 
-
-
-    DWARFReader(std::shared_ptr<const ElfSection> section)
-            : off(0)
-            , end(section->getSize())
-            , io(section->io)
-            , addrLen(ELF_BITS / 8)
-        {}
-
-    DWARFReader(DWARFReader &rhs, Elf_Off off_, Elf_Word size_)
+    DWARFReader(std::shared_ptr<Reader> io_, Elf_Off off_ = 0,
+          size_t end_ = std::numeric_limits<size_t>::max())
         : off(off_)
-        , end(off_ + size_)
-        , io(rhs.io)
-        , addrLen(ELF_BITS / 8)
-    {
-    }
-
-    DWARFReader(std::shared_ptr<const ElfSection> section, Elf_Off off_ = 0, 
-          size_t size = std::numeric_limits<size_t>::max())
-        : off(off_)
-        , end(size == std::numeric_limits<size_t>::max() ? section->getSize() : off + size)
-        , io(section->io)
+        , end(end_ == std::numeric_limits<size_t>::max() ? io_->size() : end_)
+        , io(io_)
         , addrLen(ELF_BITS / 8)
     {
     }
@@ -525,8 +509,13 @@ public:
     }
     Elf_Off getOffset() { return off; }
     Elf_Off getLimit() { return end; }
-    void setOffset(Elf_Off off_) { off = off_; }
-    bool empty() { return off == end; }
+    void setOffset(Elf_Off off_) {
+       assert(end >= off_);
+       off = off_;
+    }
+    bool empty() {
+       return off == end;
+    }
     Elf_Off getlength(size_t *);
     void skip(Elf_Off amount) { off += amount; }
 };

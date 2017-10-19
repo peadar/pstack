@@ -71,7 +71,7 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
 #endif
             Elf_Addr unitIp = objIp - unitLow->value.udata;
 
-            DWARFReader r(sec, attr->value.udata);
+            DWARFReader r(sec->io, attr->value.udata);
             for (;;) {
                 Elf_Addr start = r.getint(sizeof start);
                 Elf_Addr end = r.getint(sizeof end);
@@ -79,7 +79,7 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
                     return 0;
                 auto len = r.getuint(2);
                 if (unitIp >= start && unitIp < end) {
-                    DWARFReader exr(r, r.getOffset(), Elf_Word(len));
+                    DWARFReader exr(r.io, r.getOffset(), r.getOffset() + Elf_Word(len));
                     return eval(proc, exr, frame);
                 }
                 r.skip(len);
@@ -91,7 +91,7 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
         case DW_FORM_block:
         case DW_FORM_exprloc: {
             auto &block = attr->value.block;
-            DWARFReader r(dwarf->info, block.offset, block.offset + block.length);
+            DWARFReader r(dwarf->info->io, block.offset, block.offset + block.length);
             return eval(proc, r, frame);
         }
         default:
@@ -276,7 +276,7 @@ DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame
 
             case DW_OP_entry_value: case DW_OP_GNU_entry_value: {
                 auto len = r.getuleb128();
-                DWARFReader r2(r, r.getOffset(), len);
+                DWARFReader r2(r.io, r.getOffset(), r.getOffset() + len);
                 push(eval(proc, r2, frame));
                 break;
             }
@@ -312,7 +312,7 @@ StackFrame::getCFA(const Process &proc, const DwarfCallFrame &dcf) const
             DwarfExpressionStack stack;
             auto start = dcf.cfaValue.u.expression.offset;
             auto end = start + dcf.cfaValue.u.expression.length;
-            DWARFReader r(frameInfo->section, start, end);
+            DWARFReader r(frameInfo->section->io, start, end);
             return stack.eval(proc, r, this);
         }
     }
@@ -348,7 +348,7 @@ StackFrame::unwind(Process &p)
     if (!fde)
        throw Exception() << "no FDE for instruction address " << std::hex << ip << " in " << *elf->io;
 
-    DWARFReader r(frameInfo->section, fde->instructions, fde->end);
+    DWARFReader r(frameInfo->section->io, fde->instructions, fde->end);
 
     auto iter = dwarf->callFrameForAddr.find(objaddr);
     if (iter == dwarf->callFrameForAddr.end())
@@ -387,7 +387,7 @@ StackFrame::unwind(Process &p)
             case EXPRESSION: {
                 DwarfExpressionStack stack;
                 stack.push(cfa);
-                DWARFReader reader(frameInfo->section, unwind.u.expression.offset,
+                DWARFReader reader(frameInfo->section->io, unwind.u.expression.offset,
                       unwind.u.expression.offset + unwind.u.expression.length);
                 auto val = stack.eval(p, reader, this);
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.

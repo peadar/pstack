@@ -100,7 +100,7 @@ std::list<DwarfPubnameUnit> &
 DwarfInfo::pubnames()
 {
     if (pubnamesh) {
-        DWARFReader r(pubnamesh);
+        DWARFReader r(pubnamesh->io);
         while (!r.empty())
             pubnameUnits.emplace_back(r);
         pubnamesh = 0;
@@ -116,7 +116,7 @@ DwarfInfo::getUnit(off_t offset)
         return unit->second;
     if (info == 0)
         return std::shared_ptr<DwarfUnit>();
-    DWARFReader r(info, offset);
+    DWARFReader r(info->io, offset);
     unitsm[offset] = std::make_shared<DwarfUnit>(this, r);
     return unitsm[offset];
 }
@@ -127,7 +127,7 @@ DwarfInfo::getUnits() const
     std::list<std::shared_ptr<DwarfUnit>> list;
     if (info == 0)
         return list;
-    DWARFReader r(info);
+    DWARFReader r(info->io);
 
     while (!r.empty()) {
        auto off = r.getOffset();
@@ -148,7 +148,7 @@ std::list<DwarfARangeSet> &
 DwarfInfo::ranges()
 {
     if (arangesh) {
-        DWARFReader r(arangesh);
+        DWARFReader r(arangesh->io);
         while (!r.empty())
             aranges.emplace_back(r);
         arangesh = 0;
@@ -204,7 +204,7 @@ DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
        dwarfLen = ELF_BITS / 8;
 
     off_t off = r.getuint(version <= 2 ? 4 : dwarfLen);
-    DWARFReader abbR(di->abbrev, off);
+    DWARFReader abbR(di->abbrev->io, off);
     r.addrLen = addrlen = r.getu8();
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
@@ -217,7 +217,7 @@ DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
 #endif
 
 
-    DWARFReader entriesR(r, r.getOffset(), nextoff - r.getOffset());
+    DWARFReader entriesR(r.io, r.getOffset(), nextoff);
     assert(nextoff <= r.getLimit());
     decodeEntries(entriesR, entries, nullptr);
     r.setOffset(nextoff);
@@ -592,7 +592,7 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
         auto stmtsAttr = attrForName(DW_AT_stmt_list);
         if (unit->dwarf->lineshdr && stmtsAttr) {
             size_t stmts = dwarfAttr2Int(*stmtsAttr);
-            DWARFReader r2(unit->dwarf->lineshdr, stmts);
+            DWARFReader r2(unit->dwarf->lineshdr->io, stmts);
             unit_->lines.build(r2, unit);
         }
         break;
@@ -760,7 +760,7 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, std::shared_ptr<const ElfSection
     , type(type_)
 {
     Elf_Addr cieid;
-    DWARFReader reader(section);
+    DWARFReader reader(section->io);
 
     // decode in 2 passes: first for CIE, then for FDE
     off_t start = reader.getOffset();
@@ -859,7 +859,7 @@ DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr)
     // default frame for this CIE.
     DwarfCallFrame dframe;
     if (addr || wantAddr) {
-        DWARFReader r2(r, instructions, end - instructions);
+        DWARFReader r2(r.io, instructions, end);
         dframe = execInsns(r2, 0, 0);
         frame = dframe;
     }

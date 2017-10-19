@@ -242,7 +242,7 @@ operator <<(std::ostream &os, const std::pair<const DwarfFrameInfo *, const Dwar
         << ", \"instrlen\": " << dcie.second->end - dcie.second->instructions
         << ", \"instructions\": ";
     ;
-    DWARFReader r(dcie.first->section, dcie.second->instructions, dcie.second->end);
+    DWARFReader r(dcie.first->section->io, dcie.second->instructions, dcie.second->end);
     dwarfDumpCFAInsns(os, r);
     return os << " }";
 }
@@ -256,8 +256,8 @@ operator << (std::ostream &os, const std::pair<const DwarfFrameInfo *, const Dwa
         << ", \"range\": " << dfde.second->irange
         //<< ", \"augmentation\": \"" << dfde.second->augmentation << "\""
         << ", \"instructions\": "
-    ; 
-    DWARFReader r(dfde.first->section, dfde.second->instructions, dfde.second->end);
+    ;
+    DWARFReader r(dfde.first->section->io, dfde.second->instructions, dfde.second->end);
     dwarfDumpCFAInsns(os, r);
     return os << "}";
 }
