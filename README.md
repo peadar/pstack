@@ -22,11 +22,6 @@ the vtables found in the symbol table. This can give a quick-and-dirty histogram
 of live objects by type for finding memory leaks.
 
 ## TODO
-* Support GNU_ref_alt
-   * dwz creates these
-* Read memory contents for arg printing
-   * Read content of target memory for displaying argument values
-   * pretty-print basic types like numbes, pointers, etc.
 * Support rela for object files
    * Can't do much with object files, but at least having the dump functions
      work would be nice.
@@ -37,5 +32,5 @@ of live objects by type for finding memory leaks.
 * Provide an option (or by default) to enumerate LWPs rather than relying on
   libthread_db. At least chrome seems to have a problem with libthread_db,
   and so do things written in non-C languages like golang
-* Support gnu_debugdata/minidebug - this is an LZMA-compressed reduced debug info.
-  I'm not even sure if its DWARF or a symbol table yet.
+* Support inlined subroutines, so we show the surrounding scopes as part
+  of the stack trace.
