@@ -4,6 +4,7 @@ project(pstack C CXX)
 math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 set(PSTACK_BIN "pstack" CACHE STRING "Name of the 'pstack' binary")
 set(ELF_BITS ${PLATFORM_BITS} CACHE STRING "32 or 64 - set to 32 to build 32-bit binary on 64-bit platform")
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib" CACHE STRING "Rpath to install for binaries or the empty string")
 
 set(LIBTYPE "STATIC" CACHE STRING "Build libraries as STATIC or SHARED")
 
@@ -14,7 +15,6 @@ if(PLATFORM_BITS EQUAL 64 AND ELF_BITS EQUAL 32)
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -m32")
 endif()
 
-set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib") # Update RPATH in binaries when installed
 
 find_library(LTHREADDB NAMES thread_db PATHS (/usr/lib /usr/local/lib))
 find_package(LibLZMA)
