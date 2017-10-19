@@ -61,15 +61,22 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
     }
 }
 
+
+static std::shared_ptr<Reader> sectionReader(std::shared_ptr<ElfObject> obj, const char *name)
+{
+    auto sec = obj->getSection(name, SHT_PROGBITS);
+    return sec ? sec->io : std::shared_ptr<Reader>();
+}
+
 DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj, DwarfImageCache &cache_)
     : altImageLoaded(false)
     , imageCache(cache_)
-    , pubnamesh(obj->getSection(".debug_pubnames", SHT_PROGBITS))
-    , arangesh(obj->getSection(".debug_aranges", SHT_PROGBITS))
-    , info(obj->getSection(".debug_info", SHT_PROGBITS))
+    , pubnamesh(sectionReader(obj, ".debug_pubnames"))
+    , arangesh(sectionReader(obj, ".debug_aranges"))
+    , info(sectionReader(obj, ".debug_info"))
     , elf(obj)
-    , abbrev(obj->getSection(".debug_abbrev", SHT_PROGBITS))
-    , lineshdr(obj->getSection(".debug_line", SHT_PROGBITS))
+    , abbrev(sectionReader(obj, ".debug_abbrev"))
+    , lineshdr(sectionReader(obj, ".debug_line"))
 {
     // want these first: other sections refer into this.
     auto debstr = obj->getSection(".debug_str", SHT_PROGBITS);
@@ -100,7 +107,7 @@ std::list<DwarfPubnameUnit> &
 DwarfInfo::pubnames()
 {
     if (pubnamesh) {
-        DWARFReader r(pubnamesh->io);
+        DWARFReader r(pubnamesh);
         while (!r.empty())
             pubnameUnits.emplace_back(r);
         pubnamesh = 0;
@@ -116,7 +123,7 @@ DwarfInfo::getUnit(off_t offset)
         return unit->second;
     if (info == 0)
         return std::shared_ptr<DwarfUnit>();
-    DWARFReader r(info->io, offset);
+    DWARFReader r(info, offset);
     unitsm[offset] = std::make_shared<DwarfUnit>(this, r);
     return unitsm[offset];
 }
@@ -127,7 +134,7 @@ DwarfInfo::getUnits() const
     std::list<std::shared_ptr<DwarfUnit>> list;
     if (info == 0)
         return list;
-    DWARFReader r(info->io);
+    DWARFReader r(info);
 
     while (!r.empty()) {
        auto off = r.getOffset();
@@ -148,7 +155,7 @@ std::list<DwarfARangeSet> &
 DwarfInfo::ranges()
 {
     if (arangesh) {
-        DWARFReader r(arangesh->io);
+        DWARFReader r(arangesh);
         while (!r.empty())
             aranges.emplace_back(r);
         arangesh = 0;
@@ -204,7 +211,7 @@ DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
        dwarfLen = ELF_BITS / 8;
 
     off_t off = r.getuint(version <= 2 ? 4 : dwarfLen);
-    DWARFReader abbR(di->abbrev->io, off);
+    DWARFReader abbR(di->abbrev, off);
     r.addrLen = addrlen = r.getu8();
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
@@ -592,7 +599,7 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
         auto stmtsAttr = attrForName(DW_AT_stmt_list);
         if (unit->dwarf->lineshdr && stmtsAttr) {
             size_t stmts = dwarfAttr2Int(*stmtsAttr);
-            DWARFReader r2(unit->dwarf->lineshdr->io, stmts);
+            DWARFReader r2(unit->dwarf->lineshdr, stmts);
             unit_->lines.build(r2, unit);
         }
         break;

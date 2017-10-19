@@ -91,7 +91,7 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
         case DW_FORM_block:
         case DW_FORM_exprloc: {
             auto &block = attr->value.block;
-            DWARFReader r(dwarf->info->io, block.offset, block.offset + block.length);
+            DWARFReader r(dwarf->info, block.offset, block.offset + block.length);
             return eval(proc, r, frame);
         }
         default:

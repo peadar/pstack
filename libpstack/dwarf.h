@@ -313,7 +313,7 @@ struct DwarfFrameInfo {
     FIType type;
     std::map<Elf_Addr, DwarfCIE> cies;
     std::list<DwarfFDE> fdeList;
-    DwarfFrameInfo(DwarfInfo *, std::shared_ptr<const ElfSection> section, FIType type);
+    DwarfFrameInfo(DwarfInfo *, std::shared_ptr<const ElfSection>, FIType type);
     DwarfFrameInfo() = delete;
     DwarfFrameInfo(const DwarfFrameInfo &) = delete;
     Elf_Addr decodeCIEFDEHdr(DWARFReader &, Elf_Addr &id, FIType, DwarfCIE **);
@@ -343,18 +343,18 @@ class DwarfInfo {
     mutable std::shared_ptr<DwarfInfo> altDwarf;
     mutable bool altImageLoaded;
     DwarfImageCache &imageCache;
-    std::shared_ptr<const ElfSection> pubnamesh;
-    std::shared_ptr<const ElfSection> arangesh;
+    std::shared_ptr<Reader> pubnamesh;
+    std::shared_ptr<Reader> arangesh;
 public:
     // XXX: info is public because "block" DwarfAttributes need to read from it.
-    std::shared_ptr<const ElfSection> info;
+    std::shared_ptr<Reader> info;
     char *debugStrings;
     std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
     std::shared_ptr<ElfObject> elf;
     std::unique_ptr<DwarfFrameInfo> debugFrame;
     std::unique_ptr<DwarfFrameInfo> ehFrame;
-    std::shared_ptr<const ElfSection> abbrev;
-    std::shared_ptr<const ElfSection> lineshdr;
+    std::shared_ptr<Reader> abbrev;
+    std::shared_ptr<Reader> lineshdr;
     std::shared_ptr<ElfObject> getAltImage() const;
     std::shared_ptr<DwarfInfo> getAltDwarf() const;
     std::list<DwarfARangeSet> &ranges();
