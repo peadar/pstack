@@ -414,6 +414,11 @@ enum DwarfCFAInstruction {
     DW_CFA_PAD                  = 0xff
 };
 
+/*
+ * A DWARF Reader is a wrapper for a reader that keeps a current position in the
+ * underlying reader, and provides operations to read values in DWARF standard dwarf
+ * encodings from the underlying reader, advancing the offset as it does so.
+ */
 class DWARFReader {
     Elf_Off off;
     Elf_Off end;
@@ -439,10 +444,10 @@ public:
     {
     }
 
-    DWARFReader(std::shared_ptr<const ElfSection> section, Elf_Off off_,
+    DWARFReader(std::shared_ptr<const ElfSection> section, Elf_Off off_ = 0, 
           size_t size = std::numeric_limits<size_t>::max())
         : off(off_)
-        , end(off_ + std::min(size_t(section->getSize()) - off, size))
+        , end(size == std::numeric_limits<size_t>::max() ? section->getSize() : off + size)
         , io(section->io)
         , addrLen(ELF_BITS / 8)
     {
