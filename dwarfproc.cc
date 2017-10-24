@@ -421,7 +421,6 @@ StackFrame::setReg(unsigned regno, cpureg_t regval)
     regs[regno] = regval;
 }
 
-
 cpureg_t
 StackFrame::getReg(unsigned regno) const
 {

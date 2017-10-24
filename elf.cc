@@ -35,7 +35,6 @@ GlobalDebugDirectories::add(const std::string &str)
    dirs.push_back(str);
 }
 
-
 ElfNoteIter
 ElfNotes::begin() const
 {
@@ -104,14 +103,14 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<Reader> io_)
     if (elfHeader.e_shstrndx != SHN_UNDEF) {
         auto sshdr = sectionHeaders[elfHeader.e_shstrndx];
         for (auto &h : sectionHeaders) {
-            auto name = sshdr->io->readString((*h)->sh_name);
+            auto name = sshdr->io->readString(h->shdr.sh_name);
             namedSection[name] = h;
             // .gnu_debugdata is a separate LZMA-compressed ELF image with just
             // a symbol table.
             if (name == ".gnu_debugdata")
 #ifdef WITH_LZMA
                 debugData = std::make_shared<ElfObject>(imageCache,
-                      std::make_shared<LzmaReader>(h->io, h->getSize()));
+                      std::make_shared<LzmaReader>(h->io));
 #else
                 std::clog << "warning: no compiled support for LZMA - "
                       "can't decode debug data in " << *io << "\n";
@@ -119,19 +118,17 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<Reader> io_)
         }
         auto tab = getSection(".hash", SHT_HASH);
         if (tab) {
-            auto syms = getSection((*tab)->sh_link);
-            auto strings = getSection((*syms)->sh_link);
-            hash.reset(new ElfSymHash(tab, syms, strings));
+            auto syms = getSection(tab->shdr.sh_link);
+            if (syms) {
+               auto strings = getSection(syms->shdr.sh_link);
+               if (strings)
+                  hash.reset(new ElfSymHash(tab->io, syms->io, strings->io));
+            }
         }
     } else {
         hash = 0;
     }
 }
-
-
-/*
- * Parse out an ELF file into an ElfObject structure.
- */
 
 const Elf_Phdr *
 ElfObject::getSegmentForAddress(Elf_Off a) const
@@ -175,10 +172,10 @@ ElfObject::getInterpreter() const
 std::pair<const Elf_Sym, const string>
 SymbolIterator::operator *()
 {
-        Elf_Sym sym;
-        sec->symbols->io->readObj(off, &sym);
-        string name = sec->strings->io->readString(sym.st_name);
-        return std::make_pair(sym, name);
+    Elf_Sym sym;
+    sec->symbols->readObj(off, &sym);
+    string name = sec->strings->readString(sym.st_name);
+    return std::make_pair(sym, name);
 }
 
 /*
@@ -188,14 +185,11 @@ bool
 ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &name)
 {
     /* Try to find symbols in these sections */
-    static const char *sectionNames[] = {
-        ".symtab", ".dynsym", 0
-    };
-    for (size_t i = 0; sectionNames[i]; i++) {
-        const auto symSection = getSection(sectionNames[i], SHT_NULL);
-        if (symSection == 0 || (*symSection)->sh_type == SHT_NOBITS)
+    for (auto secname : { ".symtab", ".dynsym" }) {
+        const auto symSection = getSection(secname, SHT_NULL);
+        if (symSection == 0 || symSection->shdr.sh_type == SHT_NOBITS)
             continue;
-        SymbolSection syms(*this, symSection);
+        SymbolSection syms(symSection->io, getSection(symSection->shdr.sh_link)->io);
         for (auto syminfo : syms) {
             auto &candidate = syminfo.first;
             if (candidate.st_shndx >= sectionHeaders.size())
@@ -206,8 +200,8 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
                 continue;
             if (candidate.st_size + candidate.st_value <= addr)
                 continue;
-            auto shdr = sectionHeaders[candidate.st_shndx];
-            if (!((*shdr)->sh_flags & SHF_ALLOC))
+            auto sec = sectionHeaders[candidate.st_shndx];
+            if (!(sec->shdr.sh_flags & SHF_ALLOC))
                 continue;
             sym = candidate;
             name = syminfo.second;
@@ -222,9 +216,8 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
 std::shared_ptr<const ElfSection>
 ElfObject::getSection(const std::string &name, Elf_Word type) const
 {
-
     auto s = namedSection.find(name);
-    if (s == namedSection.end() || ((*s->second)->sh_type != type && type != SHT_NULL))
+    if (s == namedSection.end() || (s->second->shdr.sh_type != type && type != SHT_NULL))
         return nullptr;
     return s->second;
 }
@@ -236,10 +229,16 @@ ElfObject::getSection(Elf_Word idx) const
 }
 
 SymbolSection
-ElfObject::getSymbols(const std::string &table)
+ElfObject::getSymbols(const std::string &tableName)
 {
     ElfObject *elf = debugData ? debugData.get() : this;
-    return SymbolSection(*this, elf->getSection(table, SHT_NULL));
+    auto table = elf->getSection(tableName, SHT_NULL);
+    if (table) {
+        auto strings = elf->getSection(table->shdr.sh_link);
+        if (strings)
+           return SymbolSection(table->io, strings->io);
+    }
+    return SymbolSection(nullptr, nullptr);
 }
 
 bool
@@ -254,15 +253,16 @@ SymbolSection::linearSearch(const string &name, Elf_Sym &sym)
     return false;
 }
 
-ElfSymHash::ElfSymHash(std::shared_ptr<const ElfSection> &hash_, std::shared_ptr<const ElfSection> &syms_, std::shared_ptr<const ElfSection> &strings_)
+ElfSymHash::ElfSymHash(std::shared_ptr<const Reader> hash_,
+      std::shared_ptr<const Reader> syms_, std::shared_ptr<const Reader> strings_)
     : hash(hash_)
     , syms(syms_)
     , strings(strings_)
 {
     // read the hash table into local memory.
-    size_t words = hash->getSize() / sizeof (Elf_Word);
+    size_t words = hash->size() / sizeof (Elf_Word);
     data.resize(words);
-    hash->io->readObj(0, &data[0], words);
+    hash->readObj(0, &data[0], words);
     nbucket = data[0];
     nchain = data[1];
     buckets = &data[0] + 2;
@@ -275,8 +275,8 @@ ElfSymHash::findSymbol(Elf_Sym &sym, const string &name)
     uint32_t bucket = elf_hash(name) % nbucket;
     for (Elf_Word i = buckets[bucket]; i != STN_UNDEF; i = chains[i]) {
         Elf_Sym candidate;
-        syms->io->readObj(i * sizeof candidate, &candidate);
-        string candidateName = strings->io->readString(candidate.st_name);
+        syms->readObj(i * sizeof candidate, &candidate);
+        string candidateName = strings->readString(candidate.st_name);
         if (candidateName == name) {
             sym = candidate;
             return true;
@@ -324,7 +324,6 @@ ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
 
     if (!in->debugLoaded) {
         in->debugLoaded = true;
-
         auto hdr = in->getSection(".gnu_debuglink", SHT_PROGBITS);
         if (hdr) {
             std::string link = hdr->io->readString(0);
@@ -382,15 +381,12 @@ ElfSection::ElfSection(const ElfObject &obj_, off_t off)
         io = std::make_shared<InflateReader>(chdr.ch_size,
               std::make_shared<OffsetReader>(rawIo,
                  sizeof chdr, shdr.sh_size - sizeof chdr));
-        size = chdr.ch_size;
 #else
         std::clog <<"warning: no support configured for compressed debug info in "
            << obj_.io << std::endl;
-        size = 0;
 #endif
     } else {
         io = rawIo;
-        size = shdr.sh_size;
     }
 }
 
@@ -400,7 +396,6 @@ ImageCache::getImageForName(const std::string &name) {
     auto res = getImageIfLoaded(name, found);
     if (found)
         return res;
-
     auto &item = cache[name];
     item = std::make_shared<ElfObject>(*this, loadFile(name));
     return item;
@@ -433,7 +428,6 @@ ImageCache::getImageIfLoaded(const std::string &name, bool &found)
     return std::shared_ptr<ElfObject>();
 }
 
-
 std::shared_ptr<ElfObject>
 ImageCache::getDebugImage(const std::string &name) {
     // XXX: verify checksum.
@@ -453,5 +447,3 @@ ImageCache::getDebugImage(const std::string &name) {
     }
     return std::shared_ptr<ElfObject>();
 }
-
-

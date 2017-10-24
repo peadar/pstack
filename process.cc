@@ -35,7 +35,10 @@ PstackOptions::operator () (PstackOption opt) const
     return values[opt];
 }
 
-Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_, const PathReplacementList &prl, DwarfImageCache &cache)
+Process::Process(std::shared_ptr<ElfObject> exec,
+                  std::shared_ptr<Reader> io_,
+                  const PathReplacementList &prl,
+                  DwarfImageCache &cache)
     : entry(0)
     , isStatic(false)
     , sysent(0)
@@ -52,7 +55,6 @@ Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_, c
 void
 Process::load()
 {
-
     /*
      * Attach the executable and any shared libs.
      * The process is still running here, but unless its actively loading or
@@ -77,7 +79,6 @@ Process::load()
         if (verbose && the != TD_NOLIBTHREAD)
             *debug << "failed to load thread agent: " << the << std::endl;
     }
-
 }
 
 std::shared_ptr<DwarfInfo>
@@ -282,8 +283,6 @@ typeName(const DwarfEntry *type)
     }
 }
 
-
-
 struct RemoteValue {
     const Process &p;
     const Elf_Addr addr;
@@ -303,8 +302,6 @@ operator << (std::ostream &os, const RemoteValue &rv)
     auto type = rv.type;
     while (type->type->tag == DW_TAG_typedef)
        type = type->referencedEntry(DW_AT_type);
-
-
     auto size = type->attrForName(DW_AT_byte_size);
     std::vector<char> buf;
     if (size) {
@@ -435,7 +432,8 @@ operator << (std::ostream &os, const ArgPrint &ap)
 std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options)
 {
-    os << "thread: " << (void *)thread.info.ti_tid << ", lwp: " << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
+    os << "thread: " << (void *)thread.info.ti_tid << ", lwp: "
+       << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
     int frameNo = 0;
     for (auto frame : thread.stack) {
 
@@ -586,7 +584,9 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             *debug << "replaced " << startPath << " with " << path << std::endl;
 
         try {
-            addElfObject(imageCache.getImageForName(path), Elf_Addr(map.l_addr));
+            auto elf = imageCache.getImageForName(path);
+            if (elf)
+                addElfObject(elf, Elf_Addr(map.l_addr));
         }
         catch (const std::exception &e) {
             std::clog << "warning: can't load text for '" << path << "' at " <<

@@ -87,13 +87,13 @@ MemReader::describe(std::ostream &os) const
     os << "in-memory image";
 }
 
-string
+std::string
 Reader::readString(off_t offset) const
 {
     char c;
     string res;
-    for (;;) {
-        read(offset++, 1, &c);
+    for (size_t s = size(); offset < s; ++offset) {
+        read(offset, 1, &c);
         if (c == 0)
             break;
         res += c;

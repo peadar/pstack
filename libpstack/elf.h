@@ -123,13 +123,12 @@ roundup2(size_t val, size_t align)
 class ElfSymHash;
 struct SymbolSection;
 
-class ElfSection {
+/*
+ * An ELF section is effectively a pair of an Elf_Shdr to describe an ELF
+ * section, and and a reader object in which to find the content.
+ */
+struct ElfSection {
     Elf_Shdr shdr;
-    off_t size;
-public:
-    size_t getSize() const { return size; }
-    const Elf_Shdr *operator ->() const { return &shdr; }
-    const Elf_Shdr &operator *() const { return shdr; }
     std::shared_ptr<Reader> io;
     ElfSection(const ElfObject &obj_, off_t offset);
     ElfSection() = delete;
@@ -195,7 +194,9 @@ private:
     friend std::ostream &operator<< (std::ostream &os, const ElfObject &obj);
 };
 
-// Helpful for iterating over symbol sections.
+/*
+ * See SymbolSection below - provides an iterator for the symbols in a section.
+ */
 struct SymbolIterator {
     SymbolSection *sec;
     off_t off;
@@ -205,29 +206,38 @@ struct SymbolIterator {
     std::pair<const Elf_Sym, const std::string> operator *();
 };
 
+/*
+ * A symbol section represents a symbol table - this requires two sections, the
+ * set of Elf_Sym objects, and the section that contains the strings to name
+ * those symbols
+ */
 struct SymbolSection {
-    std::shared_ptr<const ElfSection> symbols;
-    std::shared_ptr<const ElfSection> strings;
+    std::shared_ptr<const Reader> symbols;
+    std::shared_ptr<const Reader> strings;
     SymbolIterator begin() { return SymbolIterator(this, 0); }
-    SymbolIterator end() { return SymbolIterator(this, symbols ? symbols->getSize() : 0); }
-    SymbolSection(ElfObject &elf, std::shared_ptr<const ElfSection> symbols_)
-        : symbols(symbols_)
-        , strings(symbols ? elf.getSection((*symbols)->sh_link) : 0)
+    SymbolIterator end() { return SymbolIterator(this, symbols ? symbols->size() : 0); }
+    SymbolSection(std::shared_ptr<const Reader> symbols_, std::shared_ptr<const Reader> strings_)
+       : symbols(symbols_), strings(strings_)
     {}
     bool linearSearch(const std::string &name, Elf_Sym &);
 };
 
+/*
+ * Helper class to provide a hashed lookup of a symbol table.
+ */
 class ElfSymHash {
-    std::shared_ptr<const ElfSection> hash;
-    std::shared_ptr<const ElfSection> syms;
-    std::shared_ptr<const ElfSection> strings;
+    std::shared_ptr<const Reader> hash;
+    std::shared_ptr<const Reader> syms;
+    std::shared_ptr<const Reader> strings;
     Elf_Word nbucket;
     Elf_Word nchain;
     std::vector<Elf_Word> data;
     const Elf_Word *chains;
     const Elf_Word *buckets;
 public:
-    ElfSymHash(std::shared_ptr<const ElfSection> &hash, std::shared_ptr<const ElfSection> &syms, std::shared_ptr<const ElfSection> &strings_);
+    ElfSymHash(std::shared_ptr<const Reader> hash,
+          std::shared_ptr<const Reader> syms,
+          std::shared_ptr<const Reader> strings_);
     bool findSymbol(Elf_Sym &sym, const std::string &name);
 };
 
@@ -334,6 +344,9 @@ enum GNUNotes {
    GNU_BUILD_ID = 3
 };
 
+/*
+ * Places to look for debug images
+ */
 class GlobalDebugDirectories {
 public:
     std::vector<std::string> dirs;
@@ -349,12 +362,18 @@ std::ostream& operator<< (std::ostream &os, std::tuple<const ElfObject *, const 
 std::ostream& operator<< (std::ostream &os, const Elf_Dyn &d);
 std::ostream& operator<< (std::ostream &os, const ElfObject &obj);
 
+// For platforms that don't have unique_ptr yet.
 template<typename T, typename... Args>
 std::unique_ptr<T> make_unique(Args&&... args)
 {
     return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
+/*
+ * A cache of named files to ELF objects. Note no deduping is done for symbolic
+ * links, hard links, or canonicalization of filenames. (XXX: do this with stat
+ * & st_ino + st_dev)
+ */
 class ImageCache {
     std::map<std::string, std::shared_ptr<ElfObject>> cache;
     int elfHits;

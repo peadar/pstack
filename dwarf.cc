@@ -19,8 +19,6 @@
 #include <libpstack/elf.h>
 #include <libpstack/dwarf.h>
 
-extern int gVerbose;
-
 uintmax_t
 DWARFReader::getuleb128shift(int *shift, bool &isSigned)
 {
@@ -61,8 +59,8 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
     }
 }
 
-
-static std::shared_ptr<Reader> sectionReader(std::shared_ptr<ElfObject> obj, const char *name)
+static std::shared_ptr<Reader>
+sectionReader(std::shared_ptr<ElfObject> obj, const char *name)
 {
     auto sec = obj->getSection(name, SHT_PROGBITS);
     return sec ? sec->io : std::shared_ptr<Reader>();
@@ -80,12 +78,8 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj, DwarfImageCache &cache_)
 {
     // want these first: other sections refer into this.
     auto debstr = obj->getSection(".debug_str", SHT_PROGBITS);
-    if (debstr) {
-        debugStrings = new char[debstr->getSize()];
-        debstr->io->readObj(0, debugStrings, debstr->getSize());
-    } else {
-        debugStrings = 0;
-    }
+    if (debstr)
+        debugStrings = debstr->io;
     auto f = [this, &obj](const char *name, FIType ftype) {
         auto section = obj->getSection(name, SHT_PROGBITS);
         if (section) {
@@ -165,13 +159,11 @@ DwarfInfo::ranges()
 
 DwarfInfo::~DwarfInfo()
 {
-    delete[] debugStrings;
 }
 
 DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
 {
     unsigned align, tupleLen;
-
     Elf_Off start = r.getOffset();
     size_t dwarfLen;
 
@@ -222,8 +214,6 @@ DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
 #else
         abbreviations[DwarfTag(code)] = DwarfAbbreviation(abbR, code);
 #endif
-
-
     DWARFReader entriesR(r.io, r.getOffset(), nextoff);
     assert(nextoff <= r.getLimit());
     decodeEntries(entriesR, entries, nullptr);
@@ -459,9 +449,13 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
 
     case DW_FORM_GNU_strp_alt: {
         const DwarfInfo *info = entry->unit->dwarf;
-        value.string = info->getAltDwarf()->debugStrings + r.getint(entry->unit->dwarfLen);
+        value.string = info->getAltDwarf()->debugStrings->readString(r.getint(entry->unit->dwarfLen)).c_str();
         break;
     }
+
+    case DW_FORM_strp:
+        value.string = entry->unit->dwarf->debugStrings->readString(r.getint(entry->unit->dwarfLen)).c_str();
+        break;
 
     case DW_FORM_GNU_ref_alt:
         value.addr = r.getuint(entry->unit->dwarfLen);
@@ -497,10 +491,6 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
 
     case DW_FORM_ref_udata:
         value.addr = r.getuleb128();
-        break;
-
-    case DW_FORM_strp:
-        value.string = entry->unit->dwarf->debugStrings + r.getint(entry->unit->dwarfLen);
         break;
 
     case DW_FORM_ref1:
@@ -582,7 +572,6 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
 {
 
     for (auto &spec : type->specs) {
-
 #ifdef NOTYET
         attributes.emplace(std::piecewise_construct,
                 std::forward_as_tuple(spec->name),
@@ -590,7 +579,6 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
 #else
         attributes[spec.name] = DwarfAttribute(r, this, &spec);
 #endif
-
     }
 
     switch (type->tag) {
@@ -619,7 +607,6 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
         intmax_t code = r.getuleb128();
         if (code == 0)
             return;
-
 #ifdef NOTYET
         auto inserted = allEntries.emplace(std::piecewise_construct,
                     std::forward_as_tuple(offset),
@@ -637,24 +624,17 @@ static std::string
 getAltImageName(std::shared_ptr<ElfObject> elf)
 {
     auto section = elf->getSection(".gnu_debugaltlink", 0);
-    char name[1024];
-    assert(section->getSize() < sizeof name);
-    name[section->getSize()] = 0;
-    section->io->read(0, section->getSize(), name);
-    char *path;
-    if (name[0] != '/') {
-        // Not relative - prefix it with dirname of the image
-        char absbuf[1024];
-        strncpy(absbuf, stringify(*elf->io).c_str(), sizeof absbuf);
-        dirname(absbuf);
-        strncat(absbuf, "/", sizeof absbuf - 1);
-        strncat(absbuf, "/", sizeof absbuf - 1);
-        strncat(absbuf, name, sizeof absbuf - 1);
-        path = absbuf;
-    } else {
-        path = name;
-    }
-    return path;
+    std::string name = section->io->readString(0);
+    if (name[0] == '/')
+        return name;
+
+    // Not relative - prefix it with dirname of the image
+    char absbuf[1024];
+    strncpy(absbuf, stringify(*elf->io).c_str(), sizeof absbuf);
+    dirname(absbuf);
+    strncat(absbuf, "/", sizeof absbuf - 1);
+    strncat(absbuf, name.c_str(), sizeof absbuf - 1);
+    return absbuf;
 }
 
 std::shared_ptr<DwarfInfo>
@@ -709,7 +689,7 @@ DwarfFrameInfo::decodeAddress(DWARFReader &f, int encoding) const
     case 0:
         break;
     case DW_EH_PE_pcrel:
-        base += offset + dwarf->elf->getBase() + (*section)->sh_offset;
+        base += offset + dwarf->elf->getBase() + section->shdr.sh_offset;
         break;
     }
     return base;
@@ -820,14 +800,12 @@ DwarfInfo::sourceFromAddr(uintmax_t addr)
                 if (r->start <= addr && r->start + r->length > addr) {
                     units.push_back(getUnit(rs.debugInfoOffset));
                     break;
-
                 }
             }
         }
     } else {
         units = getUnits();
     }
-
     for (auto unit : units) {
         for (auto i = unit->lines.matrix.begin(); i != unit->lines.matrix.end(); ++i) {
             if (i->end_sequence)
@@ -837,7 +815,6 @@ DwarfInfo::sourceFromAddr(uintmax_t addr)
                 info.push_back(std::make_pair(i->file, i->line));
         }
     }
-
     return info;
 }
 
@@ -852,7 +829,6 @@ DwarfCallFrame::DwarfCallFrame()
     registers[CFA_RESTORE_REGNO].type = ARCH;
 #endif
 }
-
 
 DwarfCallFrame
 DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr)
@@ -1059,8 +1035,6 @@ DwarfCIE::DwarfCIE(const DwarfFrameInfo *fi, DWARFReader &r, Elf_Off end_)
     dataAlign = r.getsleb128();
     rar = r.getu8();
 
-    // Get augmentations...
-
 #if ELF_BITS == 32
     addressEncoding = DW_EH_PE_udata4;
 #elif ELF_BITS == 64
@@ -1192,10 +1166,12 @@ DwarfImageCache::getDwarf(std::shared_ptr<ElfObject> object)
     dwarfCache[object] = dwarf;
     return dwarf;
 }
-DwarfImageCache::DwarfImageCache() : dwarfHits(0), dwarfLookups(0) {}
+
+DwarfImageCache::DwarfImageCache() : dwarfHits(0), dwarfLookups(0)
+{
+}
+
 DwarfImageCache::~DwarfImageCache() {
     if (verbose >= 2)
         *debug << "DWARF image cache: lookups: " << dwarfLookups << ", hits=" << dwarfHits << std::endl;
 }
-
-

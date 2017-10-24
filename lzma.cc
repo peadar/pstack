@@ -8,12 +8,12 @@ static lzma_allocator allocator = {
    0
 };
 
-LzmaReader::LzmaReader(std::shared_ptr<Reader> inputBuf, size_t end)
+LzmaReader::LzmaReader(std::shared_ptr<Reader> inputBuf)
     : upstream(inputBuf)
 {
    lzma_stream_flags options;
    uint8_t footer[LZMA_STREAM_HEADER_SIZE];
-   size_t off = end - sizeof footer;
+   size_t off = inputBuf->size() - sizeof footer;
    inputBuf->read(off, sizeof footer, (char *)footer);
 
    auto rc = lzma_stream_footer_decode(&options, footer);
