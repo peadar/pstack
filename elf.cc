@@ -110,7 +110,7 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<Reader> io_)
             if (name == ".gnu_debugdata")
 #ifdef WITH_LZMA
                 debugData = std::make_shared<ElfObject>(imageCache,
-                      std::make_shared<LzmaReader>(h->io, h->io->size()));
+                      std::make_shared<LzmaReader>(h->io));
 #else
                 std::clog << "warning: no compiled support for LZMA - "
                       "can't decode debug data in " << *io << "\n";

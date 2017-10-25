@@ -18,7 +18,7 @@ class LzmaReader : public Reader {
     std::shared_ptr<Reader> upstream;
     mutable std::map<off_t, std::vector<unsigned char>> lzBlocks;
 public:
-    LzmaReader(std::shared_ptr<Reader> downstream, size_t len);
+    LzmaReader(std::shared_ptr<Reader> downstream);
     ~LzmaReader();
     size_t read(off_t, size_t, char *) const override;
     void describe(std::ostream &) const override;
