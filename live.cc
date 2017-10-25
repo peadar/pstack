@@ -21,7 +21,6 @@ LiveProcess::LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid_, const PathRe
     , pid(pid_)
     , stopCount(0)
 {
-
 }
 
 void
@@ -68,11 +67,9 @@ LiveProcess::resume(lwpid_t pid)
     auto &tcb = stoppedLwps[pid];
     if (--tcb.stopCount != 0)
         return;
-
     kill(pid, SIGCONT);
     if (ptrace(PT_DETACH, pid, (caddr_t)1, 0) != 0)
         std::clog << "failed to detach from process " << pid << ": " << strerror(errno);
-
     if (verbose >= 2 && --stopCount == 0) {
         timeval tv;
         gettimeofday(&tv, 0);
@@ -112,7 +109,6 @@ LiveProcess::stopProcess()
     // suspend everything quickly.
     StopLWP lister(this);
     listThreads(lister);
-
     int i = 0;
     for (auto lwp = lwps.begin(); lwp != lwps.end(); ++lwp) {
         stop(*lwp);

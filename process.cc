@@ -52,7 +52,6 @@ Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_, c
 void
 Process::load()
 {
-
     /*
      * Attach the executable and any shared libs.
      * The process is still running here, but unless its actively loading or
@@ -77,7 +76,6 @@ Process::load()
         if (verbose && the != TD_NOLIBTHREAD)
             *debug << "failed to load thread agent: " << the << std::endl;
     }
-
 }
 
 std::shared_ptr<DwarfInfo>
@@ -282,8 +280,6 @@ typeName(const DwarfEntry *type)
     }
 }
 
-
-
 struct RemoteValue {
     const Process &p;
     const Elf_Addr addr;
@@ -303,8 +299,6 @@ operator << (std::ostream &os, const RemoteValue &rv)
     auto type = rv.type;
     while (type->type->tag == DW_TAG_typedef)
        type = type->referencedEntry(DW_AT_type);
-
-
     auto size = type->attrForName(DW_AT_byte_size);
     std::vector<char> buf;
     if (size) {

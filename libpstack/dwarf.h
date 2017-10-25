@@ -322,6 +322,10 @@ struct DwarfFrameInfo {
     intmax_t decodeAddress(DWARFReader &, int encoding) const;
 };
 
+/*
+ * A Dwarf Image Cache is an (Elf) Image Cache, but caches DwarfInfo for the
+ * ElfObjects also.
+ */
 class DwarfImageCache : public ImageCache {
     int dwarfHits;
     int dwarfLookups;
@@ -333,6 +337,9 @@ public:
     ~DwarfImageCache();
 };
 
+/*
+ * DwarfInfo represents the interesting bits of the DWARF data.
+ */
 class DwarfInfo {
     std::list<DwarfPubnameUnit> pubnameUnits;
     std::list<DwarfARangeSet> aranges;
@@ -363,13 +370,10 @@ public:
     std::list<std::shared_ptr<DwarfUnit>> getUnits() const;
     DwarfInfo(std::shared_ptr<ElfObject>, DwarfImageCache &);
     std::vector<std::pair<const DwarfFileEntry *, int>> sourceFromAddr(uintmax_t addr);
+
     ~DwarfInfo();
     bool hasRanges() { return arangesh || aranges.size() != 0; }
 };
-
-const DwarfAbbreviation *dwarfUnitGetAbbrev(const DwarfUnit *unit, intmax_t code);
-const char *dwarfSOpcodeName(enum DwarfLineSOpcode code);
-const char *dwarfEOpcodeName(enum DwarfLineEOpcode code);
 
 enum DwarfCFAInstruction {
     DW_CFA_advance_loc          = 0x40, // XXX: Lower 6 = delta

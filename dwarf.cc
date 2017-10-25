@@ -19,8 +19,6 @@
 #include <libpstack/elf.h>
 #include <libpstack/dwarf.h>
 
-extern int gVerbose;
-
 uintmax_t
 DWARFReader::getuleb128shift(int *shift, bool &isSigned)
 {
@@ -171,7 +169,6 @@ DwarfInfo::~DwarfInfo()
 DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
 {
     unsigned align, tupleLen;
-
     Elf_Off start = r.getOffset();
     size_t dwarfLen;
 
@@ -222,8 +219,6 @@ DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
 #else
         abbreviations[DwarfTag(code)] = DwarfAbbreviation(abbR, code);
 #endif
-
-
     DWARFReader entriesR(r.io, r.getOffset(), nextoff);
     assert(nextoff <= r.getLimit());
     decodeEntries(entriesR, entries, nullptr);
@@ -582,7 +577,6 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
 {
 
     for (auto &spec : type->specs) {
-
 #ifdef NOTYET
         attributes.emplace(std::piecewise_construct,
                 std::forward_as_tuple(spec->name),
@@ -590,7 +584,6 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
 #else
         attributes[spec.name] = DwarfAttribute(r, this, &spec);
 #endif
-
     }
 
     switch (type->tag) {
@@ -619,7 +612,6 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
         intmax_t code = r.getuleb128();
         if (code == 0)
             return;
-
 #ifdef NOTYET
         auto inserted = allEntries.emplace(std::piecewise_construct,
                     std::forward_as_tuple(offset),
@@ -820,14 +812,12 @@ DwarfInfo::sourceFromAddr(uintmax_t addr)
                 if (r->start <= addr && r->start + r->length > addr) {
                     units.push_back(getUnit(rs.debugInfoOffset));
                     break;
-
                 }
             }
         }
     } else {
         units = getUnits();
     }
-
     for (auto unit : units) {
         for (auto i = unit->lines.matrix.begin(); i != unit->lines.matrix.end(); ++i) {
             if (i->end_sequence)
@@ -837,7 +827,6 @@ DwarfInfo::sourceFromAddr(uintmax_t addr)
                 info.push_back(std::make_pair(i->file, i->line));
         }
     }
-
     return info;
 }
 
@@ -852,7 +841,6 @@ DwarfCallFrame::DwarfCallFrame()
     registers[CFA_RESTORE_REGNO].type = ARCH;
 #endif
 }
-
 
 DwarfCallFrame
 DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr)
@@ -1059,8 +1047,6 @@ DwarfCIE::DwarfCIE(const DwarfFrameInfo *fi, DWARFReader &r, Elf_Off end_)
     dataAlign = r.getsleb128();
     rar = r.getu8();
 
-    // Get augmentations...
-
 #if ELF_BITS == 32
     addressEncoding = DW_EH_PE_udata4;
 #elif ELF_BITS == 64
@@ -1192,10 +1178,12 @@ DwarfImageCache::getDwarf(std::shared_ptr<ElfObject> object)
     dwarfCache[object] = dwarf;
     return dwarf;
 }
-DwarfImageCache::DwarfImageCache() : dwarfHits(0), dwarfLookups(0) {}
+
+DwarfImageCache::DwarfImageCache() : dwarfHits(0), dwarfLookups(0)
+{
+}
+
 DwarfImageCache::~DwarfImageCache() {
     if (verbose >= 2)
         *debug << "DWARF image cache: lookups: " << dwarfLookups << ", hits=" << dwarfHits << std::endl;
 }
-
-

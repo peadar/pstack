@@ -35,7 +35,6 @@ GlobalDebugDirectories::add(const std::string &str)
    dirs.push_back(str);
 }
 
-
 ElfNoteIter
 ElfNotes::begin() const
 {
@@ -127,11 +126,6 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<Reader> io_)
         hash = 0;
     }
 }
-
-
-/*
- * Parse out an ELF file into an ElfObject structure.
- */
 
 const Elf_Phdr *
 ElfObject::getSegmentForAddress(Elf_Off a) const
@@ -324,7 +318,6 @@ ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
 
     if (!in->debugLoaded) {
         in->debugLoaded = true;
-
         auto hdr = in->getSection(".gnu_debuglink", SHT_PROGBITS);
         if (hdr) {
             std::string link = hdr->io->readString(0);
@@ -400,7 +393,6 @@ ImageCache::getImageForName(const std::string &name) {
     auto res = getImageIfLoaded(name, found);
     if (found)
         return res;
-
     auto &item = cache[name];
     item = std::make_shared<ElfObject>(*this, loadFile(name));
     return item;
@@ -433,7 +425,6 @@ ImageCache::getImageIfLoaded(const std::string &name, bool &found)
     return std::shared_ptr<ElfObject>();
 }
 
-
 std::shared_ptr<ElfObject>
 ImageCache::getDebugImage(const std::string &name) {
     // XXX: verify checksum.
@@ -453,5 +444,3 @@ ImageCache::getDebugImage(const std::string &name) {
     }
     return std::shared_ptr<ElfObject>();
 }
-
-

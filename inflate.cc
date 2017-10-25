@@ -37,7 +37,6 @@ InflateReader::InflateReader(size_t inflatedSize, std::shared_ptr<Reader> inputB
             case Z_OK:
                 if (verbose >= 2)
                     *debug << " [" << writeChunk - stream.avail_out << "]";
-
                 break;
             default:
                 throw Exception() << "inflate failed";

@@ -195,7 +195,9 @@ private:
     friend std::ostream &operator<< (std::ostream &os, const ElfObject &obj);
 };
 
-// Helpful for iterating over symbol sections.
+/*
+ * See SymbolSection below - provides an iterator for the symbols in a section.
+ */
 struct SymbolIterator {
     SymbolSection *sec;
     off_t off;
@@ -334,6 +336,9 @@ enum GNUNotes {
    GNU_BUILD_ID = 3
 };
 
+/*
+ * Places to look for debug images
+ */
 class GlobalDebugDirectories {
 public:
     std::vector<std::string> dirs;
@@ -349,12 +354,18 @@ std::ostream& operator<< (std::ostream &os, std::tuple<const ElfObject *, const 
 std::ostream& operator<< (std::ostream &os, const Elf_Dyn &d);
 std::ostream& operator<< (std::ostream &os, const ElfObject &obj);
 
+// For platforms that don't have unique_ptr yet.
 template<typename T, typename... Args>
 std::unique_ptr<T> make_unique(Args&&... args)
 {
     return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
+/*
+ * A cache of named files to ELF objects. Note no deduping is done for symbolic
+ * links, hard links, or canonicalization of filenames. (XXX: do this with stat
+ * & st_ino + st_dev)
+ */
 class ImageCache {
     std::map<std::string, std::shared_ptr<ElfObject>> cache;
     int elfHits;
