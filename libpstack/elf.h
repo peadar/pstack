@@ -123,13 +123,12 @@ roundup2(size_t val, size_t align)
 class ElfSymHash;
 struct SymbolSection;
 
-class ElfSection {
+/*
+ * An ELF section is effectively a pair of an Elf_Shdr to describe an ELF
+ * section, and and a reader object in which to find the content.
+ */
+struct ElfSection {
     Elf_Shdr shdr;
-    off_t size;
-public:
-    size_t getSize() const { return size; }
-    const Elf_Shdr *operator ->() const { return &shdr; }
-    const Elf_Shdr &operator *() const { return shdr; }
     std::shared_ptr<Reader> io;
     ElfSection(const ElfObject &obj_, off_t offset);
     ElfSection() = delete;

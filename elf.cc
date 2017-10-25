@@ -103,7 +103,7 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<Reader> io_)
     if (elfHeader.e_shstrndx != SHN_UNDEF) {
         auto sshdr = sectionHeaders[elfHeader.e_shstrndx];
         for (auto &h : sectionHeaders) {
-            auto name = sshdr->io->readString((*h)->sh_name);
+            auto name = sshdr->io->readString(h->shdr.sh_name);
             namedSection[name] = h;
             // .gnu_debugdata is a separate LZMA-compressed ELF image with just
             // a symbol table.
@@ -118,9 +118,12 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<Reader> io_)
         }
         auto tab = getSection(".hash", SHT_HASH);
         if (tab) {
-            auto syms = getSection((*tab)->sh_link);
-            auto strings = getSection((*syms)->sh_link);
-            hash.reset(new ElfSymHash(tab, syms, strings));
+            auto syms = getSection(tab->shdr.sh_link);
+            if (syms) {
+               auto strings = getSection(syms->shdr.sh_link);
+               if (strings)
+                  hash.reset(new ElfSymHash(tab->io, syms->io, strings->io));
+            }
         }
     } else {
         hash = 0;
@@ -200,8 +203,8 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
                 continue;
             if (candidate.st_size + candidate.st_value <= addr)
                 continue;
-            auto shdr = sectionHeaders[candidate.st_shndx];
-            if (!((*shdr)->sh_flags & SHF_ALLOC))
+            auto sec = sectionHeaders[candidate.st_shndx];
+            if (!(sec->shdr.sh_flags & SHF_ALLOC))
                 continue;
             sym = candidate;
             name = syminfo.second;
@@ -216,9 +219,8 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
 std::shared_ptr<const ElfSection>
 ElfObject::getSection(const std::string &name, Elf_Word type) const
 {
-
     auto s = namedSection.find(name);
-    if (s == namedSection.end() || ((*s->second)->sh_type != type && type != SHT_NULL))
+    if (s == namedSection.end() || (s->second->shdr.sh_type != type && type != SHT_NULL))
         return nullptr;
     return s->second;
 }

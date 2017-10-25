@@ -550,7 +550,7 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
     auto &o = objsec.first;
     auto sec = objsec.second;
     auto strs = o.getSection(o.getElfHeader().e_shstrndx);
-    const Elf_Shdr &sh = **sec;
+    const Elf_Shdr &sh = sec->shdr;
 
     static std::set<std::string> textContent = {
         ".gnu_debugaltlink",
@@ -725,7 +725,7 @@ operator<< (std::ostream &os, std::tuple<const ElfObject &, std::shared_ptr<cons
     auto &obj = std::get<0>(t);
     auto &sec = std::get<1>(t);
     auto s = std::get<2>(t);
-    auto symStrings = obj.getSection((*sec)->sh_link);
+    auto symStrings = obj.getSection(sec->shdr.sh_link);
 
     return os << "{ \"name\": \"" << symStrings->io->readString(s->st_name) << "\""
        << ", \"value\": " << s->st_value

@@ -689,7 +689,7 @@ DwarfFrameInfo::decodeAddress(DWARFReader &f, int encoding) const
     case 0:
         break;
     case DW_EH_PE_pcrel:
-        base += offset + dwarf->elf->getBase() + (*section)->sh_offset;
+        base += offset + dwarf->elf->getBase() + section->shdr.sh_offset;
         break;
     }
     return base;
