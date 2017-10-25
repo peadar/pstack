@@ -222,17 +222,22 @@ struct SymbolSection {
     bool linearSearch(const std::string &name, Elf_Sym &);
 };
 
+/*
+ * Helper class to provide a hashed lookup of a symbol table.
+ */
 class ElfSymHash {
-    std::shared_ptr<const ElfSection> hash;
-    std::shared_ptr<const ElfSection> syms;
-    std::shared_ptr<const ElfSection> strings;
+    std::shared_ptr<const Reader> hash;
+    std::shared_ptr<const Reader> syms;
+    std::shared_ptr<const Reader> strings;
     Elf_Word nbucket;
     Elf_Word nchain;
     std::vector<Elf_Word> data;
     const Elf_Word *chains;
     const Elf_Word *buckets;
 public:
-    ElfSymHash(std::shared_ptr<const ElfSection> &hash, std::shared_ptr<const ElfSection> &syms, std::shared_ptr<const ElfSection> &strings_);
+    ElfSymHash(std::shared_ptr<const Reader> hash,
+          std::shared_ptr<const Reader> syms,
+          std::shared_ptr<const Reader> strings_);
     bool findSymbol(Elf_Sym &sym, const std::string &name);
 };
 
