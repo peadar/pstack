@@ -362,7 +362,6 @@ public:
     std::shared_ptr<Reader> debugStrings;
     std::shared_ptr<Reader> abbrev;
     std::shared_ptr<Reader> lineshdr;
-    std::shared_ptr<ElfObject> getAltImage() const;
     std::shared_ptr<DwarfInfo> getAltDwarf() const;
     std::list<DwarfARangeSet> &ranges();
     std::list<DwarfPubnameUnit> &pubnames();
