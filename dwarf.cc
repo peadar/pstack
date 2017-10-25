@@ -59,8 +59,8 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
     }
 }
 
-
-static std::shared_ptr<Reader> sectionReader(std::shared_ptr<ElfObject> obj, const char *name)
+static std::shared_ptr<Reader>
+sectionReader(std::shared_ptr<ElfObject> obj, const char *name)
 {
     auto sec = obj->getSection(name, SHT_PROGBITS);
     return sec ? sec->io : std::shared_ptr<Reader>();
