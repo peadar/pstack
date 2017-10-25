@@ -584,7 +584,9 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             *debug << "replaced " << startPath << " with " << path << std::endl;
 
         try {
-            addElfObject(imageCache.getImageForName(path), Elf_Addr(map.l_addr));
+            auto elf = imageCache.getImageForName(path);
+            if (elf)
+                addElfObject(elf, Elf_Addr(map.l_addr));
         }
         catch (const std::exception &e) {
             std::clog << "warning: can't load text for '" << path << "' at " <<
