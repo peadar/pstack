@@ -624,24 +624,17 @@ static std::string
 getAltImageName(std::shared_ptr<ElfObject> elf)
 {
     auto section = elf->getSection(".gnu_debugaltlink", 0);
-    char name[1024];
-    assert(section->getSize() < sizeof name);
-    name[section->getSize()] = 0;
-    section->io->read(0, section->getSize(), name);
-    char *path;
-    if (name[0] != '/') {
-        // Not relative - prefix it with dirname of the image
-        char absbuf[1024];
-        strncpy(absbuf, stringify(*elf->io).c_str(), sizeof absbuf);
-        dirname(absbuf);
-        strncat(absbuf, "/", sizeof absbuf - 1);
-        strncat(absbuf, "/", sizeof absbuf - 1);
-        strncat(absbuf, name, sizeof absbuf - 1);
-        path = absbuf;
-    } else {
-        path = name;
-    }
-    return path;
+    std::string name = section->io->readString(0);
+    if (name[0] == '/')
+        return name;
+
+    // Not relative - prefix it with dirname of the image
+    char absbuf[1024];
+    strncpy(absbuf, stringify(*elf->io).c_str(), sizeof absbuf);
+    dirname(absbuf);
+    strncat(absbuf, "/", sizeof absbuf - 1);
+    strncat(absbuf, name.c_str(), sizeof absbuf - 1);
+    return absbuf;
 }
 
 std::shared_ptr<DwarfInfo>
