@@ -110,7 +110,7 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<Reader> io_)
             if (name == ".gnu_debugdata")
 #ifdef WITH_LZMA
                 debugData = std::make_shared<ElfObject>(imageCache,
-                      std::make_shared<LzmaReader>(h->io, h->getSize()));
+                      std::make_shared<LzmaReader>(h->io, h->io->size()));
 #else
                 std::clog << "warning: no compiled support for LZMA - "
                       "can't decode debug data in " << *io << "\n";
@@ -122,7 +122,7 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<Reader> io_)
             if (syms) {
                auto strings = getSection(syms->shdr.sh_link);
                if (strings)
-                  hash.reset(new ElfSymHash(tab->io, syms->io, strings->io));
+                  hash.reset(new ElfSymHash(tab, syms, strings));
             }
         }
     } else {
@@ -190,7 +190,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
     };
     for (size_t i = 0; sectionNames[i]; i++) {
         const auto symSection = getSection(sectionNames[i], SHT_NULL);
-        if (symSection == 0 || (*symSection)->sh_type == SHT_NOBITS)
+        if (symSection == 0 || symSection->shdr.sh_type == SHT_NOBITS)
             continue;
         SymbolSection syms(*this, symSection);
         for (auto syminfo : syms) {
@@ -256,7 +256,7 @@ ElfSymHash::ElfSymHash(std::shared_ptr<const ElfSection> &hash_, std::shared_ptr
     , strings(strings_)
 {
     // read the hash table into local memory.
-    size_t words = hash->getSize() / sizeof (Elf_Word);
+    size_t words = hash->io->size() / sizeof (Elf_Word);
     data.resize(words);
     hash->io->readObj(0, &data[0], words);
     nbucket = data[0];
@@ -377,15 +377,12 @@ ElfSection::ElfSection(const ElfObject &obj_, off_t off)
         io = std::make_shared<InflateReader>(chdr.ch_size,
               std::make_shared<OffsetReader>(rawIo,
                  sizeof chdr, shdr.sh_size - sizeof chdr));
-        size = chdr.ch_size;
 #else
         std::clog <<"warning: no support configured for compressed debug info in "
            << obj_.io << std::endl;
-        size = 0;
 #endif
     } else {
         io = rawIo;
-        size = shdr.sh_size;
     }
 }
 

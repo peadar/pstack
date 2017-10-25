@@ -559,7 +559,7 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
     };
 
     os << "{ \"size\":" << sh.sh_size;
-    os << ", \"uncompressedSize\":" << sec->getSize();
+    os << ", \"uncompressedSize\":" << sec->io->size();
     std::string secName;
     if (strs) {
         secName = strs->io->readString(sh.sh_name);
@@ -592,7 +592,7 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
         case SHT_SYMTAB:
         case SHT_DYNSYM: {
             off_t symoff = 0;
-            off_t esym = sec->getSize();
+            off_t esym = sec->io->size();
             os << ", \"symbols\": [";
             std::string sep = "";
             for (; symoff < esym; symoff += sizeof (Elf_Sym)) {
@@ -609,7 +609,7 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
             os << ", \"reloca\": [";
             off_t off = 0;
             const char *sep = "";
-            for (off_t esym = sec->getSize(); off < esym; off += sizeof (Elf_Rela)) {
+            for (off_t esym = sec->io->size(); off < esym; off += sizeof (Elf_Rela)) {
                 Elf_Rela rela;
                 sec->io->readObj(off, &rela);
                 os << sep << rela;
@@ -622,7 +622,7 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
 
     if (textContent.find(secName) != textContent.end()) {
         char buf[1024];
-        auto count = sec->io->read(0, std::min(sizeof buf - 1, sh.sh_size), buf);
+        auto count = sec->io->read(0, std::min(sizeof buf - 1, size_t(sec->io->size())), buf);
         buf[count] = 0;
         os << ", \"content\": \"" << buf << "\"";
     }
