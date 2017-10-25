@@ -32,11 +32,14 @@ linkResolve(string name)
 off_t
 FileReader::size() const
 {
-    struct stat buf;
-    int rc = fstat(file, &buf);
-    if (rc == -1)
-        throw Exception() << "fstat failed: can't find size of file: " << strerror(errno);
-    return buf.st_size;
+    if (fileSize == -1) {
+       struct stat buf;
+       int rc = fstat(file, &buf);
+       if (rc == -1)
+           throw Exception() << "fstat failed: can't find size of file: " << strerror(errno);
+       fileSize = buf.st_size;
+    }
+    return fileSize;
 }
 
 
@@ -55,6 +58,7 @@ FileReader::openfile(int &file, std::string name_)
 FileReader::FileReader(const string &name_)
     : name(name_)
     , file(-1)
+    , fileSize(-1)
 {
     if (!openfile(file, name_))
         throw Exception() << "cannot open file '" << name_ << "': " << strerror(errno);
@@ -114,16 +118,17 @@ FileReader::read(off_t off, size_t count, char *ptr) const
     return rc;
 }
 
-CacheReader::Page::Page(Reader &r, off_t offset_)
-    : offset(offset_)
+void
+CacheReader::Page::load(Reader &r, off_t offset_)
 {
+    assert(offset_ % PAGESIZE == 0);
     try {
         len = r.read(offset_, PAGESIZE, data);
+        offset = offset_;
     }
     catch (std::exception &ex) {
         len = 0;
     }
-    assert(offset_ % PAGESIZE == 0);
 }
 
 CacheReader::CacheReader(std::shared_ptr<Reader> upstream_)
@@ -154,11 +159,13 @@ CacheReader::getPage(off_t pageoff) const
         }
         first = false;
     }
-    p = new Page(*upstream, pageoff);
     if (pages.size() == MAXPAGES) {
-        delete pages.back();
+        p = pages.back();
         pages.pop_back();
+    } else {
+        p = new Page();
     }
+    p->load(*upstream, pageoff);
     pages.push_front(p);
     return p;
 }

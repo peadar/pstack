@@ -118,27 +118,29 @@ emain(int argc, char **argv)
 
     for (i = optind; i < argc; i++) {
         pid = atoi(argv[i]);
-        if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
-            // It's a file: should be ELF, treat core and exe differently
+        try {
+            if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
+                // It's a file: should be ELF, treat core and exe differently
 
-            // Don't put cores in the cache
-            auto obj = std::make_shared<ElfObject>(imageCache, loadFile(argv[i]));
+                // Don't put cores in the cache
+                auto obj = std::make_shared<ElfObject>(imageCache, loadFile(argv[i]));
 
-            if (obj->getElfHeader().e_type == ET_CORE) {
-                try {
-                    CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
-                    proc.load();
-                    pstack(proc, std::cout, options);
-                } catch (const std::exception &e) {
-                    std::cout << "failed to pstack " << argv[i] << ": " << e.what() << "\n";
+                if (obj->getElfHeader().e_type == ET_CORE) {
+                        CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
+                        proc.load();
+                        pstack(proc, std::cout, options);
+
+                } else {
+                    exec = obj;
                 }
             } else {
-                exec = obj;
+                LiveProcess proc(exec, pid, PathReplacementList(), imageCache);
+                proc.load();
+                pstack(proc, std::cout, options);
             }
-        } else {
-            LiveProcess proc(exec, pid, PathReplacementList(), imageCache);
-            proc.load();
-            pstack(proc, std::cout, options);
+
+        } catch (const std::exception &e) {
+            std::cout << "failed to process " << argv[i] << ": " << e.what() << "\n";
         }
     }
     return 0;
