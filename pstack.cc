@@ -125,9 +125,13 @@ emain(int argc, char **argv)
             auto obj = std::make_shared<ElfObject>(imageCache, loadFile(argv[i]));
 
             if (obj->getElfHeader().e_type == ET_CORE) {
-                CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
-                proc.load();
-                pstack(proc, std::cout, options);
+                try {
+                    CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
+                    proc.load();
+                    pstack(proc, std::cout, options);
+                } catch (const std::exception &e) {
+                    std::cout << "failed to pstack " << argv[i] << ": " << e.what() << "\n";
+                }
             } else {
                 exec = obj;
             }
