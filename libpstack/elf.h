@@ -206,6 +206,11 @@ struct SymbolIterator {
     std::pair<const Elf_Sym, const std::string> operator *();
 };
 
+/*
+ * A symbol section represents a symbol table - this requires two sections, the
+ * set of Elf_Sym objects, and the section that contains the strings to name
+ * those symbols
+ */
 struct SymbolSection {
     std::shared_ptr<const ElfSection> symbols;
     std::shared_ptr<const ElfSection> strings;
