@@ -35,7 +35,10 @@ PstackOptions::operator () (PstackOption opt) const
     return values[opt];
 }
 
-Process::Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> io_, const PathReplacementList &prl, DwarfImageCache &cache)
+Process::Process(std::shared_ptr<ElfObject> exec,
+                  std::shared_ptr<Reader> io_,
+                  const PathReplacementList &prl,
+                  DwarfImageCache &cache)
     : entry(0)
     , isStatic(false)
     , sysent(0)
@@ -429,7 +432,8 @@ operator << (std::ostream &os, const ArgPrint &ap)
 std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options)
 {
-    os << "thread: " << (void *)thread.info.ti_tid << ", lwp: " << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
+    os << "thread: " << (void *)thread.info.ti_tid << ", lwp: "
+       << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
     int frameNo = 0;
     for (auto frame : thread.stack) {
 
