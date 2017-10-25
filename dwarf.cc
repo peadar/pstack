@@ -78,12 +78,8 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj, DwarfImageCache &cache_)
 {
     // want these first: other sections refer into this.
     auto debstr = obj->getSection(".debug_str", SHT_PROGBITS);
-    if (debstr) {
-        debugStrings = new char[debstr->getSize()];
-        debstr->io->readObj(0, debugStrings, debstr->getSize());
-    } else {
-        debugStrings = 0;
-    }
+    if (debstr)
+        debugStrings = debstr->io;
     auto f = [this, &obj](const char *name, FIType ftype) {
         auto section = obj->getSection(name, SHT_PROGBITS);
         if (section) {
@@ -163,7 +159,6 @@ DwarfInfo::ranges()
 
 DwarfInfo::~DwarfInfo()
 {
-    delete[] debugStrings;
 }
 
 DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
@@ -454,9 +449,13 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
 
     case DW_FORM_GNU_strp_alt: {
         const DwarfInfo *info = entry->unit->dwarf;
-        value.string = info->getAltDwarf()->debugStrings + r.getint(entry->unit->dwarfLen);
+        value.string = info->getAltDwarf()->debugStrings->readString(r.getint(entry->unit->dwarfLen)).c_str();
         break;
     }
+
+    case DW_FORM_strp:
+        value.string = entry->unit->dwarf->debugStrings->readString(r.getint(entry->unit->dwarfLen)).c_str();
+        break;
 
     case DW_FORM_GNU_ref_alt:
         value.addr = r.getuint(entry->unit->dwarfLen);
@@ -492,10 +491,6 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
 
     case DW_FORM_ref_udata:
         value.addr = r.getuleb128();
-        break;
-
-    case DW_FORM_strp:
-        value.string = entry->unit->dwarf->debugStrings + r.getint(entry->unit->dwarfLen);
         break;
 
     case DW_FORM_ref1:

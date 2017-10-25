@@ -355,11 +355,11 @@ class DwarfInfo {
 public:
     // XXX: info is public because "block" DwarfAttributes need to read from it.
     std::shared_ptr<Reader> info;
-    char *debugStrings;
     std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
     std::shared_ptr<ElfObject> elf;
     std::unique_ptr<DwarfFrameInfo> debugFrame;
     std::unique_ptr<DwarfFrameInfo> ehFrame;
+    std::shared_ptr<Reader> debugStrings;
     std::shared_ptr<Reader> abbrev;
     std::shared_ptr<Reader> lineshdr;
     std::shared_ptr<ElfObject> getAltImage() const;
