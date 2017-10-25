@@ -10,20 +10,18 @@
 #include "libpstack/ps_callback.h"
 
 std::string
-LiveReader::procname(pid_t pid, const std::string &base)
+procname(pid_t pid, const std::string &base)
 {
-    return stringify("/proc/", pid, "/", base);
+    return linkResolve(stringify("/proc/", pid, "/", base));
 }
+
+LiveReader::LiveReader(pid_t pid, const std::string &base)
+   : FileReader(procname(pid, base)) {}
 
 LiveProcess::LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid_,
       const PathReplacementList &repls, DwarfImageCache &imageCache)
-    : Process(ex ? ex :
-          std::make_shared<ElfObject>(
-             imageCache,
-             std::make_shared<CacheReader>(
-                std::make_shared<LiveReader>(pid_, "exe"))),
-          std::make_shared<CacheReader>(
-             std::make_shared<LiveReader>(pid_, "mem")),
+    : Process(ex ? ex : imageCache.getImageForName(procname(pid_, "exe")),
+             std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")),
           repls, imageCache)
     , pid(pid_)
     , stopCount(0)

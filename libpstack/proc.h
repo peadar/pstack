@@ -143,16 +143,11 @@ struct ThreadInfo {
 };
 
 class LiveReader : public FileReader {
-    pid_t pid;
-    std::string base;
-    static std::string procname(pid_t, const std::string &base);
 public:
-    static std::shared_ptr<Reader> procfile(pid_t, const std::string &base);
-    virtual void describe(std::ostream &os) const override {
-        os << linkResolve(procname(pid, base));
-    }
-    LiveReader(pid_t pid_, const std::string &base_) : FileReader(procname(pid_, base_)), pid(pid_), base(base_) {}
+    off_t size() const override { return std::numeric_limits<off_t>::max(); }
+    LiveReader(pid_t pid_, const std::string &base_);
 };
+std::string procname(pid_t pid, const std::string &file);
 
 struct LiveThreadList;
 class LiveProcess : public Process {
