@@ -172,10 +172,10 @@ ElfObject::getInterpreter() const
 std::pair<const Elf_Sym, const string>
 SymbolIterator::operator *()
 {
-        Elf_Sym sym;
-        sec->symbols->io->readObj(off, &sym);
-        string name = sec->strings->io->readString(sym.st_name);
-        return std::make_pair(sym, name);
+    Elf_Sym sym;
+    sec->symbols->readObj(off, &sym);
+    string name = sec->strings->readString(sym.st_name);
+    return std::make_pair(sym, name);
 }
 
 /*
@@ -185,14 +185,11 @@ bool
 ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &name)
 {
     /* Try to find symbols in these sections */
-    static const char *sectionNames[] = {
-        ".symtab", ".dynsym", 0
-    };
-    for (size_t i = 0; sectionNames[i]; i++) {
-        const auto symSection = getSection(sectionNames[i], SHT_NULL);
+    for (auto secname : { ".symtab", ".dynsym" }) {
+        const auto symSection = getSection(secname, SHT_NULL);
         if (symSection == 0 || symSection->shdr.sh_type == SHT_NOBITS)
             continue;
-        SymbolSection syms(*this, symSection);
+        SymbolSection syms(symSection->io, getSection(symSection->shdr.sh_link)->io);
         for (auto syminfo : syms) {
             auto &candidate = syminfo.first;
             if (candidate.st_shndx >= sectionHeaders.size())
@@ -232,10 +229,16 @@ ElfObject::getSection(Elf_Word idx) const
 }
 
 SymbolSection
-ElfObject::getSymbols(const std::string &table)
+ElfObject::getSymbols(const std::string &tableName)
 {
     ElfObject *elf = debugData ? debugData.get() : this;
-    return SymbolSection(*this, elf->getSection(table, SHT_NULL));
+    auto table = elf->getSection(tableName, SHT_NULL);
+    if (table) {
+        auto strings = elf->getSection(table->shdr.sh_link);
+        if (strings)
+           return SymbolSection(table->io, strings->io);
+    }
+    return SymbolSection(nullptr, nullptr);
 }
 
 bool

@@ -212,13 +212,12 @@ struct SymbolIterator {
  * those symbols
  */
 struct SymbolSection {
-    std::shared_ptr<const ElfSection> symbols;
-    std::shared_ptr<const ElfSection> strings;
+    std::shared_ptr<const Reader> symbols;
+    std::shared_ptr<const Reader> strings;
     SymbolIterator begin() { return SymbolIterator(this, 0); }
-    SymbolIterator end() { return SymbolIterator(this, symbols ? symbols->io->size() : 0); }
-    SymbolSection(ElfObject &elf, std::shared_ptr<const ElfSection> symbols_)
-        : symbols(symbols_)
-        , strings(symbols ? elf.getSection(symbols->shdr.sh_link) : 0)
+    SymbolIterator end() { return SymbolIterator(this, symbols ? symbols->size() : 0); }
+    SymbolSection(std::shared_ptr<const Reader> symbols_, std::shared_ptr<const Reader> strings_)
+       : symbols(symbols_), strings(strings_)
     {}
     bool linearSearch(const std::string &name, Elf_Sym &);
 };
