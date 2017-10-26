@@ -94,9 +94,9 @@ MemReader::describe(std::ostream &os) const
 std::string
 Reader::readString(off_t offset) const
 {
-    char c;
     string res;
-    for (size_t s = size(); offset < s; ++offset) {
+    for (off_t s = size(); offset < s; ++offset) {
+        char c;
         read(offset, 1, &c);
         if (c == 0)
             break;

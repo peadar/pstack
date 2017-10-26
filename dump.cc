@@ -622,7 +622,7 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
 
     if (textContent.find(secName) != textContent.end()) {
         char buf[1024];
-        auto count = sec->io->read(0, std::min(sizeof buf - 1, size_t(sh.sh_size)), buf);
+        auto count = sec->io->read(0, std::min(sizeof buf - 1, size_t(sec->io->size())), buf);
         buf[count] = 0;
         os << ", \"content\": \"" << buf << "\"";
     }
