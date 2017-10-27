@@ -90,13 +90,15 @@ Process::getDwarf(std::shared_ptr<ElfObject> elf, bool debug)
 }
 
 void
-Process::processAUXV(const void *datap, size_t len)
+Process::processAUXV(const Reader &auxio)
 {
-    const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
-    const Elf_auxv_t *eaux = aux + len / sizeof *aux;
-    for (; aux < eaux; aux++) {
-        Elf_Addr hdr = aux->a_un.a_val;
-        switch (aux->a_type) {
+    size_t auxCount = auxio.size() / sizeof (Elf_auxv_t);
+
+    for (size_t i = 0; i < auxCount; ++i) {
+        Elf_auxv_t aux;
+        auxio.readObj(i * sizeof aux, &aux);
+        Elf_Addr hdr = aux.a_un.a_val;
+        switch (aux.a_type) {
             case AT_ENTRY: {
                 // this provides a reference for relocating the executable when
                 // compared to the entrypoint there.
@@ -104,7 +106,7 @@ Process::processAUXV(const void *datap, size_t len)
                 break;
             }
             case AT_SYSINFO: {
-                sysent = aux->a_un.a_val;
+                sysent = aux.a_un.a_val;
                 break;
             }
             case AT_SYSINFO_EHDR: {

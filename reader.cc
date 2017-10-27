@@ -69,7 +69,7 @@ FileReader::~FileReader()
     ::close(file);
 }
 
-MemReader::MemReader(size_t len_, char *data_)
+MemReader::MemReader(size_t len_, const char *data_)
     : len(len_)
     , data(data_)
 {

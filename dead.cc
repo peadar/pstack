@@ -21,7 +21,7 @@ CoreProcess::load()
     /* Find the linux-gate VDSO, and treat as an ELF file */
     for (auto note : coreImage->notes) {
        if (note.name() == "CORE" && note.type() == NT_AUXV) {
-           processAUXV(note.data(), note.size());
+           processAUXV(MemReader(note.size(), reinterpret_cast<const char *>(note.data())));
            break;
        }
     }

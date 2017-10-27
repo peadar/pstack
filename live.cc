@@ -32,17 +32,11 @@ void
 LiveProcess::load()
 {
     StopProcess here(this);
-    char path[PATH_MAX];
-    snprintf(path, sizeof path, "/proc/%d/auxv", pid);
-    int fd = open(path, O_RDONLY);
-    if (fd == -1)
-        throw Exception() << "failed to open " << path << ": " << strerror(errno);
-    char buf[4096];
-    ssize_t rc = ::read(fd, buf, sizeof buf);
-    close(fd);
-    if (rc == -1)
-        throw Exception() << "failed to read 4k from " << path;
-    processAUXV(buf, rc);
+    // need a live reader, as the file does not report its size correctly.
+    LiveReader live(pid, "auxv");
+    char data[8192];
+    size_t count = live.read(0, sizeof data, data);
+    processAUXV(MemReader(count, data));
     Process::load();
 }
 

@@ -103,7 +103,7 @@ public:
         LoadedObject(Elf_Off reloc_, std::shared_ptr<ElfObject> object_) : reloc(reloc_), object(object_) {}
     };
     std::vector<LoadedObject> objects;
-    void processAUXV(const void *data, size_t len);
+    void processAUXV(const Reader &);
     std::shared_ptr<Reader> io;
 
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) = 0;
