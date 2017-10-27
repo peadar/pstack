@@ -164,16 +164,15 @@ operator << (std::ostream &os, const DwarfBlock &b)
 std::ostream &
 operator << (std::ostream &os, const DwarfAttribute &attr)
 {
-    const DwarfValue &value = attr.value;
     auto dwarf = attr.entry->unit->dwarf;
     auto elf = dwarf->elf;
-    os << "{ \"form\": \"" << attr.spec->form << "\", \"value\":";
-    switch (attr.spec->form) {
+    os << "{ \"form\": \"" << attr.form() << "\", \"value\":";
+    switch (attr.form()) {
     case DW_FORM_addr:
-        os << value.addr;
+        os << uintmax_t(attr);
         break;
     case DW_FORM_sdata:
-        os << value.sdata;
+        os << intmax_t(attr);
         break;
     case DW_FORM_data1:
     case DW_FORM_data2:
@@ -181,12 +180,12 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_data8:
     case DW_FORM_sec_offset:
     case DW_FORM_udata:
-        os << value.udata;
+        os << uintmax_t(attr);
         break;
     case DW_FORM_GNU_strp_alt:
     case DW_FORM_string:
     case DW_FORM_strp:
-        os << "\"" << value.string << "\"";
+        os << "\"" << std::string(attr) << "\"";
         break;
     case DW_FORM_ref_addr:
     case DW_FORM_ref2:
@@ -194,7 +193,7 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_ref8:
     case DW_FORM_GNU_ref_alt:
     case DW_FORM_ref_udata: {
-        const auto entry = attr.entry->referencedEntry(attr.spec->name);
+        const auto entry = attr.entry->referencedEntry(attr.name());
         if (entry) {
            os << " { \"file\": \"" << *entry->unit->dwarf->elf->io << "\"";
            os << " , \"offset\": " << entry->offset;
@@ -211,15 +210,15 @@ operator << (std::ostream &os, const DwarfAttribute &attr)
     case DW_FORM_block2:
     case DW_FORM_block4:
     case DW_FORM_block:
-        os << value.block;
+        os << attr.block();
         break;
     case DW_FORM_flag:
-        os << (value.flag ? "true" : "false");
+        os << (bool(attr) ? "true" : "false");
         break;
     case DW_FORM_flag_present:
         os << "true";
         break;
-    default: os << "\"unknown DWARF form " << attr.spec->form << "\"";
+    default: os << "\"unknown DWARF form " << attr.form() << "\"";
     }
     os << " } ";
     return os;

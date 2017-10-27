@@ -39,7 +39,7 @@ Elf_Addr
 DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, const StackFrame *frame)
 {
     const DwarfInfo *dwarf = attr->entry->unit->dwarf;
-    switch (attr->spec->form) {
+    switch (attr->form()) {
         case DW_FORM_sec_offset: {
             auto sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
             Elf_Off reloc;
@@ -56,22 +56,22 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
             auto unitHigh = unitEntry->attrForName(DW_AT_high_pc);
             Elf_Addr endAddr;
             if (unitHigh) {
-               switch (unitHigh->spec->form) {
+               switch (unitHigh->form()) {
                    case DW_FORM_addr:
-                       endAddr = unitHigh->value.addr;
+                       endAddr = Elf_Addr(*unitHigh);
                        break;
                    case DW_FORM_data1: case DW_FORM_data2: case DW_FORM_data4: case DW_FORM_data8: case DW_FORM_udata:
-                       endAddr = unitHigh->value.sdata + unitLow->value.addr;
+                       endAddr = intmax_t(*unitHigh) + uintmax_t(*unitLow);
                        break;
                    default:
                        abort();
                }
-               assert(objIp >= unitLow->value.udata && objIp < endAddr);
+               assert(objIp >= uintmax_t(*unitLow) && objIp < endAddr);
             }
 #endif
-            Elf_Addr unitIp = objIp - unitLow->value.udata;
+            Elf_Addr unitIp = objIp - Elf_Addr(*unitLow);
 
-            DWARFReader r(sec->io, attr->value.udata);
+            DWARFReader r(sec->io, Elf_Addr(*attr));
             for (;;) {
                 Elf_Addr start = r.getint(sizeof start);
                 Elf_Addr end = r.getint(sizeof end);
@@ -90,7 +90,7 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
         case DW_FORM_block1:
         case DW_FORM_block:
         case DW_FORM_exprloc: {
-            auto &block = attr->value.block;
+            auto &block = attr->block();
             DWARFReader r(dwarf->info, block.offset, block.offset + block.length);
             return eval(proc, r, frame);
         }

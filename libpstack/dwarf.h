@@ -121,38 +121,32 @@ union DwarfValue {
     uintmax_t addr;
     uintmax_t udata;
     intmax_t sdata;
-    const char *string;
     DwarfBlock block;
     bool flag;
 };
 
-struct DwarfAttribute {
+class DwarfAttribute;
+std::ostream & operator << (std::ostream &os, const DwarfAttribute &attr);
+
+DwarfEntry *findEntryForFunc(Elf_Addr address, DwarfEntry *entry);
+class DwarfExpressionStack;
+class DwarfAttribute {
     const DwarfAttributeSpec *spec; /* From abbrev table attached to type */
-    const DwarfEntry *entry;
     DwarfValue value;
+public:
+    const DwarfEntry *entry;
     DwarfAttribute(DWARFReader &, const DwarfEntry *, const DwarfAttributeSpec *spec);
-    ~DwarfAttribute() {
-        if (spec && spec->form == DW_FORM_string)
-            free((void *)(const void *)value.string);
-    }
+    DwarfForm form() const { return spec->form; }
+    DwarfAttrName name() const { return spec->name; }
+    ~DwarfAttribute() { }
     DwarfAttribute() : spec(0), entry(0) {}
-    DwarfAttribute(const DwarfAttribute &rhs) : spec(rhs.spec), entry(rhs.entry) {
-        if (spec && spec->form == DW_FORM_string)
-            value.string = strdup(rhs.value.string);
-        else
-            value.block = rhs.value.block;
-    }
-    DwarfAttribute &operator = (const DwarfAttribute &rhs) {
-        entry = rhs.entry;
-        if (spec && spec->form == DW_FORM_string)
-            value.string = strdup(rhs.value.string);
-        spec = rhs.spec;
-        if (spec && spec->form == DW_FORM_string)
-            value.string = strdup(rhs.value.string);
-        else
-            value.block = rhs.value.block;
-        return *this;
-    }
+    operator std::string() const;
+    operator intmax_t() const;
+    operator uintmax_t() const;
+    operator bool() const { return value.flag; }
+    const DwarfEntry *getReference() const;
+    DwarfBlock &block() { return value.block; }
+    const DwarfBlock &block() const { return value.block; }
 };
 
 class DwarfEntry {
@@ -177,7 +171,7 @@ public:
     std::string name() const {
         const DwarfAttribute *attr = attrForName(DW_AT_name);
         if (attr)
-           return attr->value.string;
+           return *attr;
         return "";
     }
 };
@@ -235,6 +229,7 @@ struct DwarfUnit {
     std::map<off_t, std::unique_ptr<DwarfEntry>> allEntries;
 public:
     const DwarfInfo *dwarf;
+    std::shared_ptr<const Reader> io;
     off_t offset;
     size_t dwarfLen;
     void decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *parent);

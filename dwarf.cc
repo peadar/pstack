@@ -193,6 +193,7 @@ DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
 
 DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
     : dwarf(di)
+    , io(r.io)
     , offset(r.getOffset())
 {
     length = r.getlength(&dwarfLen);
@@ -245,19 +246,34 @@ DwarfAbbreviation::DwarfAbbreviation(DWARFReader &r, intmax_t code_)
     }
 }
 
-static intmax_t
-dwarfAttr2Int(const DwarfAttribute &attr)
+DwarfAttribute::operator intmax_t() const
 {
-    switch (attr.spec->form) {
+    switch (spec->form) {
     case DW_FORM_data1:
     case DW_FORM_data2:
     case DW_FORM_data4:
     case DW_FORM_data8:
     case DW_FORM_sdata:
     case DW_FORM_udata:
-        return attr.value.sdata;
+        return value.sdata;
     case DW_FORM_sec_offset:
-        return attr.value.addr;
+        return value.addr;
+    default:
+        abort();
+    }
+}
+DwarfAttribute::operator uintmax_t() const
+{
+    switch (spec->form) {
+    case DW_FORM_data1:
+    case DW_FORM_data2:
+    case DW_FORM_data4:
+    case DW_FORM_data8:
+     case DW_FORM_udata:
+        return value.udata;
+    case DW_FORM_addr:
+    case DW_FORM_sec_offset:
+        return value.addr;
     default:
         abort();
     }
@@ -441,6 +457,24 @@ DwarfFileEntry::DwarfFileEntry(DWARFReader &r, DwarfLineInfo *info)
 {
 }
 
+DwarfAttribute::operator std::string() const
+{
+    const DwarfInfo *dwarf = entry->unit->dwarf;
+    switch (spec->form) {
+
+    case DW_FORM_GNU_strp_alt:
+        return dwarf->getAltDwarf()->debugStrings->readString(value.addr);
+
+    case DW_FORM_strp:
+        return dwarf->debugStrings->readString(value.addr);
+
+    case DW_FORM_string:
+        return entry->unit->io->readString(value.addr);
+    default:
+        abort();
+    }
+}
+
 DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const DwarfAttributeSpec *spec_)
     : spec(spec_)
     , entry(entry_)
@@ -448,13 +482,12 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
     switch (spec->form) {
 
     case DW_FORM_GNU_strp_alt: {
-        const DwarfInfo *info = entry->unit->dwarf;
-        value.string = info->getAltDwarf()->debugStrings->readString(r.getint(entry->unit->dwarfLen)).c_str();
+        value.addr = r.getint(entry->unit->dwarfLen);
         break;
     }
 
     case DW_FORM_strp:
-        value.string = entry->unit->dwarf->debugStrings->readString(r.getint(entry->unit->dwarfLen)).c_str();
+        value.addr = r.getint(entry->unit->dwarfLen);
         break;
 
     case DW_FORM_GNU_ref_alt:
@@ -514,7 +547,8 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
         break;
 
     case DW_FORM_string:
-        value.string = strdup(r.getstring().c_str());
+        value.addr = r.getOffset();
+        r.getstring();
         break;
 
     case DW_FORM_block1:
@@ -586,7 +620,7 @@ DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t
     case DW_TAG_compile_unit: {
         auto stmtsAttr = attrForName(DW_AT_stmt_list);
         if (unit->dwarf->lineshdr && stmtsAttr) {
-            size_t stmts = dwarfAttr2Int(*stmtsAttr);
+            off_t stmts = *stmtsAttr;
             DWARFReader r2(unit->dwarf->lineshdr, stmts);
             unit_->lines.build(r2, unit);
         }
@@ -1088,46 +1122,50 @@ const DwarfEntry *
 DwarfEntry::referencedEntry(DwarfAttrName name) const
 {
     auto attr = attrForName(name);
-    if (!attr)
-        return 0;
+    return attr ?  attr->getReference() : 0;
 
+}
+
+const DwarfEntry *
+DwarfAttribute::getReference() const
+{
+
+    const DwarfInfo *dwarf = entry->unit->dwarf;
     off_t off;
-    const DwarfInfo *refDwarf = this->unit->dwarf;
-    switch (attr->spec->form) {
+    switch (spec->form) {
         case DW_FORM_ref_addr:
-            off = attr->value.addr;
+            off = value.addr;
             break;
         case DW_FORM_ref_udata:
         case DW_FORM_ref2:
         case DW_FORM_ref4:
         case DW_FORM_ref8:
-            off = attr->value.addr + unit->offset;
+            off = value.addr + entry->unit->offset;
             break;
         case DW_FORM_GNU_ref_alt: {
-            auto dwarf = unit->dwarf->getAltDwarf();
+            dwarf = dwarf->getAltDwarf().get();
             if (!dwarf)
                 return 0; // XXX: deal with this.
-            refDwarf = dwarf.get(); // our dwarf object will continue to hold a reference to the alt dwarf.
-            off = attr->value.addr;
+            off = value.addr;
             break;
         }
         default:
             abort();
             break;
     }
-    const auto &entry = unit->allEntries.find(off);
+    const auto &otherEntry = entry->unit->allEntries.find(off);
 
     // Try this unit first (if we're dealing with the same DwarfInfo)
-    if (refDwarf == this->unit->dwarf && entry != unit->allEntries.end())
-        return entry->second.get();
+    if (dwarf == entry->unit->dwarf && otherEntry != entry->unit->allEntries.end())
+        return otherEntry->second.get();
 
     // Nope - try other units.
-    for (auto u : refDwarf->getUnits()) {
-        if (u.get() == unit)
+    for (auto u : dwarf->getUnits()) {
+        if (u.get() == entry->unit)
             continue;
-        const auto &entry = u->allEntries.find(off);
-        if (entry != u->allEntries.end())
-            return entry->second.get();
+        const auto &otherEntry = u->allEntries.find(off);
+        if (otherEntry != u->allEntries.end())
+            return otherEntry->second.get();
     }
     return 0;
 }

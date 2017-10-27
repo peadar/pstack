@@ -194,27 +194,27 @@ findEntryForFunc(Elf_Addr address, DwarfEntry *entry)
    switch (entry->type->tag) {
       case DW_TAG_subprogram: {
          const DwarfAttribute *lowAttr = entry->attrForName(DW_AT_low_pc);
-         const DwarfAttribute *highAttr =entry->attrForName(DW_AT_high_pc);
+         const DwarfAttribute *highAttr = entry->attrForName(DW_AT_high_pc);
          if (lowAttr && highAttr) {
             Elf_Addr start, end;
-            switch (lowAttr->spec->form) {
+            switch (lowAttr->form()) {
                case DW_FORM_addr:
-                  start = lowAttr->value.addr;
+                  start = *lowAttr;
                   break;
                default:
                   abort();
                   break;
             }
-            switch (highAttr->spec->form) {
+            switch (highAttr->form()) {
                case DW_FORM_addr:
-                  end = highAttr->value.addr;
+                  end = *highAttr;
                   break;
                case DW_FORM_data1:
                case DW_FORM_data2:
                case DW_FORM_data4:
                case DW_FORM_data8:
                case DW_FORM_udata:
-                  end = start + highAttr->value.sdata;
+                  end = start + uintmax_t(*highAttr);
                   break;
                default:
                   abort();
@@ -302,13 +302,14 @@ operator << (std::ostream &os, const RemoteValue &rv)
     auto type = rv.type;
     while (type->type->tag == DW_TAG_typedef)
        type = type->referencedEntry(DW_AT_type);
-    auto size = type->attrForName(DW_AT_byte_size);
+    auto sizeAttr = type->attrForName(DW_AT_byte_size);
     std::vector<char> buf;
-    if (size) {
-        buf.resize(size->value.udata);
-        auto rc = rv.p.io->read(rv.addr, size->value.udata, &buf[0]);
-        if (rc != size->value.udata) {
-            return os << "<error reading " << size->value.udata << " bytes from " << rv.addr << ", got " << rc << ">";
+    uintmax_t size = sizeAttr ? *sizeAttr : uintmax_t(0);
+    if (sizeAttr) {
+        buf.resize(size);
+        auto rc = rv.p.io->read(rv.addr, size, &buf[0]);
+        if (rc != size) {
+            return os << "<error reading " << size << " bytes from " << rv.addr << ", got " << rc << ">";
         }
     }
 
@@ -318,14 +319,16 @@ operator << (std::ostream &os, const RemoteValue &rv)
             if (size == 0) {
                 os << "unrepresentable(1)";
             }
-            auto encoding = type->attrForName(DW_AT_encoding);
-            switch (encoding->value.udata) {
+            auto encodingAttr = type->attrForName(DW_AT_encoding);
+            uintmax_t encoding = *encodingAttr;
+
+            switch (encoding) {
                 case DW_ATE_address:
                     os << *(void **)&buf[0];
                     break;
                 case DW_ATE_boolean:
                     for (size_t i = 0;; ++i) {
-                        if (i == size->value.udata) {
+                        if (i == size) {
                             os << "false";
                             break;
                         }
@@ -338,7 +341,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
 
                 case DW_ATE_signed:
                 case DW_ATE_signed_char:
-                    switch (size->value.udata) {
+                    switch (size) {
                         case sizeof (int8_t):
                             os << *(int8_t *)&buf[0];
                             break;
@@ -356,7 +359,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
 
                 case DW_ATE_unsigned:
                 case DW_ATE_unsigned_char:
-                    switch (size->value.udata) {
+                    switch (size) {
                         case sizeof (uint8_t):
                             os << *(uint8_t *)&buf[0];
                             break;
@@ -491,7 +494,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         }
                         frame->function = de;
                         frame->dwarf = dwarf; // hold on to 'de'
-                        os << "in " << symName << sigmsg << "+" << objIp - de->attrForName(DW_AT_low_pc)->value.udata << "(";
+                        os << "in " << symName << sigmsg << "+" << objIp - uintmax_t(*de->attrForName(DW_AT_low_pc)) << "(";
                         if (options(PstackOptions::doargs)) {
                             os << ArgPrint(*this, frame);
                         }
