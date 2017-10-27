@@ -21,7 +21,7 @@ CoreProcess::load()
     /* Find the linux-gate VDSO, and treat as an ELF file */
     for (auto note : coreImage->notes) {
        if (note.name() == "CORE" && note.type() == NT_AUXV) {
-           processAUXV(MemReader(note.size(), reinterpret_cast<const char *>(note.data())));
+           processAUXV(*note.data());
            break;
        }
     }
@@ -120,10 +120,11 @@ bool
 CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
 {
    for (auto note : coreImage->notes) {
-        const prstatus_t *prstatus = (const prstatus_t *)note.data();
+        prstatus_t prstatus;
+        note.data()->readObj(0, &prstatus);
 #ifdef NT_PRSTATUS
-        if (note.name() == "CORE" && note.type() == NT_PRSTATUS && prstatus->pr_pid == pid) {
-            memcpy(reg, &prstatus->pr_reg, sizeof(*reg));
+        if (note.name() == "CORE" && note.type() == NT_PRSTATUS && prstatus.pr_pid == pid) {
+            memcpy(reg, &prstatus.pr_reg, sizeof(*reg));
             return true;
         }
 #endif
@@ -148,8 +149,9 @@ CoreProcess::getPID() const
 {
     for (auto note : coreImage->notes) {
         if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
-            const prstatus_t *status = (const prstatus_t *)note.data();
-            return status->pr_pid;
+            prstatus_t status;
+            note.data()->readObj(0, &status);
+            return status.pr_pid;
         }
     }
     return -1;

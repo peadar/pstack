@@ -50,22 +50,13 @@ ElfNotes::end() const
 std::string
 ElfNoteDesc::name() const
 {
-   char *buf = new char[note.n_namesz + 1];
-   io->readObj(sizeof note, buf, note.n_namesz);
-   buf[note.n_namesz] = 0;
-   std::string s = buf;
-   delete[] buf;
-   return s;
+   return io->readString(sizeof note);
 }
 
-const unsigned char *
+std::shared_ptr<const Reader>
 ElfNoteDesc::data() const
 {
-   if (databuf == 0) {
-      databuf = new unsigned char[note.n_descsz];
-      io->readObj(roundup2(sizeof note + note.n_namesz, 4), databuf, note.n_descsz);
-   }
-   return databuf;
+   return std::make_shared<OffsetReader>(io, sizeof note + roundup2(note.n_namesz, 4), note.n_descsz);
 }
 
 size_t
@@ -337,7 +328,9 @@ ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
                     std::ostringstream dir;
                     dir << ".build-id/";
                     size_t i;
-                    auto data = note.data();
+                    auto io = note.data();
+                    std::vector<unsigned char> data(io->size());
+                    io->readObj(0, &data[0], io->size());
                     dir << std::hex << std::setw(2) << std::setfill('0') << int(data[0]);
                     dir << "/";
                     for (i = 1; i < note.size(); ++i)

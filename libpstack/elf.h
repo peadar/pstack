@@ -255,29 +255,25 @@ typedef struct user_regs_struct CoreRegisters;
 class ElfNoteDesc {
    Elf_Note note;
    std::shared_ptr<Reader> io;
-   mutable unsigned char *databuf;
 public:
+
    ElfNoteDesc(const ElfNoteDesc &rhs)
       : note(rhs.note)
       , io(rhs.io)
-      , databuf(0)
    {
-      if (rhs.databuf) {
-         databuf = new unsigned char[rhs.size()];
-         memcpy(databuf, rhs.databuf, rhs.size());
-      }
    }
+
    std::string name() const;
-   const unsigned char *data() const;
+   std::shared_ptr<const Reader> data() const;
    size_t size() const;
    int type()  const { return note.n_type; }
-   ElfNoteDesc(const Elf_Note &n, std::shared_ptr<Reader> io_)
-      : note(n)
+   ElfNoteDesc(const Elf_Note &note_, std::shared_ptr<Reader> io_)
+      : note(note_)
       , io(io_)
-      , databuf(0)
-   {}
+   {
+      io->readObj(0, &note);
+   }
    ~ElfNoteDesc() {
-      delete[] databuf;
    }
 };
 
@@ -290,12 +286,14 @@ struct ElfNoteIter {
     std::shared_ptr<Reader> io;
 
     ElfNoteDesc operator *() {
-        return ElfNoteDesc(curNote, std::make_shared<OffsetReader>(io, offset, std::numeric_limits<off_t>::max()));
+        return ElfNoteDesc(curNote, std::make_shared<OffsetReader>(io, offset));
     }
 
     void startSection() {
         offset = 0;
-        io = std::make_shared<OffsetReader>(object->io, off_t(phdrsi->p_offset), off_t(phdrsi->p_filesz));
+        io = std::make_shared<OffsetReader>(object->io,
+              off_t(phdrsi->p_offset),
+              off_t(phdrsi->p_filesz));
     }
 
     ElfNoteIter &operator++() {

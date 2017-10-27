@@ -367,25 +367,25 @@ void printNote(std::ostream &os, const ElfNoteDesc &note) {
          << ", \"type\": \"" << note.type() << "\"";
      // need to switch on type and name for notes.
      if (note.name() == "CORE") {
-         const unsigned char *datap = note.data();
+         auto data = note.data();
          size_t len = note.size();
          switch (note.type()) {
              case NT_PRSTATUS: {
                  assert(len >= sizeof (prstatus_t));
-                 const prstatus_t *prstatus = (const prstatus_t *)datap;
-                 os << ", \"prstatus\": " << *prstatus;
+                 prstatus_t prstatus;
+                 data->readObj(0, &prstatus);
+                 os << ", \"prstatus\": " << prstatus;
              }
              break;
              case NT_AUXV: {
-                 const Elf_auxv_t *aux = (const Elf_auxv_t *)datap;
-                 const Elf_auxv_t *eaux = aux + len / sizeof *aux;
+                 Elf_auxv_t aux;
                  const char *sep = "";
                  os << ", \"auxv\": [";
-                 while (aux < eaux) {
+                 for (size_t i = 0; i < len / sizeof aux; ++i) {
+                     data->readObj(i * sizeof aux, &aux);
                      os << sep;
                      sep = ",\n";
-                     os << *aux;
-                     aux++;
+                     os << aux;
                  }
                  os << "]";
              }

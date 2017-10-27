@@ -197,8 +197,12 @@ public:
            count = length - off;
         return upstream->read(off + offset, count, ptr);
     }
-    OffsetReader(std::shared_ptr<Reader> upstream_, off_t offset_, off_t length_)
-        : upstream(upstream_), offset(offset_), length(length_) {}
+    OffsetReader(std::shared_ptr<Reader> upstream_, off_t offset_,
+          off_t length_ = std::numeric_limits<off_t>::max())
+       : upstream(upstream_)
+       , offset(offset_)
+       , length(length_ == std::numeric_limits<off_t>::max() ? upstream->size() - offset : length_)
+    { }
     void describe(std::ostream &os) const override {
         os << *upstream << "[" << offset << "," << offset + length << "]";
     }
