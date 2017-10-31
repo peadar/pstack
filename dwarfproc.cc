@@ -69,9 +69,9 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
                assert(objIp >= uintmax_t(*unitLow) && objIp < endAddr);
             }
 #endif
-            Elf_Addr unitIp = objIp - Elf_Addr(*unitLow);
+            Elf_Addr unitIp = objIp - uintmax_t(*unitLow);
 
-            DWARFReader r(sec->io, Elf_Addr(*attr));
+            DWARFReader r(sec->io, uintmax_t(*attr));
             for (;;) {
                 Elf_Addr start = r.getint(sizeof start);
                 Elf_Addr end = r.getint(sizeof end);

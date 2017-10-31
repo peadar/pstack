@@ -201,7 +201,7 @@ findEntryForFunc(Elf_Addr address, DwarfEntry *entry)
             Elf_Addr start, end;
             switch (lowAttr->form()) {
                case DW_FORM_addr:
-                  start = *lowAttr;
+                  start = uintmax_t(*lowAttr);
                   break;
                default:
                   abort();
@@ -209,7 +209,7 @@ findEntryForFunc(Elf_Addr address, DwarfEntry *entry)
             }
             switch (highAttr->form()) {
                case DW_FORM_addr:
-                  end = *highAttr;
+                  end = uintmax_t(*highAttr);
                   break;
                case DW_FORM_data1:
                case DW_FORM_data2:
