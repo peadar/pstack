@@ -58,7 +58,7 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
             if (unitHigh) {
                switch (unitHigh->form()) {
                    case DW_FORM_addr:
-                       endAddr = Elf_Addr(*unitHigh);
+                       endAddr = uintmax_t(*unitHigh);
                        break;
                    case DW_FORM_data1: case DW_FORM_data2: case DW_FORM_data4: case DW_FORM_data8: case DW_FORM_udata:
                        endAddr = intmax_t(*unitHigh) + uintmax_t(*unitLow);
