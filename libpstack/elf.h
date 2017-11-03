@@ -129,10 +129,9 @@ struct SymbolSection;
  */
 struct ElfSection {
     Elf_Shdr shdr;
-    std::shared_ptr<Reader> io;
-    ElfSection(const ElfObject &obj_, off_t offset);
-    ElfSection() = delete;
-    ElfSection(const ElfSection &) = delete;
+    std::shared_ptr<const Reader> io;
+    void open(const std::shared_ptr<const Reader> &image, off_t offset);
+    operator bool() const { return shdr.sh_type != SHT_NULL; }
 };
 
 struct ElfNoteIter;
@@ -147,16 +146,16 @@ struct ElfNotes {
 class ElfObject {
 public:
     typedef std::vector<Elf_Phdr> ProgramHeaders;
-    typedef std::vector<std::shared_ptr<ElfSection>> SectionHeaders;
+    typedef std::vector<ElfSection> SectionHeaders;
 
     // construct/destruct. Note you will generally need to use make_shared to
     // create an ElfObject
-    ElfObject(ImageCache &imageCache, std::shared_ptr<Reader>);
+    ElfObject(ImageCache &imageCache, std::shared_ptr<const Reader>);
     ~ElfObject();
 
     // Accessing sections.
-    std::shared_ptr<const ElfSection> getSection(Elf_Word idx) const;
-    std::shared_ptr<const ElfSection> getSection(const std::string &name, Elf_Word type) const;
+    const ElfSection &getSection(Elf_Word idx) const;
+    const ElfSection &getSection(const std::string &name, Elf_Word type) const;
 
     // Accessing segments.
     const ProgramHeaders &getSegments(Elf_Word type) const;
@@ -166,7 +165,7 @@ public:
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(const std::string &name, Elf_Sym &sym);
 
-    std::shared_ptr<Reader> io; // IO for the ELF image.
+    std::shared_ptr<const Reader> io; // IO for the ELF image.
 
     // Gets linked debug object.
     static std::shared_ptr<ElfObject> getDebug(std::shared_ptr<ElfObject> &);
@@ -183,7 +182,7 @@ private:
     Elf_Ehdr elfHeader;
     ImageCache &imageCache;
     SectionHeaders sectionHeaders;
-    std::map<std::string, std::shared_ptr<ElfSection>> namedSection;
+    std::map<std::string, ElfSection *> namedSection;
     std::map<Elf_Word, ProgramHeaders> programHeaders;
 
     std::shared_ptr<ElfObject> debugData; // symbol table data as extracted from .gnu.debugdata
@@ -254,7 +253,7 @@ typedef struct user_regs_struct CoreRegisters;
 
 class ElfNoteDesc {
    Elf_Note note;
-   std::shared_ptr<Reader> io;
+   std::shared_ptr<const Reader> io;
 public:
 
    ElfNoteDesc(const ElfNoteDesc &rhs)
@@ -267,7 +266,7 @@ public:
    std::shared_ptr<const Reader> data() const;
    size_t size() const;
    int type()  const { return note.n_type; }
-   ElfNoteDesc(const Elf_Note &note_, std::shared_ptr<Reader> io_)
+   ElfNoteDesc(const Elf_Note &note_, std::shared_ptr<const Reader> io_)
       : note(note_)
       , io(io_)
    {
@@ -283,10 +282,10 @@ struct ElfNoteIter {
     ElfObject::ProgramHeaders::const_iterator phdrsi;
     Elf_Off offset;
     Elf_Note curNote;
-    std::shared_ptr<Reader> io;
+    std::shared_ptr<const Reader> io;
 
     ElfNoteDesc operator *() {
-        return ElfNoteDesc(curNote, std::make_shared<OffsetReader>(io, offset));
+        return ElfNoteDesc(curNote, std::make_shared<const OffsetReader>(io, offset));
     }
 
     void startSection() {

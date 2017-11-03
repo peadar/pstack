@@ -119,7 +119,7 @@ FileReader::read(off_t off, size_t count, char *ptr) const
 }
 
 void
-CacheReader::Page::load(Reader &r, off_t offset_)
+CacheReader::Page::load(const Reader &r, off_t offset_)
 {
     assert(offset_ % PAGESIZE == 0);
     try {
@@ -131,7 +131,7 @@ CacheReader::Page::load(Reader &r, off_t offset_)
     }
 }
 
-CacheReader::CacheReader(std::shared_ptr<Reader> upstream_)
+CacheReader::CacheReader(std::shared_ptr<const Reader> upstream_)
     : upstream(upstream_)
 {
 }
@@ -204,7 +204,7 @@ CacheReader::readString(off_t offset) const
     return entry.value;
 }
 
-std::shared_ptr<Reader>
+std::shared_ptr<const Reader>
 loadFile(const std::string &path)
 {
     return std::make_shared<CacheReader>(

@@ -8,7 +8,7 @@ static lzma_allocator allocator = {
    0
 };
 
-LzmaReader::LzmaReader(std::shared_ptr<Reader> inputBuf)
+LzmaReader::LzmaReader(std::shared_ptr<const Reader> inputBuf)
     : upstream(inputBuf)
 {
    lzma_stream_flags options;

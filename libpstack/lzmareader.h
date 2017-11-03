@@ -15,10 +15,10 @@ class LzmaReader : public Reader {
     lzma_index *index;
     uint64_t memlimit = std::numeric_limits<uint64_t>::max();
     size_t pos = 0;
-    std::shared_ptr<Reader> upstream;
+    std::shared_ptr<const Reader> upstream;
     mutable std::map<off_t, std::vector<unsigned char>> lzBlocks;
 public:
-    LzmaReader(std::shared_ptr<Reader> downstream);
+    LzmaReader(std::shared_ptr<const Reader> upstream_);
     ~LzmaReader();
     size_t read(off_t, size_t, char *) const override;
     void describe(std::ostream &) const override;

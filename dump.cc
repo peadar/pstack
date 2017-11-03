@@ -236,7 +236,7 @@ operator <<(std::ostream &os, const std::pair<const DwarfFrameInfo *, const Dwar
         << ", \"instrlen\": " << dcie.second->end - dcie.second->instructions
         << ", \"instructions\": ";
     ;
-    DWARFReader r(dcie.first->section->io, dcie.second->instructions, dcie.second->end);
+    DWARFReader r(dcie.first->io, dcie.second->instructions, dcie.second->end);
     dwarfDumpCFAInsns(os, r);
     return os << " }";
 }
@@ -251,7 +251,7 @@ operator << (std::ostream &os, const std::pair<const DwarfFrameInfo *, const Dwa
         //<< ", \"augmentation\": \"" << dfde.second->augmentation << "\""
         << ", \"instructions\": "
     ;
-    DWARFReader r(dfde.first->section->io, dfde.second->instructions, dfde.second->end);
+    DWARFReader r(dfde.first->io, dfde.second->instructions, dfde.second->end);
     dwarfDumpCFAInsns(os, r);
     return os << "}";
 }
@@ -529,7 +529,7 @@ const struct sh_flag_names {
 };
 
 std::ostream &
-operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr<const ElfSection>> objsec)
+operator <<(std::ostream &os, const std::pair<const ElfObject &, const ElfSection &> objsec)
 {
     static const char *sectionTypeNames[] = {
         "SHT_NULL",
@@ -549,7 +549,7 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
     auto &o = objsec.first;
     auto sec = objsec.second;
     auto strs = o.getSection(o.getElfHeader().e_shstrndx);
-    const Elf_Shdr &sh = sec->shdr;
+    const Elf_Shdr &sh = sec.shdr;
 
     static std::set<std::string> textContent = {
         ".gnu_debugaltlink",
@@ -558,12 +558,10 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
     };
 
     os << "{ \"size\":" << sh.sh_size;
-    os << ", \"uncompressedSize\":" << sec->io->size();
+    os << ", \"uncompressedSize\":" << sec.io->size();
     std::string secName;
-    if (strs) {
-        secName = strs->io->readString(sh.sh_name);
-        os << ", \"name\": \"" << secName << "\"";
-    }
+    secName = strs.io->readString(sh.sh_name);
+    os << ", \"name\": \"" << secName << "\"";
 
     os << ", \"type\": ";
     if (sh.sh_type <= SHT_DYNSYM)
@@ -591,14 +589,13 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
         case SHT_SYMTAB:
         case SHT_DYNSYM: {
             off_t symoff = 0;
-            off_t esym = sec->io->size();
+            off_t esym = sec.io->size();
             os << ", \"symbols\": [";
             std::string sep = "";
             for (; symoff < esym; symoff += sizeof (Elf_Sym)) {
                 Elf_Sym sym;
-                sec->io->readObj(symoff, &sym);
-                auto r = std::make_tuple(std::ref(o), sec, (const Elf_Sym *)&sym);
-                os << sep << r;
+                sec.io->readObj(symoff, &sym);
+                os << sep << std::make_tuple(std::ref(o), std::ref(sec), std::ref(sym));
                 sep = ",\n";
             }
             os << "]";
@@ -608,9 +605,9 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
             os << ", \"reloca\": [";
             off_t off = 0;
             const char *sep = "";
-            for (off_t esym = sec->io->size(); off < esym; off += sizeof (Elf_Rela)) {
+            for (off_t esym = sec.io->size(); off < esym; off += sizeof (Elf_Rela)) {
                 Elf_Rela rela;
-                sec->io->readObj(off, &rela);
+                sec.io->readObj(off, &rela);
                 os << sep << rela;
                 sep = ",\n";
             }
@@ -621,7 +618,7 @@ operator <<(std::ostream &os, const std::pair<const ElfObject &, std::shared_ptr
 
     if (textContent.find(secName) != textContent.end()) {
         char buf[1024];
-        auto count = sec->io->read(0, std::min(sizeof buf - 1, size_t(sec->io->size())), buf);
+        auto count = sec.io->read(0, std::min(sizeof buf - 1, size_t(sec.io->size())), buf);
         buf[count] = 0;
         os << ", \"content\": \"" << buf << "\"";
     }
@@ -682,7 +679,7 @@ operator<< (std::ostream &os, const Elf_Phdr &h)
  * Debug output of an Elf symbol.
  */
 std::ostream &
-operator<< (std::ostream &os, std::tuple<const ElfObject &, std::shared_ptr<const ElfSection>, const Elf_Sym *> &t)
+operator<< (std::ostream &os, const std::tuple<const ElfObject &, const ElfSection &, const Elf_Sym &> &t)
 {
     static const char *bindingNames[] = {
         "STB_LOCAL",
@@ -724,16 +721,16 @@ operator<< (std::ostream &os, std::tuple<const ElfObject &, std::shared_ptr<cons
     auto &obj = std::get<0>(t);
     auto &sec = std::get<1>(t);
     auto s = std::get<2>(t);
-    auto symStrings = obj.getSection(sec->shdr.sh_link);
+    auto symStrings = obj.getSection(sec.shdr.sh_link);
 
-    return os << "{ \"name\": \"" << symStrings->io->readString(s->st_name) << "\""
-       << ", \"value\": " << s->st_value
-       << ", \"size\": " << s->st_size
-       << ", \"info\": " << (int)s->st_info
-       << ", \"binding\": \"" << bindingNames[s->st_info >> 4] << "\""
-       << ", \"type\": \"" << typeNames[s->st_info & 0xf] << "\""
-       << ", \"other\": " << (int)s->st_other
-       << ", \"shndx\": " << s->st_shndx
+    return os << "{ \"name\": \"" << symStrings.io->readString(s.st_name) << "\""
+       << ", \"value\": " << s.st_value
+       << ", \"size\": " << s.st_size
+       << ", \"info\": " << (int)s.st_info
+       << ", \"binding\": \"" << bindingNames[s.st_info >> 4] << "\""
+       << ", \"type\": \"" << typeNames[s.st_info & 0xf] << "\""
+       << ", \"other\": " << (int)s.st_other
+       << ", \"shndx\": " << s.st_shndx
        << " }";
 }
 

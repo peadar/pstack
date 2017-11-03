@@ -119,16 +119,16 @@ CoreReader::CoreReader(CoreProcess *p_) : p(p_) { }
 bool
 CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
 {
+#ifdef NT_PRSTATUS
    for (auto note : coreImage->notes) {
         prstatus_t prstatus;
         note.data()->readObj(0, &prstatus);
-#ifdef NT_PRSTATUS
         if (note.name() == "CORE" && note.type() == NT_PRSTATUS && prstatus.pr_pid == pid) {
             memcpy(reg, &prstatus.pr_reg, sizeof(*reg));
             return true;
         }
-#endif
    }
+#endif
    return false;
 }
 

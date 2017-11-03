@@ -59,11 +59,11 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
     }
 }
 
-static std::shared_ptr<Reader>
+static std::shared_ptr<const Reader>
 sectionReader(std::shared_ptr<ElfObject> obj, const char *name)
 {
-    auto sec = obj->getSection(name, SHT_PROGBITS);
-    return sec ? sec->io : std::shared_ptr<Reader>();
+    auto &sec = obj->getSection(name, SHT_PROGBITS);
+    return sec.io;
 }
 
 DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj, DwarfImageCache &cache_)
@@ -73,23 +73,22 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj, DwarfImageCache &cache_)
     , arangesh(sectionReader(obj, ".debug_aranges"))
     , info(sectionReader(obj, ".debug_info"))
     , elf(obj)
+    , debugStrings(sectionReader(obj, ".debug_str"))
     , abbrev(sectionReader(obj, ".debug_abbrev"))
     , lineshdr(sectionReader(obj, ".debug_line"))
 {
-    // want these first: other sections refer into this.
-    auto debstr = obj->getSection(".debug_str", SHT_PROGBITS);
-    if (debstr)
-        debugStrings = debstr->io;
     auto f = [this, &obj](const char *name, FIType ftype) {
-        auto section = obj->getSection(name, SHT_PROGBITS);
-        if (section) {
-            try {
-                return make_unique<DwarfFrameInfo>(this, section, ftype);
-            }
-            catch (const Exception &ex) {
-                std::clog << "can't decode " << name << " for " << *obj->io << ": " << ex.what() << "\n";
-            }
+        auto &section = obj->getSection(name, SHT_PROGBITS);
+        if (!section)
+            return std::unique_ptr<DwarfFrameInfo>();
+
+        try {
+            return make_unique<DwarfFrameInfo>(this, section, ftype);
         }
+        catch (const Exception &ex) {
+            std::clog << "can't decode " << name << " for " << *obj->io << ": " << ex.what() << "\n";
+        }
+
         return std::unique_ptr<DwarfFrameInfo>();
     };
 
@@ -439,7 +438,6 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
     }
 }
 
-
 DwarfFileEntry::DwarfFileEntry(const std::string &name_, std::string dir_,
         unsigned lastMod_, unsigned length_)
     : name(name_)
@@ -657,8 +655,8 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
 static std::string
 getAltImageName(std::shared_ptr<ElfObject> elf)
 {
-    auto section = elf->getSection(".gnu_debugaltlink", 0);
-    std::string name = section->io->readString(0);
+    auto &section = elf->getSection(".gnu_debugaltlink", 0);
+    std::string name = section.io->readString(0);
     if (name[0] == '/')
         return name;
 
@@ -723,7 +721,7 @@ DwarfFrameInfo::decodeAddress(DWARFReader &f, int encoding) const
     case 0:
         break;
     case DW_EH_PE_pcrel:
-        base += offset + dwarf->elf->getBase() + section->shdr.sh_offset;
+        base += offset + dwarf->elf->getBase() + sectionOffset;
         break;
     }
     return base;
@@ -775,13 +773,14 @@ DwarfFrameInfo::isCIE(Elf_Addr cieid)
     return (type == FI_DEBUG_FRAME && cieid == 0xffffffff) || (type == FI_EH_FRAME && cieid == 0);
 }
 
-DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, std::shared_ptr<const ElfSection> section_, enum FIType type_)
+DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, const ElfSection& section, enum FIType type_)
     : dwarf(info)
-    , section(section_)
+    , sectionOffset(section.shdr.sh_offset)
+    , io(section.io)
     , type(type_)
 {
     Elf_Addr cieid;
-    DWARFReader reader(section->io);
+    DWARFReader reader(io);
 
     // decode in 2 passes: first for CIE, then for FDE
     off_t start = reader.getOffset();

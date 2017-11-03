@@ -54,5 +54,6 @@ set_target_properties(procman PROPERTIES VERSION 1.0.0 SOVERSION 1)
 
 install(TARGETS ${PSTACK_BIN} canal DESTINATION bin)
 install(TARGETS dwelf procman DESTINATION lib)
+install(FILES ${CMAKE_SOURCE_DIR}/pstack.1 DESTINATION man/man1)
 install(DIRECTORY libpstack DESTINATION include)
 install(CODE "execute_process (COMMAND setcap cap_sys_ptrace+ep ${CMAKE_INSTALL_PREFIX}/bin/${PSTACK_BIN})")

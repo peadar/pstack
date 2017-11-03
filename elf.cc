@@ -65,7 +65,7 @@ ElfNoteDesc::size() const
    return note.n_descsz;
 }
 
-ElfObject::ElfObject(ImageCache &cache, shared_ptr<Reader> io_)
+ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
    : notes(this)
    , imageCache(cache)
 {
@@ -86,36 +86,33 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<Reader> io_)
         off += elfHeader.e_phentsize;
     }
 
+    sectionHeaders.resize(elfHeader.e_shnum);
     for (off = elfHeader.e_shoff, i = 0; i < elfHeader.e_shnum; i++) {
-        sectionHeaders.push_back(std::make_shared<ElfSection>(*this, off));
+        sectionHeaders[i].open(io, off);
         off += elfHeader.e_shentsize;
     }
 
     if (elfHeader.e_shstrndx != SHN_UNDEF) {
-        auto sshdr = sectionHeaders[elfHeader.e_shstrndx];
+        auto &sshdr = sectionHeaders[elfHeader.e_shstrndx];
         for (auto &h : sectionHeaders) {
-            auto name = sshdr->io->readString(h->shdr.sh_name);
-            namedSection[name] = h;
+            auto name = sshdr.io->readString(h.shdr.sh_name);
+            namedSection[name] = &h;
             // .gnu_debugdata is a separate LZMA-compressed ELF image with just
             // a symbol table.
             if (name == ".gnu_debugdata")
 #ifdef WITH_LZMA
                 debugData = std::make_shared<ElfObject>(imageCache,
-                      std::make_shared<LzmaReader>(h->io));
+                      std::make_shared<const LzmaReader>(h.io));
 #else
                 std::clog << "warning: no compiled support for LZMA - "
                       "can't decode debug data in " << *io << "\n";
 #endif
         }
-        auto tab = getSection(".hash", SHT_HASH);
-        if (tab) {
-            auto syms = getSection(tab->shdr.sh_link);
-            if (syms) {
-               auto strings = getSection(syms->shdr.sh_link);
-               if (strings)
-                  hash.reset(new ElfSymHash(tab->io, syms->io, strings->io));
-            }
-        }
+        auto &tab = getSection(".hash", SHT_HASH);
+        auto &syms = getSection(tab.shdr.sh_link);
+        auto &strings = getSection(syms.shdr.sh_link);
+        if (tab && syms && strings)
+            hash.reset(new ElfSymHash(tab.io, syms.io, strings.io));
     } else {
         hash = 0;
     }
@@ -177,10 +174,10 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
 {
     /* Try to find symbols in these sections */
     for (auto secname : { ".symtab", ".dynsym" }) {
-        const auto symSection = getSection(secname, SHT_NULL);
-        if (symSection == 0 || symSection->shdr.sh_type == SHT_NOBITS)
+        const auto &symSection = getSection(secname, SHT_NULL);
+        if (symSection.shdr.sh_type == SHT_NOBITS)
             continue;
-        SymbolSection syms(symSection->io, getSection(symSection->shdr.sh_link)->io);
+        SymbolSection syms(symSection.io, getSection(symSection.shdr.sh_link).io);
         for (auto syminfo : syms) {
             auto &candidate = syminfo.first;
             if (candidate.st_shndx >= sectionHeaders.size())
@@ -191,8 +188,8 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
                 continue;
             if (candidate.st_size + candidate.st_value <= addr)
                 continue;
-            auto sec = sectionHeaders[candidate.st_shndx];
-            if (!(sec->shdr.sh_flags & SHF_ALLOC))
+            auto &sec = sectionHeaders[candidate.st_shndx];
+            if (!(sec.shdr.sh_flags & SHF_ALLOC))
                 continue;
             sym = candidate;
             name = syminfo.second;
@@ -204,16 +201,16 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
     return false;;
 }
 
-std::shared_ptr<const ElfSection>
+const ElfSection &
 ElfObject::getSection(const std::string &name, Elf_Word type) const
 {
     auto s = namedSection.find(name);
     if (s == namedSection.end() || (s->second->shdr.sh_type != type && type != SHT_NULL))
-        return nullptr;
-    return s->second;
+        return sectionHeaders[0];
+    return *s->second;
 }
 
-std::shared_ptr<const ElfSection>
+const ElfSection &
 ElfObject::getSection(Elf_Word idx) const
 {
     return sectionHeaders[idx];
@@ -223,13 +220,9 @@ SymbolSection
 ElfObject::getSymbols(const std::string &tableName)
 {
     ElfObject *elf = debugData ? debugData.get() : this;
-    auto table = elf->getSection(tableName, SHT_NULL);
-    if (table) {
-        auto strings = elf->getSection(table->shdr.sh_link);
-        if (strings)
-           return SymbolSection(table->io, strings->io);
-    }
-    return SymbolSection(nullptr, nullptr);
+    auto &table = elf->getSection(tableName, SHT_NULL);
+    auto &strings = elf->getSection(table.shdr.sh_link);
+    return SymbolSection(table.io, strings.io);
 }
 
 bool
@@ -288,18 +281,11 @@ ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
     if (hash && hash->findSymbol(sym, name))
         return true;
 
-    {
-        SymbolSection sect = getSymbols(".dynsym");
+    for (const char *sec : { ".dynsym", ".symtab" }) {
+        SymbolSection sect = getSymbols(sec);
         if (sect.linearSearch(name, sym))
             return true;
     }
-
-    {
-        SymbolSection sect = getSymbols(".symtab");
-        if (sect.linearSearch(name, sym))
-            return true;
-    }
-
     return false;
 }
 
@@ -315,12 +301,10 @@ ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
 
     if (!in->debugLoaded) {
         in->debugLoaded = true;
-        auto hdr = in->getSection(".gnu_debuglink", SHT_PROGBITS);
-        if (hdr) {
-            std::string link = hdr->io->readString(0);
-            auto dir = dirname(stringify(*in->io));
-            in->debugObject = in->imageCache.getDebugImage(dir + "/" + link);
-        }
+        auto &hdr = in->getSection(".gnu_debuglink", SHT_PROGBITS);
+        auto link = hdr.io->readString(0);
+        auto dir = dirname(stringify(*in->io));
+        in->debugObject = in->imageCache.getDebugImage(dir + "/" + link);
 
         if (!in->debugObject) {
             for (auto note : in->notes) {
@@ -363,11 +347,16 @@ elf_hash(string name)
     return (h);
 }
 
-ElfSection::ElfSection(const ElfObject &obj_, off_t off)
+
+void
+ElfSection::open(const std::shared_ptr<const Reader> &image, off_t off)
 {
-    obj_.io->readObj(off, &shdr);
-    auto rawIo = std::make_shared<OffsetReader>(obj_.io, shdr.sh_offset, shdr.sh_size);
-    if (shdr.sh_flags & SHF_COMPRESSED) {
+    image->readObj(off, &shdr);
+    auto rawIo = std::make_shared<OffsetReader>(image, shdr.sh_offset, shdr.sh_size);
+    if ((shdr.sh_flags & SHF_COMPRESSED) == 0) {
+        io = rawIo;
+    } else {
+
 #ifdef WITH_ZLIB
         Elf_Chdr chdr;
         rawIo->readObj(0, &chdr);
@@ -375,11 +364,13 @@ ElfSection::ElfSection(const ElfObject &obj_, off_t off)
               std::make_shared<OffsetReader>(rawIo,
                  sizeof chdr, shdr.sh_size - sizeof chdr));
 #else
-        std::clog <<"warning: no support configured for compressed debug info in "
-           << obj_.io << std::endl;
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            std::clog <<"warning: no support configured for compressed debug info in " << *image << std::endl;
+        }
+        io = std::make_shared<NullReader>();
 #endif
-    } else {
-        io = rawIo;
     }
 }
 

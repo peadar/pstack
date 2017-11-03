@@ -123,7 +123,7 @@ class CacheReader : public Reader {
         bool isNew;
         CacheEnt() : isNew(true) {}
     };
-    std::shared_ptr<Reader> upstream;
+    std::shared_ptr<const Reader> upstream;
     mutable std::unordered_map<off_t, CacheEnt> stringCache;
     static const size_t PAGESIZE = 4096;
     static const size_t MAXPAGES = 16;
@@ -134,7 +134,7 @@ class CacheReader : public Reader {
         size_t len;
         char data[PAGESIZE];
         Page() {};
-        void load(Reader &r, off_t offset);
+        void load(const Reader &r, off_t offset);
     };
     mutable std::list<Page *> pages;
     Page *getPage(off_t offset) const;
@@ -145,7 +145,7 @@ public:
         // FileReader's filename
         os << *upstream;
     }
-    CacheReader(std::shared_ptr<Reader> upstream);
+    CacheReader(std::shared_ptr<const Reader> upstream);
     std::string readString(off_t absoff) const override;
     ~CacheReader();
     off_t size() const override { return upstream->size(); }
@@ -183,7 +183,7 @@ public:
 };
 
 class OffsetReader : public Reader {
-    std::shared_ptr<Reader> upstream;
+    std::shared_ptr<const Reader> upstream;
     off_t offset;
     off_t length;
 public:
@@ -197,7 +197,7 @@ public:
            count = length - off;
         return upstream->read(off + offset, count, ptr);
     }
-    OffsetReader(std::shared_ptr<Reader> upstream_, off_t offset_,
+    OffsetReader(std::shared_ptr<const Reader> upstream_, off_t offset_,
           off_t length_ = std::numeric_limits<off_t>::max())
        : upstream(upstream_)
        , offset(offset_)
@@ -229,6 +229,6 @@ public:
         target.copyfmt(saved);
     }
 };
-std::shared_ptr<Reader> loadFile(const std::string &path);
+std::shared_ptr<const Reader> loadFile(const std::string &path);
 
 #endif // LIBPSTACK_UTIL_H

@@ -304,11 +304,12 @@ struct DwarfCIE {
 
 struct DwarfFrameInfo {
     const DwarfInfo *dwarf;
-    std::shared_ptr<const ElfSection> section;
+    Elf_Word sectionOffset;
+    std::shared_ptr<const Reader> io;
     FIType type;
     std::map<Elf_Addr, DwarfCIE> cies;
     std::list<DwarfFDE> fdeList;
-    DwarfFrameInfo(DwarfInfo *, std::shared_ptr<const ElfSection>, FIType type);
+    DwarfFrameInfo(DwarfInfo *, const ElfSection &, FIType type);
     DwarfFrameInfo() = delete;
     DwarfFrameInfo(const DwarfFrameInfo &) = delete;
     Elf_Addr decodeCIEFDEHdr(DWARFReader &, Elf_Addr &id, FIType, DwarfCIE **);
@@ -345,18 +346,18 @@ class DwarfInfo {
     mutable std::shared_ptr<DwarfInfo> altDwarf;
     mutable bool altImageLoaded;
     DwarfImageCache &imageCache;
-    std::shared_ptr<Reader> pubnamesh;
-    std::shared_ptr<Reader> arangesh;
+    std::shared_ptr<const Reader> pubnamesh;
+    std::shared_ptr<const Reader> arangesh;
 public:
     // XXX: info is public because "block" DwarfAttributes need to read from it.
-    std::shared_ptr<Reader> info;
+    std::shared_ptr<const Reader> info;
     std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
     std::shared_ptr<ElfObject> elf;
     std::unique_ptr<DwarfFrameInfo> debugFrame;
     std::unique_ptr<DwarfFrameInfo> ehFrame;
-    std::shared_ptr<Reader> debugStrings;
-    std::shared_ptr<Reader> abbrev;
-    std::shared_ptr<Reader> lineshdr;
+    std::shared_ptr<const Reader> debugStrings;
+    std::shared_ptr<const Reader> abbrev;
+    std::shared_ptr<const Reader> lineshdr;
     std::shared_ptr<DwarfInfo> getAltDwarf() const;
     std::list<DwarfARangeSet> &ranges();
     std::list<DwarfPubnameUnit> &pubnames();
@@ -423,10 +424,10 @@ class DWARFReader {
     Elf_Off end;
     uintmax_t getuleb128shift(int *shift, bool &isSigned);
 public:
-    std::shared_ptr<Reader> io;
+    std::shared_ptr<const Reader> io;
     unsigned addrLen;
 
-    DWARFReader(std::shared_ptr<Reader> io_, Elf_Off off_ = 0,
+    DWARFReader(std::shared_ptr<const Reader> io_, Elf_Off off_ = 0,
           size_t end_ = std::numeric_limits<size_t>::max())
         : off(off_)
         , end(end_ == std::numeric_limits<size_t>::max() ? io_->size() : end_)
