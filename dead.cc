@@ -121,11 +121,13 @@ CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
 {
 #ifdef NT_PRSTATUS
    for (auto note : coreImage->notes) {
-        prstatus_t prstatus;
-        note.data()->readObj(0, &prstatus);
-        if (note.name() == "CORE" && note.type() == NT_PRSTATUS && prstatus.pr_pid == pid) {
-            memcpy(reg, &prstatus.pr_reg, sizeof(*reg));
-            return true;
+        if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
+            prstatus_t prstatus;
+            note.data()->readObj(0, &prstatus);
+            if (prstatus.pr_pid == pid) {
+                memcpy(reg, &prstatus.pr_reg, sizeof(*reg));
+                return true;
+            }
         }
    }
 #endif
