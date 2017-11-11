@@ -73,11 +73,12 @@ emain(int argc, char **argv)
     std::string execFile;
     std::shared_ptr<ElfObject> exec;
     DwarfImageCache imageCache;
+    int sleepTime = 0;
 
     PstackOptions options;
     noDebugLibs = false;
 
-    while ((c = getopt(argc, argv, "d:D:hsvnag:")) != -1) {
+    while ((c = getopt(argc, argv, "b:d:D:hsvnag:")) != -1) {
         switch (c) {
         case 'g':
             globalDebugDirectories.add(optarg);
@@ -108,6 +109,9 @@ emain(int argc, char **argv)
         case 'n':
             noDebugLibs = true;
             break;
+        case 'b':
+            sleepTime = atoi(optarg);
+            break;
         default:
             return usage();
         }
@@ -116,33 +120,37 @@ emain(int argc, char **argv)
     if (optind == argc)
         return usage();
 
-    for (i = optind; i < argc; i++) {
-        pid = atoi(argv[i]);
-        try {
-            if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
-                // It's a file: should be ELF, treat core and exe differently
+    do {
+       for (i = optind; i < argc; i++) {
+           pid = atoi(argv[i]);
+           try {
+               if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
+                   // It's a file: should be ELF, treat core and exe differently
 
-                // Don't put cores in the cache
-                auto obj = std::make_shared<ElfObject>(imageCache, loadFile(argv[i]));
+                   // Don't put cores in the cache
+                   auto obj = std::make_shared<ElfObject>(imageCache, loadFile(argv[i]));
 
-                if (obj->getElfHeader().e_type == ET_CORE) {
-                        CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
-                        proc.load();
-                        pstack(proc, std::cout, options);
+                   if (obj->getElfHeader().e_type == ET_CORE) {
+                           CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
+                           proc.load();
+                           pstack(proc, std::cout, options);
 
-                } else {
-                    exec = obj;
-                }
-            } else {
-                LiveProcess proc(exec, pid, PathReplacementList(), imageCache);
-                proc.load();
-                pstack(proc, std::cout, options);
-            }
+                   } else {
+                       exec = obj;
+                   }
+               } else {
+                   LiveProcess proc(exec, pid, PathReplacementList(), imageCache);
+                   proc.load();
+                   pstack(proc, std::cout, options);
+               }
 
-        } catch (const std::exception &e) {
-            std::cout << "failed to process " << argv[i] << ": " << e.what() << "\n";
-        }
-    }
+           } catch (const std::exception &e) {
+               std::cout << "failed to process " << argv[i] << ": " << e.what() << "\n";
+           }
+       }
+       if (sleepTime)
+          sleep(sleepTime);
+    } while (sleepTime != 0);
     return 0;
 }
 
@@ -171,7 +179,8 @@ usage(void)
         "\t[-s]                         don't include source-level details\n"
         "\t[-g]                         add global debug directory\n"
         "\t[-a]                         show arguments to functions where possible (TODO: not finished)\n"
-        "\t[-n]                         don't try and find external debug images)\n"
+        "\t[-n]                         don't try and find external debug images\n"
+        "\t[-b<n>]                      batch mode: repeat every 'n' seconds\n"
         "\t[<pid>|<core>|<executable>]* list cores and pids to examine. An executable\n"
         "\t                             will override use of in-core or in-process information\n"
         "\t                             to predict location of the executable\n"
