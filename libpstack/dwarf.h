@@ -79,7 +79,7 @@ struct DwarfAbbreviation {
     DwarfTag tag;
     enum DwarfHasChildren hasChildren;
     std::list<DwarfAttributeSpec> specs;
-    DwarfAbbreviation(DWARFReader &, intmax_t code);
+    DwarfAbbreviation(DWARFReader &, intmax_t);
     DwarfAbbreviation() {}
 };
 
@@ -136,7 +136,7 @@ class DwarfAttribute {
     DwarfValue value;
 public:
     const DwarfEntry *entry;
-    DwarfAttribute(DWARFReader &, const DwarfEntry *, const DwarfAttributeSpec *spec);
+    DwarfAttribute(DWARFReader &, const DwarfEntry *, const DwarfAttributeSpec *);
     DwarfForm form() const { return spec->form; }
     DwarfAttrName name() const { return spec->name; }
     ~DwarfAttribute() { }
@@ -166,7 +166,7 @@ public:
 #endif
     const DwarfAttribute *attrForName(DwarfAttrName name) const;
     const DwarfEntry *referencedEntry(DwarfAttrName name) const;
-    DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit, intmax_t offset, DwarfEntry *parent);
+    DwarfEntry(DWARFReader &, DwarfTag, DwarfUnit *, intmax_t, DwarfEntry *);
     std::string name() const {
         const DwarfAttribute *attr = attrForName(DW_AT_name);
         if (attr)
@@ -188,7 +188,7 @@ public:
     std::string directory;
     unsigned lastMod;
     unsigned length;
-    DwarfFileEntry(const std::string &name_, std::string dir_, unsigned lastMod_, unsigned length_);
+    DwarfFileEntry(const std::string &name_, const std::string &dir_, unsigned lastMod_, unsigned length_);
     DwarfFileEntry(DWARFReader &r, DwarfLineInfo *info);
 };
 
@@ -249,7 +249,7 @@ struct DwarfFDE {
     Elf_Off instructions;
     Elf_Off end;
     std::vector<unsigned char> augmentation;
-    DwarfFDE(DwarfFrameInfo *, DWARFReader &, DwarfCIE * , Elf_Off end);
+    DwarfFDE(DwarfFrameInfo *, DWARFReader &, DwarfCIE * , Elf_Off);
 };
 
 enum DwarfRegisterType {
@@ -312,7 +312,7 @@ struct DwarfFrameInfo {
     DwarfFrameInfo(const DwarfFrameInfo &) = delete;
     Elf_Addr decodeCIEFDEHdr(DWARFReader &, Elf_Addr &id, FIType, DwarfCIE **);
     const DwarfFDE *findFDE(Elf_Addr) const;
-    bool isCIE(Elf_Off id);
+    bool isCIE(Elf_Addr);
     intmax_t decodeAddress(DWARFReader &, int encoding) const;
 };
 
@@ -325,8 +325,8 @@ class DwarfImageCache : public ImageCache {
     int dwarfLookups;
     std::map<std::shared_ptr<ElfObject>, std::shared_ptr<DwarfInfo>> dwarfCache;
 public:
-    std::shared_ptr<DwarfInfo> getDwarf(const std::string &filename);
-    std::shared_ptr<DwarfInfo> getDwarf(std::shared_ptr<ElfObject> o);
+    std::shared_ptr<DwarfInfo> getDwarf(const std::string &);
+    std::shared_ptr<DwarfInfo> getDwarf(std::shared_ptr<ElfObject>);
     DwarfImageCache();
     ~DwarfImageCache();
 };
