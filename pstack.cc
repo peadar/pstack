@@ -41,7 +41,6 @@ static int usage(void);
 std::ostream &
 pstack(Process &proc, std::ostream &os, const PstackOptions &options)
 {
-
     // get its back trace.
     ThreadLister threadLister(&proc);
     {
@@ -63,7 +62,7 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
     os << "process: " << *proc.io << "\n";
     for (auto s = threadLister.threadStacks.begin(); s != threadLister.threadStacks.end(); ++s) {
         proc.dumpStackText(os, *s, options);
-        os << "\n";
+        os << std::endl;
     }
     return os;
 }
