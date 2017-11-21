@@ -21,8 +21,8 @@ public:
     int inReg;
     Elf_Addr poptop() { Elf_Addr tos = top(); pop(); return tos; }
     DwarfExpressionStack(): isReg(false) {}
-    Elf_Addr eval(const Process &, DWARFReader &r, const StackFrame *frame);
-    Elf_Addr eval(const Process &, const DwarfAttribute *, const StackFrame *);
+    Elf_Addr eval(const Process &, DWARFReader &r, const StackFrame *frame, Elf_Addr);
+    Elf_Addr eval(const Process &, const DwarfAttribute *, const StackFrame *, Elf_Addr);
 };
 
 // this works for i386 and x86_64 - might need to change for other archs.
@@ -32,8 +32,10 @@ struct StackFrame {
     Elf_Addr ip;
     Elf_Addr cfa;
     std::map<unsigned, cpureg_t> regs;
+    std::shared_ptr<ElfObject> elf;
+    Elf_Addr elfReloc;
     std::shared_ptr<DwarfInfo> dwarf;
-    DwarfEntry * function;
+    const DwarfEntry * function;
     DwarfFrameInfo *frameInfo;
     const DwarfFDE *fde;
     StackFrame()
@@ -87,7 +89,6 @@ class Process : public ps_prochandle {
     void loadSharedObjects(Elf_Addr);
     bool isStatic;
     Elf_Addr sysent; // for AT_SYSINFO
-    DwarfImageCache &imageCache;
 
 protected:
     td_thragent_t *agent;
@@ -96,6 +97,7 @@ protected:
     PathReplacementList pathReplacements;
 
 public:
+    DwarfImageCache &imageCache;
 
     struct LoadedObject {
         Elf_Off reloc;

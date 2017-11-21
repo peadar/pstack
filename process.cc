@@ -42,10 +42,10 @@ Process::Process(std::shared_ptr<ElfObject> exec,
     : entry(0)
     , isStatic(false)
     , sysent(0)
-    , imageCache(cache)
     , agent(0)
     , execImage(exec)
     , pathReplacements(prl)
+    , imageCache(cache)
     , io(std::make_shared<CacheReader>(io_))
 {
    if (exec)
@@ -190,8 +190,8 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
     return os << " ] }";
 }
 
-DwarfEntry *
-findEntryForFunc(Elf_Addr address, DwarfEntry *entry)
+const DwarfEntry *
+findEntryForFunc(Elf_Addr address, const DwarfEntry *entry)
 {
    switch (entry->type->tag) {
       case DW_TAG_subprogram: {
@@ -413,7 +413,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
                     const DwarfAttribute *locationA = child->attrForName(DW_AT_location);
                     if (locationA) {
                         DwarfExpressionStack fbstack;
-                        addr = fbstack.eval(ap.p, locationA, ap.frame);
+                        addr = fbstack.eval(ap.p, locationA, ap.frame, ap.frame->elfReloc);
                         os << "=";
                         if (fbstack.isReg) {
                            IOFlagSave _(os);
@@ -484,8 +484,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             for (auto u : units) {
                 // find the DIE for this function
                 for (auto it : u->entries) {
-                    DwarfEntry *de = 0;
-                    de = findEntryForFunc(objIp - 1, it);
+                    const DwarfEntry *de = findEntryForFunc(objIp - 1, it);
                     if (de) {
                         symName = de->name();
                         if (symName == "") {

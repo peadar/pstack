@@ -12,17 +12,19 @@
 #include <assert.h>
 
 enum DwarfHasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
-struct DwarfCIE;
-class DwarfInfo;
-class DWARFReader;
-class DwarfLineInfo;
-struct DwarfUnit;
-struct DwarfFrameInfo;
+
+class DwarfAttribute;
 class DwarfEntry;
+class DwarfExpressionStack;
+class DwarfInfo;
+class DwarfLineInfo;
+class DWARFReader;
+struct DwarfCIE;
+struct DwarfFrameInfo;
+struct DwarfUnit;
+
 // The DWARF Unit's allEntries map contains the underlying data for the tree.
 typedef std::list<DwarfEntry *> DwarfEntries;
-
-
 
 #define DWARF_TAG(a,b) a = b,
 enum DwarfTag {
@@ -30,13 +32,13 @@ enum DwarfTag {
     DW_TAG_none = 0x0
 };
 #undef DWARF_ATE
+
 #define DWARF_ATE(a,b) a = b,
 enum DwarfEncoding {
 #include <libpstack/dwarf/encodings.h>
     DW_ATE_none = 0x0
 };
 #undef DWARF_TAG
-
 
 #define DWARF_FORM(a,b) a = b,
 enum DwarfForm {
@@ -125,11 +127,10 @@ union DwarfValue {
     bool flag;
 };
 
-class DwarfAttribute;
 std::ostream & operator << (std::ostream &os, const DwarfAttribute &attr);
 
-DwarfEntry *findEntryForFunc(Elf_Addr address, DwarfEntry *entry);
-class DwarfExpressionStack;
+const DwarfEntry *findEntryForFunc(Elf_Addr address, const DwarfEntry *entry);
+
 class DwarfAttribute {
     const DwarfAttributeSpec *spec; /* From abbrev table attached to type */
     DwarfValue value;
@@ -163,10 +164,8 @@ public:
 #else
     std::map<DwarfAttrName, DwarfAttribute> attributes;
 #endif
-
     const DwarfAttribute *attrForName(DwarfAttrName name) const;
     const DwarfEntry *referencedEntry(DwarfAttrName name) const;
-
     DwarfEntry(DWARFReader &r, intmax_t, DwarfUnit *unit, intmax_t offset, DwarfEntry *parent);
     std::string name() const {
         const DwarfAttribute *attr = attrForName(DW_AT_name);
@@ -253,7 +252,6 @@ struct DwarfFDE {
     DwarfFDE(DwarfFrameInfo *, DWARFReader &, DwarfCIE * , Elf_Off end);
 };
 
-#define MAXREG 128
 enum DwarfRegisterType {
     UNDEF,
     SAME,

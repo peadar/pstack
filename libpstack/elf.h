@@ -45,15 +45,6 @@ extern bool noDebugLibs;
 #include <libpstack/util.h>
 #include <limits>
 
-
-/*
- * FreeBSD defines all elf types with a common header, defining the
- * 64 and 32 bit versions through a common body, giving us platform
- * independent names for each one. We work backwards on Linux to
- * provide the same handy naming.
- */
-
-
 #ifndef ELF_BITS
 #define ELF_BITS 64
 #endif
@@ -68,7 +59,7 @@ class ElfObject;
 #define ElfType2(type, bits) ElfTypeForBits(type, bits, _)
 #define ElfType(type) ElfType2(type, ELF_BITS)
 
-#ifndef SHF_COMPRESSED
+#ifndef SHF_COMPRESSED // Old headers may not have SHF_COMPRESSED: define it here.
 #define SHF_COMPRESSED (1<<11)
 typedef struct {
    Elf32_Word ch_type;
@@ -82,8 +73,6 @@ typedef struct {
    Elf64_Word ch_addralign;
 } Elf64_Chdr;
 #endif
-
-
 
 typedef Elf32_Nhdr Elf32_Note;
 typedef Elf64_Nhdr Elf64_Note;
@@ -165,7 +154,7 @@ public:
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(const std::string &name, Elf_Sym &sym);
 
-    std::shared_ptr<const Reader> io; // IO for the ELF image.
+    std::shared_ptr<const Reader> io;
 
     // Gets linked debug object.
     static std::shared_ptr<ElfObject> getDebug(std::shared_ptr<ElfObject> &);
