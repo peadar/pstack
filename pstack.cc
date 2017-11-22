@@ -11,6 +11,7 @@
 #include <libpstack/ps_callback.h>
 
 static bool python;
+extern std::ostream & pythonStack(Process &proc, std::ostream &os, const PstackOptions &);
 
 struct ThreadLister {
 
@@ -34,39 +35,6 @@ struct ThreadLister {
         }
     }
 };
-
-static int usage(void);
-std::ostream &
-pythonStack(Process &proc, std::ostream &os, const PstackOptions &)
-{
-    // Find the python library.
-    for (auto &o : proc.objects) {
-        std::string module = stringify(*o.object->io);
-        if (module.find("python") != std::string::npos) {
-            auto dwarf = proc.imageCache.getDwarf(ElfObject::getDebug(o.object));
-            if (dwarf) {
-                std::clog << "searching  " << module << std::endl;
-                for (auto u : dwarf->getUnits()) {
-                    for (const DwarfEntry *compile : u->entries) {
-                        if (compile->type->tag == DW_TAG_compile_unit) {
-                            std::clog << "process unit " << compile->name() << std::endl;
-                            for (const DwarfEntry *var : compile->children) {
-                                if (var->type->tag == DW_TAG_variable && var->name() == "interp_head") {
-                                    std::clog << "found interp_head at " << *var->attrForName(DW_AT_location) << std::endl;
-                                    DwarfExpressionStack evalStack;
-                                    auto addr = evalStack.eval(proc, var->attrForName(DW_AT_location), 0, o.reloc);
-                                    std::clog << "address of variable: " << addr << "\n";
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    return os;
-}
 
 static int usage(void);
 std::ostream &
