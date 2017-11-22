@@ -37,22 +37,6 @@ doPyInterp(Process &proc, std::ostream &os, Elf_Addr ptr)
     }
     return reinterpret_cast<Elf_Addr>(state.next);
 }
-    /*
-    PyThreadState *tstate = PyThreadState_GET();
-    if (nullptr != tstate && nullptr != tstate->frame) {
-	PyFrameObject *frame = tstate->frame;
-
-	printf("Python stack trace:\n");
-	while (nullptr != frame) {
-	    // int line = frame->f_lineno;
-	    int line = PyCode_Addr2Line(frame->f_code, frame->f_lasti);
-	    const char *filename = PyString_AsString(frame->f_code->co_filename);
-	    const char *funcname = PyString_AsString(frame->f_code->co_name);
-	    printf("    %s(%d): %s\n", filename, line, funcname);
-	    frame = frame->f_back;
-	}
-    }
-*/
 
 std::ostream &
 pythonStack(Process &proc, std::ostream &os, const PstackOptions &)
@@ -63,7 +47,6 @@ pythonStack(Process &proc, std::ostream &os, const PstackOptions &)
         if (module.find("python") != std::string::npos) {
             auto dwarf = proc.imageCache.getDwarf(ElfObject::getDebug(o.object));
             if (dwarf) {
-                std::clog << "searching  " << module << std::endl;
                 for (auto u : dwarf->getUnits()) {
                     for (const DwarfEntry *compile : u->entries) {
                         if (compile->type->tag == DW_TAG_compile_unit) {
