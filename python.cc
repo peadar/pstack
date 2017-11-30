@@ -8,22 +8,34 @@
 Elf_Addr
 doPyThread(Process &proc, std::ostream &os, Elf_Addr ptr)
 {
-    PyThreadState state;
-    proc.io->readObj(ptr, &state);
+    PyThreadState thread;
+    proc.io->readObj(ptr, &thread);
     PyFrameObject frame;
-    os << "\tthread " << ptr << std::endl;
-    for (Elf_Addr framePtr = reinterpret_cast<Elf_Addr>(state.frame);
+
+    os << "\tthread @" << std::hex << ptr << std::dec;
+    if (thread.thread_id) {
+       // XXX: offsets for pid/tid came from debugging in gdb. They are almost
+       // certainly wrong for 64-bit, and liable to change. The structure required
+       // to find the canonical version is pthread, defined in nptl/descr.h in
+       // the libc source.
+       Elf_Addr pidptr = thread.thread_id + sizeof (pid_t) * 26;
+       pid_t pids[2];
+       proc.io->readObj(pidptr, &pids[0], 2);
+       os << " lwp " << pids[0] << ", pid " << pids[1];
+    }
+    os << "\n";
+    for (Elf_Addr framePtr = reinterpret_cast<Elf_Addr>(thread.frame);
             framePtr != 0;
             framePtr = reinterpret_cast<Elf_Addr>(frame.f_back)) {
         proc.io->readObj(framePtr, &frame);
         PyCodeObject code;
-        PyStringObject function;
         proc.io->readObj(reinterpret_cast<Elf_Addr>(frame.f_code), &code);
+
         auto func = proc.io->readString(reinterpret_cast<Elf_Addr>(code.co_name) + offsetof(PyStringObject, ob_sval));
         auto file = proc.io->readString(reinterpret_cast<Elf_Addr>(code.co_filename) + offsetof(PyStringObject, ob_sval));
         os << "\t\t" << func << " in " << file << ":" << frame.f_lineno << "\n";
     }
-    return reinterpret_cast<Elf_Addr>(state.next);
+    return reinterpret_cast<Elf_Addr>(thread.next);
 }
 
 Elf32_Addr
@@ -31,7 +43,7 @@ doPyInterp(Process &proc, std::ostream &os, Elf_Addr ptr)
 {
     PyInterpreterState state;
     proc.io->readObj(ptr, &state);
-    os << "interpreter " << ptr << std::endl;
+    os << "interpreter @" << std::hex << ptr << std::dec << std::endl;
     for (Elf_Addr tsp = reinterpret_cast<Elf_Addr>(state.tstate_head); tsp; ) {
         tsp = doPyThread(proc, os, tsp);
     }
@@ -66,8 +78,5 @@ pythonStack(Process &proc, std::ostream &os, const PstackOptions &)
             }
         }
     }
-
     return os;
 }
-
-
