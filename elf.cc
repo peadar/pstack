@@ -224,9 +224,11 @@ ElfObject::getSection(Elf_Word idx) const
 SymbolSection
 ElfObject::getSymbols(const std::string &tableName)
 {
-    ElfObject *elf = debugData ? debugData.get() : this;
-    auto &table = elf->getSection(tableName, SHT_NULL);
-    auto &strings = elf->getSection(table.shdr.sh_link);
+    auto &table = getSection(tableName, SHT_NULL);
+    std::string n = stringify(*io);
+    if (table.shdr.sh_type == SHT_NOBITS || table.shdr.sh_type == SHT_NULL)
+        return SymbolSection(sectionHeaders[0].io, sectionHeaders[0].io);
+    auto &strings = getSection(table.shdr.sh_link);
     return SymbolSection(table.io, strings.io);
 }
 
@@ -280,9 +282,6 @@ ElfSymHash::findSymbol(Elf_Sym &sym, const string &name)
 bool
 ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
 {
-    if (debugData)
-        return debugData->findSymbolByName(name, sym);
-
     if (hash && hash->findSymbol(sym, name))
         return true;
 
@@ -291,7 +290,7 @@ ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
         if (sect.linearSearch(name, sym))
             return true;
     }
-    return false;
+    return debugData ? debugData->findSymbolByName(name, sym) : false;
 }
 
 ElfObject::~ElfObject()
