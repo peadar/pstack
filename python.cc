@@ -13,14 +13,13 @@ pthreadTidOffset(const Process &proc, size_t *offsetp)
     static enum { notDone, notFound, found } status;
     if (status == notDone) {
         try {
-            std::string foundIn;
-            auto addr = proc.findNamedSymbol("", "_thread_db_pthread_tid", foundIn);
+            auto addr = proc.findNamedSymbol(0, "_thread_db_pthread_tid");
             uint32_t desc[3];
             proc.io->readObj(addr, &desc[0], 3);
             offset = desc[2];
             status = found;
             if (verbose)
-               *debug << "found thread offset " << offset << " in " << foundIn <<  "\n";
+                *debug << "found thread offset " << offset <<  "\n";
         } catch (const std::exception &ex) {
            if (verbose)
                *debug << "failed to find offset of tid in pthread: " << ex.what();
@@ -112,9 +111,8 @@ pythonStack(Process &proc, std::ostream &os, const PstackOptions &)
                     DwarfExpressionStack evalStack;
                     auto addr = evalStack.eval(proc, var->attrForName(DW_AT_location), 0, o.reloc);
                     Elf_Addr ptr;
-                    for (proc.io->readObj(addr, &ptr); ptr; ) {
+                    for (proc.io->readObj(addr, &ptr); ptr; )
                         ptr = doPyInterp(proc, os, ptr);
-                    }
                 }
             }
         }

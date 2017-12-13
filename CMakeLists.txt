@@ -15,10 +15,10 @@ if(PLATFORM_BITS EQUAL 64 AND ELF_BITS EQUAL 32)
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -m32")
 endif()
 
-
 find_library(LTHREADDB NAMES thread_db PATHS (/usr/lib /usr/local/lib))
 find_package(LibLZMA)
 find_package(ZLIB)
+find_package(PythonLibs)
 
 add_definitions("-std=c++11 -Wall -Wextra -DELF_BITS=${ELF_BITS} -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -26,15 +26,27 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if (ZLIB_FOUND)
    set(inflatesrc inflate.cc)
    add_definitions("-DWITH_ZLIB")
+else()
+   message(WARNING "no ZLIB support found")
 endif()
 
 if (LIBLZMA_FOUND)
    set(lzmasrc lzma.cc)
    add_definitions("-DWITH_LZMA")
+else()
+   message(WARNING "no LZMA support found")
 endif()
 
+if (PythonLibs_FOUND)
+   set(pysrc python.cc)
+   add_definitions("-DWITH_PYTHON")
+else()
+   message(WARNING "no python support found")
+endif()
+
+
 # Make sure to use the local libpstack headers rather than what's installed.
-include_directories("." ${LIBLZMA_INCLUDES} ${ZLIB_INCLUDES})
+include_directories("." ${LIBLZMA_INCLUDES} ${ZLIB_INCLUDES} ${PYTHON_INCLUDE_DIRS} )
 
 add_library(dwelf ${LIBTYPE} dwarf.cc elf.cc reader.cc util.cc dump.cc
    ${inflatesrc} ${lzmasrc})
@@ -42,11 +54,11 @@ add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc
    dwarfproc.cc procdump.cc ${stubsrc})
 
 add_executable(canal canal.cc)
-add_executable(${PSTACK_BIN} pstack.cc python.cc)
+add_executable(${PSTACK_BIN} pstack.cc ${pysrc} )
 
 target_link_libraries(dwelf ${LIBLZMA_LIBRARIES} ${ZLIB_LIBRARIES})
 target_link_libraries(procman ${LTHREADDB} dwelf)
-target_link_libraries(${PSTACK_BIN} dwelf procman)
+target_link_libraries(${PSTACK_BIN} dwelf procman ${PYTHON_LIBRARIES})
 target_link_libraries(canal dwelf procman)
 
 set_target_properties(dwelf PROPERTIES VERSION 1.0.0 SOVERSION 1)

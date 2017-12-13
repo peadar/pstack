@@ -10,8 +10,9 @@
 #include <libpstack/proc.h>
 #include <libpstack/ps_callback.h>
 
-static bool python;
+#ifdef WITH_PYTHON
 extern std::ostream & pythonStack(Process &proc, std::ostream &os, const PstackOptions &);
+#endif
 
 struct ThreadLister {
 
@@ -80,6 +81,10 @@ emain(int argc, char **argv)
     PstackOptions options;
     noDebugLibs = false;
 
+#ifdef WITH_PYTHON
+    bool python = false;
+#endif
+
     while ((c = getopt(argc, argv, "b:d:D:hsvnag:p")) != -1) {
         switch (c) {
         case 'g':
@@ -115,7 +120,11 @@ emain(int argc, char **argv)
             sleepTime = atoi(optarg);
             break;
         case 'p':
+#ifdef WITH_PYTHON
             python = true;
+#else
+            std::clog << "no python support compiled in" << std::endl;
+#endif
             break;
         default:
             return usage();

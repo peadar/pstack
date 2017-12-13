@@ -1,6 +1,3 @@
-// Copyright (c) 2016 Arista Networks, Inc.  All rights reserved.
-// Arista Networks, Inc. Confidential and Proprietary.
-
 #ifndef PSTACK_PROCDUMP_H
 #define PSTACK_PROCDUMP_H
 
