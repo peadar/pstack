@@ -24,18 +24,15 @@ doPyThread(Process &proc, std::ostream &os, Elf_Addr ptr)
        os << " lwp " << pids[0] << ", pid " << pids[1];
     }
     os << "\n";
-    for (Elf_Addr framePtr = reinterpret_cast<Elf_Addr>(thread.frame);
-            framePtr != 0;
-            framePtr = reinterpret_cast<Elf_Addr>(frame.f_back)) {
+    for (auto framePtr = Elf_Addr(thread.frame); framePtr != 0; framePtr = Elf_Addr(frame.f_back)) {
         proc.io->readObj(framePtr, &frame);
         PyCodeObject code;
-        proc.io->readObj(reinterpret_cast<Elf_Addr>(frame.f_code), &code);
-
-        auto func = proc.io->readString(reinterpret_cast<Elf_Addr>(code.co_name) + offsetof(PyStringObject, ob_sval));
-        auto file = proc.io->readString(reinterpret_cast<Elf_Addr>(code.co_filename) + offsetof(PyStringObject, ob_sval));
+        proc.io->readObj(Elf_Addr(frame.f_code), &code);
+        auto func = proc.io->readString(Elf_Addr(code.co_name) + offsetof(PyStringObject, ob_sval));
+        auto file = proc.io->readString(Elf_Addr(code.co_filename) + offsetof(PyStringObject, ob_sval));
         os << "\t\t" << func << " in " << file << ":" << frame.f_lineno << "\n";
     }
-    return reinterpret_cast<Elf_Addr>(thread.next);
+    return Elf_Addr(thread.next);
 }
 
 Elf32_Addr
