@@ -1,10 +1,43 @@
 #include <iostream>
+#include <stdlib.h>
 #include <stddef.h>
 #include <libpstack/dwarf.h>
 #include <libpstack/proc.h>
 #include <python2.7/Python.h>
 #include <python2.7/frameobject.h>
 
+static bool
+pthreadTidOffset(const Process &proc, size_t *offsetp)
+{
+    static size_t offset;
+    static enum { notDone, notFound, found } status;
+    if (status == notDone) {
+        try {
+            std::string foundIn;
+            auto addr = proc.findNamedSymbol("", "_thread_db_pthread_tid", foundIn);
+            uint32_t desc[3];
+            proc.io->readObj(addr, &desc[0], 3);
+            offset = desc[2];
+            status = found;
+            if (verbose)
+               *debug << "found thread offset " << offset << " in " << foundIn <<  "\n";
+        } catch (const std::exception &ex) {
+           if (verbose)
+               *debug << "failed to find offset of tid in pthread: " << ex.what();
+            status = notFound;
+        }
+    }
+    if (status == found) {
+        *offsetp = offset;
+        return true;
+    }
+    return false;
+}
+
+/*
+ * process one python thread in an interpreter, at remote addr "ptr". 
+ * returns the address of the next thread on the list.
+ */
 Elf_Addr
 doPyThread(Process &proc, std::ostream &os, Elf_Addr ptr)
 {
@@ -12,16 +45,14 @@ doPyThread(Process &proc, std::ostream &os, Elf_Addr ptr)
     proc.io->readObj(ptr, &thread);
     PyFrameObject frame;
 
-    os << "\tthread @" << std::hex << ptr << std::dec;
-    if (thread.thread_id) {
-       // XXX: offsets for pid/tid came from debugging in gdb. They are almost
-       // certainly wrong for 64-bit, and liable to change. The structure required
-       // to find the canonical version is pthread, defined in nptl/descr.h in
-       // the libc source.
-       Elf_Addr pidptr = thread.thread_id + sizeof (pid_t) * 26;
-       pid_t pids[2];
-       proc.io->readObj(pidptr, &pids[0], 2);
-       os << " lwp " << pids[0] << ", pid " << pids[1];
+    size_t toff;
+    if (thread.thread_id && pthreadTidOffset(proc, &toff)) {
+        Elf_Addr tidptr = thread.thread_id + toff;
+        pid_t tid;
+        proc.io->readObj(tidptr, &tid);
+        os << "pthread: 0x" << std::hex << thread.thread_id << std::dec << ", lwp " << tid;
+    } else {
+       os << "anonymous thread";
     }
     os << "\n";
     for (auto framePtr = Elf_Addr(thread.frame); framePtr != 0; framePtr = Elf_Addr(frame.f_back)) {
@@ -30,46 +61,59 @@ doPyThread(Process &proc, std::ostream &os, Elf_Addr ptr)
         proc.io->readObj(Elf_Addr(frame.f_code), &code);
         auto func = proc.io->readString(Elf_Addr(code.co_name) + offsetof(PyStringObject, ob_sval));
         auto file = proc.io->readString(Elf_Addr(code.co_filename) + offsetof(PyStringObject, ob_sval));
-        os << "\t\t" << func << " in " << file << ":" << frame.f_lineno << "\n";
+        os << "\t" << func << " in " << file << ":" << frame.f_lineno << "\n";
     }
     return Elf_Addr(thread.next);
 }
 
+/*
+ * Process one python interpreter in the process at remote address ptr
+ * Returns the address of the next interpreter on on the process's list.
+ */
 Elf32_Addr
 doPyInterp(Process &proc, std::ostream &os, Elf_Addr ptr)
 {
     PyInterpreterState state;
     proc.io->readObj(ptr, &state);
-    os << "interpreter @" << std::hex << ptr << std::dec << std::endl;
+    os << "---- interpreter @" << std::hex << ptr << std::dec << " -----" << std::endl ;
     for (Elf_Addr tsp = reinterpret_cast<Elf_Addr>(state.tstate_head); tsp; ) {
         tsp = doPyThread(proc, os, tsp);
+        os << std::endl;
     }
     return reinterpret_cast<Elf_Addr>(state.next);
 }
 
+/*
+ * Print all python stack traces from this process.
+ */
 std::ostream &
 pythonStack(Process &proc, std::ostream &os, const PstackOptions &)
 {
     // Find the python library.
     for (auto &o : proc.objects) {
         std::string module = stringify(*o.object->io);
-        if (module.find("python") != std::string::npos) {
-            auto dwarf = proc.imageCache.getDwarf(ElfObject::getDebug(o.object));
-            if (dwarf) {
-                for (auto u : dwarf->getUnits()) {
-                    for (const DwarfEntry *compile : u->entries) {
-                        if (compile->type->tag == DW_TAG_compile_unit) {
-                            for (const DwarfEntry *var : compile->children) {
-                                if (var->type->tag == DW_TAG_variable && var->name() == "interp_head") {
-                                    DwarfExpressionStack evalStack;
-                                    auto addr = evalStack.eval(proc, var->attrForName(DW_AT_location), 0, o.reloc);
-                                    Elf_Addr ptr;
-                                    for (proc.io->readObj(addr, &ptr); ptr; ) {
-                                        ptr = doPyInterp(proc, os, ptr);
-                                    }
-                                }
-                            }
-                        }
+        if (module.find("python") == std::string::npos)
+            continue;
+        auto dwarf = proc.imageCache.getDwarf(ElfObject::getDebug(o.object));
+        if (!dwarf)
+            continue;
+        for (auto u : dwarf->getUnits()) {
+            // For each unit
+            for (const DwarfEntry *compile : u->entries) {
+                if (compile->type->tag != DW_TAG_compile_unit)
+                    continue;
+                // Do we have a global variable called interp_head?
+                for (const DwarfEntry *var : compile->children) {
+                    if (var->type->tag != DW_TAG_variable)
+                        continue;
+                    if (var->name() != "interp_head")
+                        continue;
+                    // Yes - let's run through the interpreters, and dump their stacks.
+                    DwarfExpressionStack evalStack;
+                    auto addr = evalStack.eval(proc, var->attrForName(DW_AT_location), 0, o.reloc);
+                    Elf_Addr ptr;
+                    for (proc.io->readObj(addr, &ptr); ptr; ) {
+                        ptr = doPyInterp(proc, os, ptr);
                     }
                 }
             }
