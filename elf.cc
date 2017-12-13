@@ -99,14 +99,19 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
             namedSection[name] = &h;
             // .gnu_debugdata is a separate LZMA-compressed ELF image with just
             // a symbol table.
-            if (name == ".gnu_debugdata")
+            if (name == ".gnu_debugdata") {
 #ifdef WITH_LZMA
                 debugData = std::make_shared<ElfObject>(imageCache,
                       std::make_shared<const LzmaReader>(h.io));
 #else
-                std::clog << "warning: no compiled support for LZMA - "
-                      "can't decode debug data in " << *io << "\n";
+                static bool warned = false;
+                if (!warned) {
+                    std::clog << "warning: no compiled support for LZMA - "
+                          "can't decode debug data in " << *io << "\n";
+                    warned = true;
+                }
 #endif
+            }
         }
         auto &tab = getSection(".hash", SHT_HASH);
         auto &syms = getSection(tab.shdr.sh_link);
