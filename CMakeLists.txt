@@ -37,7 +37,7 @@ else()
    message(WARNING "no LZMA support found")
 endif()
 
-if (PythonLibs_FOUND)
+if (PythonLibs_FOUND OR PYTHONLIBS_FOUND)
    set(pysrc python.cc)
    add_definitions("-DWITH_PYTHON")
 else()

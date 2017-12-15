@@ -40,6 +40,8 @@ Process::Process(std::shared_ptr<ElfObject> exec,
                   const PathReplacementList &prl,
                   DwarfImageCache &cache)
     : entry(0)
+    , interpBase(0)
+    , vdsoBase(0)
     , isStatic(false)
     , sysent(0)
     , agent(0)
@@ -112,9 +114,10 @@ Process::processAUXV(const Reader &auxio)
             case AT_SYSINFO_EHDR: {
                 try {
                     auto elf = std::make_shared<ElfObject>(imageCache, std::make_shared<OffsetReader>(io, hdr, 65536));
-                    addElfObject(elf, hdr - elf->getBase());
+                    vdsoBase = hdr - elf->getBase();
+                    addElfObject(elf, vdsoBase);
                     if (verbose >= 2)
-                        *debug << "VDSO " << *elf->io << " loaded\n";
+                        *debug << "VDSO " << *elf->io << " loaded at " << std::hex << vdsoBase << "\n";
 
                 }
                 catch (const std::exception &ex) {
@@ -122,6 +125,9 @@ Process::processAUXV(const Reader &auxio)
                 }
                 break;
             }
+            case AT_BASE:
+                interpBase = hdr;
+                break;
 #ifdef AT_EXECFN
             case AT_EXECFN:
                 auto exeName = io->readString(hdr);
@@ -560,11 +566,15 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
     struct link_map map;
     for (Elf_Addr mapAddr = (Elf_Addr)rDebug.r_map; mapAddr; mapAddr = (Elf_Addr)map.l_next) {
         io->readObj(mapAddr, &map);
-        // first one's the executable itself.
+        // If we see the executable, just add it in and avoid going through the path replacement work
         if (mapAddr == Elf_Addr(rDebug.r_map)) {
             assert(map.l_addr == entry - execImage->getElfHeader().e_entry);
             addElfObject(execImage, map.l_addr);
             continue;
+        }
+        if (map.l_addr == vdsoBase) {
+           // we already have the VDSO, and won't be able to read the file.
+           continue;
         }
         /* Read the path to the file */
         if (map.l_name == 0) {
@@ -574,8 +584,8 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
         }
         std::string path = io->readString(Elf_Off(map.l_name));
         if (path == "") {
-            // XXX: dunno why this is.
-            path = execImage->getInterpreter();
+            *debug << "warning: empty name for object loaded at " << std::hex << map.l_addr << "\n";
+            continue;
         }
 
         std::string startPath = path;
@@ -619,6 +629,15 @@ Process::findRDebugAddr()
             }
         }
     }
+    // If there's no DT_DEBUG, we've probably got someone executing a shared library,
+    // which doesn't have an _r_debug symbol. Use the address of _r_debug in the
+    // interpreter
+    try {
+        addElfObject(imageCache.getImageForName(execImage->getInterpreter()), interpBase);
+        return findNamedSymbol(execImage->getInterpreter().c_str(), "_r_debug");
+    }
+    catch (...) {
+    }
     return 0;
 }
 
@@ -646,11 +665,13 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
         auto obj = i->object;
         if (objectName != 0) {
             auto objname = stringify(*obj->io);
-            auto p = objname.rfind('/');
-            if (p != std::string::npos)
-                objname = objname.substr(p + 1, std::string::npos);
-            if (objname != std::string(objectName))
-                continue;
+            if (objname != std::string(objectName)) {
+               auto p = objname.rfind('/');
+               if (p != std::string::npos)
+                   objname = objname.substr(p + 1, std::string::npos);
+               if (objname != std::string(objectName))
+                   continue;
+            }
         }
         Elf_Sym sym;
         if (obj->findSymbolByName(symbolName, sym))
