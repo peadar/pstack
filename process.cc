@@ -395,7 +395,14 @@ operator << (std::ostream &os, const RemoteValue &rv)
                buf.resize(sizeof (void *));
                rv.p.io->read(rv.addr, sizeof (void **), &buf[0]);
             }
-            os << *(void **)&buf[0];
+            Elf_Addr remote = Elf_Addr(*(void **)&buf[0]);
+            auto base = type->referencedEntry(DW_AT_type);
+            if (base->name() == "char") {
+               std::string s = rv.p.io->readString(remote);
+               os << "\"" << s << "\"";
+            } else {
+               os << (void *)remote;
+            }
             break;
         }
         default:
