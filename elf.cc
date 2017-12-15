@@ -356,6 +356,13 @@ void
 ElfSection::open(const std::shared_ptr<const Reader> &image, off_t off)
 {
     image->readObj(off, &shdr);
+
+    // Null sections get null readers.
+    if (shdr.sh_type == SHT_NULL) {
+        io = std::make_shared<NullReader>();
+        return;
+    }
+
     auto rawIo = std::make_shared<OffsetReader>(image, shdr.sh_offset, shdr.sh_size);
     if ((shdr.sh_flags & SHF_COMPRESSED) == 0) {
         io = rawIo;
