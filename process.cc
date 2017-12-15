@@ -423,18 +423,21 @@ operator << (std::ostream &os, const ArgPrint &ap)
                 Elf_Addr addr = 0;
                 os << sep << name;
                 if (type) {
-                    const DwarfAttribute *locationA = child->attrForName(DW_AT_location);
-                    if (locationA) {
+                    const DwarfAttribute *attr;
+
+                    if ((attr = child->attrForName(DW_AT_location)) != nullptr) {
                         DwarfExpressionStack fbstack;
-                        addr = fbstack.eval(ap.p, locationA, ap.frame, ap.frame->elfReloc);
+                        addr = fbstack.eval(ap.p, attr, ap.frame, ap.frame->elfReloc);
                         os << "=";
                         if (fbstack.isReg) {
                            IOFlagSave _(os);
                            os << std::hex << addr;
-                           os << "{in register " << fbstack.inReg << "}";
+                           os << "{r" << fbstack.inReg << "}";
                         } else {
                            os << RemoteValue(ap.p, addr, type);
                         }
+                    } else if ((attr = child->attrForName(DW_AT_const_value)) != nullptr) {
+                        os << "=" << intmax_t(*attr);
                     }
                 }
                 sep = ", ";
