@@ -306,6 +306,8 @@ ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
     if (!in->debugLoaded) {
         in->debugLoaded = true;
         auto &hdr = in->getSection(".gnu_debuglink", SHT_PROGBITS);
+        if (!hdr)
+           return in;
         auto link = hdr.io->readString(0);
         auto dir = dirname(stringify(*in->io));
         in->debugObject = in->imageCache.getDebugImage(dir + "/" + link);
