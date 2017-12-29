@@ -94,11 +94,15 @@ Process::getDwarf(std::shared_ptr<ElfObject> elf, bool debug)
 void
 Process::processAUXV(const Reader &auxio)
 {
-    size_t auxCount = auxio.size() / sizeof (Elf_auxv_t);
-
-    for (size_t i = 0; i < auxCount; ++i) {
+    for (size_t i = 0;; i++) {
         Elf_auxv_t aux;
-        auxio.readObj(i * sizeof aux, &aux);
+        try {
+            auxio.readObj(i * sizeof aux, &aux);
+        }
+        catch (const Exception &ex) {
+            break;
+        }
+
         Elf_Addr hdr = aux.a_un.a_val;
         switch (aux.a_type) {
             case AT_ENTRY: {

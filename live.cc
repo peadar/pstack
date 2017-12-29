@@ -32,11 +32,8 @@ void
 LiveProcess::load()
 {
     StopProcess here(this);
-    // need a live reader, as the file does not report its size correctly.
     LiveReader live(pid, "auxv");
-    char data[8192];
-    size_t count = live.read(0, sizeof data, data);
-    processAUXV(MemReader(count, data));
+    processAUXV(live);
     Process::load();
 }
 
