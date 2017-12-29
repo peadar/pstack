@@ -148,8 +148,9 @@ Process::listThreads(const T &callback)
  */
 struct TaskInfo {
     int stopCount;
+    bool hasThread; // is associated with a libc thread that we suspended.
     timeval stoppedAt;
-    TaskInfo() : stopCount(0) {}
+    TaskInfo() : stopCount{0}, hasThread{false}, stoppedAt{} {}
 };
 
 class LiveReader : public FileReader {
@@ -162,10 +163,9 @@ std::string procname(pid_t pid, const std::string &file);
 struct LiveThreadList;
 class LiveProcess : public Process {
     pid_t pid;
-    std::map<pid_t, TaskInfo> stoppedLwps;
+    std::map<pid_t, TaskInfo> lwps;
     friend class LiveReader;
     int stopCount;
-    std::set<pid_t> lwps; // lwps for threads we could not suspend with the thread_db interface.
     friend class StopLWP;
 public:
     LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid, const PathReplacementList &repls, DwarfImageCache &cache);

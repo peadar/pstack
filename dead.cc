@@ -150,6 +150,7 @@ pid_t
 CoreProcess::getPID() const
 {
     for (auto note : coreImage->notes) {
+        // Return the PID of the first task in the core.
         if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
             prstatus_t status;
             note.data()->readObj(0, &status);
