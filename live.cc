@@ -69,13 +69,13 @@ LiveProcess::resume(lwpid_t pid)
     kill(pid, SIGCONT);
     if (ptrace(PT_DETACH, pid, (caddr_t)1, 0) != 0)
         std::clog << "failed to detach from process " << pid << ": " << strerror(errno);
-    if (verbose >= 2 && --stopCount == 0) {
+    if (verbose) {
         timeval tv;
         gettimeofday(&tv, 0);
-        long long secs = (tv.tv_sec - start.tv_sec) * 1000000;
+        long long secs = (tv.tv_sec - tcb.stoppedAt.tv_sec) * 1000000;
         secs += tv.tv_usec;
-        secs -= start.tv_usec;
-        *debug << "child was stopped for " << std::dec << secs << " microseconds" << std::endl;
+        secs -= tcb.stoppedAt.tv_usec;
+        *debug << "resumed " << pid << ": was stopped for " << std::dec << secs << " microseconds" << std::endl;
     }
 }
 
@@ -89,14 +89,14 @@ public:
              * This doesn't actually work under linux: just add the LWP
              * to the list of stopped lwps.
              */
-            if (verbose)
-                *debug << "can't suspend LWP "  << thr << ": will do it later\n";
             td_thrinfo_t info;
             td_thr_get_info(thr, &info);
             proc->lwps.insert(info.ti_lid);
+            if (verbose)
+                *debug << "can't suspend thread "  << thr << ": will suspend it's LWP " << info.ti_lid << "\n";
         } else {
             if (verbose)
-                *debug << "suspended LWP "  << thr << "\n";
+                *debug << "suspended thread "  << thr << "\n";
         }
     }
 };
@@ -133,17 +133,20 @@ LiveProcess::stop(lwpid_t pid)
     if (tcb.stopCount++ != 0)
         return;
 
-    if (stopCount++ == 0 && verbose)
-        gettimeofday(&start, 0);
+    gettimeofday(&tcb.stoppedAt, 0);
 
     if (ptrace(PT_ATTACH, pid, 0, 0) == 0) {
         int status;
         pid_t waitedpid = waitpid(pid, &status, pid == this->pid ? 0 : __WCLONE);
-        if (waitedpid != -1)
+        if (waitedpid != -1) {
+            if (verbose)
+                *debug << "stopped LWP " << pid << "\n";
             return;
+        }
         if (verbose)
-            *debug << "wait failed: " << strerror(errno) << "\n";
+            *debug << "failed to stop LWP " << pid << ": wait failed: " << strerror(errno) << "\n";
         return;
     }
-    if (verbose) *debug << "ptrace failed: " << strerror(errno) << "\n";
+    if (verbose)
+        *debug << "failed to stop LWP " << pid << ": ptrace failed: " << strerror(errno) << "\n";
 }

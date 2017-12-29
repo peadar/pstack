@@ -141,9 +141,15 @@ Process::listThreads(const T &callback)
             (void *)&callback, TD_THR_ANY_STATE, TD_THR_LOWEST_PRIORITY, TD_SIGNO_MASK, TD_THR_ANY_USER_FLAGS);
 }
 
-struct ThreadInfo {
+/*
+ * This contains information about an LWP.  In linux, since NPTL, this is
+ * essentially a thread. Old style, userland threads may have a single LWP for
+ * all threads.
+ */
+struct TaskInfo {
     int stopCount;
-    ThreadInfo() : stopCount(0) {}
+    timeval stoppedAt;
+    TaskInfo() : stopCount(0) {}
 };
 
 class LiveReader : public FileReader {
@@ -156,11 +162,10 @@ std::string procname(pid_t pid, const std::string &file);
 struct LiveThreadList;
 class LiveProcess : public Process {
     pid_t pid;
-    std::map<pid_t, ThreadInfo> stoppedLwps;
+    std::map<pid_t, TaskInfo> stoppedLwps;
     friend class LiveReader;
     int stopCount;
-    timeval start;
-    std::set<pid_t> lwps; // lwps we could not suspend.
+    std::set<pid_t> lwps; // lwps for threads we could not suspend with the thread_db interface.
     friend class StopLWP;
 public:
     LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid, const PathReplacementList &repls, DwarfImageCache &cache);
