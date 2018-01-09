@@ -608,9 +608,7 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             *debug << "replaced " << startPath << " with " << path << std::endl;
 
         try {
-            auto elf = imageCache.getImageForName(path);
-            if (elf)
-                addElfObject(elf, Elf_Addr(map.l_addr));
+            addElfObject(imageCache.getImageForName(path), Elf_Addr(map.l_addr));
         }
         catch (const std::exception &e) {
             std::clog << "warning: can't load text for '" << path << "' at " <<
@@ -642,11 +640,13 @@ Process::findRDebugAddr()
     // If there's no DT_DEBUG, we've probably got someone executing a shared library,
     // which doesn't have an _r_debug symbol. Use the address of _r_debug in the
     // interpreter
-    try {
-        addElfObject(imageCache.getImageForName(execImage->getInterpreter()), interpBase);
-        return findNamedSymbol(execImage->getInterpreter().c_str(), "_r_debug");
-    }
-    catch (...) {
+    if (interpBase && execImage->getInterpreter() != "") {
+        try {
+            addElfObject(imageCache.getImageForName(execImage->getInterpreter()), interpBase);
+            return findNamedSymbol(execImage->getInterpreter().c_str(), "_r_debug");
+        }
+        catch (...) {
+        }
     }
     return 0;
 }
@@ -671,10 +671,9 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
 {
     if (isStatic) // static exe: ignore object name.
         objectName = 0;
-    for (auto i = objects.begin(); i != objects.end(); ++i) {
-        auto obj = i->object;
+    for (auto &loaded : objects) {
         if (objectName != 0) {
-            auto objname = stringify(*obj->io);
+            auto objname = stringify(*loaded.object->io);
             if (objname != std::string(objectName)) {
                auto p = objname.rfind('/');
                if (p != std::string::npos)
@@ -684,8 +683,8 @@ Process::findNamedSymbol(const char *objectName, const char *symbolName) const
             }
         }
         Elf_Sym sym;
-        if (obj->findSymbolByName(symbolName, sym))
-            return sym.st_value + i->reloc;
+        if (loaded.object->findSymbolByName(symbolName, sym))
+            return sym.st_value + loaded.reloc;
         if (objectName)
             break;
     }

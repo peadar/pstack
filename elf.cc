@@ -391,8 +391,12 @@ std::shared_ptr<ElfObject>
 ImageCache::getImageForName(const std::string &name) {
     bool found;
     auto res = getImageIfLoaded(name, found);
-    if (found)
-        return res;
+    if (found) {
+        if (res != nullptr)
+            return res;
+        // Don't return null to keep it consistent with a previous failure to load.
+        throw Exception() << "previously failed to load " << name;
+    }
     auto &item = cache[name];
     item = std::make_shared<ElfObject>(*this, loadFile(name));
     return item;
