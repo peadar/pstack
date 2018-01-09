@@ -234,6 +234,7 @@ operator <<(std::ostream &os, const std::pair<const DwarfFrameInfo *, const Dwar
         << ", \"dataAlign\": " << dcie.second->dataAlign
         << ", \"return address reg\": " << dcie.second->rar
         << ", \"instrlen\": " << dcie.second->end - dcie.second->instructions
+        << ", \"lsdaEncoding\": " << int(dcie.second->lsdaEncoding)
         << ", \"instructions\": ";
     ;
     DWARFReader r(dcie.first->io, dcie.second->instructions, dcie.second->end);
