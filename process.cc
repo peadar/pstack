@@ -401,7 +401,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
             }
             Elf_Addr remote = Elf_Addr(*(void **)&buf[0]);
             auto base = type->referencedEntry(DW_AT_type);
-            if (base->name() == "char") {
+            if (base && base->name() == "char") {
                std::string s = rv.p.io->readString(remote);
                os << "\"" << s << "\"";
             } else {
