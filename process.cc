@@ -166,7 +166,7 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
         if (frame->ip == sysent) {
             symName = "(syscall)";
         } else {
-            Elf_Off reloc;
+            Elf_Off reloc = 0;
             obj = findObject(frame->ip, &reloc);
             if (obj) {
                 fileName = stringify(*obj->io);
@@ -312,7 +312,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
     if (rv.addr == 0)
        return os << "(null)";
     auto type = rv.type;
-    while (type->type->tag == DW_TAG_typedef)
+    while (type->type->tag == DW_TAG_typedef || type->type->tag == DW_TAG_const_type)
        type = type->referencedEntry(DW_AT_type);
     auto sizeAttr = type->attrForName(DW_AT_byte_size);
     std::vector<char> buf;
@@ -394,6 +394,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
             }
             break;
         }
+        case DW_TAG_reference_type:
         case DW_TAG_pointer_type: {
             if (size == 0) {
                buf.resize(sizeof (void *));

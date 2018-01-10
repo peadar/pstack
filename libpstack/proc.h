@@ -150,7 +150,7 @@ struct TaskInfo {
     int stopCount;
     bool hasThread; // is associated with a libc thread that we suspended.
     timeval stoppedAt;
-    TaskInfo() : stopCount{0}, hasThread{false}, stoppedAt{} {}
+    TaskInfo() : stopCount{0}, hasThread{false}, stoppedAt{0,0} {}
 };
 
 class LiveReader : public FileReader {
