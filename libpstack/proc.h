@@ -74,12 +74,24 @@ public:
     enum PstackOption {
         nosrc,
         doargs,
-        maxopt
+        threaddb,
+        maxopt // leave this last
     };
     void operator += (PstackOption);
     void operator -= (PstackOption);
     bool operator() (PstackOption) const;
     std::bitset<maxopt> values;
+};
+
+/*
+ * This contains information about an LWP.  In linux, since NPTL, this is
+ * essentially a thread. Old style, userland threads may have a single LWP for
+ * all threads.
+ */
+struct Lwp {
+    int stopCount;
+    timeval stoppedAt;
+    Lwp() : stopCount{0}, stoppedAt{0,0} {}
 };
 
 typedef std::vector<std::pair<std::string, std::string>> PathReplacementList;
@@ -99,6 +111,7 @@ protected:
     PathReplacementList pathReplacements;
 
 public:
+    std::map<pid_t, Lwp> lwps;
     DwarfImageCache &imageCache;
 
     struct LoadedObject {
@@ -117,16 +130,17 @@ public:
     Process(std::shared_ptr<ElfObject> obj, std::shared_ptr<Reader> mem, const PathReplacementList &prl, DwarfImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
+    virtual void findLWPs() = 0;
 
     virtual void resumeProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
-    virtual pid_t getPID() const = 0;
     std::ostream &dumpStackText(std::ostream &, const ThreadStack &, const PstackOptions &);
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &);
     template <typename T> void listThreads(const T &);
     Elf_Addr findNamedSymbol(const char *objName, const char *symbolName) const;
     ~Process();
-    virtual void load();
+    virtual void load(const PstackOptions &);
+    virtual pid_t getPID() const = 0;
 };
 
 template <typename T> int
@@ -141,18 +155,6 @@ Process::listThreads(const T &callback)
             (void *)&callback, TD_THR_ANY_STATE, TD_THR_LOWEST_PRIORITY, TD_SIGNO_MASK, TD_THR_ANY_USER_FLAGS);
 }
 
-/*
- * This contains information about an LWP.  In linux, since NPTL, this is
- * essentially a thread. Old style, userland threads may have a single LWP for
- * all threads.
- */
-struct TaskInfo {
-    int stopCount;
-    bool hasThread; // is associated with a libc thread that we suspended.
-    timeval stoppedAt;
-    TaskInfo() : stopCount{0}, hasThread{false}, stoppedAt{0,0} {}
-};
-
 class LiveReader : public FileReader {
 public:
     off_t size() const override { return std::numeric_limits<off_t>::max(); }
@@ -163,7 +165,6 @@ std::string procname(pid_t pid, const std::string &file);
 struct LiveThreadList;
 class LiveProcess : public Process {
     pid_t pid;
-    std::map<pid_t, TaskInfo> lwps;
     friend class LiveReader;
     int stopCount;
     friend class StopLWP;
@@ -172,10 +173,11 @@ public:
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg);
     virtual void stop(pid_t lwpid);
     virtual void resume(pid_t lwpid);
-    virtual pid_t getPID()  const{ return pid; }
     void stopProcess();
     void resumeProcess();
-    virtual void load();
+    virtual void load(const PstackOptions &);
+    virtual void findLWPs() override;
+    virtual pid_t getPID() const override;
 };
 
 class CoreProcess;
@@ -197,10 +199,11 @@ public:
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg);
     virtual void stop(lwpid_t);
     virtual void resume(lwpid_t);
-    virtual pid_t getPID() const;
-    void stopProcess() { }
+    void stopProcess();
     void resumeProcess() { }
-    virtual void load();
+    virtual void findLWPs() override;
+    virtual void load(const PstackOptions &);
+    virtual pid_t getPID() const override;
 };
 
 // RAII to stop a process.
@@ -208,5 +211,14 @@ struct StopProcess {
     Process *proc;
 public:
     StopProcess(Process *proc_) : proc(proc_) { proc->stopProcess(); }
-    ~StopProcess() { proc->resumeProcess(); } 
+    ~StopProcess() { proc->resumeProcess(); }
 };
+
+// RAII to stop a process.
+struct StopLWP {
+    Process *proc;
+    lwpid_t lwp;
+public:
+    StopLWP(Process *proc_, lwpid_t lwp_) : proc(proc_), lwp(lwp_) { proc->stop(lwp); }
+    ~StopLWP() { proc->resume(lwp); }
+};;

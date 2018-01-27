@@ -15,7 +15,7 @@ CoreProcess::CoreProcess(
 }
 
 void
-CoreProcess::load()
+CoreProcess::load(const PstackOptions &options)
 {
 #ifdef __linux__
     /* Find the linux-gate VDSO, and treat as an ELF file */
@@ -26,7 +26,7 @@ CoreProcess::load()
        }
     }
 #endif
-    Process::load();
+    Process::load(options);
 }
 
 void CoreReader::describe(std::ostream &os) const
@@ -146,6 +146,13 @@ CoreProcess::stop(lwpid_t)
     // can't stop a dead process.
 }
 
+void
+CoreProcess::stopProcess()
+{
+    // Find LWPs when we attempt to "stop" the process.
+    findLWPs();
+}
+
 pid_t
 CoreProcess::getPID() const
 {
@@ -158,4 +165,15 @@ CoreProcess::getPID() const
         }
     }
     return -1;
+}
+void
+CoreProcess::findLWPs()
+{
+    for (auto note : coreImage->notes) {
+        if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
+            prstatus_t status;
+            note.data()->readObj(0, &status);
+            (void)lwps[status.pr_pid];
+        }
+    }
 }

@@ -55,7 +55,7 @@ Process::Process(std::shared_ptr<ElfObject> exec,
 }
 
 void
-Process::load()
+Process::load(const PstackOptions &options)
 {
     /*
      * Attach the executable and any shared libs.
@@ -74,12 +74,14 @@ Process::load()
     else
         loadSharedObjects(r_debug_addr);
 
-    td_err_e the;
-    the = td_ta_new(this, &agent);
-    if (the != TD_OK) {
-        agent = 0;
-        if (verbose > 0 && the != TD_NOLIBTHREAD)
-            *debug << "failed to load thread agent: " << the << std::endl;
+    if (options(PstackOptions::threaddb)) {
+        td_err_e the;
+        the = td_ta_new(this, &agent);
+        if (the != TD_OK) {
+            agent = 0;
+            if (verbose > 0 && the != TD_NOLIBTHREAD)
+                *debug << "failed to load thread agent: " << the << std::endl;
+        }
     }
 }
 

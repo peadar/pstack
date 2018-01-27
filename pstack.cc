@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sys/types.h>
 #include <signal.h>
+#include <set>
 
 #include <libpstack/dwarf.h>
 #include <libpstack/dump.h>
@@ -14,44 +15,41 @@
 extern std::ostream & pythonStack(Process &proc, std::ostream &os, const PstackOptions &);
 #endif
 
-struct ThreadLister {
-
-    std::list<ThreadStack> threadStacks;
-    Process *process;
-
-    ThreadLister(Process *process_ ) : process(process_) {}
-
-    void operator() (const td_thrhandle_t *thr) {
-        CoreRegisters regs;
-        td_err_e the;
-#ifdef __linux__
-        the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
-#else
-        the = td_thr_getgregs(thr, &regs);
-#endif
-        if (the == TD_OK) {
-            threadStacks.push_back(ThreadStack());
-            td_thr_get_info(thr, &threadStacks.back().info);
-            threadStacks.back().unwind(*process, regs);
-        }
-    }
-};
-
 static int usage(void);
 std::ostream &
 pstack(Process &proc, std::ostream &os, const PstackOptions &options)
 {
     // get its back trace.
-    ThreadLister threadLister(&proc);
+    std::list<ThreadStack> threadStacks;
+    std::set<pid_t> tracedLwps;
     {
         StopProcess here(&proc);
-        proc.listThreads(threadLister);
-        if (threadLister.threadStacks.empty()) {
-            // get the register for the process itself, and use those.
+        proc.listThreads([&proc, &threadStacks, &tracedLwps] (const td_thrhandle_t *thr) {
+
             CoreRegisters regs;
-            proc.getRegs(ps_getpid(&proc),  &regs);
-            threadLister.threadStacks.push_back(ThreadStack());
-            threadLister.threadStacks.back().unwind(proc, regs);
+            td_err_e the;
+#ifdef __linux__
+            the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
+#else
+            the = td_thr_getgregs(thr, &regs);
+#endif
+            if (the == TD_OK) {
+                threadStacks.push_back(ThreadStack());
+                td_thr_get_info(thr, &threadStacks.back().info);
+                threadStacks.back().unwind(proc, regs);
+                tracedLwps.insert(threadStacks.back().info.ti_lid);
+            }
+
+            });
+
+        for (auto &lwp : proc.lwps) {
+            if (tracedLwps.find(lwp.first) == tracedLwps.end()) {
+                CoreRegisters regs;
+                proc.getRegs(ps_getpid(&proc),  &regs);
+                threadStacks.push_back(ThreadStack());
+                threadStacks.back().info.ti_lid = lwp.first;
+                threadStacks.back().unwind(proc, regs);
+            }
         }
     }
 
@@ -60,8 +58,8 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
      * unloaded while we print stuff out, but worth the risk, normally.
      */
     os << "process: " << *proc.io << "\n";
-    for (auto s = threadLister.threadStacks.begin(); s != threadLister.threadStacks.end(); ++s) {
-        proc.dumpStackText(os, *s, options);
+    for (auto &s : threadStacks) {
+        proc.dumpStackText(os, s, options);
         os << std::endl;
     }
     return os;
@@ -76,15 +74,15 @@ emain(int argc, char **argv)
     std::shared_ptr<ElfObject> exec;
     DwarfImageCache imageCache;
     int sleepTime = 0;
-
     PstackOptions options;
+
     noDebugLibs = false;
 
 #ifdef WITH_PYTHON
     bool python = false;
 #endif
 
-    while ((c = getopt(argc, argv, "b:d:D:hsvnag:p")) != -1) {
+    while ((c = getopt(argc, argv, "b:d:D:hsvnag:pt")) != -1) {
         switch (c) {
         case 'g':
             globalDebugDirectories.add(optarg);
@@ -125,6 +123,9 @@ emain(int argc, char **argv)
             std::clog << "no python support compiled in" << std::endl;
 #endif
             break;
+        case 't':
+            options += PstackOptions::threaddb;
+            break;
         default:
             return usage();
         }
@@ -145,7 +146,7 @@ emain(int argc, char **argv)
 
                    if (obj->getElfHeader().e_type == ET_CORE) {
                            CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
-                           proc.load();
+                           proc.load(options);
                            if (python)
                                pythonStack(proc, std::cout, options);
                            else
@@ -156,7 +157,7 @@ emain(int argc, char **argv)
                    }
                } else {
                    LiveProcess proc(exec, pid, PathReplacementList(), imageCache);
-                   proc.load();
+                   proc.load(options);
                    if (python)
                        pythonStack(proc, std::cout, options);
                    else

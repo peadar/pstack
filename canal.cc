@@ -106,7 +106,7 @@ mainExcept(int argc, char *argv[])
     int symOffset = -1;
     bool showloaded = false;
 
-    while ((c = getopt(argc, argv, "o:vhr:sp:f:e:S:R:K:lV")) != -1) {
+    while ((c = getopt(argc, argv, "o:vhr:sp:f:e:S:R:K:lVt")) != -1) {
         switch (c) {
             case 'V':
                showsyms = true;
@@ -215,7 +215,7 @@ mainExcept(int argc, char *argv[])
        core = make_shared<ElfObject>(cache, loadFile(argv[optind]));
        process = make_shared<CoreProcess>(exec, core, pathReplacements, cache);
     }
-    process->load();
+    process->load(PstackOptions());
     if (searchaddrs.size()) {
         std::clog << "finding references to " << dec << searchaddrs.size() << " addresses\n";
         for (auto &addr : searchaddrs)

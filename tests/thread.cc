@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <vector>
+#include <iostream>
 
 pthread_mutex_t l = PTHREAD_MUTEX_INITIALIZER;
 int in_entry;
@@ -38,5 +39,7 @@ main(int argc, char *argv[])
       pthread_cond_wait(&c, &l);
       pthread_mutex_unlock(&l);
    }
+   std::clog << "proc " << getpid() << std::endl;
+   pause();
    raise(SIGBUS);
 }
