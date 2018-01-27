@@ -30,6 +30,7 @@ LiveProcess::LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid_,
     , pid(pid_)
     , stopCount(0)
 {
+   (void)ps_getpid(this);
 }
 
 void

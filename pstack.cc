@@ -44,10 +44,10 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
 
         for (auto &lwp : proc.lwps) {
             if (tracedLwps.find(lwp.first) == tracedLwps.end()) {
-                CoreRegisters regs;
-                proc.getRegs(ps_getpid(&proc),  &regs);
                 threadStacks.push_back(ThreadStack());
                 threadStacks.back().info.ti_lid = lwp.first;
+                CoreRegisters regs;
+                proc.getRegs(lwp.first,  &regs);
                 threadStacks.back().unwind(proc, regs);
             }
         }
