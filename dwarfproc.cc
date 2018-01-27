@@ -268,7 +268,8 @@ DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame
                 push(frame->getReg(r.getsleb128()));
                 break;
 
-            case DW_OP_entry_value: case DW_OP_GNU_entry_value: {
+            case DW_OP_entry_value:
+            case DW_OP_GNU_entry_value: {
                 auto len = r.getuleb128();
                 DWARFReader r2(r.io, r.getOffset(), r.getOffset() + len);
                 push(eval(proc, r2, frame, reloc));

@@ -1177,7 +1177,7 @@ DwarfEntry::attrForName(DwarfAttrName name) const
         return &it->second;
     if (name != DW_AT_abstract_origin) {
         auto ao = referencedEntry(DW_AT_abstract_origin);
-        if (ao != 0)
+        if (ao != nullptr)
             return ao->attrForName(name);
     }
     return 0;

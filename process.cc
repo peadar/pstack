@@ -434,9 +434,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
                         addr = fbstack.eval(ap.p, attr, ap.frame, ap.frame->elfReloc);
                         os << "=";
                         if (fbstack.isReg) {
-                           IOFlagSave _(os);
-                           os << std::hex << addr;
-                           os << "{r" << fbstack.inReg << "}";
+                           os << std::hex << addr << std::dec << "{r" << fbstack.inReg << "}";
                         } else {
                            os << RemoteValue(ap.p, addr, type);
                         }
@@ -457,6 +455,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
 std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options)
 {
+    os << std::dec;
     os << "thread: " << (void *)thread.info.ti_tid << ", lwp: "
        << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
     int frameNo = 0;
