@@ -1,7 +1,6 @@
 // vim: expandtab:ts=4:sw=4
 #include <stack>
 #include <libgen.h>
-#include <sstream>
 #include <unistd.h>
 #include <elf.h>
 #include <err.h>
@@ -12,12 +11,13 @@
 #include <string.h>
 #include <assert.h>
 
-#include <sstream>
 #include <iostream>
 #include <memory>
+#include <set>
+#include <sstream>
 
-#include <libpstack/elf.h>
-#include <libpstack/dwarf.h>
+#include "libpstack/elf.h"
+#include "libpstack/dwarf.h"
 
 uintmax_t
 DWARFReader::getuleb128shift(int *shift, bool &isSigned)
@@ -1174,11 +1174,21 @@ DwarfEntry::attrForName(DwarfAttrName name) const
     auto it = attributes.find(name);
     if (it != attributes.end())
         return &it->second;
-    if (name != DW_AT_abstract_origin) {
-        auto ao = referencedEntry(DW_AT_abstract_origin);
-        if (ao != nullptr)
-            return ao->attrForName(name);
+
+    // If we have attributes of any of these types, we can look for other attributes in the referenced entry.
+    static std::set<DwarfAttrName> derefs = {
+        DW_AT_abstract_origin,
+        DW_AT_specification
+    };
+
+    if (derefs.find(name) == derefs.end()) {
+        for (auto alt : derefs) {
+            auto ao = referencedEntry(alt);
+            if (ao != nullptr && ao != this)
+                return ao->attrForName(name);
+        }
     }
+
     return 0;
 }
 
