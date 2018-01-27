@@ -78,7 +78,7 @@ Process::load()
     the = td_ta_new(this, &agent);
     if (the != TD_OK) {
         agent = 0;
-        if (verbose && the != TD_NOLIBTHREAD)
+        if (verbose > 0 && the != TD_NOLIBTHREAD)
             *debug << "failed to load thread agent: " << the << std::endl;
     }
 }
@@ -166,7 +166,7 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
         if (frame->ip == sysent) {
             symName = "(syscall)";
         } else {
-            Elf_Off reloc;
+            Elf_Off reloc = 0;
             obj = findObject(frame->ip, &reloc);
             if (obj) {
                 fileName = stringify(*obj->io);
@@ -312,7 +312,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
     if (rv.addr == 0)
        return os << "(null)";
     auto type = rv.type;
-    while (type->type->tag == DW_TAG_typedef)
+    while (type->type->tag == DW_TAG_typedef || type->type->tag == DW_TAG_const_type)
        type = type->referencedEntry(DW_AT_type);
     auto sizeAttr = type->attrForName(DW_AT_byte_size);
     std::vector<char> buf;
@@ -394,6 +394,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
             }
             break;
         }
+        case DW_TAG_reference_type:
         case DW_TAG_pointer_type: {
             if (size == 0) {
                buf.resize(sizeof (void *));
@@ -465,7 +466,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             IOFlagSave _(os);
             os << "#" << std::left << std::dec << std::setw(2) << std::setfill(' ') << frameNo++ << " ";
             os << std::right << std::hex << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->ip;
-            if (verbose)
+            if (verbose > 0)
                 os << "/" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa;
             os << " ";
         }
@@ -607,7 +608,7 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             if (found != std::string::npos)
                 path.replace(found, it->first.size(), it->second);
         }
-        if (verbose && path != startPath)
+        if (verbose > 0 && path != startPath)
             *debug << "replaced " << startPath << " with " << path << std::endl;
 
         try {

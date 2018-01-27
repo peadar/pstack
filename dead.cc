@@ -9,8 +9,8 @@ CoreProcess::CoreProcess(
         const PathReplacementList &pathReplacements_,
         DwarfImageCache &imageCache
         )
-    : Process(exe, std::make_shared<CoreReader>(this), pathReplacements_, imageCache)
-    , coreImage(core)
+    : Process(std::move(exe), std::make_shared<CoreReader>(this), pathReplacements_, imageCache)
+    , coreImage(std::move(core))
 {
 }
 

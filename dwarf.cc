@@ -60,22 +60,21 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
 }
 
 static std::shared_ptr<const Reader>
-sectionReader(std::shared_ptr<ElfObject> obj, const char *name)
+sectionReader(const ElfObject &obj, const char *name)
 {
-    auto &sec = obj->getSection(name, SHT_PROGBITS);
-    return sec.io;
+    return obj.getSection(name, SHT_PROGBITS).io;
 }
 
 DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj, DwarfImageCache &cache_)
     : altImageLoaded(false)
     , imageCache(cache_)
-    , pubnamesh(sectionReader(obj, ".debug_pubnames"))
-    , arangesh(sectionReader(obj, ".debug_aranges"))
-    , info(sectionReader(obj, ".debug_info"))
+    , pubnamesh(sectionReader(*obj, ".debug_pubnames"))
+    , arangesh(sectionReader(*obj, ".debug_aranges"))
+    , info(sectionReader(*obj, ".debug_info"))
     , elf(obj)
-    , debugStrings(sectionReader(obj, ".debug_str"))
-    , abbrev(sectionReader(obj, ".debug_abbrev"))
-    , lineshdr(sectionReader(obj, ".debug_line"))
+    , debugStrings(sectionReader(*obj, ".debug_str"))
+    , abbrev(sectionReader(*obj, ".debug_abbrev"))
+    , lineshdr(sectionReader(*obj, ".debug_line"))
 {
     auto f = [this, &obj](const char *name, FIType ftype) {
         auto &section = obj->getSection(name, SHT_PROGBITS);
@@ -438,7 +437,7 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
     }
 }
 
-DwarfFileEntry::DwarfFileEntry(const std::string &name_, std::string dir_,
+DwarfFileEntry::DwarfFileEntry(const std::string &name_, const std::string &dir_,
         unsigned lastMod_, unsigned length_)
     : name(name_)
     , directory(dir_)
@@ -596,10 +595,10 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
     }
 }
 
-DwarfEntry::DwarfEntry(DWARFReader &r, intmax_t code, DwarfUnit *unit_, intmax_t offset_, DwarfEntry *parent_)
+DwarfEntry::DwarfEntry(DWARFReader &r, DwarfTag code, DwarfUnit *unit_, intmax_t offset_, DwarfEntry *parent_)
     : parent(parent_)
     , unit(unit_)
-    , type(&unit->abbreviations.find(DwarfTag(code))->second)
+    , type(&unit->abbreviations.find(code)->second)
     , offset(offset_)
 {
 
@@ -636,8 +635,8 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
 {
     while (!r.empty()) {
         intmax_t offset = r.getOffset();
-        intmax_t code = r.getuleb128();
-        if (code == 0)
+        intmax_t tagUleb = r.getuleb128();
+        if (tagUleb == 0)
             return;
 #ifdef NOTYET
         auto inserted = allEntries.emplace(std::piecewise_construct,
@@ -645,7 +644,7 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
                     std::forward_as_tuple(r, code, this, offset, parent));
         entries.push_back(&inserted.first->second);
 #else
-        DwarfEntry *entry = new DwarfEntry(r, code, this, offset, parent);
+        DwarfEntry *entry = new DwarfEntry(r, DwarfTag(tagUleb), this, offset, parent);
         allEntries[offset].reset(entry);
         entries.push_back(entry);
 #endif
