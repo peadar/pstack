@@ -484,7 +484,7 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
     }
 
     case DW_FORM_strp:
-        value.addr = r.getint(entry->unit->dwarfLen);
+        value.addr = r.getint(entry->unit->version <= 2 ? 4 : entry->unit->dwarfLen);
         break;
 
     case DW_FORM_GNU_ref_alt:
