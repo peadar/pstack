@@ -142,7 +142,6 @@ LiveProcess::resumeProcess()
 {
     if (verbose >= 1)
         *debug << "resuming process " << pid << "\n";
-
     listThreads([this] (const td_thrhandle_t *thr) {
         if (td_thr_dbresume(thr) == TD_NOCAPAB) {
             td_thrinfo_t info;
@@ -167,22 +166,18 @@ LiveProcess::stop(lwpid_t pid)
     if (tcb.stopCount++ != 0)
         return;
 
-    if (verbose >= 0)
-        *debug << "stopping LWP " << pid << "\n";
-
     gettimeofday(&tcb.stoppedAt, 0);
-    if (ptrace(PT_ATTACH, pid, 0, 0) == 0) {
-        int status;
-        pid_t waitedpid = waitpid(pid, &status, pid == this->pid ? 0 : __WCLONE);
-        if (waitedpid != -1) {
-            if (verbose >= 2)
-                *debug << "stopped LWP " << pid << "\n";
-            return;
-        }
-        if (verbose >= 2)
-            *debug << "failed to stop LWP " << pid << ": wait failed: " << strerror(errno) << "\n";
+    if (ptrace(PT_ATTACH, pid, 0, 0) != 0) {
+        *debug << "failed to stop LWP " << pid << ": ptrace failed: " << strerror(errno) << "\n";
         return;
     }
-    if (verbose >= 2)
-        *debug << "failed to stop LWP " << pid << ": ptrace failed: " << strerror(errno) << "\n";
+
+    int status;
+    pid_t waitedpid = waitpid(pid, &status, pid == this->pid ? 0 : __WCLONE);
+    if (waitedpid == -1) {
+        *debug << "failed to stop LWP " << pid << ": wait failed: " << strerror(errno) << "\n";
+        return;
+    }
+    if (verbose >= 1)
+        *debug << "stopped LWP " << pid << "\n";
 }
