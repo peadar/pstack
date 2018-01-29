@@ -1,21 +1,23 @@
+#include "libpstack/dump.h"
+#include "libpstack/dwarf.h"
+#include "libpstack/proc.h"
+#include "libpstack/ps_callback.h"
+
+#include <sys/types.h>
+
 #include <sysexits.h>
 #include <unistd.h>
-#include <iostream>
-#include <sys/types.h>
-#include <signal.h>
-#include <set>
 
-#include <libpstack/dwarf.h>
-#include <libpstack/dump.h>
-#include <libpstack/elf.h>
-#include <libpstack/proc.h>
-#include <libpstack/ps_callback.h>
+#include <csignal>
+
+#include <iostream>
+#include <set>
 
 #ifdef WITH_PYTHON
 extern std::ostream & pythonStack(Process &proc, std::ostream &os, const PstackOptions &);
 #endif
 
-static int usage(void);
+static int usage();
 std::ostream &
 pstack(Process &proc, std::ostream &os, const PstackOptions &options)
 {
@@ -138,37 +140,34 @@ emain(int argc, char **argv)
        for (i = optind; i < argc; i++) {
            pid = atoi(argv[i]);
            try {
-               if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
-                   // It's a file: should be ELF, treat core and exe differently
-
-                   // Don't put cores in the cache
-                   auto obj = std::make_shared<ElfObject>(imageCache, loadFile(argv[i]));
-
-                   if (obj->getElfHeader().e_type == ET_CORE) {
-                           CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
-                           proc.load(options);
-                           if (python)
-                               pythonStack(proc, std::cout, options);
-                           else
-                               pstack(proc, std::cout, options);
-
-                   } else {
-                       exec = obj;
-                   }
-               } else {
-                   LiveProcess proc(exec, pid, PathReplacementList(), imageCache);
+               auto doStack = [python, &options] (Process &proc) {
                    proc.load(options);
                    if (python)
                        pythonStack(proc, std::cout, options);
                    else
                        pstack(proc, std::cout, options);
-               }
+               };
+               if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
+                   // It's a file: should be ELF, treat core and exe differently
+                   // Don't put cores in the cache
+                   auto obj = std::make_shared<ElfObject>(imageCache, loadFile(argv[i]));
 
+                   if (obj->getElfHeader().e_type == ET_CORE) {
+                       CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
+                       doStack(proc);
+                   } else {
+                       exec = obj;
+                   }
+               } else {
+                   // It's a PID.
+                   LiveProcess proc(exec, pid, PathReplacementList(), imageCache);
+                   doStack(proc);
+               }
            } catch (const std::exception &e) {
                std::cout << "failed to process " << argv[i] << ": " << e.what() << "\n";
            }
        }
-       if (sleepTime)
+       if (sleepTime != 0)
           sleep(sleepTime);
     } while (sleepTime != 0);
     return 0;
@@ -187,7 +186,7 @@ main(int argc, char **argv)
 }
 
 static int
-usage(void)
+usage()
 {
     std::clog <<
         "usage: pstack\n"

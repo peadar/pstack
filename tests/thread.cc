@@ -40,6 +40,5 @@ main(int argc, char *argv[])
       pthread_mutex_unlock(&l);
    }
    std::clog << "proc " << getpid() << std::endl;
-   pause();
    raise(SIGBUS);
 }

@@ -28,7 +28,6 @@ LiveProcess::LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid_,
              std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")),
           repls, imageCache)
     , pid(pid_)
-    , stopCount(0)
 {
    (void)ps_getpid(this);
 }

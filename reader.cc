@@ -1,11 +1,13 @@
-#include <libpstack/util.h>
-#include <unistd.h>
-#include <stdint.h>
-#include <unistd.h>
-#include <iostream>
-#include <fcntl.h>
-#include <assert.h>
+#include "libpstack/util.h"
+
 #include <sys/stat.h>
+
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <cassert>
+#include <cstdint>
+#include <iostream>
 
 using std::string;
 
@@ -36,7 +38,7 @@ FileReader::size() const
        struct stat buf;
        int rc = fstat(file, &buf);
        if (rc == -1)
-           throw Exception() << "fstat failed: can't find size of file: " << strerror(errno);
+           throw (Exception() << "fstat failed: can't find size of file: " << strerror(errno));
        fileSize = buf.st_size;
     }
     return fileSize;
@@ -44,7 +46,7 @@ FileReader::size() const
 
 
 bool
-FileReader::openfile(int &file, std::string name_)
+FileReader::openfile(int &file, const std::string &name_)
 {
     auto fd = open(name_.c_str(), O_RDONLY);
     if (fd != -1) {
@@ -55,13 +57,13 @@ FileReader::openfile(int &file, std::string name_)
     return false;
 }
 
-FileReader::FileReader(const string &name_)
-    : name(name_)
+FileReader::FileReader(string name_)
+    : name(std::move(name_))
     , file(-1)
     , fileSize(-1)
 {
-    if (!openfile(file, name_))
-        throw Exception() << "cannot open file '" << name_ << "': " << strerror(errno);
+    if (!openfile(file, name))
+        throw (Exception() << "cannot open file '" << name << "': " << strerror(errno));
 }
 
 FileReader::~FileReader()
@@ -79,7 +81,7 @@ size_t
 MemReader::read(off_t off, size_t count, char *ptr) const
 {
     if (off > off_t(len))
-        throw Exception() << "read past end of memory";
+        throw (Exception() << "read past end of memory");
     size_t rc = std::min(count, len - size_t(off));
     memcpy(ptr, data + off, rc);
     return rc;
@@ -97,7 +99,8 @@ Reader::readString(off_t offset) const
     string res;
     for (off_t s = size(); offset < s; ++offset) {
         char c;
-        read(offset, 1, &c);
+        if (read(offset, 1, &c) != 1)
+            break;
         if (c == 0)
             break;
         res += c;
@@ -110,11 +113,11 @@ FileReader::read(off_t off, size_t count, char *ptr) const
 {
     auto rc = pread(file, ptr, count, off);
     if (rc == -1)
-        throw Exception()
+        throw (Exception()
             << "read " << count
             << " at " << off
             << " on " << *this
-            << " failed: " << strerror(errno);
+            << " failed: " << strerror(errno));
     return rc;
 }
 
@@ -132,14 +135,14 @@ CacheReader::Page::load(const Reader &r, off_t offset_)
 }
 
 CacheReader::CacheReader(std::shared_ptr<const Reader> upstream_)
-    : upstream(upstream_)
+    : upstream(move(upstream_))
 {
 }
 
 CacheReader::~CacheReader()
 {
-    for (auto i = pages.begin(); i != pages.end(); ++i)
-        delete *i;
+    for (auto &i : pages)
+        delete i;
 }
 
 CacheReader::Page *
@@ -171,34 +174,34 @@ CacheReader::getPage(off_t pageoff) const
 }
 
 size_t
-CacheReader::read(off_t absoff, size_t count, char *ptr) const
+CacheReader::read(off_t off, size_t count, char *ptr) const
 {
-    off_t startoff = absoff;
+    off_t startoff = off;
     for (;;) {
         if (count == 0)
             break;
-        size_t offsetOfDataInPage = absoff % PAGESIZE;
-        off_t offsetOfPageInFile = absoff - offsetOfDataInPage;
+        size_t offsetOfDataInPage = off % PAGESIZE;
+        off_t offsetOfPageInFile = off - offsetOfDataInPage;
         Page *page = getPage(offsetOfPageInFile);
         if (page == 0)
             break;
         size_t chunk = std::min(page->len - offsetOfDataInPage, count);
         memcpy(ptr, page->data + offsetOfDataInPage, chunk);
-        absoff += chunk;
+        off += chunk;
         count -= chunk;
         ptr += chunk;
         if (page->len != PAGESIZE)
             break;
     }
-    return absoff - startoff;
+    return off - startoff;
 }
 
 string
-CacheReader::readString(off_t offset) const
+CacheReader::readString(off_t off) const
 {
-    auto &entry = stringCache[offset];
+    auto &entry = stringCache[off];
     if (entry.isNew) {
-        entry.value = Reader::readString(offset);
+        entry.value = Reader::readString(off);
         entry.isNew = false;
     }
     return entry.value;

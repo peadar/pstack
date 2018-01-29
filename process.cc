@@ -1,19 +1,20 @@
-#include <set>
-#include <iomanip>
-#include <limits>
-#include <cassert>
-#include <limits>
-#include <limits.h>
-#include <iostream>
-#include <link.h>
-#include <unistd.h>
-#include <libpstack/ps_callback.h>
+#include "libpstack/dump.h"
 #define REGMAP(a,b)
 #include "libpstack/dwarf/archreg.h"
+#include "libpstack/dwarf.h"
+#include "libpstack/proc.h"
+#include "libpstack/ps_callback.h"
 
-#include <libpstack/proc.h>
-#include <libpstack/dwarf.h>
-#include <libpstack/dump.h>
+#include <link.h>
+#include <unistd.h>
+
+#include <cassert>
+#include <climits>
+
+#include <iomanip>
+#include <iostream>
+#include <limits>
+#include <set>
 
 static size_t gMaxFrames = 1024; /* max number of frames to read */
 
@@ -36,7 +37,7 @@ PstackOptions::operator () (PstackOption opt) const
 }
 
 Process::Process(std::shared_ptr<ElfObject> exec,
-                  std::shared_ptr<Reader> io_,
+                  std::shared_ptr<Reader> memory,
                   const PathReplacementList &prl,
                   DwarfImageCache &cache)
     : entry(0)
@@ -44,11 +45,11 @@ Process::Process(std::shared_ptr<ElfObject> exec,
     , vdsoBase(0)
     , isStatic(false)
     , sysent(0)
-    , agent(0)
-    , execImage(exec)
+    , agent(nullptr)
+    , execImage(std::move(exec))
     , pathReplacements(prl)
     , imageCache(cache)
-    , io(std::make_shared<CacheReader>(io_))
+    , io(std::make_shared<CacheReader>(memory))
 {
    if (exec)
       entry = exec->getElfHeader().e_entry;
@@ -68,7 +69,7 @@ Process::load(const PstackOptions &options)
         throw Exception() << "no executable image located for process";
 
     Elf_Addr r_debug_addr = findRDebugAddr();
-    isStatic = (r_debug_addr == 0 || r_debug_addr == (Elf_Addr)-1);
+    isStatic = r_debug_addr == 0 || r_debug_addr == Elf_Addr(-1);
     if (isStatic)
         addElfObject(execImage, 0);
     else
@@ -78,7 +79,7 @@ Process::load(const PstackOptions &options)
         td_err_e the;
         the = td_ta_new(this, &agent);
         if (the != TD_OK) {
-            agent = 0;
+            agent = nullptr;
             if (verbose > 0 && the != TD_NOLIBTHREAD)
                 *debug << "failed to load thread agent: " << the << std::endl;
         }
@@ -141,7 +142,7 @@ Process::processAUXV(const Reader &auxio)
                     *debug << "filename from auxv: " << exeName << "\n";
                 if (!execImage) {
                     execImage = imageCache.getImageForName(exeName);
-                    if (!entry)
+                    if (entry == 0)
                        entry = execImage->getElfHeader().e_entry;
                 }
 
@@ -158,7 +159,6 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
         << ", \"ti_type\": " << thread.info.ti_type
         << ", \"stack\": [ ";
 
-    const char *frameSep = "";
     for (auto &frame : thread.stack) {
         Elf_Addr objIp = 0;
         std::shared_ptr<ElfObject> obj;
@@ -177,9 +177,7 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
             }
         }
 
-        os << frameSep << "{ \"ip\": " << intptr_t(frame->ip);
-
-        frameSep = ", ";
+        os << "{ \"ip\": " << intptr_t(frame->ip);
 
         if (symName != "")
             os << ", \"function\": \"" << symName << "\"";
@@ -190,14 +188,13 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
             auto di = getDwarf(obj);
             if (di) {
                 auto src = di->sourceFromAddr(objIp - 1);
-                for (auto ent = src.begin(); ent != src.end(); ++ent)
+                for (auto &ent : src)
                     os
-                        << ", \"source\": \"" << ent->first << "\""
-                        << ", \"line\": " << ent->second;
+                        << ", \"source\": \"" << ent.first << "\""
+                        << ", \"line\": " << ent.second;
             }
         }
         os << " }";
-        frameSep = ", ";
     }
     return os << " ] }";
 }
@@ -243,7 +240,7 @@ findEntryForFunc(Elf_Addr address, const DwarfEntry *entry)
       default:
          for (auto &child : entry->children) {
             auto descendent = findEntryForFunc(address, child);
-            if (descendent)
+            if (descendent != nullptr)
                return descendent;
          }
          break;
@@ -260,7 +257,7 @@ struct ArgPrint {
 std::string
 typeName(const DwarfEntry *type)
 {
-    if (type == 0) {
+    if (type == nullptr) {
         return "void";
     }
     std::string name = type->name();
@@ -318,13 +315,16 @@ operator << (std::ostream &os, const RemoteValue &rv)
        type = type->referencedEntry(DW_AT_type);
     auto sizeAttr = type->attrForName(DW_AT_byte_size);
     std::vector<char> buf;
-    uintmax_t size = sizeAttr ? *sizeAttr : uintmax_t(0);
-    if (sizeAttr) {
+    uintmax_t size;
+    if (sizeAttr != nullptr) {
+        size = uintmax_t(*sizeAttr);
         buf.resize(size);
         auto rc = rv.p.io->read(rv.addr, size, &buf[0]);
         if (rc != size) {
             return os << "<error reading " << size << " bytes from " << rv.addr << ", got " << rc << ">";
         }
+    } else {
+       size = 0;
     }
 
     IOFlagSave _(os);
@@ -334,7 +334,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
                 os << "unrepresentable(1)";
             }
             auto encodingAttr = type->attrForName(DW_AT_encoding);
-            uintmax_t encoding = *encodingAttr;
+            auto encoding = uintmax_t(*encodingAttr);
 
             switch (encoding) {
                 case DW_ATE_address:
@@ -402,7 +402,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
                buf.resize(sizeof (void *));
                rv.p.io->read(rv.addr, sizeof (void **), &buf[0]);
             }
-            Elf_Addr remote = Elf_Addr(*(void **)&buf[0]);
+            auto remote = Elf_Addr(*(void **)&buf[0]);
             auto base = type->referencedEntry(DW_AT_type);
             if (base && base->name() == "char") {
                std::string s = rv.p.io->readString(remote);
@@ -429,7 +429,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
                 const DwarfEntry *type = child->referencedEntry(DW_AT_type);
                 Elf_Addr addr = 0;
                 os << sep << name;
-                if (type) {
+                if (type != nullptr) {
                     const DwarfAttribute *attr;
 
                     if ((attr = child->attrForName(DW_AT_location)) != nullptr) {
@@ -501,13 +501,13 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             }
 
 
-            std::string sigmsg = frame->fde && frame->fde->cie->isSignalHandler ?  "[signal handler]" : "";
+            std::string sigmsg = frame->fde != nullptr && frame->fde->cie->isSignalHandler ?  "[signal handler]" : "";
             std::shared_ptr<DwarfUnit> dwarfUnit;
-            for (auto u : units) {
+            for (const auto &u : units) {
                 // find the DIE for this function
                 for (auto it : u->entries) {
                     const DwarfEntry *de = findEntryForFunc(objIp - 1, it);
-                    if (de) {
+                    if (de != nullptr) {
                         symName = de->name();
                         if (symName == "") {
                             obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
@@ -580,7 +580,7 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
 
     /* Iterate over the r_debug structure's entries, loading libraries */
     struct link_map map;
-    for (Elf_Addr mapAddr = (Elf_Addr)rDebug.r_map; mapAddr; mapAddr = (Elf_Addr)map.l_next) {
+    for (auto mapAddr = Elf_Addr(rDebug.r_map); mapAddr != 0; mapAddr = Elf_Addr(map.l_next)) {
         io->readObj(mapAddr, &map);
         // If we see the executable, just add it in and avoid going through the path replacement work
         if (mapAddr == Elf_Addr(rDebug.r_map)) {
@@ -660,12 +660,12 @@ Process::findRDebugAddr()
 std::shared_ptr<ElfObject>
 Process::findObject(Elf_Addr addr, Elf_Off *reloc) const
 {
-    for (auto i = objects.begin(); i != objects.end(); ++i) {
-        for (auto &phdr : i->object->getSegments(PT_LOAD)) {
-            Elf_Off addrReloc = addr - i->reloc;
+    for (auto &candidate : objects) {
+        for (auto &phdr : candidate.object->getSegments(PT_LOAD)) {
+            Elf_Off addrReloc = addr - candidate.reloc;
             if (addrReloc >= phdr.p_vaddr && addrReloc < phdr.p_vaddr + phdr.p_memsz) {
-                *reloc = i->reloc;
-                return i->object;
+                *reloc = candidate.reloc;
+                return candidate.object;
             }
         }
     }
@@ -673,31 +673,31 @@ Process::findObject(Elf_Addr addr, Elf_Off *reloc) const
 }
 
 Elf_Addr
-Process::findNamedSymbol(const char *objectName, const char *symbolName) const
+Process::findNamedSymbol(const char *objName, const char *symbolName) const
 {
     if (isStatic) // static exe: ignore object name.
-        objectName = 0;
+        objName = 0;
     for (auto &loaded : objects) {
-        if (objectName != 0) {
+        if (objName != 0) {
             auto objname = stringify(*loaded.object->io);
-            if (objname != std::string(objectName)) {
+            if (objname != std::string(objName)) {
                auto p = objname.rfind('/');
                if (p != std::string::npos)
                    objname = objname.substr(p + 1, std::string::npos);
-               if (objname != std::string(objectName))
+               if (objname != std::string(objName))
                    continue;
             }
         }
         Elf_Sym sym;
         if (loaded.object->findSymbolByName(symbolName, sym))
             return sym.st_value + loaded.reloc;
-        if (objectName)
+        if (objName)
             break;
     }
     Exception e;
     e << "symbol " << symbolName << " not found";
-    if (objectName)
-        e << " in " << objectName;
+    if (objName)
+        e << " in " << objName;
     throw e;
 }
 

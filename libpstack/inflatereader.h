@@ -8,7 +8,7 @@ class InflateReader : public MemReader {
     InflateReader(const AllocMemReader &) = delete;
     InflateReader() = delete;
     public:
-    InflateReader(size_t uncompressed_size, std::shared_ptr<Reader> downstream);
+    InflateReader(size_t inflatedSize, std::shared_ptr<Reader> upstream);
     ~InflateReader() { delete[] data; }
 };
 

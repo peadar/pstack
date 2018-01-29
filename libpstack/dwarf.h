@@ -77,7 +77,7 @@ struct DwarfAttributeSpec {
 struct DwarfAbbreviation {
     intmax_t code;
     DwarfTag tag;
-    enum DwarfHasChildren hasChildren;
+    bool hasChildren;
     std::list<DwarfAttributeSpec> specs;
     DwarfAbbreviation(DWARFReader &, intmax_t);
     DwarfAbbreviation() {}
@@ -141,10 +141,10 @@ public:
     DwarfAttrName name() const { return spec->name; }
     ~DwarfAttribute() { }
     DwarfAttribute() : spec(0), entry(0) {}
-    operator std::string() const;
-    operator intmax_t() const;
-    operator uintmax_t() const;
-    operator bool() const { return value.flag; }
+    explicit operator std::string() const;
+    explicit operator intmax_t() const;
+    explicit operator uintmax_t() const;
+    explicit operator bool() const { return value.flag; }
     const DwarfEntry *getReference() const;
     DwarfBlock &block() { return value.block; }
     const DwarfBlock &block() const { return value.block; }
@@ -169,8 +169,8 @@ public:
     DwarfEntry(DWARFReader &, DwarfTag, DwarfUnit *, intmax_t, DwarfEntry *);
     std::string name() const {
         const DwarfAttribute *attr = attrForName(DW_AT_name);
-        if (attr)
-           return *attr;
+        if (attr != nullptr)
+           return std::string(*attr);
         return "";
     }
 };
@@ -188,7 +188,7 @@ public:
     std::string directory;
     unsigned lastMod;
     unsigned length;
-    DwarfFileEntry(const std::string &name_, const std::string &dir_, unsigned lastMod_, unsigned length_);
+    DwarfFileEntry(std::string name_, std::string dir_, unsigned lastMod_, unsigned length_);
     DwarfFileEntry(DWARFReader &r, DwarfLineInfo *info);
 };
 
@@ -199,11 +199,11 @@ public:
     const DwarfFileEntry *file;
     unsigned line;
     unsigned column;
-    unsigned is_stmt:1;
-    unsigned basic_block:1;
-    unsigned end_sequence:1;
-    unsigned prologue_end:1;
-    unsigned epilogue_begin:1;
+    bool is_stmt:1;
+    bool basic_block:1;
+    bool end_sequence:1;
+    bool prologue_end:1;
+    bool epilogue_begin:1;
     DwarfLineState(DwarfLineInfo *);
     void reset(DwarfLineInfo *);
 };
@@ -212,7 +212,7 @@ class DwarfLineInfo {
     DwarfLineInfo(const DwarfLineInfo &) = delete;
 public:
     DwarfLineInfo() {}
-    int default_is_stmt;
+    bool default_is_stmt;
     uint8_t opcode_base;
     std::vector<int> opcode_lengths;
     std::vector<std::string> directories;
@@ -307,7 +307,7 @@ struct DwarfFrameInfo {
     FIType type;
     std::map<Elf_Addr, DwarfCIE> cies;
     std::list<DwarfFDE> fdeList;
-    DwarfFrameInfo(DwarfInfo *, const ElfSection &, FIType type);
+    DwarfFrameInfo(DwarfInfo *, const ElfSection &, FIType);
     DwarfFrameInfo() = delete;
     DwarfFrameInfo(const DwarfFrameInfo &) = delete;
     Elf_Addr decodeCIEFDEHdr(DWARFReader &, Elf_Addr &id, FIType, DwarfCIE **);
@@ -365,7 +365,7 @@ public:
     std::vector<std::pair<const DwarfFileEntry *, int>> sourceFromAddr(uintmax_t addr);
 
     ~DwarfInfo();
-    bool hasRanges() { return arangesh || aranges.size() != 0; }
+    bool hasRanges() { ranges(); return aranges.size() != 0; }
 };
 
 enum DwarfCFAInstruction {

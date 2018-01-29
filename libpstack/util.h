@@ -18,10 +18,10 @@ class Exception : public std::exception {
     mutable std::ostringstream str;
     mutable std::string intermediate;
 public:
-    Exception() {
+    Exception() throw() {
     }
 
-    Exception(const Exception &rhs) {
+    Exception(const Exception &rhs) throw() {
         str << rhs.str.str();
     }
 
@@ -105,10 +105,10 @@ class FileReader : public Reader {
     std::string name;
     int file;
     mutable off_t fileSize;
-    bool openfile(int &file, std::string name_);
+    bool openfile(int &file, const std::string &name_);
 public:
     virtual size_t read(off_t off, size_t count, char *ptr) const override ;
-    FileReader(const std::string &name);
+    FileReader(std::string name_);
     ~FileReader();
     void describe(std::ostream &os) const  override { os << name; }
     off_t size() const override;
@@ -131,10 +131,10 @@ class CacheReader : public Reader {
         size_t len;
         char data[PAGESIZE];
         Page() {};
-        void load(const Reader &r, off_t offset);
+        void load(const Reader &r, off_t offset_);
     };
     mutable std::list<Page *> pages;
-    Page *getPage(off_t offset) const;
+    Page *getPage(off_t pageoff) const;
 public:
     virtual size_t read(off_t off, size_t count, char *ptr) const override;
     virtual void describe(std::ostream &os) const override {
@@ -142,8 +142,8 @@ public:
         // FileReader's filename
         os << *upstream;
     }
-    CacheReader(std::shared_ptr<const Reader> upstream);
-    std::string readString(off_t absoff) const override;
+    CacheReader(std::shared_ptr<const Reader> upstream_);
+    std::string readString(off_t off) const override;
     ~CacheReader();
     off_t size() const override { return upstream->size(); }
 };

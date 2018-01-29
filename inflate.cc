@@ -2,7 +2,7 @@
 #include <libpstack/inflatereader.h>
 #include <zlib.h>
 
-InflateReader::InflateReader(size_t inflatedSize, std::shared_ptr<Reader> inputBuf)
+InflateReader::InflateReader(size_t inflatedSize, std::shared_ptr<Reader> upstream)
     : MemReader(inflatedSize, new char[inflatedSize])
 {
     char xferbuf[32768];
@@ -12,18 +12,18 @@ InflateReader::InflateReader(size_t inflatedSize, std::shared_ptr<Reader> inputB
 
     int window = 15;
     if (inflateInit2(&stream, window) != Z_OK)
-        throw Exception() << "inflateInit2 failed";
+        throw (Exception() << "inflateInit2 failed");
 
     stream.avail_out = inflatedSize;
     stream.next_out = (Bytef *)data;
     bool eof = false;
     size_t inputOffset = 0;
     if (verbose >= 2)
-        *debug << "inflating" << *inputBuf << "...";
+        *debug << "inflating" << *upstream << "...";
     for (bool done = false; !done; ) {
         if (stream.avail_in == 0 && !eof) {
             // keep the input buffer full
-            stream.avail_in = inputBuf->read(inputOffset, sizeof xferbuf, xferbuf);
+            stream.avail_in = upstream->read(inputOffset, sizeof xferbuf, xferbuf);
             inputOffset += stream.avail_in;
             stream.next_in = (Bytef *)xferbuf;
             if (stream.avail_in == 0)
@@ -39,7 +39,7 @@ InflateReader::InflateReader(size_t inflatedSize, std::shared_ptr<Reader> inputB
                     *debug << " [" << writeChunk - stream.avail_out << "]";
                 break;
             default:
-                throw Exception() << "inflate failed";
+                throw (Exception() << "inflate failed");
         }
     }
     if (verbose >= 2)

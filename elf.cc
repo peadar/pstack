@@ -1,10 +1,3 @@
-#include <limits>
-#include <iostream>
-#include <iomanip>
-#include <unistd.h>
-#include <algorithm>
-
-#include "libpstack/util.h"
 #include "libpstack/elf.h"
 #ifdef WITH_ZLIB
 #include "libpstack/inflatereader.h"
@@ -12,6 +5,14 @@
 #ifdef WITH_LZMA
 #include "libpstack/lzmareader.h"
 #endif
+#include "libpstack/util.h"
+
+#include <unistd.h>
+
+#include <algorithm>
+#include <iomanip>
+#include <iostream>
+#include <limits>
 
 using std::string;
 using std::make_shared;
@@ -23,7 +24,7 @@ static uint32_t elf_hash(string);
 bool noDebugLibs;
 
 GlobalDebugDirectories globalDebugDirectories;
-GlobalDebugDirectories::GlobalDebugDirectories()
+GlobalDebugDirectories::GlobalDebugDirectories() throw()
 {
    add("/usr/lib/debug");
    add("/usr/lib/debug/usr"); // Add as a hack for when linker loads from /lib, but package has /usr/lib
@@ -66,18 +67,18 @@ ElfNoteDesc::size() const
 }
 
 ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
-   : notes(this)
-   , imageCache(cache)
+    : io(std::move(io_))
+    , notes(this)
+    , imageCache(cache)
 {
     debugLoaded = false;
-    io = io_;
     int i;
     size_t off;
     io->readObj(0, &elfHeader);
 
     /* Validate the ELF header */
     if (!IS_ELF(elfHeader) || elfHeader.e_ident[EI_VERSION] != EV_CURRENT)
-        throw Exception() << *io << ": content is not an ELF image";
+        throw (Exception() << *io << ": content is not an ELF image");
 
     for (off = elfHeader.e_phoff, i = 0; i < elfHeader.e_phnum; i++) {
         Elf_Phdr hdr;
@@ -119,7 +120,7 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
         if (tab && syms && strings)
             hash.reset(new ElfSymHash(tab.io, syms.io, strings.io));
     } else {
-        hash = 0;
+        hash = nullptr;
     }
 }
 
@@ -129,7 +130,7 @@ ElfObject::getSegmentForAddress(Elf_Off a) const
     for (const auto &hdr : getSegments(PT_LOAD))
         if (hdr.p_vaddr <= a && hdr.p_vaddr + hdr.p_memsz > a)
             return &hdr;
-    return 0;
+    return nullptr;
 }
 
 const ElfObject::ProgramHeaders &
@@ -194,7 +195,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
             if (candidate.st_size + candidate.st_value <= addr)
                 continue;
             auto &sec = sectionHeaders[candidate.st_shndx];
-            if (!(sec.shdr.sh_flags & SHF_ALLOC))
+            if ((sec.shdr.sh_flags & SHF_ALLOC) == 0)
                 continue;
             sym = candidate;
             name = syminfo.second;
@@ -246,9 +247,9 @@ SymbolSection::linearSearch(const string &name, Elf_Sym &sym)
 
 ElfSymHash::ElfSymHash(std::shared_ptr<const Reader> hash_,
       std::shared_ptr<const Reader> syms_, std::shared_ptr<const Reader> strings_)
-    : hash(hash_)
-    , syms(syms_)
-    , strings(strings_)
+    : hash(std::move(hash_))
+    , syms(std::move(syms_))
+    , strings(std::move(strings_))
 {
     // read the hash table into local memory.
     size_t words = hash->size() / sizeof (Elf_Word);
@@ -293,9 +294,7 @@ ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
     return debugData ? debugData->findSymbolByName(name, sym) : false;
 }
 
-ElfObject::~ElfObject()
-{
-}
+ElfObject::~ElfObject() = default;
 
 std::shared_ptr<ElfObject>
 ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
@@ -395,7 +394,7 @@ ImageCache::getImageForName(const std::string &name) {
         if (res != nullptr)
             return res;
         // Don't return null to keep it consistent with a previous failure to load.
-        throw Exception() << "previously failed to load " << name;
+        throw (Exception() << "previously failed to load " << name);
     }
     auto &item = cache[name];
     item = std::make_shared<ElfObject>(*this, loadFile(name));
@@ -432,13 +431,13 @@ ImageCache::getImageIfLoaded(const std::string &name, bool &found)
 std::shared_ptr<ElfObject>
 ImageCache::getDebugImage(const std::string &name) {
     // XXX: verify checksum.
-    for (auto dir : globalDebugDirectories.dirs) {
+    for (const auto &dir : globalDebugDirectories.dirs) {
         bool found;
         auto img = getImageIfLoaded(dir + "/" + name, found);
         if (found)
             return img;
     }
-    for (auto dir : globalDebugDirectories.dirs) {
+    for (const auto &dir : globalDebugDirectories.dirs) {
         try {
            return getImageForName(dir + "/" + name);
         }

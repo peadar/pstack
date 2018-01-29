@@ -92,12 +92,12 @@ ElfType(Chdr)
 
 #if ELF_BITS==64
 #define ELF_ST_TYPE ELF64_ST_TYPE
-#define IS_ELF(a) 1
+#define IS_ELF(a) true
 #endif
 
 #if ELF_BITS==32
 #define ELF_ST_TYPE ELF32_ST_TYPE
-#define IS_ELF(a) 1
+#define IS_ELF(a) true
 #endif
 
 
@@ -119,7 +119,7 @@ struct SymbolSection;
 struct ElfSection {
     Elf_Shdr shdr;
     std::shared_ptr<const Reader> io;
-    void open(const std::shared_ptr<const Reader> &image, off_t offset);
+    void open(const std::shared_ptr<const Reader> &image, off_t off);
     operator bool() const { return shdr.sh_type != SHT_NULL; }
 };
 
@@ -139,7 +139,7 @@ public:
 
     // construct/destruct. Note you will generally need to use make_shared to
     // create an ElfObject
-    ElfObject(ImageCache &imageCache, std::shared_ptr<const Reader>);
+    ElfObject(ImageCache &, std::shared_ptr<const Reader>);
     ~ElfObject();
 
     // Accessing sections.
@@ -150,7 +150,7 @@ public:
     const ProgramHeaders &getSegments(Elf_Word type) const;
 
     // Accessing symbols
-    SymbolSection getSymbols(const std::string &table);
+    SymbolSection getSymbols(const std::string &tableName);
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(const std::string &name, Elf_Sym &sym);
 
@@ -223,8 +223,8 @@ class ElfSymHash {
     const Elf_Word *chains;
     const Elf_Word *buckets;
 public:
-    ElfSymHash(std::shared_ptr<const Reader> hash,
-          std::shared_ptr<const Reader> syms,
+    ElfSymHash(std::shared_ptr<const Reader> hash_,
+          std::shared_ptr<const Reader> syms_,
           std::shared_ptr<const Reader> strings_);
     bool findSymbol(Elf_Sym &sym, const std::string &name);
 };
@@ -337,7 +337,7 @@ class GlobalDebugDirectories {
 public:
     std::vector<std::string> dirs;
     void add(const std::string &);
-    GlobalDebugDirectories();
+    GlobalDebugDirectories() throw();
 };
 extern GlobalDebugDirectories globalDebugDirectories;
 

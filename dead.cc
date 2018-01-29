@@ -1,15 +1,16 @@
-#include <iostream>
-#include "libpstack/elf.h"
 #include "libpstack/dwarf.h"
+#include "libpstack/elf.h"
 #include "libpstack/proc.h"
 
+#include <iostream>
+
 CoreProcess::CoreProcess(
-        std::shared_ptr<ElfObject> exe,
+        std::shared_ptr<ElfObject> exec,
         std::shared_ptr<ElfObject> core,
         const PathReplacementList &pathReplacements_,
         DwarfImageCache &imageCache
         )
-    : Process(std::move(exe), std::make_shared<CoreReader>(this), pathReplacements_, imageCache)
+    : Process(std::move(exec), std::make_shared<CoreReader>(this), pathReplacements_, imageCache)
     , coreImage(std::move(core))
 {
 }
@@ -35,21 +36,21 @@ void CoreReader::describe(std::ostream &os) const
 }
 
 static size_t
-readFromHdr(std::shared_ptr<ElfObject> obj, const Elf_Phdr *hdr, Elf_Off addr, char *ptr, Elf_Off size, Elf_Off *toClear)
+readFromHdr(const ElfObject &obj, const Elf_Phdr *hdr, Elf_Off addr, char *ptr, Elf_Off size, Elf_Off *toClear)
 {
     Elf_Off rv, off = addr - hdr->p_vaddr; // offset in header of our ptr.
     if (off < hdr->p_filesz) {
         // some of the data is in the file: read min of what we need and // that.
         Elf_Off fileSize = std::min(hdr->p_filesz - off, size);
-        rv = obj->io->read(hdr->p_offset + off, fileSize, ptr);
+        rv = obj.io->read(hdr->p_offset + off, fileSize, ptr);
         if (rv != fileSize)
-            throw Exception() << "unexpected short read in core file";
+            throw (Exception() << "unexpected short read in core file");
         off += rv;
         size -= rv;
     } else {
         rv = 0;
     }
-    if (toClear)
+    if (toClear != nullptr)
         *toClear = std::max(
             *toClear > rv
                 ? *toClear - rv
@@ -64,38 +65,38 @@ size_t
 CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 {
     Elf_Off start = remoteAddr;
-    while (size) {
+    while (size != 0) {
         auto obj = p->coreImage;
 
         Elf_Off zeroes = 0;
         // Locate "remoteAddr" in the core file
         auto hdr = obj->getSegmentForAddress(remoteAddr);
-        if (hdr) {
+        if (hdr != nullptr) {
             // The start address appears in the core (or is defaulted from it)
-            size_t rc = readFromHdr(obj, hdr, remoteAddr, ptr, size, &zeroes);
+            size_t rc = readFromHdr(*obj, hdr, remoteAddr, ptr, size, &zeroes);
             remoteAddr += rc;
             ptr += rc;
             size -= rc;
-            if (rc && zeroes == 0) // we got some data from the header, and there's nothing to default
+            if (rc != 0 && zeroes == 0) // we got some data from the header, and there's nothing to default
                 continue;
         }
 
         // Either no data in core, or it was incomplete to this point: search loaded objects.
-        hdr = 0;
+        hdr = nullptr;
         obj.reset();
         Elf_Off reloc;
-        for (auto i = p->objects.begin(); i != p->objects.end(); ++i) {
-            hdr = i->object->getSegmentForAddress(remoteAddr - i->reloc);
-            if (hdr) {
-                obj = i->object;
-                reloc = i->reloc;
+        for (auto &candidate : p->objects) {
+            hdr = candidate.object->getSegmentForAddress(remoteAddr - candidate.reloc);
+            if (hdr != nullptr) {
+                obj = candidate.object;
+                reloc = candidate.reloc;
                 break;
             }
         }
 
-        if (hdr) {
+        if (hdr != nullptr) {
             // header in an object - try reading from here.
-            size_t rc = readFromHdr(obj, hdr, remoteAddr - reloc, ptr, size, &zeroes);
+            size_t rc = readFromHdr(*obj, hdr, remoteAddr - reloc, ptr, size, &zeroes);
             remoteAddr += rc;
             ptr += rc;
             size -= rc;
@@ -108,7 +109,7 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
         remoteAddr += zeroes;
         ptr += zeroes;
 
-        if (hdr == 0 && zeroes == 0) // Nothing from core, objects, or defaulted. We're stuck.
+        if (hdr == nullptr && zeroes == 0) // Nothing from core, objects, or defaulted. We're stuck.
             break;
     }
     return remoteAddr - start;

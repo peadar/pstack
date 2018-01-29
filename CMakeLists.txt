@@ -5,8 +5,8 @@ math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 set(PSTACK_BIN "pstack" CACHE STRING "Name of the 'pstack' binary")
 set(ELF_BITS ${PLATFORM_BITS} CACHE STRING "32 or 64 - set to 32 to build 32-bit binary on 64-bit platform")
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib" CACHE STRING "Rpath to install for binaries or the empty string")
-
 set(LIBTYPE "STATIC" CACHE STRING "Build libraries as STATIC or SHARED")
+option(TIDY "Run clang-tidy on the source" False)
 
 if(PLATFORM_BITS EQUAL 64 AND ELF_BITS EQUAL 32)
     # we want a 32-bit binary in a 64-bit build environment: use -m32 everywhere
@@ -20,7 +20,9 @@ find_package(LibLZMA)
 find_package(ZLIB)
 find_package(PythonLibs)
 
-add_definitions("-std=c++11 -Wall -Wextra -DELF_BITS=${ELF_BITS} -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
+set(CMAKE_CXX_STANDARD 11)
+
+add_definitions("-Wall -Wextra -DELF_BITS=${ELF_BITS} -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if (ZLIB_FOUND)
@@ -60,6 +62,14 @@ target_link_libraries(dwelf ${LIBLZMA_LIBRARIES} ${ZLIB_LIBRARIES})
 target_link_libraries(procman ${LTHREADDB} dwelf)
 target_link_libraries(${PSTACK_BIN} dwelf procman ${PYTHON_LIBRARIES})
 target_link_libraries(canal dwelf procman)
+
+if (TIDY)
+set (CLANG_TIDY "clang-tidy;-checks=*,-*readability-braces-around-statements,-cppcoreguidelines-pro-type-union-access")
+set_target_properties(canal PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
+set_target_properties(${PSTACK_BIN} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
+set_target_properties(dwelf PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
+set_target_properties(procman PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
+endif()
 
 set_target_properties(dwelf PROPERTIES VERSION 1.0.0 SOVERSION 1)
 set_target_properties(procman PROPERTIES VERSION 1.0.0 SOVERSION 1)

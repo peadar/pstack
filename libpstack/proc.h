@@ -127,7 +127,7 @@ public:
     void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
     std::shared_ptr<ElfObject> findObject(Elf_Addr addr, Elf_Off *reloc) const;
     std::shared_ptr<DwarfInfo> getDwarf(std::shared_ptr<ElfObject>, bool debug = true);
-    Process(std::shared_ptr<ElfObject> obj, std::shared_ptr<Reader> mem, const PathReplacementList &prl, DwarfImageCache &cache);
+    Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> memory, const PathReplacementList &prl, DwarfImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
     virtual void findLWPs() = 0;
@@ -166,16 +166,14 @@ struct LiveThreadList;
 class LiveProcess : public Process {
     pid_t pid;
     friend class LiveReader;
-    int stopCount;
-    friend class StopLWP;
 public:
     LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid, const PathReplacementList &repls, DwarfImageCache &cache);
-    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg);
-    virtual void stop(pid_t lwpid);
-    virtual void resume(pid_t lwpid);
-    void stopProcess();
-    void resumeProcess();
-    virtual void load(const PstackOptions &);
+    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) override;
+    virtual void stop(pid_t lwpid) override;
+    virtual void resume(pid_t lwpid) override;
+    void stopProcess() override;
+    void resumeProcess() override;
+    virtual void load(const PstackOptions &) override;
     virtual void findLWPs() override;
     virtual pid_t getPID() const override;
 };
@@ -184,9 +182,9 @@ class CoreProcess;
 class CoreReader : public Reader {
     CoreProcess *p;
 protected:
-    virtual size_t read(off_t offset, size_t count, char *ptr) const override;
+    virtual size_t read(off_t remoteAddr, size_t size, char *ptr) const override;
 public:
-    CoreReader (CoreProcess *p);
+    CoreReader (CoreProcess *);
     virtual void describe(std::ostream &os) const override;
     off_t size() const override { return std::numeric_limits<off_t>::max(); }
 };
@@ -196,13 +194,13 @@ class CoreProcess : public Process {
     friend class CoreReader;
 public:
     CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<ElfObject> core, const PathReplacementList &, DwarfImageCache &);
-    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg);
-    virtual void stop(lwpid_t);
-    virtual void resume(lwpid_t);
-    void stopProcess();
-    void resumeProcess() { }
+    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) override;
+    virtual void stop(lwpid_t) override;
+    virtual void resume(lwpid_t) override;
+    void stopProcess() override;
+    void resumeProcess()  override { }
     virtual void findLWPs() override;
-    virtual void load(const PstackOptions &);
+    virtual void load(const PstackOptions &) override;
     virtual pid_t getPID() const override;
 };
 
