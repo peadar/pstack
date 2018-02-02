@@ -1135,6 +1135,7 @@ DwarfAttribute::getReference() const
             off = value.addr;
             break;
         case DW_FORM_ref_udata:
+        case DW_FORM_ref1:
         case DW_FORM_ref2:
         case DW_FORM_ref4:
         case DW_FORM_ref8:
