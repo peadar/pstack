@@ -4,7 +4,7 @@
 #include <lzma.h>
 
 static lzma_allocator allocator = {
-   [] ( void *, size_t m, size_t s ) noexcept {  return calloc(m, s); },
+   [] ( void *, size_t m, size_t s ) noexcept { return malloc(m * s); },
    [] ( void *, void *p ) noexcept { free(p); },
    nullptr
 };

@@ -464,6 +464,7 @@ DwarfAttribute::operator std::string() const
 
     case DW_FORM_string:
         return entry->unit->io->readString(value.addr);
+
     default:
         abort();
     }
