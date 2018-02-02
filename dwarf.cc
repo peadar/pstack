@@ -850,7 +850,7 @@ DwarfInfo::sourceFromAddr(uintmax_t addr)
 
 DwarfCallFrame::DwarfCallFrame()
     : cfaReg(0)
-      , cfaValue{ .type = UNDEF }
+    , cfaValue{ .type = UNDEF, .u = { .arch = 0  } }
 {
     cfaReg = 0;
     cfaValue.type = UNDEF;
