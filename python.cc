@@ -33,6 +33,28 @@ pthreadTidOffset(const Process &proc, size_t *offsetp)
     return false;
 }
 
+// This reimplements PyCode_Addr2Line
+int getLine(Process *proc, const PyCodeObject *code, const PyFrameObject *frame)
+{
+    PyVarObject lnotab;
+    proc->io->readObj(Elf_Addr(code->co_lnotab), &lnotab);
+    unsigned char linedata[lnotab.ob_size];
+    proc->io->readObj(Elf_Addr(code->co_lnotab) + offsetof(PyStringObject, ob_sval),
+            &linedata[0], lnotab.ob_size);
+    int line = code->co_firstlineno;
+    int addr = 0;
+    unsigned char *p = linedata;
+    unsigned char *e = linedata + lnotab.ob_size;
+    while (p < e) {
+        addr += *p++;
+        if (addr > frame->f_lasti) {
+            break;
+        }
+        line += *p++;
+    }
+    return line;
+}
+
 /*
  * process one python thread in an interpreter, at remote addr "ptr". 
  * returns the address of the next thread on the list.
@@ -58,9 +80,10 @@ doPyThread(Process &proc, std::ostream &os, Elf_Addr ptr)
         proc.io->readObj(framePtr, &frame);
         PyCodeObject code;
         proc.io->readObj(Elf_Addr(frame.f_code), &code);
+        auto lineNo = getLine(&proc, &code, &frame);
         auto func = proc.io->readString(Elf_Addr(code.co_name) + offsetof(PyStringObject, ob_sval));
         auto file = proc.io->readString(Elf_Addr(code.co_filename) + offsetof(PyStringObject, ob_sval));
-        os << "\t" << func << " in " << file << ":" << frame.f_lineno << "\n";
+        os << "\t" << func << " in " << file << ":" << lineNo << "\n";
     }
     return Elf_Addr(thread.next);
 }
