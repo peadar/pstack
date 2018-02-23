@@ -20,6 +20,20 @@ find_package(LibLZMA)
 find_package(ZLIB)
 find_package(PythonLibs)
 
+find_package(Git)
+if (GIT_FOUND)
+   execute_process(
+      COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
+      OUTPUT_VARIABLE GIT_TAG
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      )
+   message(STATUS "Version from git tag: ${GIT_TAG}")
+else()
+   set(GIT_TAG "unknown")
+   message(STATUS "No git/no version")
+endif()
+add_definitions("-DVERSION=${GIT_TAG}")
+
 set(CMAKE_CXX_STANDARD 11)
 
 add_definitions("-Wall -Wextra -DELF_BITS=${ELF_BITS} -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
@@ -45,7 +59,6 @@ if (PythonLibs_FOUND OR PYTHONLIBS_FOUND)
 else()
    message(WARNING "no python support found")
 endif()
-
 
 # Make sure to use the local libpstack headers rather than what's installed.
 include_directories("." ${LIBLZMA_INCLUDES} ${ZLIB_INCLUDES} ${PYTHON_INCLUDE_DIRS} )

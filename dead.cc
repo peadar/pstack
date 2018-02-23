@@ -167,6 +167,7 @@ CoreProcess::getPID() const
     }
     return -1;
 }
+
 void
 CoreProcess::findLWPs()
 {

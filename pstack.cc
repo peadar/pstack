@@ -13,6 +13,9 @@
 #include <iostream>
 #include <set>
 
+#define XSTR(a) #a
+#define STR(a) XSTR(a)
+
 #ifdef WITH_PYTHON
 extern std::ostream & pythonStack(Process &proc, std::ostream &os, const PstackOptions &);
 #endif
@@ -84,7 +87,7 @@ emain(int argc, char **argv)
     bool python = false;
 #endif
 
-    while ((c = getopt(argc, argv, "b:d:D:hsvnag:pt")) != -1) {
+    while ((c = getopt(argc, argv, "b:d:D:hsVvnag:pt")) != -1) {
         switch (c) {
         case 'g':
             globalDebugDirectories.add(optarg);
@@ -128,6 +131,10 @@ emain(int argc, char **argv)
         case 't':
             options += PstackOptions::threaddb;
             break;
+
+        case 'V':
+            std::clog << STR(VERSION) << "\n";
+            return 0;
         default:
             return usage();
         }
@@ -195,6 +202,7 @@ usage()
         "\t[-h]                         show this message\n"
         "or\n"
         "\t[-v]                         include verbose information to stderr\n"
+        "\t[-V]                         dump git tag of source\n"
         "\t[-s]                         don't include source-level details\n"
         "\t[-g]                         add global debug directory\n"
         "\t[-a]                         show arguments to functions where possible (TODO: not finished)\n"
