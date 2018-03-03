@@ -95,12 +95,12 @@ emain(int argc, char **argv)
         case 'D': {
             auto dumpobj = std::make_shared<ElfObject>(imageCache, loadFile(optarg));
             DwarfInfo di(ElfObject::getDebug(dumpobj), imageCache);
-            std::cout << di;
+            std::cout << json(di);
             return 0;
         }
         case 'd': {
             /* Undocumented option to dump image contents */
-            std::cout << ElfObject(imageCache, loadFile(optarg));
+            std::cout << json(ElfObject(imageCache, loadFile(optarg)));
             return 0;
         }
         case 'h':

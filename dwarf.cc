@@ -96,7 +96,7 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj, DwarfImageCache &cache_)
 }
 
 std::list<DwarfPubnameUnit> &
-DwarfInfo::pubnames()
+DwarfInfo::pubnames() const
 {
     if (pubnamesh) {
         DWARFReader r(pubnamesh);
@@ -144,7 +144,7 @@ DwarfInfo::getUnits() const
 
 
 std::list<DwarfARangeSet> &
-DwarfInfo::ranges()
+DwarfInfo::ranges() const
 {
     if (arangesh) {
         DWARFReader r(arangesh);
@@ -221,7 +221,7 @@ std::string
 DwarfUnit::name() const
 {
     assert(entries.begin() != entries.end());
-    return (*entries.begin())->name();
+    return (*entries.begin()).name();
 }
 
 DwarfUnit::~DwarfUnit() = default;
@@ -638,16 +638,8 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
         intmax_t tagUleb = r.getuleb128();
         if (tagUleb == 0)
             return;
-#ifdef NOTYET
-        auto inserted = allEntries.emplace(std::piecewise_construct,
-                    std::forward_as_tuple(offset),
-                    std::forward_as_tuple(r, code, this, offset, parent));
-        entries.push_back(&inserted.first->second);
-#else
-        auto *entry = new DwarfEntry(r, DwarfTag(tagUleb), this, offset, parent);
-        allEntries[offset].reset(entry);
-        entries.push_back(entry);
-#endif
+        entries.emplace_back(r, DwarfTag(tagUleb), this, offset, parent);
+        allEntries[offset] = &entries.back();
     }
 }
 
@@ -826,8 +818,8 @@ DwarfInfo::sourceFromAddr(uintmax_t addr)
     if (hasRanges()) {
         auto &rangelist = ranges();
         for (auto &rs : rangelist) {
-            for (auto r = rs.ranges.begin(); r != rs.ranges.end(); ++r) {
-                if (r->start <= addr && r->start + r->length > addr) {
+            for (auto &r : rs.ranges) {
+                if (r.start <= addr && r.start + r.length > addr) {
                     units.push_back(getUnit(rs.debugInfoOffset));
                     break;
                 }
@@ -1120,11 +1112,15 @@ const DwarfEntry *
 DwarfEntry::referencedEntry(DwarfAttrName name) const
 {
     auto attr = attrForName(name);
-    return attr != nullptr ? attr->getReference() : nullptr;
-
+    try {
+        return attr != nullptr ? &attr->getReference() : nullptr;
+    }
+    catch (...) {
+        return nullptr;
+    }
 }
 
-const DwarfEntry *
+const DwarfEntry &
 DwarfAttribute::getReference() const
 {
 
@@ -1144,7 +1140,7 @@ DwarfAttribute::getReference() const
         case DW_FORM_GNU_ref_alt: {
             dwarf = dwarf->getAltDwarf().get();
             if (dwarf == nullptr)
-                return nullptr; // XXX: deal with this.
+                throw (Exception() << "no alt reference");
             off = value.addr;
             break;
         }
@@ -1152,11 +1148,11 @@ DwarfAttribute::getReference() const
             abort();
             break;
     }
-    const auto &otherEntry = entry->unit->allEntries.find(off);
+    const auto otherEntry = entry->unit->allEntries.find(off);
 
     // Try this unit first (if we're dealing with the same DwarfInfo)
     if (dwarf == entry->unit->dwarf && otherEntry != entry->unit->allEntries.end())
-        return otherEntry->second.get();
+        return *otherEntry->second;
 
     // Nope - try other units.
     for (const auto &u : dwarf->getUnits()) {
@@ -1164,9 +1160,9 @@ DwarfAttribute::getReference() const
             continue;
         const auto &otherEntry = u->allEntries.find(off);
         if (otherEntry != u->allEntries.end())
-            return otherEntry->second.get();
+            return *otherEntry->second;
     }
-    return nullptr;
+    throw (Exception() << "reference not found");
 }
 
 const DwarfAttribute *

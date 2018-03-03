@@ -24,7 +24,7 @@ struct DwarfFrameInfo;
 struct DwarfUnit;
 
 // The DWARF Unit's allEntries map contains the underlying data for the tree.
-typedef std::list<DwarfEntry *> DwarfEntries;
+typedef std::list<DwarfEntry> DwarfEntries;
 
 #define DWARF_TAG(a,b) a = b,
 enum DwarfTag {
@@ -145,7 +145,7 @@ public:
     explicit operator intmax_t() const;
     explicit operator uintmax_t() const;
     explicit operator bool() const { return value.flag; }
-    const DwarfEntry *getReference() const;
+    const DwarfEntry &getReference() const;
     DwarfBlock &block() { return value.block; }
     const DwarfBlock &block() const { return value.block; }
 };
@@ -225,7 +225,7 @@ struct DwarfUnit {
     DwarfUnit() = delete;
     DwarfUnit(const DwarfUnit &) = delete;
     std::map<DwarfTag, DwarfAbbreviation> abbreviations;
-    std::map<off_t, std::unique_ptr<DwarfEntry>> allEntries;
+    std::map<off_t, DwarfEntry *> allEntries;
 public:
     const DwarfInfo *dwarf;
     std::shared_ptr<const Reader> io;
@@ -335,8 +335,8 @@ public:
  * DwarfInfo represents the interesting bits of the DWARF data.
  */
 class DwarfInfo {
-    std::list<DwarfPubnameUnit> pubnameUnits;
-    std::list<DwarfARangeSet> aranges;
+    mutable std::list<DwarfPubnameUnit> pubnameUnits;
+    mutable std::list<DwarfARangeSet> aranges;
 
     // These are mutable so we can lazy-eval them when getters are called, and
     // maintain logical constness.
@@ -344,8 +344,8 @@ class DwarfInfo {
     mutable std::shared_ptr<DwarfInfo> altDwarf;
     mutable bool altImageLoaded;
     DwarfImageCache &imageCache;
-    std::shared_ptr<const Reader> pubnamesh;
-    std::shared_ptr<const Reader> arangesh;
+    mutable std::shared_ptr<const Reader> pubnamesh;
+    mutable std::shared_ptr<const Reader> arangesh;
 public:
     // XXX: info is public because "block" DwarfAttributes need to read from it.
     std::shared_ptr<const Reader> info;
@@ -357,8 +357,8 @@ public:
     std::shared_ptr<const Reader> abbrev;
     std::shared_ptr<const Reader> lineshdr;
     std::shared_ptr<DwarfInfo> getAltDwarf() const;
-    std::list<DwarfARangeSet> &ranges();
-    std::list<DwarfPubnameUnit> &pubnames();
+    std::list<DwarfARangeSet> &ranges() const;
+    std::list<DwarfPubnameUnit> &pubnames() const;
     std::shared_ptr<DwarfUnit> getUnit(off_t offset);
     std::list<std::shared_ptr<DwarfUnit>> getUnits() const;
     DwarfInfo(std::shared_ptr<ElfObject>, DwarfImageCache &);
@@ -510,7 +510,7 @@ public:
        assert(end >= off_);
        off = off_;
     }
-    bool empty() {
+    bool empty() const {
        return off == end;
     }
     Elf_Off getlength(size_t *);

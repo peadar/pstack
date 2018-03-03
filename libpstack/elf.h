@@ -44,6 +44,7 @@ extern bool noDebugLibs;
 #include <sys/procfs.h>
 #include <libpstack/util.h>
 #include <limits>
+#include "libpstack/json.h"
 
 #ifndef ELF_BITS
 #define ELF_BITS 64
@@ -124,12 +125,15 @@ struct ElfSection {
 };
 
 struct ElfNoteIter;
+class ElfNoteDesc;
 
 struct ElfNotes {
    ElfNoteIter begin() const;
    ElfNoteIter end() const;
    ElfObject *object;
    ElfNotes(ElfObject *object_) : object(object_) {}
+   typedef ElfNoteDesc value_type;
+   typedef ElfNoteIter iterator;
 };
 
 class ElfObject {
@@ -179,7 +183,7 @@ private:
     std::shared_ptr<ElfObject> debugObject; // (DWARF) debug object as per .gnu_debuglink/other.
 
     bool debugLoaded; // We've at least attempted to load debugObject: don't try again
-    friend std::ostream &operator<< (std::ostream &os, const ElfObject &obj);
+    friend std::ostream &operator<< (std::ostream &os, const JSON<ElfObject> &obj);
 };
 
 /*

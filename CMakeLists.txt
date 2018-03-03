@@ -34,7 +34,7 @@ else()
 endif()
 add_definitions("-DVERSION=${GIT_TAG}")
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 
 add_definitions("-Wall -Wextra -DELF_BITS=${ELF_BITS} -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -63,7 +63,7 @@ endif()
 # Make sure to use the local libpstack headers rather than what's installed.
 include_directories("." ${LIBLZMA_INCLUDES} ${ZLIB_INCLUDES} ${PYTHON_INCLUDE_DIRS} )
 
-add_library(dwelf ${LIBTYPE} dwarf.cc elf.cc reader.cc util.cc dump.cc
+add_library(dwelf ${LIBTYPE} dump.cc dwarf.cc elf.cc reader.cc util.cc
    ${inflatesrc} ${lzmasrc})
 add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc
    dwarfproc.cc procdump.cc ${stubsrc})

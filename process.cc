@@ -200,12 +200,12 @@ Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
 }
 
 const DwarfEntry *
-findEntryForFunc(Elf_Addr address, const DwarfEntry *entry)
+findEntryForFunc(Elf_Addr address, const DwarfEntry &entry)
 {
-   switch (entry->type->tag) {
+   switch (entry.type->tag) {
       case DW_TAG_subprogram: {
-         const DwarfAttribute *lowAttr = entry->attrForName(DW_AT_low_pc);
-         const DwarfAttribute *highAttr = entry->attrForName(DW_AT_high_pc);
+         const DwarfAttribute *lowAttr = entry.attrForName(DW_AT_low_pc);
+         const DwarfAttribute *highAttr = entry.attrForName(DW_AT_high_pc);
          if (lowAttr && highAttr) {
             Elf_Addr start, end;
             switch (lowAttr->form()) {
@@ -232,13 +232,13 @@ findEntryForFunc(Elf_Addr address, const DwarfEntry *entry)
 
             }
             if (start <= address && end > address)
-               return entry;
+               return &entry;
          }
          break;
       }
 
       default:
-         for (auto &child : entry->children) {
+         for (auto &child : entry.children) {
             auto descendent = findEntryForFunc(address, child);
             if (descendent != nullptr)
                return descendent;
@@ -277,10 +277,10 @@ typeName(const DwarfEntry *type)
             s = typeName(base) + "(";
             sep = "";
             for (auto &arg : type->children) {
-                if (arg->type->tag != DW_TAG_formal_parameter)
+                if (arg.type->tag != DW_TAG_formal_parameter)
                     continue;
                 s += sep;
-                s += typeName(arg->referencedEntry(DW_AT_type));
+                s += typeName(arg.referencedEntry(DW_AT_type));
                 sep = ", ";
             }
             s += ")";
@@ -422,17 +422,17 @@ std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
     const char *sep = "";
-    for (auto child : ap.frame->function->children) {
-        switch (child->type->tag) {
+    for (auto &child : ap.frame->function->children) {
+        switch (child.type->tag) {
             case DW_TAG_formal_parameter: {
-                auto name = child->name();
-                const DwarfEntry *type = child->referencedEntry(DW_AT_type);
+                auto name = child.name();
+                const DwarfEntry *type = child.referencedEntry(DW_AT_type);
                 Elf_Addr addr = 0;
                 os << sep << name;
                 if (type != nullptr) {
                     const DwarfAttribute *attr;
 
-                    if ((attr = child->attrForName(DW_AT_location)) != nullptr) {
+                    if ((attr = child.attrForName(DW_AT_location)) != nullptr) {
                         DwarfExpressionStack fbstack;
                         addr = fbstack.eval(ap.p, attr, ap.frame, ap.frame->elfReloc);
                         os << "=";
@@ -441,7 +441,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
                         } else {
                            os << RemoteValue(ap.p, addr, type);
                         }
-                    } else if ((attr = child->attrForName(DW_AT_const_value)) != nullptr) {
+                    } else if ((attr = child.attrForName(DW_AT_const_value)) != nullptr) {
                         os << "=" << intmax_t(*attr);
                     }
                 }
@@ -505,7 +505,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             std::shared_ptr<DwarfUnit> dwarfUnit;
             for (const auto &u : units) {
                 // find the DIE for this function
-                for (auto it : u->entries) {
+                for (auto &it : u->entries) {
                     const DwarfEntry *de = findEntryForFunc(objIp - 1, it);
                     if (de != nullptr) {
                         symName = de->name();
