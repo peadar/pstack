@@ -2,6 +2,7 @@
 #define LIBPSTACK_UTIL_H
 
 #include <exception>
+#include <cassert>
 #include <limits>
 #include <vector>
 #include <list>
@@ -227,5 +228,35 @@ public:
     }
 };
 std::shared_ptr<const Reader> loadFile(const std::string &path);
+
+// This allows a reader to be treated like an iterator for a type of object.
+
+template <typename T>
+struct ReaderArray {
+   class iterator {
+      const Reader *reader;
+      off_t offset;
+   public:
+      T operator *();
+      iterator(const Reader *reader_, off_t offset_) : reader(reader_),offset(offset_) {}
+      bool operator == (const iterator &rhs) { return offset == rhs.offset && reader == rhs.reader; }
+      bool operator != (const iterator &rhs) { return ! (*this == rhs); }
+      void operator++() { offset += sizeof (T); }
+   };
+   const Reader &reader;
+   typedef T value_type;
+   iterator begin() const { return iterator(&reader, 0); }
+   iterator end() const { return iterator(&reader, reader.size()); }
+   ReaderArray(const Reader &reader_) : reader(reader_) {
+      assert(reader.size() % sizeof (T) == 0);
+   }
+};
+
+template <typename T> T ReaderArray<T>::iterator::operator *() {
+   T t;
+   reader->readObj(offset, &t);
+   return t;
+}
+
 
 #endif // LIBPSTACK_UTIL_H

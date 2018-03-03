@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <sys/procfs.h>
 #include <cassert>
+#include "libpstack/json.h"
 
 #if ELF_BITS == 64
 #define ELF_R_SYM(a) ELF64_R_SYM(a)
@@ -14,286 +15,15 @@
 #error "Non-32, non-64-bit platform?"
 #endif
 
-static void dwarfDumpCFAInsns(std::ostream &os, DWARFReader &r);
+struct DwarfDumpCFAInsns {
+    DWARFReader &r;
+    DwarfDumpCFAInsns(DWARFReader &r_) : r(r_) { }
+};
 
-std::ostream &operator << (std::ostream &os, const DwarfFileEntry &fe) {
-    return os
-        << "{ \"name\": \"" << fe.name << "\""
-        << ", \"dir\": \"" << fe.directory << "\""
-        << ", \"lastmod\": " << fe.lastMod
-        << "}";
-}
-
-std::ostream &operator << (std::ostream &os, const DwarfLineState &ls) {
-    return os
-        << "{ \"file\": " << *ls.file
-        << ", \"line\": " << ls.line
-        << ", \"addr\": " << ls.addr
-        << "}";
-}
-
-std::ostream &operator << (std::ostream &os, const DwarfLineInfo &lines) {
-    return os
-        << "{ \"default_is_stmt\": " << lines.default_is_stmt
-        << ", \"opcode_base\": " << int(lines.opcode_base)
-        << ", \"opcode_lengths\": " << lines.opcode_lengths
-        << ", \"files\": " << lines.files
-        << ", \"directories\": " << lines.directories
-        << ", \"matrix\": " << lines.matrix
-        << "}";
-}
-
-std::ostream & operator << (std::ostream &os, const DwarfEntry &entry) {
-    os
-        << "{ \"type\": \"" << entry.type->tag << "\""
-        << ", \"offset\": " << entry.offset
-        << ", \"attributes\": " << entry.attributes;
-    if (entry.type->hasChildren)
-        os << ", \"children\": " << entry.children;
-    return os
-        << " }";
-}
-
-std::ostream &operator << (std::ostream &os, const DwarfAttributeSpec &spec) {
-    return os
-        << "{ \"name\": " << "\"" << spec.name << "\""
-        << ", \"form\": " << "\"" << spec.form << "\""
-        << "}";
-}
-
-std::ostream & operator << (std::ostream &os, const DwarfAbbreviation &abbr) {
-    return os
-        << " { \"code\": " << abbr.code
-        << " , \"has_children\": " << (abbr.hasChildren ? "true" : "false")
-        << " , \"specs\": " << abbr.specs
-        << " }";
-}
-
-std::ostream &operator << (std::ostream &os, const std::shared_ptr<DwarfUnit> &unit) {
-    return os << *unit;
-}
-
-std::ostream &operator << (std::ostream &os, const DwarfUnit &unit) {
-    return os
-        << " { \"length\":" <<  unit.length
-        << " , \"offset\":" <<  unit.offset
-        << " , \"version\":" <<  int(unit.version)
-        << " , \"addrlen\":" <<  int(unit.addrlen)
-        << " , \"linenumbers\":" << unit.lines
-        << " , \"entries\":" <<  unit.entries
-        << " }";
-}
-
-std::ostream & operator << (std::ostream &os, const DwarfARange &range) {
-    return os
-        << " { \"start\":" << range.start
-        << " , \"length\":" << range.length
-        << " }";
-}
-
-std::ostream & operator << (std::ostream &os, const DwarfARangeSet &ranges) {
-    return os
-        << " { \"length\":" << ranges.length
-        << " , \"version\":" << int(ranges.version)
-        << " , \"debug_info_offset\":" << ranges.debugInfoOffset
-        << " , \"addrlen\":" << int(ranges.addrlen)
-        << " , \"descrlen\":" <<  int(ranges.segdesclen)
-        << " , \"ranges\":" <<  ranges.ranges
-        << " }";
-}
-
-std::ostream & operator << (std::ostream &os, DwarfTag tag) {
-#define DWARF_TAG(x,y) case x: return os << #x;
-    switch (tag) {
-#include <libpstack/dwarf/tags.h>
-    default: return os << int(tag);
-    }
-#undef DWARF_TAG
-}
-
-std::ostream &operator << (std::ostream &os, DwarfLineEOpcode code) {
-#define DWARF_LINE_E(x,y) case x: return os << "\"" #x "\"";
-    switch (code) {
-#include <libpstack/dwarf/line_e.h>
-    default: return os << int(code);
-    }
-#undef DWARF_LINE_E
-}
-
-std::ostream &operator << (std::ostream &os, DwarfForm code) {
-#define DWARF_FORM(x,y) case x: return os << #x;
-    switch (code) {
-#include <libpstack/dwarf/forms.h>
-    default: return os << "(unknown)";
-    }
-#undef DWARF_FORM
-}
-
-std::ostream &operator << (std::ostream &os, DwarfAttrName code) {
-#define DWARF_ATTR(x,y) case x: return os <<  #x ;
-    switch (code) {
-#include <libpstack/dwarf/attr.h>
-    default: return os << int(code);
-    }
-#undef DWARF_ATTR
-}
-
-std::ostream &operator << (std::ostream &os, const DwarfPubname &name) {
-    return os
-        << " { \"offset\": " << name.offset
-        << " , \"name\": \"" << name.name << "\""
-        << " }";
-}
-
-std::ostream &operator << (std::ostream &os, const DwarfPubnameUnit &unit) {
-    return os
-        << " { \"length\": " << unit.length
-        << " , \"version\": " << unit.version
-        << " , \"info offset\": " << unit.infoOffset
-        << " , \"info size\":" <<  unit.infoLength
-        << " , \"names\": " << unit.pubnames
-        << " }";
-}
-
-std::ostream &
-operator << (std::ostream &os, const DwarfBlock &b)
-{
-    return os << "[ " << b.offset << ", " << b.length << "]";
-}
-
-std::ostream &
-operator << (std::ostream &os, const DwarfAttribute &attr)
-{
-    auto dwarf = attr.entry->unit->dwarf;
-    auto elf = dwarf->elf;
-    os << "{ \"form\": \"" << attr.form() << "\", \"value\":";
-    switch (attr.form()) {
-    case DW_FORM_addr:
-        os << uintmax_t(attr);
-        break;
-    case DW_FORM_sdata:
-        os << intmax_t(attr);
-        break;
-    case DW_FORM_data1:
-    case DW_FORM_data2:
-    case DW_FORM_data4:
-    case DW_FORM_data8:
-    case DW_FORM_sec_offset:
-    case DW_FORM_udata:
-        os << uintmax_t(attr);
-        break;
-    case DW_FORM_GNU_strp_alt:
-    case DW_FORM_string:
-    case DW_FORM_strp:
-        os << "\"" << std::string(attr) << "\"";
-        break;
-    case DW_FORM_ref_addr:
-    case DW_FORM_ref2:
-    case DW_FORM_ref4:
-    case DW_FORM_ref8:
-    case DW_FORM_GNU_ref_alt:
-    case DW_FORM_ref_udata: {
-        const auto entry = attr.entry->referencedEntry(attr.name());
-        if (entry) {
-           os << " { \"file\": \"" << *entry->unit->dwarf->elf->io << "\"";
-           os << " , \"offset\": " << entry->offset;
-           if (entry->name() != "")
-              os << " , \"name\": \"" << entry->name() << "\"";
-           os << " }";
-        }
-        else
-            os << "null";
-        break;
-    }
-    case DW_FORM_exprloc:
-    case DW_FORM_block1:
-    case DW_FORM_block2:
-    case DW_FORM_block4:
-    case DW_FORM_block:
-        os << attr.block();
-        break;
-    case DW_FORM_flag:
-        os << (bool(attr) ? "true" : "false");
-        break;
-    case DW_FORM_flag_present:
-        os << "true";
-        break;
-    default: os << "\"unknown DWARF form " << attr.form() << "\"";
-    }
-    os << " } ";
-    return os;
-}
-
-std::ostream &
-operator <<(std::ostream &os, const std::pair<const DwarfFrameInfo *, const DwarfCIE *> &dcie)
-{
-    os
-        << "{ \"version\": " << int(dcie.second->version)
-        << ", \"augmentation\": \"" << dcie.second->augmentation << "\""
-        << ", \"codeAlign\":" << dcie.second->codeAlign
-        << ", \"dataAlign\": " << dcie.second->dataAlign
-        << ", \"return address reg\": " << dcie.second->rar
-        << ", \"instrlen\": " << dcie.second->end - dcie.second->instructions
-        << ", \"lsdaEncoding\": " << int(dcie.second->lsdaEncoding)
-        << ", \"instructions\": ";
-    ;
-    DWARFReader r(dcie.first->io, dcie.second->instructions, dcie.second->end);
-    dwarfDumpCFAInsns(os, r);
-    return os << " }";
-}
-
-std::ostream &
-operator << (std::ostream &os, const std::pair<const DwarfFrameInfo *, const DwarfFDE *> &dfde )
-{
-    os
-        << "{ \"cie\": " << intptr_t(dfde.second->cie)
-        << ", \"loc\": " << dfde.second->iloc
-        << ", \"range\": " << dfde.second->irange
-        //<< ", \"augmentation\": \"" << dfde.second->augmentation << "\""
-        << ", \"instructions\": "
-    ;
-    DWARFReader r(dfde.first->io, dfde.second->instructions, dfde.second->end);
-    dwarfDumpCFAInsns(os, r);
-    return os << "}";
-}
-
-std::ostream &
-operator << (std::ostream &os, const DwarfFrameInfo &info)
-{
-    os << "{ \"cielist\": [";
-    const char *sep = "";
-    for (auto cieent = info.cies.begin(); cieent != info.cies.end(); ++cieent) {
-        const DwarfCIE &cie  = cieent->second;
-        os << sep << std::make_pair(&info, &cie);
-        sep = ",\n";
-    }
-    os << "], \"fdelist\": [";
-
-    sep = "";
-    for (auto fde = info.fdeList.begin(); fde != info.fdeList.end(); ++ fde) {
-        os << sep << std::make_pair(&info, &(*fde));
-        sep = ",\n";
-    }
-    return os << " ] }";
-}
-
-std::ostream &
-operator << (std::ostream &os, DwarfInfo &dwarf)
-{
-    os
-        << "{ \"units\": " << dwarf.getUnits()
-        << ", \"pubnameUnits\": " << dwarf.pubnames()
-        << ", \"aranges\": " << dwarf.ranges();
-    if (dwarf.debugFrame)
-        os << ", \"debugframe\": " << *dwarf.debugFrame;
-    if (dwarf.ehFrame)
-        os << ", \"ehFrame\": " << *dwarf.ehFrame;
-    return os << "}";
-}
-
-static void
+void
 dwarfDumpCFAInsn(std::ostream &os, DWARFReader &r)
 {
+
     Elf_Off len;
     Elf_Off off = r.getOffset();
     os
@@ -349,9 +79,11 @@ dwarfDumpCFAInsn(std::ostream &os, DWARFReader &r)
     os << " }";
 }
 
-static void
-dwarfDumpCFAInsns(std::ostream &os, DWARFReader &r)
+template <typename C>
+static std::ostream &
+operator << (std::ostream &os, const JSON<DwarfDumpCFAInsns, C> &jinsns)
 {
+    auto &r = jinsns.object.r;
     os << "[ ";
     std::string sep = "";
     while (!r.empty()) {
@@ -360,47 +92,350 @@ dwarfDumpCFAInsns(std::ostream &os, DWARFReader &r)
         sep = ",\n";
     }
     os << "]";
+    return os;
 }
 
-void printNote(std::ostream &os, const ElfNoteDesc &note) {
-     os
-         << "{ \"name\": \"" << note.name() << "\""
-         << ", \"type\": \"" << note.type() << "\"";
-     // need to switch on type and name for notes.
-     if (note.name() == "CORE") {
-         auto data = note.data();
-         size_t len = note.size();
-         switch (note.type()) {
-             case NT_PRSTATUS: {
-                 assert(len >= sizeof (prstatus_t));
-                 prstatus_t prstatus;
-                 data->readObj(0, &prstatus);
-                 os << ", \"prstatus\": " << prstatus;
-             }
-             break;
-             case NT_AUXV: {
-                 Elf_auxv_t aux;
-                 const char *sep = "";
-                 os << ", \"auxv\": [";
-                 for (size_t i = 0; i < len / sizeof aux; ++i) {
-                     data->readObj(i * sizeof aux, &aux);
-                     os << sep;
-                     sep = ",\n";
-                     os << aux;
-                 }
-                 os << "]";
-             }
-             break;
-         }
-     }
-     os << " }";
+std::ostream &operator << (std::ostream &os, const JSON<DwarfFileEntry> &jobj) {
+    auto &fe = jobj.object;
+    return JObject(os)
+        .field("name", fe.name)
+        .field("dir", fe.directory)
+        .field("lastmod", fe.lastMod);
+}
+
+template <typename C>
+std::ostream &operator << (std::ostream &os, const JSON<DwarfLineState, C> &jo) {
+    auto &ls = jo.object;
+    return JObject(os)
+        .field("file", *ls.file)
+        .field("line", ls.line)
+        .field("addr", ls.addr);
+}
+
+template <typename C>
+std::ostream &operator << (std::ostream &os, const JSON<DwarfLineInfo, C> &jo) {
+    auto &lines = jo.object;
+    return JObject(os)
+        .field("default_is_stmt",  lines.default_is_stmt)
+        .field("opcode_base", int(lines.opcode_base))
+        .field("opcode_lengths", lines.opcode_lengths)
+        .field("files", lines.files)
+        .field("directories", lines.directories)
+        .field("matrix", lines.matrix);
+}
+
+template <typename C>
+std::ostream & operator << (std::ostream &os, const JSON<DwarfEntry, C> &jo) {
+    auto &entry = jo.object;
+    JObject o(os);
+    o.field("type", entry.type->tag);
+    o.field("offset", entry.offset);
+    o.field("attributes", entry.attributes);
+    if (entry.type->hasChildren)
+        o.field("children", entry.children);
+    return o;
+}
+
+template <typename C>
+std::ostream &operator << (std::ostream &os, const JSON<DwarfAttributeSpec, C> spec) {
+    return JObject(os)
+        .field("name", spec.object.name)
+        .field("form", spec.object.form);
+}
+
+template <typename C>
+std::ostream &
+operator << (std::ostream &os, const JSON<DwarfAbbreviation, C> &abbr) {
+    return JObject(os)
+        .field("code", abbr.object.code)
+        .field("has_children", abbr.object.hasChildren)
+        .field("specs", abbr.object.specs);
+}
+
+std::ostream &operator << (std::ostream &os, const JSON<std::shared_ptr<DwarfUnit>> &unit) {
+    return JObject(os)
+        .field("length", unit.object->length)
+        .field("offset",  unit.object->offset)
+        .field("version",  int(unit.object->version))
+        .field("addrlen",  int(unit.object->addrlen))
+        .field("linenumbers", unit.object->lines)
+        .field("entries", unit.object->entries);
+}
+
+std::ostream & operator << (std::ostream &os, const JSON<DwarfARange> &range) {
+    return JObject(os)
+        .field("start", range.object.start)
+        .field("length", range.object.length);
+}
+
+std::ostream & operator << (std::ostream &os, const JSON<DwarfARangeSet> &ranges) {
+    return JObject(os)
+        .field("length", ranges.object.length)
+        .field("version", int(ranges.object.version))
+        .field("debug_info_offset", ranges.object.debugInfoOffset)
+        .field("addrlen", int(ranges.object.addrlen))
+        .field("descrlen",  int(ranges.object.segdesclen))
+        .field("ranges", ranges.object.ranges);
+}
+
+std::ostream & operator << (std::ostream &os, const JSON<DwarfTag> &tag) {
+#define DWARF_TAG(x,y) case x: return os << json(#x);
+    switch (tag.object) {
+#include "libpstack/dwarf/tags.h"
+    default: return os << json(int(tag.object));
+    }
+#undef DWARF_TAG
+}
+
+std::ostream &operator << (std::ostream &os, JSON<DwarfLineEOpcode> code) {
+#define DWARF_LINE_E(x,y) case x: return os << json(#x);
+    switch (code.object) {
+#include "libpstack/dwarf/line_e.h"
+    default: return os << json(int(code.object));
+    }
+#undef DWARF_LINE_E
+}
+
+std::ostream &operator << (std::ostream &os, const JSON<DwarfForm> &code) {
+#define DWARF_FORM(x,y) case x: return os << json(#x);
+    switch (code.object) {
+#include "libpstack/dwarf/forms.h"
+    default: return os << json("(unknown)");
+    }
+#undef DWARF_FORM
+}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<DwarfAttrName> &code) {
+#define DWARF_ATTR(x,y) case x: return os << json(#x) ;
+    switch (code.object) {
+#include "libpstack/dwarf/attr.h"
+    default: return os << '"' << int(code.object) << '"';
+    }
+#undef DWARF_ATTR
+}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<DwarfPubname> &name) {
+   return JObject(os)
+      .field("offset", name.object.offset)
+      .field("name", name.object.name);
+}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<DwarfPubnameUnit> &jo) {
+    const auto &unit = jo.object;
+    return JObject(os)
+        .field("length", unit.length)
+        .field("version", unit.version)
+        .field("info offset", unit.infoOffset)
+        .field("info size",  unit.infoLength)
+        .field("names", unit.pubnames);
+}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<DwarfBlock> &b)
+{
+    return JObject(os)
+        .field("offset", b.object.offset)
+        .field("length", b.object.length);
+}
+
+struct EntryReference {
+   const DwarfEntry *entry;
+   EntryReference(const DwarfEntry *entry_) : entry(entry_) {}
+};
+
+std::ostream &
+operator << (std::ostream &os, const JSON<EntryReference> &jer)
+{
+   const auto &e = jer.object.entry;
+   return JObject(os)
+      .field("file", stringify(*e->unit->dwarf->elf->io))
+      .field("offset", e->offset)
+      .field("name", e->name());
+}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<DwarfAttribute> &o)
+{
+    auto &attr = o.object;
+    JObject writer(os);
+
+    auto dwarf = attr.entry->unit->dwarf;
+    auto elf = dwarf->elf;
+    writer.field("form", attr.form());
+    switch (attr.form()) {
+    case DW_FORM_addr:
+    case DW_FORM_data1:
+    case DW_FORM_data2:
+    case DW_FORM_data4:
+    case DW_FORM_data8:
+    case DW_FORM_sec_offset:
+    case DW_FORM_udata:
+        writer.field("value", uintmax_t(attr));
+        break;
+    case DW_FORM_sdata:
+        writer.field("value", intmax_t(attr));
+        break;
+    case DW_FORM_GNU_strp_alt:
+    case DW_FORM_string:
+    case DW_FORM_strp:
+        writer.field("value", std::string(attr));
+        break;
+
+    case DW_FORM_ref_addr:
+    case DW_FORM_ref2:
+    case DW_FORM_ref4:
+    case DW_FORM_ref8:
+    case DW_FORM_GNU_ref_alt:
+    case DW_FORM_ref_udata: {
+        const auto entry = attr.entry->referencedEntry(attr.name());
+        if (entry)
+           writer.field("value", EntryReference(entry));
+        break;
+
+    }
+
+    case DW_FORM_exprloc:
+    case DW_FORM_block1:
+    case DW_FORM_block2:
+    case DW_FORM_block4:
+    case DW_FORM_block:
+        writer.field("value", attr.block());
+        break;
+
+    case DW_FORM_flag:
+        writer.field("value", bool(attr));
+        break;
+
+    case DW_FORM_flag_present:
+        writer.field("value", true);
+        break;
+    default:
+        writer.field("value", "unknown");
+    }
+    return os;
+}
+
+std::ostream &
+operator <<(std::ostream &os, const JSON<DwarfCIE, const DwarfFrameInfo *> &dcie)
+{
+    DWARFReader r(dcie.context->io, dcie.object.instructions, dcie.object.end);
+    return JObject(os)
+    .field("version", int(dcie.object.version))
+    .field("augmentation", dcie.object.augmentation)
+    .field("codeAlign", dcie.object.codeAlign)
+    .field("dataAlign", dcie.object.dataAlign)
+    .field("return address reg", dcie.object.rar)
+    .field("instruction length", dcie.object.end - dcie.object.instructions)
+    .field("LSDA encoding", int(dcie.object.lsdaEncoding))
+    .field("instructions", DwarfDumpCFAInsns(r), dcie.context);
+}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<DwarfFDE, const DwarfFrameInfo*> &dfde)
+{
+    DWARFReader r(dfde.context->io, dfde.object.instructions, dfde.object.end);
+    return JObject(os)
+        .field("cie", intptr_t(dfde.object.cie))
+        .field( "loc", dfde.object.iloc)
+        .field("range", dfde.object.irange)
+        .field("instructions", DwarfDumpCFAInsns(r), dfde.context);
+    ;
+}
+
+struct ElfAddrStr {
+   Elf_Addr addr;
+   ElfAddrStr(Elf_Addr addr_) : addr(addr_) {}
+};
+
+std::ostream &
+operator << (std::ostream &os, const JSON<ElfAddrStr> &addr)
+{
+   return os << '"' << addr.object.addr << '"';
+}
+
+
+std::ostream &
+operator << (std::ostream &os, const JSON<DwarfFrameInfo> &info)
+{
+    Mapper<ElfAddrStr, decltype(info.object.cies)::mapped_type, decltype(info.object.cies)> ciesByString(info.object.cies);
+    return JObject(os)
+        .field("cielist", ciesByString, &info.object)
+        .field("fdelist", info.object.fdeList, &info.object);
+}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<DwarfInfo> &jo)
+{
+    JObject writer(os);
+    auto &dwarf = jo.object;
+    writer.field("units", dwarf.getUnits())
+        .field("pubnameUnits", dwarf.pubnames())
+        .field("aranges", dwarf.ranges());
+    if (dwarf.debugFrame)
+        writer.field("debugframe", *dwarf.debugFrame);
+    if (dwarf.ehFrame)
+        writer.field("ehFrame", *dwarf.ehFrame);
+    return writer;
+}
+
+std::ostream &operator << (std::ostream &os, const JSON<ElfNoteDesc> &jnote)
+{
+    const auto &note = jnote.object;
+    JObject writer(os);
+
+    writer.field("name", note.name()).field("type", note.type());
+
+    // need to switch on type and name for notes.
+    if (note.name() == "CORE") {
+        auto data = note.data();
+        size_t len = note.size();
+        prstatus_t prstatus;
+        switch (note.type()) {
+            case NT_PRSTATUS:
+                assert(len >= sizeof (prstatus_t));
+                data->readObj(0, &prstatus);
+                writer.field("prstatus", prstatus);
+                break;
+            case NT_AUXV:
+                writer.field("auxv", ReaderArray<Elf_auxv_t>(*data));
+                break;
+        }
+    }
+    return os;
+}
+
+struct ProgramHeaderName {
+   int type;
+   ProgramHeaderName(int type_) : type(type_) {}
+};
+
+std::ostream &operator << (std::ostream &os, const JSON<ProgramHeaderName> &jph)
+{
+    auto ph = jph.object;
+
+    static const char *segmentTypeNames[] = {
+        "PT_NULL",
+        "PT_LOAD",
+        "PT_DYNAMIC",
+        "PT_INTERP",
+        "PT_NOTE",
+        "PT_SHLIB",
+        "PT_PHDR"
+    };
+    if (ph.type >= 0 && ph.type <= PT_PHDR)
+        return os << json(segmentTypeNames[ph.type]);
+    return os << '"' << ph.type << '"';
 }
 
 /*
  * Debug output of an ELF32 object.
  */
-std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
+std::ostream &operator<< (std::ostream &os, const JSON<ElfObject> &jo)
 {
+    auto &obj = jo.object;
     static const char *typeNames[] = {
         "ET_NONE",
         "ET_REL",
@@ -424,24 +459,21 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
         "OpenBSD"
     };
 
-    auto ehdr = obj.getElfHeader();
+    auto &ehdr = obj.getElfHeader();
     auto brand = ehdr.e_ident[EI_OSABI];
-    os << "{ \"type\": \"" << typeNames[ehdr.e_type] << "\", \"entry\": " <<  ehdr.e_entry << ", \"abi\": ";
-    if (brand < sizeof abiNames / sizeof abiNames[0])
-        os << "\"" << abiNames[brand] << "\"";
-    else
-        os << brand;
 
-    os << ", \"sections\": [";
-    const char *sep = "";
-    for (auto &i : obj.sectionHeaders) {
-        os << sep << std::make_pair(std::ref(obj), i);
-        sep = ",\n";
-    }
-    os << "]";
-    os << ", \"segments\": " << obj.programHeaders;
+    Mapper<ProgramHeaderName, decltype(obj.programHeaders)::mapped_type, std::map<Elf_Word, ElfObject::ProgramHeaders>> mappedSegments(obj.programHeaders);
+    return JObject(os)
+      .field("type",  typeNames[ehdr.e_type])
+      .field("entry", ehdr.e_entry)
+      .field("abi", brand < sizeof abiNames / sizeof abiNames[0]? abiNames[brand] : nullptr)
+      .field("sections", obj.sectionHeaders, &obj)
+      .field("segments", mappedSegments, &obj)
+      .field("interpreter", obj.getInterpreter())
+      .field("notes", obj.notes);
+    /*
+
     for (auto &seg :  obj.getSegments(PT_DYNAMIC)) {
-
         os << ", \"dynamic\": [";
         const char *sep = "";
         off_t dynoff = seg.p_offset;
@@ -455,53 +487,38 @@ std::ostream &operator<< (std::ostream &os, const ElfObject &obj)
         os << "]";
         break;
     }
-    os << ", \"interpreter\": \"" << obj.getInterpreter() << "\"";
-    sep = "";
-    os << ", \"notes\": [";
-    for (const auto note : obj.notes) {
-        os << sep;
-        sep = ",\n";
-       printNote(os, note);
-    }
-    os << "]";
-    return os << "}";
+    */
 }
 
 std::ostream &
-operator <<(std::ostream &os, const timeval &tv)
+operator <<(std::ostream &os, const JSON<timeval> &tv)
 {
-    return os
-        << "{ \"tv_sec\": " << tv.tv_sec
-        << ", \"tv_usec\": " << tv.tv_usec
-        << "}";
+    return JObject(os)
+        .field("tv_sec", tv.object.tv_sec)
+        .field("tv_usec", tv.object.tv_usec);
 }
 
 std::ostream &
-operator <<(std::ostream &os, const Elf_auxv_t &a)
+operator <<(std::ostream &os, const JSON<Elf_auxv_t> &a)
 {
-    os
-        << "{ \"a_type\": ";
-    switch (a.a_type) {
-#define AUX_TYPE(name, value) case value: os << "\"" << #name << "\""; break;
+    JObject writer(os);
+    
+    switch (a.object.a_type) {
+#define AUX_TYPE(name, value) case value: writer.field("a_type", #name); break;
 #include "libpstack/elf/aux.h"
-    default: os << a.a_type; break;
+    default: writer.field("a_type", a.object.a_type); break;
 #undef AUX_TYPE
     }
-    return os
-        << ", \"a_val\": " << a.a_un.a_val
-        << "}";
+    return writer.field("a_val", a.object.a_un.a_val);
 }
 
 std::ostream &
-operator <<(std::ostream &os, const Elf_Rela &rela)
+operator <<(std::ostream &os, const JSON<Elf_Rela> &rela)
 {
-   return os
-      << "{ \"r_offset\": " << rela.r_offset
-         << ", \"r_info\": { "
-            << ", \"SYM\": " << ELF_R_SYM(rela.r_info)
-            << ", \"TYPE\": " << ELF_R_TYPE(rela.r_info)
-         << "} "
-      << "} ";
+   return JObject(os)
+      .field("r_offset", rela.object.r_offset)
+      .field("r_info-sym", ELF_R_SYM(rela.object.r_info))
+      .field("r_info-type", ELF_R_TYPE(rela.object.r_info));
 }
 
 const struct sh_flag_names {
@@ -529,159 +546,15 @@ const struct sh_flag_names {
     { .name = 0, .value = 0 }
 };
 
-std::ostream &
-operator <<(std::ostream &os, const std::pair<const ElfObject &, const ElfSection &> objsec)
-{
-    static const char *sectionTypeNames[] = {
-        "SHT_NULL",
-        "SHT_PROGBITS",
-        "SHT_SYMTAB",
-        "SHT_STRTAB",
-        "SHT_RELA",
-        "SHT_HASH",
-        "SHT_DYNAMIC",
-        "SHT_NOTE",
-        "SHT_NOBITS",
-        "SHT_REL",
-        "SHT_SHLIB",
-        "SHT_DYNSYM",
-    };
-
-    auto &o = objsec.first;
-    auto sec = objsec.second;
-    auto strs = o.getSection(o.getElfHeader().e_shstrndx);
-    const Elf_Shdr &sh = sec.shdr;
-
-    static std::set<std::string> textContent = {
-        ".gnu_debugaltlink",
-        ".gnu_debuglink",
-        ".comment",
-    };
-
-    os << "{ \"size\":" << sh.sh_size;
-    os << ", \"uncompressedSize\":" << sec.io->size();
-    std::string secName;
-    secName = strs.io->readString(sh.sh_name);
-    os << ", \"name\": \"" << secName << "\"";
-
-    os << ", \"type\": ";
-    if (sh.sh_type <= SHT_DYNSYM)
-        os << "\"" << sectionTypeNames[sh.sh_type] << "\"";
-    else
-        os << sh.sh_type;
-
-    os << ", \"flags\": " << "[";
-
-    std::string sep = "";
-    for (auto i = sh_flag_names; i->name; ++i) {
-        if (sh.sh_flags & i->value) {
-            os << sep << "\"" << i->name << "\"";
-            sep = ", ";
-        }
-    }
-    os
-        << "]"
-        << ", \"address\": " << sh.sh_addr
-        << ", \"offset\": " << sh.sh_offset
-        << ", \"link\":" << sh.sh_link
-        << ", \"info\":" << sh.sh_info;
-
-    switch (sh.sh_type) {
-        case SHT_SYMTAB:
-        case SHT_DYNSYM: {
-            off_t symoff = 0;
-            off_t esym = sec.io->size();
-            os << ", \"symbols\": [";
-            std::string sep = "";
-            for (; symoff < esym; symoff += sizeof (Elf_Sym)) {
-                Elf_Sym sym;
-                sec.io->readObj(symoff, &sym);
-                os << sep << std::make_tuple(std::ref(o), std::ref(sec), std::ref(sym));
-                sep = ",\n";
-            }
-            os << "]";
-            break;
-        }
-        case SHT_RELA: {
-            os << ", \"reloca\": [";
-            off_t off = 0;
-            const char *sep = "";
-            for (off_t esym = sec.io->size(); off < esym; off += sizeof (Elf_Rela)) {
-                Elf_Rela rela;
-                sec.io->readObj(off, &rela);
-                os << sep << rela;
-                sep = ",\n";
-            }
-            os << "]";
-            break;
-        }
-    }
-
-    if (textContent.find(secName) != textContent.end()) {
-        char buf[1024];
-        auto count = sec.io->read(0, std::min(sizeof buf - 1, size_t(sec.io->size())), buf);
-        buf[count] = 0;
-        os << ", \"content\": \"" << buf << "\"";
-    }
-
-    return os << " }";
-}
-
-/*
- * Debug output of an ELF32 program segment
- */
-std::ostream &
-operator<< (std::ostream &os, const Elf_Phdr &h)
-{
-    static const char *segmentTypeNames[] = {
-            "PT_NULL",
-            "PT_LOAD",
-            "PT_DYNAMIC",
-            "PT_INTERP",
-            "PT_NOTE",
-            "PT_SHLIB",
-            "PT_PHDR"
-    };
-
-    os << "{ \"type\": ";
-    if (h.p_type <= PT_PHDR)
-        os << "\"" << segmentTypeNames[h.p_type] << "\"";
-    else
-        os << h.p_type;
-
-    os
-        << ", \"offset\": " << h.p_offset
-        << ", \"vaddr\": " << h.p_vaddr
-        << ", \"paddr\": " << h.p_paddr
-        << ", \"filesz\": " << h.p_filesz
-        << ", \"memsz\": " << h.p_memsz
-        << ", \"flags\": [";
-
-    std::string sep = "";
-
-    if (h.p_flags & PF_R) {
-        os << sep << "\"PF_R\"";
-        sep = ", ";
-    }
-
-    if (h.p_flags & PF_W) {
-        os << sep << "\"PF_W\"";
-        sep = ", ";
-    }
-
-    if (h.p_flags & PF_X) {
-        os << sep << "\"PF_X\"";
-        sep = ", ";
-    }
-    return os << "], \"alignment\": " << h.p_align << " }";
-}
-
 /*
  * Debug output of an Elf symbol.
  */
 std::ostream &
-operator<< (std::ostream &os, const std::tuple<const ElfObject &, const ElfSection &, const Elf_Sym &> &t)
+operator<< (std::ostream &os, const JSON<Elf_Sym, std::tuple<const ElfObject &, const ElfSection &> *> &t)
 {
+    auto &s = t.object;
+    auto &obj = std::get<0>(*t.context);
+    auto &sec = std::get<1>(*t.context);
     static const char *bindingNames[] = {
         "STB_LOCAL",
         "STB_GLOBAL",
@@ -718,21 +591,124 @@ operator<< (std::ostream &os, const std::tuple<const ElfObject &, const ElfSecti
         "STT_LOPROC + 1",
         "STT_HIPROC"
     };
-
-    auto &obj = std::get<0>(t);
-    auto &sec = std::get<1>(t);
-    auto s = std::get<2>(t);
     auto symStrings = obj.getSection(sec.shdr.sh_link);
 
-    return os << "{ \"name\": \"" << symStrings.io->readString(s.st_name) << "\""
-       << ", \"value\": " << s.st_value
-       << ", \"size\": " << s.st_size
-       << ", \"info\": " << (int)s.st_info
-       << ", \"binding\": \"" << bindingNames[s.st_info >> 4] << "\""
-       << ", \"type\": \"" << typeNames[s.st_info & 0xf] << "\""
-       << ", \"other\": " << (int)s.st_other
-       << ", \"shndx\": " << s.st_shndx
-       << " }";
+    return JObject(os)
+        .field("name", symStrings.io->readString(s.st_name))
+        .field("value", s.st_value)
+        .field("size",s.st_size)
+        .field("info", (int)s.st_info)
+        .field("binding", bindingNames[s.st_info >> 4])
+        .field("type", typeNames[s.st_info & 0xf])
+        .field("other", (int)s.st_other)
+        .field("shndx", s.st_shndx);
+}
+
+
+std::ostream &
+operator <<(std::ostream &os, const JSON<ElfSection, const ElfObject *> jsection)
+{
+    static const char *sectionTypeNames[] = {
+        "SHT_NULL",
+        "SHT_PROGBITS",
+        "SHT_SYMTAB",
+        "SHT_STRTAB",
+        "SHT_RELA",
+        "SHT_HASH",
+        "SHT_DYNAMIC",
+        "SHT_NOTE",
+        "SHT_NOBITS",
+        "SHT_REL",
+        "SHT_SHLIB",
+        "SHT_DYNSYM",
+    };
+
+    JObject writer(os);
+
+    auto &o = *jsection.context;
+    const auto sec = jsection.object;
+    auto strs = o.getSection(o.getElfHeader().e_shstrndx);
+    const Elf_Shdr &sh = sec.shdr;
+
+    static std::set<std::string> textContent = {
+        ".gnu_debugaltlink",
+        ".gnu_debuglink",
+        ".comment",
+    };
+
+    std::string secName = strs.io->readString(sh.sh_name);
+    writer.field("size", sh.sh_size);
+    writer.field("uncompressedSize", sec.io->size());
+    writer.field("name", secName);
+    if (sh.sh_type <= SHT_DYNSYM)
+        writer.field("type", sectionTypeNames[sh.sh_type]);
+    else
+        writer.field("type", sh.sh_type);
+
+    os << ", \"flags\": " << "[";
+
+    std::string sep = "";
+    for (auto i = sh_flag_names; i->name; ++i) {
+        if (sh.sh_flags & i->value) {
+            os << sep << "\"" << i->name << "\"";
+            sep = ", ";
+        }
+    }
+    os << "]";
+
+    writer.field("address", sh.sh_addr);
+    writer.field("offset", sh.sh_offset);
+    writer.field("link", sh.sh_link);
+    writer.field("info", sh.sh_info);
+
+    switch (sh.sh_type) {
+        case SHT_SYMTAB:
+        case SHT_DYNSYM: {
+            auto context = std::make_tuple(std::ref(o), std::ref(sec));
+            writer.field("symbols", ReaderArray<Elf_Sym>(*sec.io), &context);
+            break;
+        }
+        case SHT_RELA:
+            writer.field("reloca", ReaderArray<Elf_Rela>(*sec.io));
+            break;
+    }
+
+    if (textContent.find(secName) != textContent.end()) {
+        char buf[1024];
+        auto count = sec.io->read(0, std::min(sizeof buf - 1, size_t(sec.io->size())), buf);
+        buf[count] = 0;
+        os << ", \"content\": \"" << buf << "\"";
+    }
+    return os;
+}
+
+/*
+ * Debug output of an ELF32 program segment
+ */
+template <typename C> std::ostream &
+operator<< (std::ostream &os, const JSON<Elf_Phdr, C> &jh)
+{
+    auto &h = jh.object;
+    JObject writer(os);
+
+    std::set<const char *>flags;
+    if (h.p_flags & PF_R)
+        flags.insert("PF_R");
+
+    if (h.p_flags & PF_W)
+        flags.insert("PF_W");
+
+    if (h.p_flags & PF_X)
+        flags.insert("PF_X");
+
+    return writer.field("offset", h.p_offset)
+        .field("vaddr", h.p_vaddr)
+        .field("paddr", h.p_paddr)
+        .field("filesz", h.p_filesz)
+        .field("memsz", h.p_memsz)
+        .field("type", ProgramHeaderName(h.p_type))
+        .field("flags", flags)
+        .field("alignment", h.p_align);
 }
 
 struct DynTag {
@@ -740,10 +716,10 @@ struct DynTag {
     DynTag(long long tag_) : tag(tag_) {}
 };
 std::ostream &
-operator << (std::ostream &os, DynTag tag)
+operator << (std::ostream &os, const JSON<DynTag> &tag)
 {
-#define T(a) case a: return os << #a;
-    switch (tag.tag) {
+#define T(a) case a: return os << json(#a);
+    switch (tag.object.tag) {
     T(DT_NULL)
     T(DT_NEEDED)
     T(DT_PLTRELSZ)
@@ -816,58 +792,58 @@ operator << (std::ostream &os, DynTag tag)
     T(DT_VERNEED)
     T(DT_VERNEEDNUM)
     T(DT_AUXILIARY)
-    default: return os << "unknown " << tag.tag;
+    default: return os << json(int(tag.object.tag));
     }
 #undef T
 }
 
 std::ostream &
-operator<< (std::ostream &os, const Elf_Dyn &d)
+operator<< (std::ostream &os, const JSON<Elf_Dyn> &d)
 {
-    os << "{ \"tag\": \"" << DynTag(d.d_tag) << "\"";
-    return os << ", \"word\": " << d.d_un.d_val << " }";
+    return JObject(os)
+        .field("tag", DynTag(d.object.d_tag))
+        .field("word", d.object.d_un.d_val);
 }
 
 std::ostream &
-operator<< (std::ostream &os, DwarfExpressionOp op)
+operator<< (std::ostream &os, const JSON<DwarfExpressionOp> op)
 {
-#define DWARF_OP(name, value, args) case name: return os << #name;
-    switch (op) {
+#define DWARF_OP(name, value, args) case name: return os << json(#name);
+    switch (op.object) {
 #include <libpstack/dwarf/ops.h>
-        default: return os << "(unknown operation)";
+        default: return os << json(int(op.object));
     }
 #undef DWARF_OP
 }
 
 std::ostream &
-operator <<(std::ostream &os, const elf_siginfo &prinfo)
+operator <<(std::ostream &os, const JSON<elf_siginfo> &prinfo)
 {
-    return os
-        << "{ \"si_signo\": " << prinfo.si_signo
-        << ", \"si_code\": " << prinfo.si_code
-        << ", \"si_errno\": " << prinfo.si_errno
-        << " }";
+    return JObject(os)
+        .field("si_signo", prinfo.object.si_signo)
+        .field("si_code", prinfo.object.si_code)
+        .field("si_errno", prinfo.object.si_errno);
 }
 
 std::ostream &
-operator <<(std::ostream &os, const prstatus_t &prstat)
+operator <<(std::ostream &os, const JSON<prstatus_t> &jo)
 {
-    return os
-        << "{ \"pr_info\": " << prstat.pr_info
-        << ", \"pr_cursig\": " << prstat.pr_cursig
-        << ", \"pr_sigpend\": " << prstat.pr_sigpend
-        << ", \"pr_sighold\": " << prstat.pr_sighold
-        << ", \"pr_pid\": " << prstat.pr_pid
-        << ", \"pr_ppid\": " << prstat.pr_ppid
-        << ", \"pr_pgrp\": " << prstat.pr_pgrp
-        << ", \"pr_sid\": " << prstat.pr_sid
-        << ", \"pr_utime\": " << prstat.pr_utime
-        << ", \"pr_stime\": " << prstat.pr_stime
-        << ", \"pr_cutime\": " << prstat.pr_cutime
-        << ", \"pr_cstime\": " << prstat.pr_cstime
-        << ", \"pr_reg\": " << intptr_t(prstat.pr_reg)
-        << ", \"pr_fpvalid\": " << prstat.pr_fpvalid
-        << "}";
+    auto &prstat = jo.object;
+    return JObject(os)
+        .field("pr_info", prstat.pr_info)
+        .field("pr_cursig", prstat.pr_cursig)
+        .field("pr_sigpend", prstat.pr_sigpend)
+        .field("pr_sighold", prstat.pr_sighold)
+        .field("pr_pid", prstat.pr_pid)
+        .field("pr_ppid", prstat.pr_ppid)
+        .field("pr_pgrp", prstat.pr_pgrp)
+        .field("pr_sid", prstat.pr_sid)
+        .field("pr_utime", prstat.pr_utime)
+        .field("pr_stime", prstat.pr_stime)
+        .field("pr_cutime", prstat.pr_cutime)
+        .field("pr_cstime", prstat.pr_cstime)
+        .field("pr_reg", intptr_t(prstat.pr_reg))
+        .field("pr_fpvalid", prstat.pr_fpvalid);
 }
 
 std::string

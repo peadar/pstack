@@ -121,18 +121,18 @@ pythonStack(Process &proc, std::ostream &os, const PstackOptions &)
             continue;
         for (auto u : dwarf->getUnits()) {
             // For each unit
-            for (const DwarfEntry *compile : u->entries) {
-                if (compile->type->tag != DW_TAG_compile_unit)
+            for (const DwarfEntry &compile : u->entries) {
+                if (compile.type->tag != DW_TAG_compile_unit)
                     continue;
                 // Do we have a global variable called interp_head?
-                for (const DwarfEntry *var : compile->children) {
-                    if (var->type->tag != DW_TAG_variable)
+                for (const DwarfEntry &var : compile.children) {
+                    if (var.type->tag != DW_TAG_variable)
                         continue;
-                    if (var->name() != "interp_head")
+                    if (var.name() != "interp_head")
                         continue;
                     // Yes - let's run through the interpreters, and dump their stacks.
                     DwarfExpressionStack evalStack;
-                    auto addr = evalStack.eval(proc, var->attrForName(DW_AT_location), 0, o.reloc);
+                    auto addr = evalStack.eval(proc, var.attrForName(DW_AT_location), 0, o.reloc);
                     Elf_Addr ptr;
                     for (proc.io->readObj(addr, &ptr); ptr; )
                         ptr = doPyInterp(proc, os, ptr);
