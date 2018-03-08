@@ -20,7 +20,7 @@ using std::shared_ptr;
 
 std::ostream *debug = &std::clog;
 int verbose = 0;
-static uint32_t elf_hash(string);
+static uint32_t elf_hash(const string &text);
 bool noDebugLibs;
 
 GlobalDebugDirectories globalDebugDirectories;
@@ -66,23 +66,23 @@ ElfNoteDesc::size() const
    return note.n_descsz;
 }
 
+
 ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
     : io(std::move(io_))
     , notes(this)
+    , elfHeader(io->readObj<Elf_Ehdr>(0))
     , imageCache(cache)
 {
     debugLoaded = false;
     int i;
     size_t off;
-    io->readObj(0, &elfHeader);
 
     /* Validate the ELF header */
     if (!IS_ELF(elfHeader) || elfHeader.e_ident[EI_VERSION] != EV_CURRENT)
         throw (Exception() << *io << ": content is not an ELF image");
 
     for (off = elfHeader.e_phoff, i = 0; i < elfHeader.e_phnum; i++) {
-        Elf_Phdr hdr;
-        io->readObj(off, &hdr);
+        auto hdr = io->readObj<Elf_Phdr>(off);
         programHeaders[hdr.p_type].push_back(hdr);
         off += elfHeader.e_phentsize;
     }
@@ -118,7 +118,7 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
         auto &syms = getSection(tab.shdr.sh_link);
         auto &strings = getSection(syms.shdr.sh_link);
         if (tab && syms && strings)
-            hash.reset(new ElfSymHash(tab.io, syms.io, strings.io));
+            hash = std::make_unique<ElfSymHash>(tab.io, syms.io, strings.io);
     } else {
         hash = nullptr;
     }
@@ -166,8 +166,7 @@ ElfObject::getInterpreter() const
 std::pair<const Elf_Sym, const string>
 SymbolIterator::operator *()
 {
-    Elf_Sym sym;
-    sec->symbols->readObj(off, &sym);
+    auto sym = sec->symbols->readObj<Elf_Sym>(off);
     string name = sec->strings->readString(sym.st_name);
     return std::make_pair(sym, name);
 }
@@ -266,9 +265,8 @@ ElfSymHash::findSymbol(Elf_Sym &sym, const string &name)
 {
     uint32_t bucket = elf_hash(name) % nbucket;
     for (Elf_Word i = buckets[bucket]; i != STN_UNDEF; i = chains[i]) {
-        Elf_Sym candidate;
-        syms->readObj(i * sizeof candidate, &candidate);
-        string candidateName = strings->readString(candidate.st_name);
+        auto candidate = syms->readObj<Elf_Sym>(i * sizeof (Elf_Sym));
+        auto candidateName = strings->readString(candidate.st_name);
         if (candidateName == name) {
             sym = candidate;
             return true;
@@ -340,10 +338,10 @@ ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
  * Culled from System V Application Binary Interface
  */
 static uint32_t
-elf_hash(string name)
+elf_hash(const string &text)
 {
     uint32_t h = 0, g;
-    for (auto c : name) {
+    for (auto c : text) {
         h = (h << 4) + c;
         if ((g = h & 0xf0000000) != 0)
             h ^= g >> 24;
@@ -370,11 +368,9 @@ ElfSection::open(const std::shared_ptr<const Reader> &image, off_t off)
     } else {
 
 #ifdef WITH_ZLIB
-        Elf_Chdr chdr;
-        rawIo->readObj(0, &chdr);
+        auto chdr = rawIo->readObj<Elf_Chdr>(0);
         io = std::make_shared<InflateReader>(chdr.ch_size,
-              std::make_shared<OffsetReader>(rawIo,
-                 sizeof chdr, shdr.sh_size - sizeof chdr));
+              OffsetReader(rawIo, sizeof chdr, shdr.sh_size - sizeof chdr));
 #else
         static bool warned = false;
         if (!warned) {
@@ -433,13 +429,13 @@ ImageCache::getDebugImage(const std::string &name) {
     // XXX: verify checksum.
     for (const auto &dir : globalDebugDirectories.dirs) {
         bool found;
-        auto img = getImageIfLoaded(dir + "/" + name, found);
+        auto img = getImageIfLoaded(stringify(dir, "/", name), found);
         if (found)
             return img;
     }
     for (const auto &dir : globalDebugDirectories.dirs) {
         try {
-           return getImageForName(dir + "/" + name);
+           return getImageForName(stringify(dir, "/", name));
         }
         catch (const std::exception &ex) {
             continue;

@@ -4,6 +4,7 @@
 #include <libpstack/elf.h>
 #include <limits>
 #include <map>
+#include <unordered_map>
 #include <list>
 #include <vector>
 #include <string>
@@ -127,7 +128,7 @@ union DwarfValue {
     bool flag;
 };
 
-std::ostream & operator << (std::ostream &os, const DwarfAttribute &attr);
+std::ostream &operator << (std::ostream &os, const JSON<DwarfInfo> &);
 
 const DwarfEntry *findEntryForFunc(Elf_Addr address, const DwarfEntry *entry);
 
@@ -205,7 +206,6 @@ public:
     bool prologue_end:1;
     bool epilogue_begin:1;
     DwarfLineState(DwarfLineInfo *);
-    void reset(DwarfLineInfo *);
 };
 
 class DwarfLineInfo {
@@ -224,7 +224,7 @@ public:
 struct DwarfUnit {
     DwarfUnit() = delete;
     DwarfUnit(const DwarfUnit &) = delete;
-    std::map<DwarfTag, DwarfAbbreviation> abbreviations;
+    std::unordered_map<DwarfTag, DwarfAbbreviation> abbreviations;
     std::map<off_t, DwarfEntry *> allEntries;
 public:
     const DwarfInfo *dwarf;
@@ -243,13 +243,13 @@ public:
 };
 
 struct DwarfFDE {
-    DwarfCIE *cie;
     uintmax_t iloc;
     uintmax_t irange;
     Elf_Off instructions;
     Elf_Off end;
+    Elf_Off cieOff;
     std::vector<unsigned char> augmentation;
-    DwarfFDE(DwarfFrameInfo *, DWARFReader &, DwarfCIE * , Elf_Off);
+    DwarfFDE(DwarfFrameInfo *, DWARFReader &, Elf_Off cieOff_, Elf_Off endOff_);
 };
 
 enum DwarfRegisterType {
@@ -297,7 +297,7 @@ struct DwarfCIE {
     std::string augmentation;
     DwarfCIE(const DwarfFrameInfo *, DWARFReader &, Elf_Off);
     DwarfCIE() {}
-    DwarfCallFrame execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr);
+    DwarfCallFrame execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const;
 };
 
 struct DwarfFrameInfo {
@@ -310,7 +310,7 @@ struct DwarfFrameInfo {
     DwarfFrameInfo(DwarfInfo *, const ElfSection &, FIType);
     DwarfFrameInfo() = delete;
     DwarfFrameInfo(const DwarfFrameInfo &) = delete;
-    Elf_Addr decodeCIEFDEHdr(DWARFReader &, Elf_Addr &id, FIType, DwarfCIE **);
+    Elf_Addr decodeCIEFDEHdr(DWARFReader &, FIType, Elf_Off *cieOff); // cieOFF set to -1 if this is CIE, set to offset of associated CIE for an FDE
     const DwarfFDE *findFDE(Elf_Addr) const;
     bool isCIE(Elf_Addr);
     intmax_t decodeAddress(DWARFReader &, int encoding) const;
@@ -358,58 +358,21 @@ public:
     std::shared_ptr<const Reader> lineshdr;
     std::shared_ptr<DwarfInfo> getAltDwarf() const;
     std::list<DwarfARangeSet> &ranges() const;
-    std::list<DwarfPubnameUnit> &pubnames() const;
+    const std::list<DwarfPubnameUnit> &pubnames() const;
     std::shared_ptr<DwarfUnit> getUnit(off_t offset);
     std::list<std::shared_ptr<DwarfUnit>> getUnits() const;
     DwarfInfo(std::shared_ptr<ElfObject>, DwarfImageCache &);
-    std::vector<std::pair<const DwarfFileEntry *, int>> sourceFromAddr(uintmax_t addr);
+    std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
 
     ~DwarfInfo();
     bool hasRanges() { ranges(); return aranges.size() != 0; }
 };
 
 enum DwarfCFAInstruction {
-    DW_CFA_advance_loc          = 0x40, // XXX: Lower 6 = delta
-    DW_CFA_offset               = 0x80, // XXX: lower 6 = reg, (offset:uleb128)
-    DW_CFA_restore              = 0xc0, // XXX: lower 6 = register
-    DW_CFA_nop                  = 0,
-    DW_CFA_set_loc              = 1,    // (address)
-    DW_CFA_advance_loc1         = 0x02, // (1-byte delta)
-    DW_CFA_advance_loc2         = 0x03, // (2-byte delta)
-    DW_CFA_advance_loc4         = 0x04, // (4-byte delta)
-    DW_CFA_offset_extended      = 0x05, // ULEB128 register ULEB128 offset
-    DW_CFA_restore_extended     = 0x06, // ULEB128 register
-    DW_CFA_undefined            = 0x07, // ULEB128 register
-    DW_CFA_same_value           = 0x08, // ULEB128 register
-    DW_CFA_register             = 0x09, // ULEB128 register ULEB128 register
-    DW_CFA_remember_state       = 0x0a, //
-    DW_CFA_restore_state        = 0x0b, //
-    DW_CFA_def_cfa              = 0x0c, // ULEB128 register ULEB128 offset
-    DW_CFA_def_cfa_register     = 0x0d, // ULEB128 register
-    DW_CFA_def_cfa_offset       = 0x0e, // ULEB128 offset
-    DW_CFA_def_cfa_expression   = 0x0f, // BLOCK
-
-    // DWARF 3 only {
-    DW_CFA_expression           = 0x10, // ULEB128 register BLOCK
-    DW_CFA_offset_extended_sf   = 0x11, // ULEB128 register SLEB128 offset
-    DW_CFA_def_cfa_sf           = 0x12, // ULEB128 register SLEB128 offset
-    DW_CFA_def_cfa_offset_sf    = 0x13, // SLEB128 offset
-    DW_CFA_val_offset           = 0x14, // ULEB128 ULEB128
-    DW_CFA_val_offset_sf        = 0x15, // ULEB128 SLEB128
-    DW_CFA_val_expression       = 0x16, // ULEB128 BLOCK
-    // }
-
-    DW_CFA_lo_user              = 0x1c,
-    DW_CFA_GNU_window_size      = 0x2d,
-    DW_CFA_GNU_args_size        = 0x2e,
-    DW_CFA_GNU_negative_offset_extended = 0x2f,
-    DW_CFA_hi_user              = 0x3f,
-
-    /*
-     * Value may be this high: ensure compiler generates enough
-     * padding to represent this value
-     */
-    DW_CFA_PAD                  = 0xff
+#define DWARF_CFA_INSN(name, value) name = value,
+#include "libpstack/dwarf/cfainsns.h"
+#undef DWARF_CFA_INSN
+    DW_CFA_max = 0xff
 };
 
 /*
@@ -504,8 +467,8 @@ public:
         off += s.size() + 1;
         return s;
     }
-    Elf_Off getOffset() { return off; }
-    Elf_Off getLimit() { return end; }
+    Elf_Off getOffset() const { return off; }
+    Elf_Off getLimit() const { return end; }
     void setOffset(Elf_Off off_) {
        assert(end >= off_);
        off = off_;

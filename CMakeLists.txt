@@ -61,7 +61,7 @@ else()
 endif()
 
 # Make sure to use the local libpstack headers rather than what's installed.
-include_directories("." ${LIBLZMA_INCLUDES} ${ZLIB_INCLUDES} ${PYTHON_INCLUDE_DIRS} )
+include_directories(${CMAKE_SOURCE_DIR} ${LIBLZMA_INCLUDES} ${ZLIB_INCLUDES} ${PYTHON_INCLUDE_DIRS} )
 
 add_library(dwelf ${LIBTYPE} dump.cc dwarf.cc elf.cc reader.cc util.cc
    ${inflatesrc} ${lzmasrc})
@@ -81,6 +81,7 @@ set (CLANG_TIDY "clang-tidy;-checks=*,-*readability-braces-around-statements,-cp
 set_target_properties(canal PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
 set_target_properties(${PSTACK_BIN} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
 set_target_properties(dwelf PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
+add_definitions("-DNDEBUG")
 set_target_properties(procman PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
 endif()
 

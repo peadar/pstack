@@ -95,7 +95,7 @@ DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj, DwarfImageCache &cache_)
     debugFrame = f(".debug_frame", FI_DEBUG_FRAME);
 }
 
-std::list<DwarfPubnameUnit> &
+const std::list<DwarfPubnameUnit> &
 DwarfInfo::pubnames() const
 {
     if (pubnamesh) {
@@ -275,23 +275,16 @@ DwarfAttribute::operator uintmax_t() const
 }
 
 DwarfLineState::DwarfLineState(DwarfLineInfo *li)
-{
-    reset(li);
-}
-
-void
-DwarfLineState::reset(DwarfLineInfo *li)
-{
-    addr = 0;
-    file = &li->files[1];
-    line = 1;
-    column = 0;
-    is_stmt = li->default_is_stmt;
-    basic_block = false;
-    end_sequence = false;
-    prologue_end = false;
-    epilogue_begin = false;
-}
+    : addr { 0 }
+    , file { &li->files[1] }
+    , line { 1 }
+    , column { 0 }
+    , is_stmt { li->default_is_stmt }
+    , basic_block { false }
+    , end_sequence { false }
+    , prologue_end { false }
+    , epilogue_begin { false }
+{}
 
 static void
 dwarfStateAddRow(DwarfLineInfo *li, const DwarfLineState &state)
@@ -369,7 +362,7 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
             case DW_LNE_end_sequence:
                 state.end_sequence = true;
                 dwarfStateAddRow(this, state);
-                state.reset(this);
+                state = DwarfLineState(this);
                 break;
             case DW_LNE_set_address:
                 state.addr = r.getuint(unit->addrlen);
@@ -456,8 +449,17 @@ DwarfAttribute::operator std::string() const
     assert(dwarf != nullptr);
     switch (spec->form) {
 
-    case DW_FORM_GNU_strp_alt:
-        return dwarf->getAltDwarf()->debugStrings->readString(value.addr);
+    case DW_FORM_GNU_strp_alt: {
+        const auto &altDwarf = dwarf->getAltDwarf();
+        if (!altDwarf) {
+            return "(alt string table unavailable)";
+        }
+        auto &strs = altDwarf->debugStrings;
+        if (!strs) {
+            return "(alt string table unavailable)";
+        }
+        return strs->readString(value.addr);
+                               }
 
     case DW_FORM_strp:
         return dwarf->debugStrings->readString(value.addr);
@@ -737,22 +739,18 @@ DWARFReader::getlength(size_t *addrLen)
 }
 
 Elf_Off
-DwarfFrameInfo::decodeCIEFDEHdr(DWARFReader &r, Elf_Addr &id, enum FIType type, DwarfCIE **ciep)
+DwarfFrameInfo::decodeCIEFDEHdr(DWARFReader &r, enum FIType type, Elf_Off *cieOff)
 {
     size_t addrLen;
     Elf_Off length = r.getlength(&addrLen);
-
     if (length == 0)
         return 0;
-
     Elf_Off idoff = r.getOffset();
-    id = r.getuint(addrLen);
-    if (!isCIE(id)) {
-        if (ciep != nullptr) {
-            auto ciei = cies.find(type == FI_EH_FRAME ? idoff - id : id);
-            *ciep = ciei != cies.end() ? &ciei->second : nullptr;
-        }
-    }
+    auto id = r.getuint(addrLen);
+    if (!isCIE(id))
+        *cieOff = type == FI_EH_FRAME ? idoff - id : id;
+    else
+        *cieOff = -1;
     return idoff + length;
 }
 
@@ -768,51 +766,51 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, const ElfSection& section, enum 
     , io(section.io)
     , type(type_)
 {
-    Elf_Addr cieid;
     DWARFReader reader(io);
 
     // decode in 2 passes: first for CIE, then for FDE
-    off_t start = reader.getOffset();
     off_t nextoff;
     for (; !reader.empty();  reader.setOffset(nextoff)) {
-        size_t cieoff = reader.getOffset();
-        nextoff = decodeCIEFDEHdr(reader, cieid, type, nullptr);
+        size_t startOffset = reader.getOffset();
+        Elf_Off associatedCIE;
+        nextoff = decodeCIEFDEHdr(reader, type, &associatedCIE);
         if (nextoff == 0)
             break;
-        if (isCIE(cieid))
-#ifdef NOTYET
+
+        auto ensureCIE = [this, &reader, nextoff] (Elf_Off offset) {
+            // This is in fact a CIE - add it in if we have not seen it yet.
+            if (cies.find(offset) != cies.end())
+                return;
             cies.emplace(std::piecewise_construct,
-                    std::forward_as_tuple(cieoff),
-                    std::forward_as_tuple(this, reader, nextoff));
-#else
-            cies[cieoff] = DwarfCIE(this, reader, nextoff);
-#endif
-    }
-    reader.setOffset(start);
-    for (reader.setOffset(start); !reader.empty(); reader.setOffset(nextoff)) {
-        DwarfCIE *cie = nullptr;
-        nextoff = decodeCIEFDEHdr(reader, cieid, type, &cie);
-        if (nextoff == 0)
-            break;
-        if (!isCIE(cieid))
-            fdeList.emplace_back(this, reader, cie, nextoff);
+                        std::forward_as_tuple(offset),
+                        std::forward_as_tuple(this, reader, nextoff));
+        };
+
+        if (associatedCIE == Elf_Off(-1)) {
+            ensureCIE(startOffset);
+        } else {
+            // Make sure we have the associated CIE.
+            ensureCIE(associatedCIE);
+            fdeList.emplace_back(this, reader, associatedCIE, nextoff);
+        }
     }
 }
 
 const DwarfFDE *
 DwarfFrameInfo::findFDE(Elf_Addr addr) const
 {
-    for (const auto &fde : fdeList)
+    for (const auto &fde : fdeList) {
         // XXX: addr can be just past last instruction in function
         if (fde.iloc <= addr && fde.iloc + fde.irange >= addr)
             return &fde;
+    }
     return nullptr;
 }
 
-std::vector<std::pair<const DwarfFileEntry *, int>>
+std::vector<std::pair<std::string, int>>
 DwarfInfo::sourceFromAddr(uintmax_t addr)
 {
-    std::vector<std::pair<const DwarfFileEntry *, int>> info;
+    std::vector<std::pair<std::string, int>> info;
     std::list<std::shared_ptr<DwarfUnit>> units;
 
     if (hasRanges()) {
@@ -834,7 +832,7 @@ DwarfInfo::sourceFromAddr(uintmax_t addr)
                 continue;
             auto next = i+1;
             if (i->addr <= addr && next->addr > addr)
-                info.emplace_back(i->file, i->line);
+                info.emplace_back(i->file->name, i->line);
         }
     }
     return info;
@@ -847,7 +845,7 @@ DwarfCallFrame::DwarfCallFrame()
     cfaReg = 0;
     cfaValue.type = UNDEF;
 #define REGMAP(number, field) registers[number].type = SAME;
-#include <libpstack/dwarf/archreg.h>
+#include "libpstack/dwarf/archreg.h"
 #undef REGMAP
 #ifdef CFA_RESTORE_REGNO
     registers[CFA_RESTORE_REGNO].type = ARCH;
@@ -855,7 +853,7 @@ DwarfCallFrame::DwarfCallFrame()
 }
 
 DwarfCallFrame
-DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr)
+DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
 {
     std::stack<DwarfCallFrame> stack;
     DwarfCallFrame frame;
@@ -1016,7 +1014,7 @@ DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr)
             }
 
             // Can't deal with anything else yet.
-            case DW_CFA_GNU_window_size:
+            case DW_CFA_GNU_window_save:
             case DW_CFA_GNU_negative_offset_extended:
             default:
                 abort();
@@ -1031,18 +1029,19 @@ DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr)
     return frame;
 }
 
-DwarfFDE::DwarfFDE(DwarfFrameInfo *fi, DWARFReader &reader, DwarfCIE *cie_, Elf_Off end_)
-    : cie(cie_)
+DwarfFDE::DwarfFDE(DwarfFrameInfo *fi, DWARFReader &reader, Elf_Off cieOff_, Elf_Off endOff_)
+    : end(endOff_)
+    , cieOff(cieOff_)
 {
-    iloc = fi->decodeAddress(reader, cie->addressEncoding);
-    irange = fi->decodeAddress(reader, cie->addressEncoding & 0xf);
-    if (!cie->augmentation.empty() && cie->augmentation[0] == 'z') {
+    auto &cie = fi->cies[cieOff];
+    iloc = fi->decodeAddress(reader, cie.addressEncoding);
+    irange = fi->decodeAddress(reader, cie.addressEncoding & 0xf);
+    if (!cie.augmentation.empty() && cie.augmentation[0] == 'z') {
         size_t alen = reader.getuleb128();
         while (alen-- != 0)
             augmentation.push_back(reader.getu8());
     }
     instructions = reader.getOffset();
-    end = end_;
 }
 
 DwarfCIE::DwarfCIE(const DwarfFrameInfo *fi, DWARFReader &r, Elf_Off end_)

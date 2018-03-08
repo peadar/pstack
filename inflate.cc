@@ -1,31 +1,32 @@
-#include <libpstack/util.h>
-#include <libpstack/inflatereader.h>
+#include "libpstack/inflatereader.h"
+#include "libpstack/util.h"
+
 #include <zlib.h>
 
-InflateReader::InflateReader(size_t inflatedSize, std::shared_ptr<Reader> upstream)
+InflateReader::InflateReader(size_t inflatedSize, const Reader &upstream)
     : MemReader(inflatedSize, new char[inflatedSize])
 {
     char xferbuf[32768];
 
-    z_stream stream;
-    memset(&stream, 0, sizeof stream);
+    z_stream stream{};
 
     int window = 15;
     if (inflateInit2(&stream, window) != Z_OK)
         throw (Exception() << "inflateInit2 failed");
 
     stream.avail_out = inflatedSize;
-    stream.next_out = (Bytef *)data;
+    using bytep = Bytef *;
+    stream.next_out = bytep(data);
     bool eof = false;
     size_t inputOffset = 0;
     if (verbose >= 2)
-        *debug << "inflating" << *upstream << "...";
+        *debug << "inflating" << upstream << "...";
     for (bool done = false; !done; ) {
         if (stream.avail_in == 0 && !eof) {
             // keep the input buffer full
-            stream.avail_in = upstream->read(inputOffset, sizeof xferbuf, xferbuf);
+            stream.avail_in = upstream.read(inputOffset, sizeof xferbuf, xferbuf);
             inputOffset += stream.avail_in;
-            stream.next_in = (Bytef *)xferbuf;
+            stream.next_in = bytep(xferbuf);
             if (stream.avail_in == 0)
                 eof = true;
         }

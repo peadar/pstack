@@ -78,6 +78,7 @@ class Reader {
 public:
     Reader() {}
     template <typename Obj> void readObj(off_t offset, Obj *object, size_t count = 1) const;
+    template <typename Obj> Obj readObj(off_t offset) const;
     virtual size_t read(off_t off, size_t count, char *ptr) const = 0;
     virtual void describe(std::ostream &os) const = 0;
     virtual std::string readString(off_t offset) const;
@@ -100,6 +101,14 @@ Reader::readObj(off_t offset, Obj *object, size_t count) const
         throw Exception() << "incomplete object read from " << *this
            << " at offset " << offset
            << " for " << count << " bytes";
+}
+
+template <typename Obj> Obj
+Reader::readObj(off_t offset) const
+{
+   Obj t;
+   readObj(offset, &t);
+   return t;
 }
 
 class FileReader : public Reader {

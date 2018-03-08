@@ -123,8 +123,7 @@ CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
 #ifdef NT_PRSTATUS
    for (auto note : coreImage->notes) {
         if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
-            prstatus_t prstatus;
-            note.data()->readObj(0, &prstatus);
+            const auto &prstatus = note.data()->readObj<prstatus_t>(0);
             if (prstatus.pr_pid == pid) {
                 memcpy(reg, &prstatus.pr_reg, sizeof(*reg));
                 return true;
@@ -136,13 +135,13 @@ CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
 }
 
 void
-CoreProcess::resume(pid_t)
+CoreProcess::resume(pid_t /* unused */)
 {
     // can't resume post-mortem debugger.
 }
 
 void
-CoreProcess::stop(lwpid_t)
+CoreProcess::stop(lwpid_t /* unused */)
 {
     // can't stop a dead process.
 }
@@ -157,14 +156,10 @@ CoreProcess::stopProcess()
 pid_t
 CoreProcess::getPID() const
 {
-    for (auto note : coreImage->notes) {
-        // Return the PID of the first task in the core.
-        if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
-            prstatus_t status;
-            note.data()->readObj(0, &status);
-            return status.pr_pid;
-        }
-    }
+    // Return the PID of the first task in the core.
+    for (auto note : coreImage->notes)
+        if (note.name() == "CORE" && note.type() == NT_PRSTATUS)
+            return note.data()->readObj<prstatus_t>(0).pr_pid;
     return -1;
 }
 
@@ -172,10 +167,7 @@ void
 CoreProcess::findLWPs()
 {
     for (auto note : coreImage->notes) {
-        if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
-            prstatus_t status;
-            note.data()->readObj(0, &status);
-            (void)lwps[status.pr_pid];
-        }
+        if (note.name() == "CORE" && note.type() == NT_PRSTATUS)
+            (void)lwps[note.data()->readObj<prstatus_t>(0).pr_pid];
     }
 }

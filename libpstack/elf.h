@@ -33,17 +33,20 @@ extern bool noDebugLibs;
 #ifndef elfinfo_h_guard
 #define elfinfo_h_guard
 
+#include <sys/procfs.h>
+#include <sys/ptrace.h>
+
+#include <elf.h>
+
 #include <tuple>
 #include <string>
-#include <sys/ptrace.h>
 #include <list>
 #include <vector>
 #include <map>
 #include <memory>
-#include <elf.h>
-#include <sys/procfs.h>
-#include <libpstack/util.h>
 #include <limits>
+
+#include "libpstack/util.h"
 #include "libpstack/json.h"
 
 #ifndef ELF_BITS
@@ -90,6 +93,7 @@ ElfType(auxv_t)
 ElfType(Off)
 ElfType(Rela)
 ElfType(Chdr)
+ElfType(Sword)
 
 #if ELF_BITS==64
 #define ELF_ST_TYPE ELF64_ST_TYPE
@@ -183,7 +187,7 @@ private:
     std::shared_ptr<ElfObject> debugObject; // (DWARF) debug object as per .gnu_debuglink/other.
 
     bool debugLoaded; // We've at least attempted to load debugObject: don't try again
-    friend std::ostream &operator<< (std::ostream &os, const JSON<ElfObject> &obj);
+    friend std::ostream &operator<< (std::ostream &, const JSON<ElfObject> &);
 };
 
 /*

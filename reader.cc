@@ -35,7 +35,7 @@ off_t
 FileReader::size() const
 {
     if (fileSize == -1) {
-       struct stat buf;
+       struct stat buf{};
        int rc = fstat(file, &buf);
        if (rc == -1)
            throw (Exception() << "fstat failed: can't find size of file: " << strerror(errno));
@@ -149,7 +149,7 @@ CacheReader::Page *
 CacheReader::getPage(off_t pageoff) const
 {
     Page *p;
-    int first = true;
+    bool first = true;
     for (auto i = pages.begin(); i != pages.end(); ++i) {
         p = *i;
         if (p->offset == pageoff) {
@@ -183,7 +183,7 @@ CacheReader::read(off_t off, size_t count, char *ptr) const
         size_t offsetOfDataInPage = off % PAGESIZE;
         off_t offsetOfPageInFile = off - offsetOfDataInPage;
         Page *page = getPage(offsetOfPageInFile);
-        if (page == 0)
+        if (page == nullptr)
             break;
         size_t chunk = std::min(page->len - offsetOfDataInPage, count);
         memcpy(ptr, page->data + offsetOfDataInPage, chunk);

@@ -1,17 +1,18 @@
+#include "libpstack/proc.h"
+#include "libpstack/ps_callback.h"
+
 #include <sys/ptrace.h>
 #include <sys/types.h>
 
 #include <dirent.h>
-#include <unistd.h>
-#include <limits.h>
-#include <fcntl.h>
-#include <wait.h>
 #include <err.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <wait.h>
 
+#include <climits>
 #include <iostream>
-
-#include "libpstack/proc.h"
-#include "libpstack/ps_callback.h"
+#include <utility>
 
 std::string
 procname(pid_t pid, const std::string &base)
@@ -22,10 +23,8 @@ procname(pid_t pid, const std::string &base)
 LiveReader::LiveReader(pid_t pid, const std::string &base)
    : FileReader(procname(pid, base)) {}
 
-LiveProcess::LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid_,
-      const PathReplacementList &repls, DwarfImageCache &imageCache)
-    : Process(ex ? ex : imageCache.getImageForName(procname(pid_, "exe")),
-             std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")),
+LiveProcess::LiveProcess(std::shared_ptr<ElfObject> &ex, pid_t pid_, const PathReplacementList &repls, DwarfImageCache &imageCache)
+    : Process(ex ? ex : imageCache.getImageForName(procname(pid_, "exe")), std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")),
           repls, imageCache)
     , pid(pid_)
 {
@@ -69,15 +68,15 @@ LiveProcess::resume(lwpid_t pid)
     if (--tcb.stopCount != 0)
         return;
     kill(pid, SIGCONT);
-    if (ptrace(PT_DETACH, pid, (caddr_t)1, 0) != 0)
+    if (ptrace(PT_DETACH, pid, caddr_t(1), 0) != 0)
         std::clog << "failed to detach from process " << pid << ": " << strerror(errno) << "\n";
     if (verbose >= 1) {
         timeval tv;
-        gettimeofday(&tv, 0);
-        long long secs = (tv.tv_sec - tcb.stoppedAt.tv_sec) * 1000000;
-        secs += tv.tv_usec;
-        secs -= tcb.stoppedAt.tv_usec;
-        *debug << "resumed LWP " << pid << ": was stopped for " << std::dec << secs << " microseconds" << std::endl;
+        gettimeofday(&tv, nullptr);
+        intmax_t usecs = (tv.tv_sec - tcb.stoppedAt.tv_sec) * 1000000;
+        usecs += tv.tv_usec;
+        usecs -= tcb.stoppedAt.tv_usec;
+        *debug << "resumed LWP " << pid << ": was stopped for " << std::dec << usecs << " microseconds" << std::endl;
     }
 }
 
@@ -85,16 +84,17 @@ void
 LiveProcess::findLWPs()
 {
     std::string dirName = procname(pid, "task");
-    DIR *d;
+    DIR *d = opendir(dirName.c_str());
     dirent *de;
-    for (d = opendir(dirName.c_str()); d != nullptr && (de = readdir(d)) != nullptr; ) {
-        char *p;
-        lwpid_t pid = strtol(de->d_name, &p, 0);
-        if (*p == 0) {
-            (void)lwps[pid];
+    if (d != nullptr) {
+        while ((de = readdir(d)) != nullptr) {
+            char *p;
+            lwpid_t pid = strtol(de->d_name, &p, 0);
+            if (*p == 0)
+                (void)lwps[pid];
         }
+        closedir(d);
     }
-    closedir(d);
 }
 
 pid_t
@@ -129,8 +129,8 @@ LiveProcess::stopProcess()
 
     // Stop all LWPS.
     int i = 0;
-    for (auto lwp = lwps.begin(); lwp != lwps.end(); ++lwp) {
-        stop(lwp->first);
+    for (auto &lwp : lwps) {
+        stop(lwp.first);
         i++;
     }
     if (verbose >= 1)
@@ -151,8 +151,8 @@ LiveProcess::resumeProcess()
         }
     });
 
-    for (auto lwp = lwps.begin(); lwp != lwps.end(); ++lwp)
-        resume(lwp->first);
+    for (auto &lwp : lwps)
+        resume(lwp.first);
 
     resume(pid);
     if (verbose >= 1)
@@ -166,7 +166,7 @@ LiveProcess::stop(lwpid_t pid)
     if (tcb.stopCount++ != 0)
         return;
 
-    gettimeofday(&tcb.stoppedAt, 0);
+    gettimeofday(&tcb.stoppedAt, nullptr);
     if (ptrace(PT_ATTACH, pid, 0, 0) != 0) {
         *debug << "failed to stop LWP " << pid << ": ptrace failed: " << strerror(errno) << "\n";
         return;

@@ -1,10 +1,11 @@
 #include <iostream>
 #include <stdlib.h>
 #include <stddef.h>
-#include <libpstack/dwarf.h>
-#include <libpstack/proc.h>
 #include <python2.7/Python.h>
 #include <python2.7/frameobject.h>
+
+#include "libpstack/dwarf.h"
+#include "libpstack/proc.h"
 
 static bool
 pthreadTidOffset(const Process &proc, size_t *offsetp)

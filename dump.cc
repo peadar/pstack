@@ -1,9 +1,11 @@
-#include <libpstack/dump.h>
+#include "libpstack/json.h"
+#include "libpstack/dwarf.h"
+
+#include <sys/procfs.h>
+
+#include <cassert>
 #include <set>
 #include <unordered_map>
-#include <sys/procfs.h>
-#include <cassert>
-#include "libpstack/json.h"
 
 #if ELF_BITS == 64
 #define ELF_R_SYM(a) ELF64_R_SYM(a)
@@ -16,79 +18,173 @@
 #endif
 
 struct DwarfDumpCFAInsns {
-    DWARFReader &r;
-    DwarfDumpCFAInsns(DWARFReader &r_) : r(r_) { }
+    off_t start;
+    off_t end;
+    explicit DwarfDumpCFAInsns(off_t start_, off_t end_)
+          : start(start_)
+          , end(end_)
+    {}
 };
 
+std::ostream &operator <<(std::ostream &os, const JSON<DwarfCFAInstruction> &j)
+{
+   DwarfCFAInstruction insn = j.object;
+#define DWARF_CFA_INSN(x,y) case x: return os << json(#x);
+    switch (insn) {
+#include "libpstack/dwarf/cfainsns.h"
+    default: return os << json(int(insn));
+    }
+#undef DWARF_CFA_INSN
+
+   return os;
+}
+
 void
-dwarfDumpCFAInsn(std::ostream &os, DWARFReader &r)
+dwarfDumpCFAInsn(std::ostream &os, DWARFReader *r)
 {
 
+    JObject jo(os);
+
     Elf_Off len;
-    Elf_Off off = r.getOffset();
-    os
-        << "{ \"offset\": " << off
-        << ", \"type\": ";
-    uint8_t op = r.getu8();
-    switch (op >> 6) {
-    case 1: os << "\"DW_CFA_advance_loc\"" << ", \"delta\":" << (op & 0x3f); break;
-    case 2: os << "\"DW_CFA_offset\"" << ", \"register\": " << (op & 0x3f) << r.getuleb128(); break;
-    case 3: os << "\"DW_CFA_restore\"" << ", \"register\": " << (op & 0x3f); break;
 
-    case 0:
-        switch (op & 0x3f) {
-            case 0x0: os << "\"DW_CFA_nop\""; break;
-            case 0x1: os << "\"DW_CFA_set_loc\""
-                    << ", \"arg\":" << r.getuint(r.addrLen); break;
-            case 0x2: os << "\"DW_CFA_advance_loc1\"" << ", \"arg\":" << int(r.getu8()); break;
-            case 0x3: os << "\"DW_CFA_advance_loc2\"" << ", \"arg\":" <<  r.getu16(); break;
-            case 0x4: os << "\"DW_CFA_advance_loc4\"" << ", \"arg\":" << r.getu32(); break;
-            case 0x5: os << "\"DW_CFA_offset_extended\"" << ", \"reg\":" << r.getuleb128() << ", \"arg\":" << r.getuleb128(); break;
-            case 0x6: os << "\"DW_CFA_restore_extended\"" << ", \"reg\":" << r.getuleb128(); break;
-            case 0x7: os << "\"DW_CFA_undefined\"" << ", \"reg\":" << r.getuleb128(); break;
-            case 0x8: os << "\"DW_CFA_same_value\"" << ", \"reg\":" << r.getuleb128(); break;
-            case 0x9: os << "\"DW_CFA_register\"" << ", \"reg1\":" << r.getuleb128() << ", \"reg2\":" << r.getuleb128(); break;
-            case 0xa: os << "\"DW_CFA_remember_state\""; break;
-            case 0xb: os << "\"DW_CFA_restore_state\""; break;
-            case 0xc: os << "\"DW_CFA_def_cfa\"" << ", \"reg\":" << r.getuleb128() << ", \"offset\":" << r.getuleb128(); break;
-            case 0xd: os << "\"DW_CFA_def_cfa_register\"" << ", \"reg\":" << r.getuleb128(); break;
-            case 0xe: os << "\"DW_CFA_def_cfa_offset\"" << ", \"offset\":" << r.getuleb128(); break;
+    DwarfCFAInstruction insn;
+    uint8_t op = r->getu8();
 
-            case 0xf: os << "\"DW_CFA_def_cfa_expression\"" << ", \"len\":" << (len = r.getuleb128());
-                r.skip(len);
-                break;
-
-            case 0x10: os << "\"DW_CFA_expression\"" << ", \"reg\":" << r.getuleb128() << ", \"length\":" << (len = r.getuleb128());
-                r.skip(len);
-                break;
-
-            case 0x12: os << "\"DW_CFA_def_cfa_sf\"" << ", \"register\": " << r.getuleb128() << ", \"offset\":" << r.getuleb128() ; break;
-            case 0x13: os << "\"DW_CFA_def_cfa_offset_sf\"" << ", \"offset\":" << r.getuleb128(); break;
-            case 0x16:
-                os << "\"DW_CFA_val_expression\"" << ", \"length\":" << (len = r.getuleb128()) << ", \"offset\":" << r.getOffset();
-                r.skip(len);
-                break;
-
-            case 0x2e: os << "\"DW_CFA_GNU_args_size\"" << ", \"offset\":" << r.getuleb128(); break;
-            case 0x2d: os << "\"DW_CFA_GNU_window_size\""; break;
-            case 0x2f: os << "\"DW_CFA_GNU_negative_offset_extended\""; break;
-            default: throw Exception() << "unknown CFA op " << std::hex << int(op);
+    switch (op & 0xc0) {
+        case 0:
+            insn = DwarfCFAInstruction(op);
             break;
-        }
+        default:
+            insn = DwarfCFAInstruction(op & 0xc0);
+            break;
     }
-    os << " }";
+
+    jo.field("type", insn);
+
+    switch (insn) {
+        case DW_CFA_advance_loc:
+            jo.field("delta", op & 0x3f);
+            break;
+        case DW_CFA_offset:
+            jo
+                .field("register", op & 0x3f)
+                .field("offset", r->getuleb128());
+            break;
+        case DW_CFA_restore:
+            jo.field("register", op & 0x3f);
+            break;
+
+        case DW_CFA_set_loc:
+            jo.field("arg", r->getuint(r->addrLen));
+            break;
+
+        case DW_CFA_advance_loc1:
+            jo.field("arg", int(r->getu8()));
+            break;
+
+        case DW_CFA_advance_loc2:
+            jo.field("arg", int(r->getu16()));
+            break;
+
+        case DW_CFA_advance_loc4:
+            jo.field("arg", int(r->getu32()));
+            break;
+
+        case DW_CFA_offset_extended:
+            jo
+                .field("reg", r->getuleb128())
+                .field("arg", r->getuleb128());
+            break;
+
+        case DW_CFA_restore_extended:
+            jo.field("reg", r->getuleb128());
+            break;
+        case DW_CFA_undefined:
+            jo.field("reg", r->getuleb128());
+            break;
+        case DW_CFA_same_value:
+            jo.field("reg",  r->getuleb128());
+            break;
+
+        case DW_CFA_register:
+            jo
+                .field("reg1", r->getuleb128())
+                .field("reg2", r->getuleb128());
+            break;
+
+        case DW_CFA_def_cfa:
+            jo
+                .field("reg", r->getuleb128())
+                .field("offset", r->getuleb128());
+            break;
+
+        case DW_CFA_def_cfa_register:
+            jo.field("reg", r->getuleb128());
+            break;
+
+        case DW_CFA_def_cfa_offset:
+            jo.field("offset", r->getuleb128());
+            break;
+
+        case DW_CFA_def_cfa_expression:
+            len = r->getuleb128();
+            jo.field("len", len);
+            r->skip(len);
+            break;
+
+        case DW_CFA_expression:
+            jo
+                .field("reg",  r->getuleb128())
+                .field("length",  len = r->getuleb128());
+            r->skip(len);
+            break;
+
+        case DW_CFA_def_cfa_sf:
+            jo
+                .field("register", r->getuleb128())
+                .field("offset", r->getuleb128());
+            break;
+
+        case DW_CFA_def_cfa_offset_sf:
+            jo.field("offset", r->getuleb128());
+            break;
+
+        case DW_CFA_val_expression:
+            jo.field("length", (len = r->getuleb128()))
+            .field("offset", r->getOffset());
+            r->skip(len);
+            break;
+        case DW_CFA_GNU_args_size:
+            jo.field("size", r->getuleb128());
+            break;
+
+        case DW_CFA_GNU_window_save:
+            break;
+
+        case DW_CFA_GNU_negative_offset_extended:
+        case DW_CFA_offset_extended_sf:
+            jo.field("register", r->getuleb128())
+                .field("scale", r->getsleb128());
+            break;
+
+        case DW_CFA_nop: // nothing to see.
+            break;
+
+        default:
+            throw (Exception() << "unknown CFA op " << std::hex << int(op));
+    }
 }
 
 template <typename C>
 static std::ostream &
 operator << (std::ostream &os, const JSON<DwarfDumpCFAInsns, C> &jinsns)
 {
-    auto &r = jinsns.object.r;
+    DWARFReader r(jinsns.context->io, jinsns.object.start, jinsns.object.end);
     os << "[ ";
-    std::string sep = "";
+    std::string sep;
     while (!r.empty()) {
         os << sep;
-        dwarfDumpCFAInsn(os, r);
+        dwarfDumpCFAInsn(os, &r);
         sep = ",\n";
     }
     os << "]";
@@ -243,7 +339,7 @@ operator << (std::ostream &os, const JSON<DwarfBlock> &b)
 
 struct EntryReference {
    const DwarfEntry *entry;
-   EntryReference(const DwarfEntry *entry_) : entry(entry_) {}
+   explicit EntryReference(const DwarfEntry *entry_) : entry(entry_) {}
 };
 
 std::ostream &
@@ -291,7 +387,7 @@ operator << (std::ostream &os, const JSON<DwarfAttribute> &o)
     case DW_FORM_GNU_ref_alt:
     case DW_FORM_ref_udata: {
         const auto entry = attr.entry->referencedEntry(attr.name());
-        if (entry)
+        if (entry != nullptr)
            writer.field("value", EntryReference(entry));
         break;
 
@@ -321,7 +417,6 @@ operator << (std::ostream &os, const JSON<DwarfAttribute> &o)
 std::ostream &
 operator <<(std::ostream &os, const JSON<DwarfCIE, const DwarfFrameInfo *> &dcie)
 {
-    DWARFReader r(dcie.context->io, dcie.object.instructions, dcie.object.end);
     return JObject(os)
     .field("version", int(dcie.object.version))
     .field("augmentation", dcie.object.augmentation)
@@ -330,24 +425,24 @@ operator <<(std::ostream &os, const JSON<DwarfCIE, const DwarfFrameInfo *> &dcie
     .field("return address reg", dcie.object.rar)
     .field("instruction length", dcie.object.end - dcie.object.instructions)
     .field("LSDA encoding", int(dcie.object.lsdaEncoding))
-    .field("instructions", DwarfDumpCFAInsns(r), dcie.context);
+    .field("instructions", DwarfDumpCFAInsns(dcie.object.instructions, dcie.object.end), dcie.context);
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<DwarfFDE, const DwarfFrameInfo*> &dfde)
+operator << (std::ostream &os, const JSON<DwarfFDE, const DwarfFrameInfo*> &dfi)
 {
-    DWARFReader r(dfde.context->io, dfde.object.instructions, dfde.object.end);
+    DWARFReader r(dfi.context->io, dfi->instructions, dfi->end);
     return JObject(os)
-        .field("cie", intptr_t(dfde.object.cie))
-        .field( "loc", dfde.object.iloc)
-        .field("range", dfde.object.irange)
-        .field("instructions", DwarfDumpCFAInsns(r), dfde.context);
+        .field("cie", dfi->cieOff)
+        .field( "loc", dfi->iloc)
+        .field("range", dfi->irange)
+        .field("instructions", DwarfDumpCFAInsns(dfi->instructions, dfi->end), dfi.context);
     ;
 }
 
 struct ElfAddrStr {
    Elf_Addr addr;
-   ElfAddrStr(Elf_Addr addr_) : addr(addr_) {}
+   explicit ElfAddrStr(Elf_Addr addr_) : addr(addr_) {}
 };
 
 std::ostream &
@@ -367,35 +462,30 @@ operator << (std::ostream &os, const JSON<DwarfFrameInfo> &info)
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<DwarfInfo> &jo)
+operator << (std::ostream &os, const JSON<DwarfInfo> &di)
 {
     JObject writer(os);
-    auto &dwarf = jo.object;
-    writer.field("units", dwarf.getUnits())
-        .field("pubnameUnits", dwarf.pubnames())
-        .field("aranges", dwarf.ranges());
-    if (dwarf.debugFrame)
-        writer.field("debugframe", *dwarf.debugFrame);
-    if (dwarf.ehFrame)
-        writer.field("ehFrame", *dwarf.ehFrame);
+    writer.field("units", di->getUnits())
+        .field("pubnameUnits", di->pubnames())
+        .field("aranges", di->ranges());
+    if (di->debugFrame)
+        writer.field("debugframe", *di->debugFrame);
+    if (di->ehFrame)
+        writer.field("ehFrame", *di->ehFrame);
     return writer;
 }
 
-std::ostream &operator << (std::ostream &os, const JSON<ElfNoteDesc> &jnote)
+std::ostream &operator << (std::ostream &os, const JSON<ElfNoteDesc> &note)
 {
-    const auto &note = jnote.object;
     JObject writer(os);
-
-    writer.field("name", note.name()).field("type", note.type());
+    writer.field("name", note->name()).field("type", note->type());
 
     // need to switch on type and name for notes.
-    if (note.name() == "CORE") {
-        auto data = note.data();
-        size_t len = note.size();
-        prstatus_t prstatus;
-        switch (note.type()) {
+    if (note->name() == "CORE") {
+        auto data = note->data();
+        prstatus_t prstatus{};
+        switch (note->type()) {
             case NT_PRSTATUS:
-                assert(len >= sizeof (prstatus_t));
                 data->readObj(0, &prstatus);
                 writer.field("prstatus", prstatus);
                 break;
@@ -409,40 +499,44 @@ std::ostream &operator << (std::ostream &os, const JSON<ElfNoteDesc> &jnote)
 
 struct ProgramHeaderName {
    int type;
-   ProgramHeaderName(int type_) : type(type_) {}
+   explicit ProgramHeaderName(int type_) : type(type_) {}
 };
 
-std::ostream &operator << (std::ostream &os, const JSON<ProgramHeaderName> &jph)
+std::ostream &operator << (std::ostream &os, const JSON<ProgramHeaderName> &ph)
 {
-    auto ph = jph.object;
-
-    static const char *segmentTypeNames[] = {
-        "PT_NULL",
-        "PT_LOAD",
-        "PT_DYNAMIC",
-        "PT_INTERP",
-        "PT_NOTE",
-        "PT_SHLIB",
-        "PT_PHDR"
+    static const std::map<int, const char *> names = {
+#define strpair(x) { x, #x }
+        strpair(PT_NULL),
+        strpair(PT_LOAD),
+        strpair(PT_DYNAMIC),
+        strpair(PT_INTERP),
+        strpair(PT_NOTE),
+        strpair(PT_SHLIB),
+        strpair(PT_PHDR),
+        strpair(PT_TLS),
+        strpair(PT_GNU_EH_FRAME),
+        strpair(PT_GNU_STACK)
+#undef strpair
     };
-    if (ph.type >= 0 && ph.type <= PT_PHDR)
-        return os << json(segmentTypeNames[ph.type]);
-    return os << '"' << ph.type << '"';
+    auto namei = names.find(ph->type);
+    if (namei != names.end())
+        return os << json(namei->second);
+    return os << '"' << ph->type << '"';
 }
 
 /*
  * Debug output of an ELF32 object.
  */
-std::ostream &operator<< (std::ostream &os, const JSON<ElfObject> &jo)
+std::ostream &operator<< (std::ostream &os, const JSON<ElfObject> &elf)
 {
-    auto &obj = jo.object;
     static const char *typeNames[] = {
-        "ET_NONE",
-        "ET_REL",
-        "ET_EXEC",
-        "ET_DYN",
-        "ET_CORE"
+         "ET_NONE",
+         "ET_REL",
+         "ET_EXEC",
+         "ET_DYN",
+         "ET_CORE"
     };
+
     static const char *abiNames[] = {
         "SYSV/NONE",
         "HP-UX",
@@ -459,73 +553,73 @@ std::ostream &operator<< (std::ostream &os, const JSON<ElfObject> &jo)
         "OpenBSD"
     };
 
-    auto &ehdr = obj.getElfHeader();
+    auto &ehdr = elf->getElfHeader();
     auto brand = ehdr.e_ident[EI_OSABI];
 
-    Mapper<ProgramHeaderName, decltype(obj.programHeaders)::mapped_type, std::map<Elf_Word, ElfObject::ProgramHeaders>> mappedSegments(obj.programHeaders);
+    Mapper<ProgramHeaderName, decltype(elf->programHeaders)::mapped_type, std::map<Elf_Word, ElfObject::ProgramHeaders>> mappedSegments(elf->programHeaders);
     return JObject(os)
-      .field("type",  typeNames[ehdr.e_type])
-      .field("entry", ehdr.e_entry)
-      .field("abi", brand < sizeof abiNames / sizeof abiNames[0]? abiNames[brand] : nullptr)
-      .field("sections", obj.sectionHeaders, &obj)
-      .field("segments", mappedSegments, &obj)
-      .field("interpreter", obj.getInterpreter())
-      .field("notes", obj.notes);
-    /*
-
-    for (auto &seg :  obj.getSegments(PT_DYNAMIC)) {
-        os << ", \"dynamic\": [";
-        const char *sep = "";
-        off_t dynoff = seg.p_offset;
-        off_t edyn = dynoff + seg.p_filesz;
-        for (; dynoff < edyn; dynoff += sizeof (Elf_Dyn)) {
-            Elf_Dyn dyn;
-            obj.io->readObj(dynoff, &dyn);
-            os << sep << dyn;
-            sep = ",\n";
-        }
-        os << "]";
-        break;
+        .field("type", typeNames[ehdr.e_type])
+        .field("entry", ehdr.e_entry)
+        .field("abi", brand < sizeof abiNames / sizeof abiNames[0]? abiNames[brand] : nullptr)
+        .field("sections", elf->sectionHeaders, &elf.object)
+        .field("segments", mappedSegments, &elf.object)
+        .field("interpreter", elf->getInterpreter())
+        .field("notes", elf->notes);
+/*
+ * XXX: TODO post JSON fixups.
+       for (auto &seg :  obj.getSegments(PT_DYNAMIC)) {
+       os << ", \"dynamic\": [";
+       const char *sep = "";
+       off_t dynoff = seg.p_offset;
+       off_t edyn = dynoff + seg.p_filesz;
+       for (; dynoff < edyn; dynoff += sizeof (Elf_Dyn)) {
+       Elf_Dyn dyn;
+       obj.io->readObj(dynoff, &dyn);
+       os << sep << dyn;
+       sep = ",\n";
+       }
+       os << "]";
+       break;
     }
-    */
+*/
 }
 
 std::ostream &
 operator <<(std::ostream &os, const JSON<timeval> &tv)
 {
     return JObject(os)
-        .field("tv_sec", tv.object.tv_sec)
-        .field("tv_usec", tv.object.tv_usec);
+        .field("tv_sec", tv->tv_sec)
+        .field("tv_usec", tv->tv_usec);
 }
 
 std::ostream &
 operator <<(std::ostream &os, const JSON<Elf_auxv_t> &a)
 {
     JObject writer(os);
-    
-    switch (a.object.a_type) {
+
+    switch (a->a_type) {
 #define AUX_TYPE(name, value) case value: writer.field("a_type", #name); break;
 #include "libpstack/elf/aux.h"
-    default: writer.field("a_type", a.object.a_type); break;
+    default: writer.field("a_type", a->a_type); break;
 #undef AUX_TYPE
     }
-    return writer.field("a_val", a.object.a_un.a_val);
+    return writer.field("a_val", a->a_un.a_val);
 }
 
 std::ostream &
 operator <<(std::ostream &os, const JSON<Elf_Rela> &rela)
 {
    return JObject(os)
-      .field("r_offset", rela.object.r_offset)
-      .field("r_info-sym", ELF_R_SYM(rela.object.r_info))
-      .field("r_info-type", ELF_R_TYPE(rela.object.r_info));
+      .field("r_offset", rela->r_offset)
+      .field("r_info-sym", ELF_R_SYM(rela->r_info))
+      .field("r_info-type", ELF_R_TYPE(rela->r_info));
 }
 
 const struct sh_flag_names {
     const char *name;
     Elf_Word value;
 } sh_flag_names[] = {
-#define SHF_FLAG(f) { .name = #f, .value = f },
+#define SHF_FLAG(f) { .name = #f, .value = (f) },
     SHF_FLAG(SHF_WRITE)
     SHF_FLAG(SHF_ALLOC)
     SHF_FLAG(SHF_EXECINSTR)
@@ -543,7 +637,6 @@ const struct sh_flag_names {
     SHF_FLAG(SHF_MASKPROC)
     SHF_FLAG(SHF_ORDERED)
     SHF_FLAG((Elf_Word)SHF_EXCLUDE)
-    { .name = 0, .value = 0 }
 };
 
 /*
@@ -552,7 +645,6 @@ const struct sh_flag_names {
 std::ostream &
 operator<< (std::ostream &os, const JSON<Elf_Sym, std::tuple<const ElfObject &, const ElfSection &> *> &t)
 {
-    auto &s = t.object;
     auto &obj = std::get<0>(*t.context);
     auto &sec = std::get<1>(*t.context);
     static const char *bindingNames[] = {
@@ -594,35 +686,30 @@ operator<< (std::ostream &os, const JSON<Elf_Sym, std::tuple<const ElfObject &, 
     auto symStrings = obj.getSection(sec.shdr.sh_link);
 
     return JObject(os)
-        .field("name", symStrings.io->readString(s.st_name))
-        .field("value", s.st_value)
-        .field("size",s.st_size)
-        .field("info", (int)s.st_info)
-        .field("binding", bindingNames[s.st_info >> 4])
-        .field("type", typeNames[s.st_info & 0xf])
-        .field("other", (int)s.st_other)
-        .field("shndx", s.st_shndx);
+        .field("name", symStrings.io->readString(t->st_name))
+        .field("value", t->st_value)
+        .field("size",t->st_size)
+        .field("info", int(t->st_info))
+        .field("binding", bindingNames[t->st_info >> 4])
+        .field("type", typeNames[t->st_info & 0xf])
+        .field("other", int(t->st_other))
+        .field("shndx", t->st_shndx);
 }
 
+static const char *
+sectionTypeName(intmax_t sectionType)
+{
+#define SECTION_TYPE(name, value) case name: return #name;
+    switch (sectionType) {
+#include "libpstack/elf/sectype.h"
+        default:
+            return "unknown";
+    }
+}
 
 std::ostream &
-operator <<(std::ostream &os, const JSON<ElfSection, const ElfObject *> jsection)
+operator <<(std::ostream &os, const JSON<ElfSection, const ElfObject *> &jsection)
 {
-    static const char *sectionTypeNames[] = {
-        "SHT_NULL",
-        "SHT_PROGBITS",
-        "SHT_SYMTAB",
-        "SHT_STRTAB",
-        "SHT_RELA",
-        "SHT_HASH",
-        "SHT_DYNAMIC",
-        "SHT_NOTE",
-        "SHT_NOBITS",
-        "SHT_REL",
-        "SHT_SHLIB",
-        "SHT_DYNSYM",
-    };
-
     JObject writer(os);
 
     auto &o = *jsection.context;
@@ -630,36 +717,33 @@ operator <<(std::ostream &os, const JSON<ElfSection, const ElfObject *> jsection
     auto strs = o.getSection(o.getElfHeader().e_shstrndx);
     const Elf_Shdr &sh = sec.shdr;
 
+    // Secions that have content that's raw text.
     static std::set<std::string> textContent = {
         ".gnu_debugaltlink",
         ".gnu_debuglink",
         ".comment",
     };
 
+    std::set<const char *> flags;
+    for (auto &flag : sh_flag_names)
+        if ((sh.sh_flags & flag.value) != 0)
+            flags.insert(flag.name);
+
     std::string secName = strs.io->readString(sh.sh_name);
-    writer.field("size", sh.sh_size);
-    writer.field("uncompressedSize", sec.io->size());
-    writer.field("name", secName);
+
+    writer.field("size", sh.sh_size)
+        .field("uncompressedSize", sec.io->size())
+        .field("name", secName)
+        .field("flags", flags)
+        .field("address", sh.sh_addr)
+        .field("offset", sh.sh_offset)
+        .field("link", sh.sh_link)
+        .field("info", sh.sh_info);
+
     if (sh.sh_type <= SHT_DYNSYM)
-        writer.field("type", sectionTypeNames[sh.sh_type]);
+        writer.field("type", sectionTypeName(sh.sh_type));
     else
         writer.field("type", sh.sh_type);
-
-    os << ", \"flags\": " << "[";
-
-    std::string sep = "";
-    for (auto i = sh_flag_names; i->name; ++i) {
-        if (sh.sh_flags & i->value) {
-            os << sep << "\"" << i->name << "\"";
-            sep = ", ";
-        }
-    }
-    os << "]";
-
-    writer.field("address", sh.sh_addr);
-    writer.field("offset", sh.sh_offset);
-    writer.field("link", sh.sh_link);
-    writer.field("info", sh.sh_info);
 
     switch (sh.sh_type) {
         case SHT_SYMTAB:
@@ -677,7 +761,7 @@ operator <<(std::ostream &os, const JSON<ElfSection, const ElfObject *> jsection
         char buf[1024];
         auto count = sec.io->read(0, std::min(sizeof buf - 1, size_t(sec.io->size())), buf);
         buf[count] = 0;
-        os << ", \"content\": \"" << buf << "\"";
+        writer.field("content", buf);
     }
     return os;
 }
@@ -686,123 +770,52 @@ operator <<(std::ostream &os, const JSON<ElfSection, const ElfObject *> jsection
  * Debug output of an ELF32 program segment
  */
 template <typename C> std::ostream &
-operator<< (std::ostream &os, const JSON<Elf_Phdr, C> &jh)
+operator<< (std::ostream &os, const JSON<Elf_Phdr, C> &phdr)
 {
-    auto &h = jh.object;
     JObject writer(os);
 
     std::set<const char *>flags;
-    if (h.p_flags & PF_R)
+    if (phdr->p_flags & PF_R)
         flags.insert("PF_R");
 
-    if (h.p_flags & PF_W)
+    if (phdr->p_flags & PF_W)
         flags.insert("PF_W");
 
-    if (h.p_flags & PF_X)
+    if (phdr->p_flags & PF_X)
         flags.insert("PF_X");
 
-    return writer.field("offset", h.p_offset)
-        .field("vaddr", h.p_vaddr)
-        .field("paddr", h.p_paddr)
-        .field("filesz", h.p_filesz)
-        .field("memsz", h.p_memsz)
-        .field("type", ProgramHeaderName(h.p_type))
+    return writer.field("offset", phdr->p_offset)
+        .field("vaddr", phdr->p_vaddr)
+        .field("paddr", phdr->p_paddr)
+        .field("filesz", phdr->p_filesz)
+        .field("memsz", phdr->p_memsz)
+        .field("type", ProgramHeaderName(phdr->p_type))
         .field("flags", flags)
-        .field("alignment", h.p_align);
+        .field("alignment", phdr->p_align);
 }
 
 struct DynTag {
-    long long tag;
-    DynTag(long long tag_) : tag(tag_) {}
+    Elf_Sword tag;
+    explicit DynTag(Elf_Sword tag_) : tag(tag_) {}
 };
+
 std::ostream &
 operator << (std::ostream &os, const JSON<DynTag> &tag)
 {
-#define T(a) case a: return os << json(#a);
-    switch (tag.object.tag) {
-    T(DT_NULL)
-    T(DT_NEEDED)
-    T(DT_PLTRELSZ)
-    T(DT_PLTGOT)
-    T(DT_HASH)
-    T(DT_STRTAB)
-    T(DT_SYMTAB)
-    T(DT_RELA)
-    T(DT_RELASZ)
-    T(DT_RELAENT)
-    T(DT_STRSZ)
-    T(DT_SYMENT)
-    T(DT_INIT)
-    T(DT_FINI)
-    T(DT_SONAME)
-    T(DT_RPATH)
-    T(DT_SYMBOLIC)
-    T(DT_REL)
-    T(DT_RELSZ)
-    T(DT_RELENT)
-    T(DT_PLTREL)
-    T(DT_DEBUG)
-    T(DT_TEXTREL)
-    T(DT_JMPREL)
-    T(DT_BIND_NOW)
-    T(DT_INIT_ARRAY)
-    T(DT_FINI_ARRAY)
-    T(DT_INIT_ARRAYSZ)
-    T(DT_FINI_ARRAYSZ)
-    T(DT_RUNPATH)
-    T(DT_FLAGS)
-    T(DT_PREINIT_ARRAY)
-    T(DT_PREINIT_ARRAYSZ)
-    T(DT_NUM)
-    T(DT_LOOS)
-    T(DT_HIOS)
-    T(DT_LOPROC)
-    T(DT_HIPROC)
-    T(DT_PROCNUM)
-    T(DT_VALRNGLO)
-    T(DT_GNU_PRELINKED)
-    T(DT_GNU_CONFLICTSZ)
-    T(DT_GNU_LIBLISTSZ)
-    T(DT_CHECKSUM)
-    T(DT_PLTPADSZ)
-    T(DT_MOVEENT)
-    T(DT_MOVESZ)
-    T(DT_FEATURE_1)
-    T(DT_POSFLAG_1)
-    T(DT_SYMINSZ)
-    T(DT_VALRNGHI)
-    T(DT_ADDRRNGLO)
-    T(DT_GNU_HASH)
-    T(DT_TLSDESC_PLT)
-    T(DT_TLSDESC_GOT)
-    T(DT_GNU_CONFLICT)
-    T(DT_GNU_LIBLIST)
-    T(DT_CONFIG)
-    T(DT_DEPAUDIT)
-    T(DT_AUDIT)
-    T(DT_PLTPAD)
-    T(DT_MOVETAB)
-    T(DT_SYMINFO)
-    T(DT_VERSYM)
-    T(DT_RELACOUNT)
-    T(DT_RELCOUNT)
-    T(DT_FLAGS_1)
-    T(DT_VERDEF)
-    T(DT_VERDEFNUM)
-    T(DT_VERNEED)
-    T(DT_VERNEEDNUM)
-    T(DT_AUXILIARY)
+#define DYN_TAG(name, value) case name: return os << json(#name);
+    switch (tag->tag) {
+#include "libpstack/elf/dyntag.h"
     default: return os << json(int(tag.object.tag));
     }
-#undef T
+#undef DYN_TAG
 }
 
 std::ostream &
 operator<< (std::ostream &os, const JSON<Elf_Dyn> &d)
 {
     return JObject(os)
-        .field("tag", DynTag(d.object.d_tag))
-        .field("word", d.object.d_un.d_val);
+        .field("tag", DynTag(d->d_tag))
+        .field("word", d->d_un.d_val);
 }
 
 std::ostream &
@@ -810,7 +823,7 @@ operator<< (std::ostream &os, const JSON<DwarfExpressionOp> op)
 {
 #define DWARF_OP(name, value, args) case name: return os << json(#name);
     switch (op.object) {
-#include <libpstack/dwarf/ops.h>
+#include "libpstack/dwarf/ops.h"
         default: return os << json(int(op.object));
     }
 #undef DWARF_OP
@@ -820,75 +833,27 @@ std::ostream &
 operator <<(std::ostream &os, const JSON<elf_siginfo> &prinfo)
 {
     return JObject(os)
-        .field("si_signo", prinfo.object.si_signo)
-        .field("si_code", prinfo.object.si_code)
-        .field("si_errno", prinfo.object.si_errno);
+        .field("si_signo", prinfo->si_signo)
+        .field("si_code", prinfo->si_code)
+        .field("si_errno", prinfo->si_errno);
 }
 
 std::ostream &
-operator <<(std::ostream &os, const JSON<prstatus_t> &jo)
+operator <<(std::ostream &os, const JSON<prstatus_t> &prstatus)
 {
-    auto &prstat = jo.object;
     return JObject(os)
-        .field("pr_info", prstat.pr_info)
-        .field("pr_cursig", prstat.pr_cursig)
-        .field("pr_sigpend", prstat.pr_sigpend)
-        .field("pr_sighold", prstat.pr_sighold)
-        .field("pr_pid", prstat.pr_pid)
-        .field("pr_ppid", prstat.pr_ppid)
-        .field("pr_pgrp", prstat.pr_pgrp)
-        .field("pr_sid", prstat.pr_sid)
-        .field("pr_utime", prstat.pr_utime)
-        .field("pr_stime", prstat.pr_stime)
-        .field("pr_cutime", prstat.pr_cutime)
-        .field("pr_cstime", prstat.pr_cstime)
-        .field("pr_reg", intptr_t(prstat.pr_reg))
-        .field("pr_fpvalid", prstat.pr_fpvalid);
+        .field("pr_info", prstatus->pr_info)
+        .field("pr_cursig", prstatus->pr_cursig)
+        .field("pr_sigpend", prstatus->pr_sigpend)
+        .field("pr_sighold", prstatus->pr_sighold)
+        .field("pr_pid", prstatus->pr_pid)
+        .field("pr_ppid", prstatus->pr_ppid)
+        .field("pr_pgrp", prstatus->pr_pgrp)
+        .field("pr_sid", prstatus->pr_sid)
+        .field("pr_utime", prstatus->pr_utime)
+        .field("pr_stime", prstatus->pr_stime)
+        .field("pr_cutime", prstatus->pr_cutime)
+        .field("pr_cstime", prstatus->pr_cstime)
+        .field("pr_reg", intptr_t(prstatus->pr_reg))
+        .field("pr_fpvalid", prstatus->pr_fpvalid);
 }
-
-std::string
-auxv_name(Elf_Word val)
-{
-#define AUXV(n) case n : return #n;
-    switch (val) {
-        AUXV(AT_NULL)
-        AUXV(AT_IGNORE)
-        AUXV(AT_EXECFD)
-        AUXV(AT_PHDR)
-        AUXV(AT_PHENT)
-        AUXV(AT_PHNUM)
-        AUXV(AT_PAGESZ)
-        AUXV(AT_BASE)
-        AUXV(AT_FLAGS)
-        AUXV(AT_ENTRY)
-        AUXV(AT_NOTELF)
-        AUXV(AT_UID)
-        AUXV(AT_EUID)
-        AUXV(AT_GID)
-        AUXV(AT_EGID)
-        AUXV(AT_CLKTCK)
-        AUXV(AT_PLATFORM)
-        AUXV(AT_HWCAP)
-        AUXV(AT_FPUCW)
-        AUXV(AT_DCACHEBSIZE)
-        AUXV(AT_ICACHEBSIZE)
-        AUXV(AT_UCACHEBSIZE)
-        AUXV(AT_IGNOREPPC)
-        AUXV(AT_SECURE)
-        AUXV(AT_BASE_PLATFORM)
-#ifdef AT_RANDOM
-        AUXV(AT_RANDOM)
-#endif
-#ifdef AT_EXECFN
-        AUXV(AT_EXECFN)
-#endif
-        AUXV(AT_SYSINFO)
-        AUXV(AT_SYSINFO_EHDR)
-        AUXV(AT_L1I_CACHESHAPE)
-        AUXV(AT_L1D_CACHESHAPE)
-        AUXV(AT_L2_CACHESHAPE)
-        AUXV(AT_L3_CACHESHAPE)
-        default: return "unknown";
-    }
-}
-#undef AUXV

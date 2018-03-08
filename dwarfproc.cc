@@ -1,18 +1,16 @@
-#include <stack>
+#include "libpstack/dwarf.h"
+#include "libpstack/elf.h"
+#include "libpstack/proc.h"
+
+#include <cassert>
 #include <limits>
-
-#include <libpstack/proc.h>
-#include <libpstack/elf.h>
-#include <libpstack/dwarf.h>
-#include <libpstack/dump.h>
-
-#include <assert.h>
+#include <stack>
 
 void
 StackFrame::setCoreRegs(const CoreRegisters &sys)
 {
 #define REGMAP(number, field) setReg(number, sys.field);
-#include <libpstack/dwarf/archreg.h>
+#include "libpstack/dwarf/archreg.h"
 #undef REGMAP
 }
 
@@ -20,7 +18,7 @@ void
 StackFrame::getCoreRegs(CoreRegisters &core) const
 {
 #define REGMAP(number, field) core.field = getReg(number);
-#include <libpstack/dwarf/archreg.h>
+#include "libpstack/dwarf/archreg.h"
 #undef REGMAP
 }
 
@@ -28,7 +26,7 @@ void
 StackFrame::getFrameBase(const Process &p, intmax_t offset, DwarfExpressionStack *stack) const
 {
    const DwarfAttribute *attr;
-   if (!function || (attr = function->attrForName(DW_AT_frame_base)) == 0) {
+   if (function == nullptr || (attr = function->attrForName(DW_AT_frame_base)) == nullptr) {
       stack->push(0);
       return;
    }
@@ -104,7 +102,7 @@ DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame
                 intmax_t addr = poptop();
                 Elf_Addr value;
                 proc.io->readObj(addr, &value);
-                push((intmax_t)(intptr_t)value);
+                push(intptr_t(value));
                 break;
             }
 
@@ -187,42 +185,42 @@ DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame
             case DW_OP_le: {
                 Elf_Addr rhs = poptop();
                 Elf_Addr lhs = poptop();
-                push(lhs <= rhs);
+                push(value_type(lhs <= rhs));
                 break;
             }
 
             case DW_OP_ge: {
                 Elf_Addr rhs = poptop();
                 Elf_Addr lhs = poptop();
-                push(lhs >= rhs);
+                push(value_type(lhs >= rhs));
                 break;
             }
 
             case DW_OP_eq: {
                 Elf_Addr rhs = poptop();
                 Elf_Addr lhs = poptop();
-                push(lhs == rhs);
+                push(value_type(lhs == rhs));
                 break;
             }
 
             case DW_OP_lt: {
                 Elf_Addr rhs = poptop();
                 Elf_Addr lhs = poptop();
-                push(lhs < rhs);
+                push(value_type(lhs < rhs));
                 break;
             }
 
             case DW_OP_gt: {
                 Elf_Addr rhs = poptop();
                 Elf_Addr lhs = poptop();
-                push(lhs > rhs);
+                push(value_type(lhs > rhs));
                 break;
             }
 
             case DW_OP_ne: {
                 Elf_Addr rhs = poptop();
                 Elf_Addr lhs = poptop();
-                push(lhs != rhs);
+                push(value_type(lhs != rhs));
                 break;
             }
 
@@ -319,7 +317,7 @@ StackFrame::unwind(Process &p)
 {
     elf = p.findObject(ip, &elfReloc);
     if (!elf)
-       throw Exception() << "no image for instruction address " << std::hex << ip;
+       throw (Exception() << "no image for instruction address " << std::hex << ip);
     Elf_Off objaddr = ip - elfReloc; // relocate process address to object address
     // Try and find DWARF data with debug frame information, or an eh_frame section.
     for (bool debug : {true, false}) {
@@ -327,33 +325,34 @@ StackFrame::unwind(Process &p)
        if (dwarf) {
           auto frames = { dwarf->debugFrame.get(), dwarf->ehFrame.get() };
           for (auto f : frames) {
-             if (f) {
+             if (f != nullptr) {
                  fde = f->findFDE(objaddr);
-                 if (fde) {
+                 if (fde != nullptr) {
                     frameInfo = f;
+                    cie = &f->cies[fde->cieOff];
                     break;
                  }
              }
           }
-          if (fde)
+          if (fde != nullptr)
               break;
        }
     }
-    if (!fde)
-       throw Exception() << "no FDE for instruction address " << std::hex << ip << " in " << *elf->io;
+    if (fde == nullptr)
+       throw (Exception() << "no FDE for instruction address " << std::hex << ip << " in " << *elf->io);
 
     DWARFReader r(frameInfo->io, fde->instructions, fde->end);
 
     auto iter = dwarf->callFrameForAddr.find(objaddr);
     if (iter == dwarf->callFrameForAddr.end())
-        dwarf->callFrameForAddr[objaddr] = fde->cie->execInsns(r, fde->iloc, objaddr);
+        dwarf->callFrameForAddr[objaddr] = cie->execInsns(r, fde->iloc, objaddr);
 
     const DwarfCallFrame &dcf = dwarf->callFrameForAddr[objaddr];
 
     // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
     cfa = getCFA(p, dcf);
 
-    StackFrame *out = new StackFrame();
+    auto out = new StackFrame();
 #ifdef CFA_RESTORE_REGNO
     // "The CFA is defined to be the stack pointer in the calling frame."
     out->setReg(CFA_RESTORE_REGNO, cfa);
@@ -398,11 +397,11 @@ StackFrame::unwind(Process &p)
     }
 
     // If the return address isn't defined, then we can't unwind.
-    auto rar = fde->cie->rar;
+    auto rar = cie->rar;
     auto rarInfo = dcf.registers.find(rar);
     if (rarInfo == dcf.registers.end() || rarInfo->second.type == UNDEF) {
         delete out;
-        return 0;
+        return nullptr;
     }
 
     out->ip = out->getReg(rar);

@@ -1,4 +1,3 @@
-#include "libpstack/dump.h"
 #include "libpstack/dwarf.h"
 #include "libpstack/proc.h"
 #include "libpstack/ps_callback.h"
@@ -19,6 +18,9 @@
 #ifdef WITH_PYTHON
 extern std::ostream & pythonStack(Process &proc, std::ostream &os, const PstackOptions &);
 #endif
+static bool doJson = false;
+
+extern std::ostream & operator << (std::ostream &os, const JSON<ThreadStack, Process *> &jt);
 
 static int usage();
 std::ostream &
@@ -62,10 +64,14 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
      * resume at this point - maybe a bit optimistic if a shared library gets
      * unloaded while we print stuff out, but worth the risk, normally.
      */
-    os << "process: " << *proc.io << "\n";
-    for (auto &s : threadStacks) {
-        proc.dumpStackText(os, s, options);
-        os << std::endl;
+    if (doJson) {
+        os << json(threadStacks, &proc);
+    } else {
+        os << "process: " << *proc.io << "\n";
+        for (auto &s : threadStacks) {
+            proc.dumpStackText(os, s, options);
+            os << std::endl;
+        }
     }
     return os;
 }
@@ -83,11 +89,9 @@ emain(int argc, char **argv)
 
     noDebugLibs = false;
 
-#ifdef WITH_PYTHON
     bool python = false;
-#endif
 
-    while ((c = getopt(argc, argv, "b:d:D:hsVvnag:pt")) != -1) {
+    while ((c = getopt(argc, argv, "b:d:D:hjsVvnag:pt")) != -1) {
         switch (c) {
         case 'g':
             globalDebugDirectories.add(optarg);
@@ -108,6 +112,9 @@ emain(int argc, char **argv)
             return (0);
         case 'a':
             options += PstackOptions::doargs;
+            break;
+        case 'j':
+            doJson = true;
             break;
         case 's':
             options += PstackOptions::nosrc;
@@ -149,9 +156,11 @@ emain(int argc, char **argv)
            try {
                auto doStack = [python, &options] (Process &proc) {
                    proc.load(options);
+#ifdef WITH_PYTHON
                    if (python)
                        pythonStack(proc, std::cout, options);
                    else
+#endif
                        pstack(proc, std::cout, options);
                };
                if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {

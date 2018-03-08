@@ -1,4 +1,3 @@
-#include "libpstack/dump.h"
 #define REGMAP(a,b)
 #include "libpstack/dwarf/archreg.h"
 #include "libpstack/dwarf.h"
@@ -44,10 +43,10 @@ Process::Process(std::shared_ptr<ElfObject> exec,
     , interpBase(0)
     , vdsoBase(0)
     , isStatic(false)
-    , sysent(0)
     , agent(nullptr)
     , execImage(std::move(exec))
     , pathReplacements(prl)
+    , sysent(0)
     , imageCache(cache)
     , io(std::make_shared<CacheReader>(memory))
 {
@@ -66,7 +65,7 @@ Process::load(const PstackOptions &options)
      */
 
     if (!execImage)
-        throw Exception() << "no executable image located for process";
+        throw (Exception() << "no executable image located for process");
 
     Elf_Addr r_debug_addr = findRDebugAddr();
     isStatic = r_debug_addr == 0 || r_debug_addr == Elf_Addr(-1);
@@ -152,51 +151,68 @@ Process::processAUXV(const Reader &auxio)
     }
 }
 
+template <typename ctx>
 std::ostream &
-Process::dumpStackJSON(std::ostream &os, const ThreadStack &thread)
+operator << (std::ostream &os, const JSON<td_thr_type_e, ctx> &jt)
 {
-    os << "{ \"ti_tid\": " << thread.info.ti_tid
-        << ", \"ti_type\": " << thread.info.ti_type
-        << ", \"stack\": [ ";
-
-    for (auto &frame : thread.stack) {
-        Elf_Addr objIp = 0;
-        std::shared_ptr<ElfObject> obj;
-        Elf_Sym sym;
-        std::string fileName;
-        std::string symName = "unknown";
-        if (frame->ip == sysent) {
-            symName = "(syscall)";
-        } else {
-            Elf_Off reloc = 0;
-            obj = findObject(frame->ip, &reloc);
-            if (obj) {
-                fileName = stringify(*obj->io);
-                objIp = frame->ip - reloc;
-                obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
-            }
-        }
-
-        os << "{ \"ip\": " << intptr_t(frame->ip);
-
-        if (symName != "")
-            os << ", \"function\": \"" << symName << "\"";
-
-        if (obj) {
-            os << ", \"off\": " << intptr_t(objIp) - sym.st_value;
-            os << ", \"file\": " << "\"" << fileName << "\"";
-            auto di = getDwarf(obj);
-            if (di) {
-                auto src = di->sourceFromAddr(objIp - 1);
-                for (auto &ent : src)
-                    os
-                        << ", \"source\": \"" << ent.first << "\""
-                        << ", \"line\": " << ent.second;
-            }
-        }
-        os << " }";
+    switch (jt.object) {
+        case TD_THR_ANY_TYPE: return os << json("TD_THR_ANY_TYPE");
+        case TD_THR_USER: return os << json("TD_THR_USER");
+        case TD_THR_SYSTEM: return os << json("TD_THR_SYSTEM");
+        default: return os << json("unknown type");
     }
-    return os << " ] }";
+}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<StackFrame *, Process *> &jt)
+{
+    auto &frame =jt.object;
+    auto proc = jt.context;
+
+    JObject jo(os);
+
+    Elf_Addr objIp = 0;
+    std::shared_ptr<ElfObject> obj;
+    Elf_Sym sym;
+    std::string fileName;
+    std::string symName = "unknown";
+    if (frame->ip == proc->sysent) {
+        symName = "(syscall)";
+    } else {
+        Elf_Off reloc = 0;
+        obj = proc->findObject(frame->ip, &reloc);
+        if (obj) {
+            fileName = stringify(*obj->io);
+            objIp = frame->ip - reloc;
+            obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+        }
+    }
+
+    jo.field("ip", frame->ip);
+    if (symName != "")
+        jo.field("function", symName);
+
+    if (obj) {
+        jo.field("off", objIp - sym.st_value)
+            .field("file", fileName);
+        const auto &di = proc->getDwarf(obj);
+        if (di) {
+            auto src = di->sourceFromAddr(objIp - 1);
+            jo.field("source", src);
+        }
+    }
+    return os;
+}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<ThreadStack, Process *> &jt)
+{
+    const ThreadStack &stack = jt.object;
+
+    return JObject(os)
+        .field("ti_tid", stack.info.ti_tid)
+        .field("ti_type", stack.info.ti_type)
+        .field("ti_stack", stack.stack, jt.context);
 }
 
 const DwarfEntry *
@@ -206,7 +222,7 @@ findEntryForFunc(Elf_Addr address, const DwarfEntry &entry)
       case DW_TAG_subprogram: {
          const DwarfAttribute *lowAttr = entry.attrForName(DW_AT_low_pc);
          const DwarfAttribute *highAttr = entry.attrForName(DW_AT_high_pc);
-         if (lowAttr && highAttr) {
+         if (lowAttr != nullptr && highAttr != nullptr) {
             Elf_Addr start, end;
             switch (lowAttr->form()) {
                case DW_FORM_addr:
@@ -336,9 +352,19 @@ operator << (std::ostream &os, const RemoteValue &rv)
             auto encodingAttr = type->attrForName(DW_AT_encoding);
             auto encoding = uintmax_t(*encodingAttr);
 
+            union {
+               int8_t *int8;
+               int16_t *int16;
+               int32_t *int32;
+               int64_t *int64;
+               void **voidp;
+               char *cp;
+            } u;
+            u.cp = &buf[0];
+
             switch (encoding) {
                 case DW_ATE_address:
-                    os << *(void **)&buf[0];
+                    os << *u.voidp;
                     break;
                 case DW_ATE_boolean:
                     for (size_t i = 0;; ++i) {
@@ -357,16 +383,16 @@ operator << (std::ostream &os, const RemoteValue &rv)
                 case DW_ATE_signed_char:
                     switch (size) {
                         case sizeof (int8_t):
-                            os << *(int8_t *)&buf[0];
+                            os << *u.int8;
                             break;
                         case sizeof (int16_t):
-                            os << *(int16_t *)&buf[0];
+                            os << *u.int16;
                             break;
                         case sizeof (int32_t):
-                            os << *(int32_t *)&buf[0];
+                            os << *u.int32;
                             break;
                         case sizeof (int64_t):
-                            os << *(int64_t *)&buf[0];
+                            os << *u.int64;
                             break;
                     }
                     break;
@@ -375,16 +401,16 @@ operator << (std::ostream &os, const RemoteValue &rv)
                 case DW_ATE_unsigned_char:
                     switch (size) {
                         case sizeof (uint8_t):
-                            os << *(uint8_t *)&buf[0];
+                            os << *u.int8;
                             break;
                         case sizeof (uint16_t):
-                            os << *(uint16_t *)&buf[0];
+                            os << *u.int16;
                             break;
                         case sizeof (uint32_t):
-                            os << *(uint32_t *)&buf[0];
+                            os << *u.int32;
                             break;
                         case sizeof (uint64_t):
-                            os << *(int64_t *)&buf[0];
+                            os << *u.int64;
                             break;
                         default:
                             abort();
@@ -501,7 +527,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             }
 
 
-            std::string sigmsg = frame->fde != nullptr && frame->fde->cie->isSignalHandler ?  "[signal handler]" : "";
+            std::string sigmsg = frame->cie != nullptr && frame->cie->isSignalHandler ?  "[signal handler called]" : "";
             std::shared_ptr<DwarfUnit> dwarfUnit;
             for (const auto &u : units) {
                 // find the DIE for this function
@@ -511,9 +537,10 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         symName = de->name();
                         if (symName == "") {
                             obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
-                            if (symName == "")
+                            if (symName != "")
+                                symName += "%"; // mark the lack of a dwarf symbol.
+                            else if (sigmsg == "")
                                 symName = "<unknown>";
-                            symName += "%";
                         }
                         frame->function = de;
                         frame->dwarf = dwarf; // hold on to 'de'
@@ -532,7 +559,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 
             if (!dwarfUnit) {
                 obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
-                if (symName != "")
+                if (symName != "" || sigmsg != "")
                     os << "in " << symName << sigmsg << "!+" << objIp - sym.st_value << "()";
                 else
                     os << "in <unknown>" << sigmsg << "()";
@@ -541,10 +568,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             os << " at " << fileName;
             if (!options(PstackOptions::nosrc) && dwarf) {
                 auto source = dwarf->sourceFromAddr(objIp - 1);
-                for (auto ent : source) {
-                    os << " at ";
-                    os << ent.first->directory << "/" << ent.first->name << ":" << std::dec << ent.second;
-                }
+                for (auto ent : source)
+                    os << " at " << ent.first << ":" << std::dec << ent.second;
             }
         } else {
             os << "no information for frame";

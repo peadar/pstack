@@ -2,13 +2,15 @@
 extern "C" {
 #include <thread_db.h>
 }
-#include <libpstack/ps_callback.h>
-#include <libpstack/dwarf.h>
+
 #include <map>
 #include <set>
 #include <sstream>
 #include <functional>
 #include <bitset>
+
+#include "libpstack/ps_callback.h"
+#include "libpstack/dwarf.h"
 
 struct ps_prochandle {};
 
@@ -38,6 +40,7 @@ struct StackFrame {
     const DwarfEntry * function;
     DwarfFrameInfo *frameInfo;
     const DwarfFDE *fde;
+    const DwarfCIE *cie;
     StackFrame()
         : ip(-1)
         , cfa(0)
@@ -45,14 +48,15 @@ struct StackFrame {
         , function(0)
         , frameInfo(0)
         , fde(0)
+        , cie(0)
     {}
-    void setReg(unsigned regno, cpureg_t value);
+    void setReg(unsigned, cpureg_t);
     cpureg_t getReg(unsigned regno) const;
-    Elf_Addr getCFA(const Process &proc, const DwarfCallFrame &cfi) const;
+    Elf_Addr getCFA(const Process &, const DwarfCallFrame &) const;
     StackFrame *unwind(Process &p);
-    void setCoreRegs(const CoreRegisters &core);
-    void getCoreRegs(CoreRegisters &core) const;
-    void getFrameBase(const Process &p, intmax_t offset, DwarfExpressionStack *stack) const;
+    void setCoreRegs(const CoreRegisters &);
+    void getCoreRegs(CoreRegisters &) const;
+    void getFrameBase(const Process &, intmax_t, DwarfExpressionStack *) const;
 };
 
 struct ThreadStack {
@@ -102,15 +106,15 @@ class Process : public ps_prochandle {
     Elf_Addr vdsoBase;
     void loadSharedObjects(Elf_Addr);
     bool isStatic;
-    Elf_Addr sysent; // for AT_SYSINFO
 
 protected:
     td_thragent_t *agent;
     std::shared_ptr<ElfObject> execImage;
     std::string abiPrefix;
-    PathReplacementList pathReplacements;
+    const PathReplacementList &pathReplacements;
 
 public:
+    Elf_Addr sysent; // for AT_SYSINFO
     std::map<pid_t, Lwp> lwps;
     DwarfImageCache &imageCache;
 
@@ -158,19 +162,21 @@ Process::listThreads(const T &callback)
 class LiveReader : public FileReader {
 public:
     off_t size() const override { return std::numeric_limits<off_t>::max(); }
-    LiveReader(pid_t pid_, const std::string &base_);
+    LiveReader(pid_t, const std::string &);
 };
-std::string procname(pid_t pid, const std::string &file);
+
+// Name of the file /proc/<pid>/name, after symlink dereferencing
+std::string procname(pid_t pid, const std::string &);
 
 struct LiveThreadList;
 class LiveProcess : public Process {
     pid_t pid;
     friend class LiveReader;
 public:
-    LiveProcess(std::shared_ptr<ElfObject> ex, pid_t pid, const PathReplacementList &repls, DwarfImageCache &cache);
+    LiveProcess(std::shared_ptr<ElfObject> &, pid_t, const PathReplacementList &, DwarfImageCache &);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) override;
-    virtual void stop(pid_t lwpid) override;
-    virtual void resume(pid_t lwpid) override;
+    virtual void stop(pid_t) override;
+    virtual void resume(pid_t) override;
     void stopProcess() override;
     void resumeProcess() override;
     virtual void load(const PstackOptions &) override;

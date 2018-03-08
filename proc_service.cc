@@ -1,13 +1,14 @@
-#include <stdarg.h>
-#include <libpstack/proc.h>
-#include <libpstack/ps_callback.h>
+#include "libpstack/proc.h"
+#include "libpstack/ps_callback.h"
+
+#include <cstdarg>
 
 extern "C" {
 
 ps_err_e
 ps_pcontinue(const struct ps_prochandle *ph)
 {
-    auto *p = const_cast<Process *>(static_cast<const Process *>(ph));
+    auto p = const_cast<Process *>(static_cast<const Process *>(ph));
     try {
         p->resumeProcess();
         return PS_OK;
@@ -20,7 +21,7 @@ ps_pcontinue(const struct ps_prochandle *ph)
 ps_err_e
 ps_lcontinue(const struct ps_prochandle *ph, lwpid_t pid)
 {
-    Process *p = const_cast<Process *>(static_cast<const Process *>(ph));
+    auto p = const_cast<Process *>(static_cast<const Process *>(ph));
     try {
         p->resume(pid);
         return PS_OK;
@@ -30,7 +31,7 @@ ps_lcontinue(const struct ps_prochandle *ph, lwpid_t pid)
     }
 }
 
-ps_err_e ps_pdmodel(struct ps_prochandle *, int *)
+ps_err_e ps_pdmodel(struct ps_prochandle * /* unused */, int * /* unused */)
 {
     abort();
     return (PS_ERR);
@@ -39,9 +40,9 @@ ps_err_e ps_pdmodel(struct ps_prochandle *, int *)
 ps_err_e
 ps_pglobal_lookup(struct ps_prochandle *ph, const char *ld_object_name, const char *ld_symbol_name, psaddr_t *ld_symbol_addr)
 {
-    const Process *p = static_cast<const Process *>(ph);
+    auto p = static_cast<const Process *>(ph);
     try {
-        *ld_symbol_addr = (psaddr_t)(intptr_t)p->findNamedSymbol(ld_object_name, ld_symbol_name);
+        *ld_symbol_addr = psaddr_t(intptr_t(p->findNamedSymbol(ld_object_name, ld_symbol_name)));
         return PS_OK;
     }
     catch (...) {
@@ -62,7 +63,7 @@ ps_plog(const char *fmt, ...)
 ps_err_e
 ps_pread(struct ps_prochandle *ph, psaddr_t addr, void *buf, size_t len)
 {
-    const Process *p = static_cast<const Process *>(ph);
+    auto *p = static_cast<const Process *>(ph);
     try {
         p->io->readObj(Elf_Off(addr), (char *)buf, len);
         return PS_OK;
@@ -85,7 +86,7 @@ ps_pstop(const struct ps_prochandle *ph)
 }
 
 ps_err_e
-ps_pwrite(struct ps_prochandle *, psaddr_t, const void *, size_t)
+ps_pwrite(struct ps_prochandle * /* unused */, psaddr_t /* unused */, const void * /* unused */, size_t /* unused */)
 {
     return (PS_ERR);
 }
@@ -110,21 +111,21 @@ ps_pdread(struct ps_prochandle *p, psaddr_t addr, void *d, size_t l)
 }
 
 ps_err_e
-ps_pdwrite(struct ps_prochandle *, psaddr_t, const void *, size_t)
+ps_pdwrite(struct ps_prochandle * /* unused */, psaddr_t /* unused */, const void * /* unused */, size_t /* unused */)
 {
     abort();
     return PS_ERR;
 }
 
 ps_err_e
-ps_ptread(struct ps_prochandle *, psaddr_t, void *, size_t)
+ps_ptread(struct ps_prochandle * /* unused */, psaddr_t /* unused */, void * /* unused */, size_t /* unused */)
 {
     abort();
     return PS_ERR;
 }
 
 ps_err_e
-ps_ptwrite(struct ps_prochandle *, psaddr_t, const void *, size_t)
+ps_ptwrite(struct ps_prochandle * /* unused */, psaddr_t /* unused */, const void * /* unused */, size_t /* unused */)
 {
     abort();
     return PS_ERR;
@@ -133,20 +134,20 @@ ps_ptwrite(struct ps_prochandle *, psaddr_t, const void *, size_t)
 
 #ifdef __i386__
 ps_err_e
-ps_lgetxmmregs (struct ps_prochandle *, lwpid_t, char *)
+ps_lgetxmmregs (struct ps_prochandle * /* unused */, lwpid_t /* unused */, char * /* unused */)
 {
     abort();
     return (PS_ERR);
 }
 ps_err_e
-ps_lsetxmmregs (struct ps_prochandle *, lwpid_t, const char *)
+ps_lsetxmmregs (struct ps_prochandle * /* unused */, lwpid_t /* unused */, const char * /* unused */)
 {
     abort();
     return (PS_ERR);
 }
 #endif
 
-ps_err_e ps_lgetfpregs(struct ps_prochandle *, lwpid_t, prfpregset_t *)
+ps_err_e ps_lgetfpregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */, prfpregset_t * /* unused */)
 {
     abort();
     return (PS_ERR);
@@ -154,17 +155,17 @@ ps_err_e ps_lgetfpregs(struct ps_prochandle *, lwpid_t, prfpregset_t *)
 
 ps_err_e ps_lgetregs(struct ps_prochandle *ph, lwpid_t pid, prgregset_t gregset)
 {
-    Process *p = static_cast<Process *>(ph);
+    auto p = static_cast<Process *>(ph);
     return p->getRegs(pid, (CoreRegisters *)gregset) ? PS_OK : PS_ERR;
 }
 
-ps_err_e ps_lsetfpregs(struct ps_prochandle *, lwpid_t, const prfpregset_t *)
+ps_err_e ps_lsetfpregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */, const prfpregset_t * /* unused */)
 {
     abort();
     return (PS_ERR);
 }
 
-ps_err_e ps_lsetregs(struct ps_prochandle *, lwpid_t, const prgregset_t)
+ps_err_e ps_lsetregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */, const prgregset_t /* unused */)
 {
     abort();
     return (PS_ERR);

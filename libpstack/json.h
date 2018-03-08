@@ -1,6 +1,7 @@
 #ifndef _JSON_H_
 #define _JSON_H_
 #include <iostream>
+#include <functional>
 #include <unordered_map>
 #include <type_traits>
 #include <cstdint>
@@ -8,17 +9,12 @@
 #include <typeinfo>
 #include <map>
 
-template <typename> struct is_pair : std::false_type { };
-template <typename T, typename U> struct is_pair<std::pair<T, U>> : std::true_type { };
-
-template <typename> struct is_not_pair : std::true_type { };
-template <typename T, typename U> struct is_not_pair<std::pair<T, U>> : std::false_type { };
-
 template <typename T, typename C = char> class JSON {
 public:
    const T& object;
    const C context;
    JSON(const T &object_, const C context_ = C()) : object(object_), context(context_) {}
+   const T *operator -> () const { return &object; }
    JSON() = delete;
 };
 
@@ -27,21 +23,12 @@ struct Field {
    const K &k;
    const V &v;
    Field(const K &k_, const V &v_) : k(k_), v(v_) {}
+   Field() = delete;
+   Field(const Field<K, V> &) = delete;
 };
-
-template <typename T, size_t N, typename C> std::ostream &
-operator << (std::ostream &os, const JSON<T[N], C> &json);
 
 template <template <typename, typename> class M, class K, class V, class C> std::ostream &
 operator << (std::ostream &os, JSON<const M<K, V>, C> &json);
-
-template <typename C>
-std::ostream &
-operator << (std::ostream &os, const JSON<std::string, C> &json);
-
-template <typename C>
-std::ostream &
-operator << (std::ostream &os, const JSON<const char *, C> &json);
 
 template <typename T, typename C>
 typename std::enable_if<std::is_integral<T>::value, std::ostream>::type &
@@ -51,10 +38,6 @@ template <typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<bool, C> &json)
    { return os << (json.object ? "true" : "false"); }
-
-template <typename K, typename V, typename C>
-std::ostream &
-operator << (std::ostream &os, const JSON<Field<K,V>, C> &o);
 
 template <typename T, typename C>
 JSON<T, C>
@@ -76,8 +59,7 @@ operator << (std::ostream &os, const JSON<T[N], C> &json)
    for (size_t i = 0; i < N; ++i) {
       os << (i ? ",\n" : "") << json.object[i];
    }
-   os << "]";
-   return os;
+   return os << "]";
 }
 
 template <typename K, typename V, typename C>
@@ -88,13 +70,9 @@ operator << (std::ostream &os, const JSON<Field<K,V>, C> &o)
 }
 
 /*
- * Anything that has an iterator can be printed as an array.
+ * Real arrays can be printed as a JSON array.
  */
-template <template <typename...> class Container,
-         typename C,
-         typename ...Args,
-         typename = typename std::enable_if<
-               is_not_pair<typename Container<Args...>::value_type>::value>::type>
+template <template <typename...> class Container, typename C, typename ...Args, typename = typename Container<Args...>::value_type>
 std::ostream &
 operator << (std::ostream &os, const JSON<Container<Args...>, C> &container) {
    os << "[ ";
@@ -107,10 +85,9 @@ operator << (std::ostream &os, const JSON<Container<Args...>, C> &container) {
 }
 
 /*
- * Anything that has an iterator can be printed as an array.
+ * Iterable objects can be printed as an array.
  */
-template <typename Container, typename C,
-         typename = std::enable_if<is_not_pair<typename Container::value_type>::value>>
+template <typename Container, typename C, typename = typename Container::value_type>
 std::ostream &
 operator << (std::ostream &os, const JSON<Container, C> &container) {
    os << "[ ";
@@ -121,7 +98,6 @@ operator << (std::ostream &os, const JSON<Container, C> &container) {
    }
    return os << " ]";
 }
-
 
 template <typename C>
 std::ostream &
@@ -135,6 +111,7 @@ operator << (std::ostream &os, const JSON<const char *, C> &json) {
    return os << "\"" << json.object << "\"";
 }
 
+
 template <typename C, size_t N>
 std::ostream &
 operator << (std::ostream &os, const JSON<char[N], C> &json) {
@@ -147,14 +124,14 @@ json(const T &object, const C context) {
    return JSON<T, C>(object, context);
 }
 /*
- * Print any container keyed by string as a map.
+ * Print any container with a mapped type as a JSON object.
  */
 template <template <typename...> class Container,
          typename Context,
          typename K,
          typename V,
          typename ...Args,
-         typename = typename std::enable_if<is_pair<typename Container<K, V, Args...>::value_type>::value>::type>
+         typename = typename Container<K, V, Args...>::mapped_type>
 std::ostream &
 operator << (std::ostream &os, const JSON<Container<K, V, Args...>, Context> &container) {
    os << "{";
@@ -166,7 +143,6 @@ operator << (std::ostream &os, const JSON<Container<K, V, Args...>, Context> &co
    }
    return os << "}";
 }
-
 
 template <class NK, class V, class Container> class Mapper {
     const Container &container;
@@ -218,4 +194,11 @@ class JObject {
       operator std::ostream &() { return os; }
 };
 
+template <typename F, typename S, typename C>
+std::ostream &
+operator << (std::ostream &os, const JSON<std::pair<F, S>, C> &json) {
+   return JObject(os)
+       .field("first", json.object.first)
+       .field("second", json.object.second);
+}
 #endif
