@@ -1,6 +1,6 @@
 TESTS: basic-run segv-run thread-run badfp-run
 CFLAGS += -g -O0
-CXXFLAGS += -g -O0
+CXXFLAGS += -g -O0 -std=c++14
 LDFLAGS += -g
 PSTACK_BIN ?= ../d64/pstack
 
@@ -37,4 +37,4 @@ thread: thread.o
 
 
 clean:
-	rm -f core basic *.o segv
+	rm -f core basic *.o segv badfp thread

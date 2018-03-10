@@ -205,14 +205,12 @@ operator << (std::ostream &os, const JSON<StackFrame *, Process *> &jt)
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<ThreadStack, Process *> &jt)
+operator << (std::ostream &os, const JSON<ThreadStack, Process *> &ts)
 {
-    const ThreadStack &stack = jt.object;
-
     return JObject(os)
-        .field("ti_tid", stack.info.ti_tid)
-        .field("ti_type", stack.info.ti_type)
-        .field("ti_stack", stack.stack, jt.context);
+        .field("ti_tid", ts->info.ti_tid)
+        .field("ti_type", ts->info.ti_type)
+        .field("ti_stack", ts->stack, ts.context);
 }
 
 const DwarfEntry *

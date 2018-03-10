@@ -38,30 +38,26 @@ set(CMAKE_CXX_STANDARD 14)
 
 add_definitions("-Wall -Wextra -DELF_BITS=${ELF_BITS} -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-if (ZLIB_FOUND)
-   set(inflatesrc inflate.cc)
-   add_definitions("-DWITH_ZLIB")
-else()
-   message(WARNING "no ZLIB support found")
-endif()
+# Make sure to use the local libpstack headers rather than what's installed.
+include_directories(${CMAKE_SOURCE_DIR})
 
 if (LIBLZMA_FOUND)
    set(lzmasrc lzma.cc)
    add_definitions("-DWITH_LZMA")
-else()
-   message(WARNING "no LZMA support found")
+   include_directories(${LIBLZMA_INCLUDES})
+endif()
+
+if (ZLIB_FOUND)
+   set(inflatesrc inflate.cc)
+   add_definitions("-DWITH_ZLIB")
+   include_directories(${ZLIB_INCLUDES})
 endif()
 
 if (PythonLibs_FOUND OR PYTHONLIBS_FOUND)
    set(pysrc python.cc)
    add_definitions("-DWITH_PYTHON")
-else()
-   message(WARNING "no python support found")
+   include_directories(${PYTHON_INCLUDE_DIRS})
 endif()
-
-# Make sure to use the local libpstack headers rather than what's installed.
-include_directories(${CMAKE_SOURCE_DIR} ${LIBLZMA_INCLUDES} ${ZLIB_INCLUDES} ${PYTHON_INCLUDE_DIRS} )
 
 add_library(dwelf ${LIBTYPE} dump.cc dwarf.cc elf.cc reader.cc util.cc
    ${inflatesrc} ${lzmasrc})
@@ -71,9 +67,8 @@ add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc
 add_executable(canal canal.cc)
 add_executable(${PSTACK_BIN} pstack.cc ${pysrc} )
 
-target_link_libraries(dwelf ${LIBLZMA_LIBRARIES} ${ZLIB_LIBRARIES})
 target_link_libraries(procman ${LTHREADDB} dwelf)
-target_link_libraries(${PSTACK_BIN} dwelf procman ${PYTHON_LIBRARIES})
+target_link_libraries(${PSTACK_BIN} dwelf procman)
 target_link_libraries(canal dwelf procman)
 
 if (TIDY)
@@ -87,6 +82,24 @@ endif()
 
 set_target_properties(dwelf PROPERTIES VERSION 1.0.0 SOVERSION 1)
 set_target_properties(procman PROPERTIES VERSION 1.0.0 SOVERSION 1)
+
+if (ZLIB_FOUND)
+   target_link_libraries(dwelf ${ZLIB_LIBRARIES})
+else()
+   message(WARNING "no ZLIB support found")
+endif()
+
+if (LIBLZMA_FOUND)
+   target_link_libraries(dwelf ${LIBLZMA_LIBRARIES})
+else()
+   message(WARNING "no LZMA support found")
+endif()
+
+if (PythonLibs_FOUND OR PYTHONLIBS_FOUND)
+   target_link_libraries(${PSTACK_BIN} ${PYTHON_LIBRARIES})
+else()
+   message(WARNING "no python support found")
+endif()
 
 install(TARGETS ${PSTACK_BIN} canal DESTINATION bin)
 install(TARGETS dwelf procman DESTINATION lib)
