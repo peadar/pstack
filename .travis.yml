@@ -1,12 +1,12 @@
 language: generic
 os: linux
 matrix:
+
   include:
     - os: linux
-      env: COMPILER_NAME=clang CXX=clang++-3.8 CC=clang-3.8
+      env: COMPILER_NAME=gcc CXX=g++-5 CC=gcc-5
       addons:
         apt:
           packages:
-            - clang-3.8
-          sources: *sources
+            - g++-5
 script: cmake -DCMAKE_BUILD_TYPE=Release && make VERBOSE=1
