@@ -221,6 +221,13 @@ public:
     void build(DWARFReader &, const DwarfUnit *);
 };
 
+// Override hash for DwarfTag
+namespace std {
+template <> class hash<DwarfTag> { public: size_t operator() (DwarfTag tag) const {
+    return std::hash<int>()(int(tag));
+}};
+};
+
 struct DwarfUnit {
     DwarfUnit() = delete;
     DwarfUnit(const DwarfUnit &) = delete;
