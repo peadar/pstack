@@ -191,7 +191,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
                 continue;
             if (candidate.st_value > addr)
                 continue;
-            if (candidate.st_size + candidate.st_value <= addr)
+            if (candidate.st_size + candidate.st_value < addr) // allow up to and just past the symbol
                 continue;
             auto &sec = sectionHeaders[candidate.st_shndx];
             if ((sec.shdr.sh_flags & SHF_ALLOC) == 0)

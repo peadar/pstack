@@ -245,7 +245,7 @@ findEntryForFunc(Elf_Addr address, const DwarfEntry &entry)
                   abort();
 
             }
-            if (start <= address && end > address)
+            if (start <= address && end >= address) // allow for the address to be one byte past the function
                return &entry;
          }
          break;
@@ -530,11 +530,11 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             for (const auto &u : units) {
                 // find the DIE for this function
                 for (auto &it : u->entries) {
-                    const DwarfEntry *de = findEntryForFunc(objIp - 1, it);
+                    const DwarfEntry *de = findEntryForFunc(objIp, it);
                     if (de != nullptr) {
                         symName = de->name();
                         if (symName == "") {
-                            obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
+                            obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
                             if (symName != "")
                                 symName += "%"; // mark the lack of a dwarf symbol.
                             else if (sigmsg == "")
@@ -556,7 +556,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             }
 
             if (!dwarfUnit) {
-                obj->findSymbolByAddress(objIp - 1, STT_FUNC, sym, symName);
+                obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
                 if (symName != "" || sigmsg != "")
                     os << "in " << symName << sigmsg << "!+" << objIp - sym.st_value << "()";
                 else
