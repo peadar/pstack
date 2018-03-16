@@ -46,6 +46,7 @@ dwarfDumpCFAInsn(std::ostream &os, DWARFReader *r)
     JObject jo(os);
 
     Elf_Off len;
+    Elf_Word reg;
 
     DwarfCFAInstruction insn;
     uint8_t op = r->getu8();
@@ -150,8 +151,13 @@ dwarfDumpCFAInsn(std::ostream &os, DWARFReader *r)
             break;
 
         case DW_CFA_val_expression:
-            jo.field("length", (len = r->getuleb128()))
-            .field("offset", r->getOffset());
+	    
+	    reg = r->getuleb128();
+	    len = r->getuleb128();
+            jo
+		.field("register", reg)
+		.field("length", len)
+		.field("offset", r->getOffset());
             r->skip(len);
             break;
         case DW_CFA_GNU_args_size:
@@ -167,7 +173,10 @@ dwarfDumpCFAInsn(std::ostream &os, DWARFReader *r)
                 .field("scale", r->getsleb128());
             break;
 
-        case DW_CFA_nop: // nothing to see.
+	// these instructions have no arguments, so nothing more to show
+        case DW_CFA_nop:
+        case DW_CFA_remember_state:
+        case DW_CFA_restore_state:
             break;
 
         default:
