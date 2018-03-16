@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 2.8.11)
 project(pstack C CXX)
+enable_testing()
+
+add_subdirectory(tests)
 
 math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 set(PSTACK_BIN "pstack" CACHE STRING "Name of the 'pstack' binary")
@@ -106,3 +109,8 @@ install(TARGETS dwelf procman DESTINATION lib)
 install(FILES ${CMAKE_SOURCE_DIR}/pstack.1 DESTINATION man/man1)
 install(DIRECTORY libpstack DESTINATION include)
 install(CODE "execute_process (COMMAND setcap cap_sys_ptrace+ep ${CMAKE_INSTALL_PREFIX}/bin/${PSTACK_BIN})")
+
+
+add_test(NAME segv COMMAND ${CMAKE_SOURCE_DIR}/tests/segv-test.py)
+add_test(NAME thread COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/thread-test.py)
+add_test(NAME badfp COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/badfp-test.py)

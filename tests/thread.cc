@@ -4,22 +4,29 @@
 #include <vector>
 #include <iostream>
 
+// *******
+// CHANGES TO THIS FILE AFFECTING LINE NUMBERS IN "entry" WILL REQUIRE CHANGES TO
+// thread-test.py
+// ********
 pthread_mutex_t l = PTHREAD_MUTEX_INITIALIZER;
 int in_entry;
 pthread_cond_t c = PTHREAD_COND_INITIALIZER;
 
+extern "C" {
 void *
-entry(void *arg)
+entry(void * /* unused */)
 {
    pthread_mutex_lock(&l);
    in_entry++;
    pthread_cond_signal(&c);
    pthread_mutex_unlock(&l);
    pause();
+   return nullptr;
+}
 }
 
 int
-main(int argc, char *argv[])
+main(int /*unused*/, char ** /*unused*/)
 {
    pthread_attr_t attrs;
    pthread_attr_init(&attrs);

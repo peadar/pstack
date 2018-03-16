@@ -3,18 +3,18 @@
 
 extern void my_abort();
 
-void g()
+void g(int two)
 {
     abort();
 }
-void f()
+void f(int one)
 {
-    g();
+    g(2);
 }
 
 int
 main()
 {
-    f();
+    f(1);
     return 0;
 }
