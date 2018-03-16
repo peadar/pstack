@@ -78,7 +78,7 @@ public:
     enum PstackOption {
         nosrc,
         doargs,
-        threaddb,
+        nothreaddb,
         maxopt // leave this last
     };
     void operator += (PstackOption);

@@ -136,7 +136,7 @@ emain(int argc, char **argv)
 #endif
             break;
         case 't':
-            options += PstackOptions::threaddb;
+            options += PstackOptions::nothreaddb;
             break;
 
         case 'V':
@@ -215,7 +215,8 @@ usage()
         "\t[-s]                         don't include source-level details\n"
         "\t[-g]                         add global debug directory\n"
         "\t[-a]                         show arguments to functions where possible (TODO: not finished)\n"
-        "\t[-n]                         don't try and find external debug images\n"
+        "\t[-n]                         don't try to find external debug images\n"
+        "\t[-t]                         don't try to use the thread_db library\n"
         "\t[-b<n>]                      batch mode: repeat every 'n' seconds\n"
         "\t[<pid>|<core>|<executable>]* list cores and pids to examine. An executable\n"
         "\t                             will override use of in-core or in-process information\n"

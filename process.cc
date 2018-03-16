@@ -74,7 +74,7 @@ Process::load(const PstackOptions &options)
     else
         loadSharedObjects(r_debug_addr);
 
-    if (options(PstackOptions::threaddb)) {
+    if (!options(PstackOptions::nothreaddb)) {
         td_err_e the;
         the = td_ta_new(this, &agent);
         if (the != TD_OK) {
