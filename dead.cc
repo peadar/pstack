@@ -84,19 +84,19 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
         // Either no data in core, or it was incomplete to this point: search loaded objects.
         hdr = nullptr;
         obj.reset();
-        Elf_Off reloc;
+        Elf_Off loadAddr;
         for (auto &candidate : p->objects) {
-            hdr = candidate.object->getSegmentForAddress(remoteAddr - candidate.reloc);
+            hdr = candidate.object->getSegmentForAddress(remoteAddr - candidate.loadAddr);
             if (hdr != nullptr) {
                 obj = candidate.object;
-                reloc = candidate.reloc;
+                loadAddr = candidate.loadAddr;
                 break;
             }
         }
 
         if (hdr != nullptr) {
             // header in an object - try reading from here.
-            size_t rc = readFromHdr(*obj, hdr, remoteAddr - reloc, ptr, size, &zeroes);
+            size_t rc = readFromHdr(*obj, hdr, remoteAddr - loadAddr, ptr, size, &zeroes);
             remoteAddr += rc;
             ptr += rc;
             size -= rc;

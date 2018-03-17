@@ -712,7 +712,7 @@ DwarfFrameInfo::decodeAddress(DWARFReader &f, int encoding) const
     case 0:
         break;
     case DW_EH_PE_pcrel:
-        base += offset + dwarf->elf->getBase() + sectionOffset;
+        base += offset + sectionAddr;
         break;
     }
     return base;
@@ -762,7 +762,7 @@ DwarfFrameInfo::isCIE(Elf_Addr cieid)
 
 DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, const ElfSection& section, enum FIType type_)
     : dwarf(info)
-    , sectionOffset(section.shdr.sh_offset)
+    , sectionAddr(section.shdr.sh_addr)
     , io(section.io)
     , type(type_)
 {

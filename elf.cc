@@ -21,7 +21,6 @@ using std::shared_ptr;
 std::ostream *debug = &std::clog;
 int verbose = 0;
 static uint32_t elf_hash(const string &text);
-bool noDebugLibs;
 
 GlobalDebugDirectories globalDebugDirectories;
 GlobalDebugDirectories::GlobalDebugDirectories() throw()
@@ -142,17 +141,6 @@ ElfObject::getSegments(Elf_Word type) const
         return empty;
     }
     return it->second;
-}
-
-Elf_Addr
-ElfObject::getBase() const
-{
-    auto base = std::numeric_limits<Elf_Off>::max();
-    auto &segments = getSegments(PT_LOAD);
-    for (auto &seg : segments)
-        if (Elf_Off(seg.p_vaddr) <= base)
-            base = Elf_Off(seg.p_vaddr);
-    return base;
 }
 
 std::string
@@ -297,9 +285,6 @@ ElfObject::~ElfObject() = default;
 std::shared_ptr<ElfObject>
 ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
 {
-    if (noDebugLibs)
-        return in;
-
     if (!in->debugLoaded) {
         in->debugLoaded = true;
         auto &hdr = in->getSection(".gnu_debuglink", SHT_PROGBITS);

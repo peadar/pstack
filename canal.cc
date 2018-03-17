@@ -249,7 +249,7 @@ mainExcept(int argc, char *argv[])
                    auto &name = (*sym).second;
                    if (globmatch(pattern, name)) {
                        listed.push_back(ListedSymbol((*sym).first,
-                                loaded->reloc, name, stringify(*loaded->object->io)));
+                                loaded->loadAddr, name, stringify(*loaded->object->io)));
                        if (verbose > 1 || showsyms)
                           std::cout << (*sym).second << "\n";
                        count++;

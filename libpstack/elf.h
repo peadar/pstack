@@ -114,7 +114,25 @@ roundup2(size_t val, size_t align)
 
 #endif
 
-class ElfSymHash;
+/*
+ * Helper class to provide a hashed lookup of a symbol table.
+ */
+class ElfSymHash {
+    std::shared_ptr<const Reader> hash;
+    std::shared_ptr<const Reader> syms;
+    std::shared_ptr<const Reader> strings;
+    Elf_Word nbucket;
+    Elf_Word nchain;
+    std::vector<Elf_Word> data;
+    const Elf_Word *chains;
+    const Elf_Word *buckets;
+public:
+    ElfSymHash(std::shared_ptr<const Reader> hash_,
+          std::shared_ptr<const Reader> syms_,
+          std::shared_ptr<const Reader> strings_);
+    bool findSymbol(Elf_Sym &sym, const std::string &name);
+};
+
 struct SymbolSection;
 
 /*
@@ -161,6 +179,7 @@ public:
     SymbolSection getSymbols(const std::string &tableName);
     bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
     bool findSymbolByName(const std::string &name, Elf_Sym &sym);
+    bool findHashedSymbol(const std::string &name, Elf_Sym &sym) { return hash ? hash->findSymbol(sym, name) : false; }
 
     std::shared_ptr<const Reader> io;
 
@@ -168,7 +187,6 @@ public:
     static std::shared_ptr<ElfObject> getDebug(std::shared_ptr<ElfObject> &);
 
     // Misc operations
-    Elf_Off getBase() const; // lowest address of a PT_LOAD segment.
     std::string getInterpreter() const;
     const Elf_Ehdr &getElfHeader() const { return elfHeader; }
     const Elf_Phdr *getSegmentForAddress(Elf_Off) const;
@@ -184,7 +202,7 @@ private:
 
     std::shared_ptr<ElfObject> debugData; // symbol table data as extracted from .gnu.debugdata
     std::unique_ptr<ElfSymHash> hash; // Symbol hash table.
-    std::shared_ptr<ElfObject> debugObject; // (DWARF) debug object as per .gnu_debuglink/other.
+    std::shared_ptr<ElfObject> debugObject; // debug object as per .gnu_debuglink/other.
 
     bool debugLoaded; // We've at least attempted to load debugObject: don't try again
     friend std::ostream &operator<< (std::ostream &, const JSON<ElfObject> &);
@@ -216,25 +234,6 @@ struct SymbolSection {
        : symbols(symbols_), strings(strings_)
     {}
     bool linearSearch(const std::string &name, Elf_Sym &);
-};
-
-/*
- * Helper class to provide a hashed lookup of a symbol table.
- */
-class ElfSymHash {
-    std::shared_ptr<const Reader> hash;
-    std::shared_ptr<const Reader> syms;
-    std::shared_ptr<const Reader> strings;
-    Elf_Word nbucket;
-    Elf_Word nchain;
-    std::vector<Elf_Word> data;
-    const Elf_Word *chains;
-    const Elf_Word *buckets;
-public:
-    ElfSymHash(std::shared_ptr<const Reader> hash_,
-          std::shared_ptr<const Reader> syms_,
-          std::shared_ptr<const Reader> strings_);
-    bool findSymbol(Elf_Sym &sym, const std::string &name);
 };
 
 // These are the architecture specific types representing the NT_PRSTATUS registers.

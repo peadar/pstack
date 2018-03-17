@@ -106,6 +106,10 @@ class Process : public ps_prochandle {
     Elf_Addr vdsoBase;
     void loadSharedObjects(Elf_Addr);
     bool isStatic;
+#ifdef __i386__
+    enum TrampolineType { RESTORE_RT, RESTORE };
+    std::map<Elf_Addr, TrampolineType> trampolines;
+#endif
 
 protected:
     td_thragent_t *agent;
@@ -119,9 +123,9 @@ public:
     DwarfImageCache &imageCache;
 
     struct LoadedObject {
-        Elf_Off reloc;
+        Elf_Off loadAddr;
         std::shared_ptr<ElfObject> object;
-        LoadedObject(Elf_Off reloc_, std::shared_ptr<ElfObject> object_) : reloc(reloc_), object(object_) {}
+        LoadedObject(Elf_Off loadAddr_, std::shared_ptr<ElfObject> object_) : loadAddr(loadAddr_), object(object_) {}
     };
     std::vector<LoadedObject> objects;
     void processAUXV(const Reader &);

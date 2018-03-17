@@ -133,7 +133,7 @@ pythonStack(Process &proc, std::ostream &os, const PstackOptions &)
                         continue;
                     // Yes - let's run through the interpreters, and dump their stacks.
                     DwarfExpressionStack evalStack;
-                    auto addr = evalStack.eval(proc, var.attrForName(DW_AT_location), 0, o.reloc);
+                    auto addr = evalStack.eval(proc, var.attrForName(DW_AT_location), 0, o.loadAddr);
                     Elf_Addr ptr;
                     for (proc.io->readObj(addr, &ptr); ptr; )
                         ptr = doPyInterp(proc, os, ptr);

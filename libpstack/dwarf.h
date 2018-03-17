@@ -309,7 +309,7 @@ struct DwarfCIE {
 
 struct DwarfFrameInfo {
     const DwarfInfo *dwarf;
-    Elf_Word sectionOffset;
+    Elf_Word sectionAddr; // virtual address of this section  (may need to be offset by load address)
     std::shared_ptr<const Reader> io;
     FIType type;
     std::map<Elf_Addr, DwarfCIE> cies;
