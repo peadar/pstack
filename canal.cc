@@ -22,11 +22,11 @@ globmatchR(const char *pattern, const char *name)
         case '*':
             // if the rest of the name matches the bit of pattern after '*',
             for (;;) {
-                ++name;
                 if (globmatchR(pattern + 1, name))
                     return 1;
                 if (*name == 0) // exhuasted name without finding a match
                     return 0;
+                ++name;
             }
         default:
             if (*name != *pattern)
@@ -127,7 +127,6 @@ mainExcept(int argc, char *argv[])
 
             case 'p':
                 patterns.push_back(optarg);
-                virtpattern = 0;
                 break;
 
             case 'r': {
@@ -230,7 +229,7 @@ mainExcept(int argc, char *argv[])
         exit(0);
     }
 
-    if (virtpattern)
+    if (patterns.empty())
         patterns.push_back(virtpattern);
 
     vector<ListedSymbol> listed;
@@ -240,7 +239,7 @@ mainExcept(int argc, char *argv[])
 
         struct SymbolSection symtabs[2] = {
            loaded->object->getSymbols(".dynsym"),
-           loaded->object->getSymbols(".symtab")
+           ElfObject::getDebug(loaded->object)->getSymbols(".symtab")
         };
 
         for (auto &syms : symtabs) {
@@ -271,6 +270,7 @@ mainExcept(int argc, char *argv[])
         Elf_Off p;
         filesize += hdr.p_filesz;
         memsize += hdr.p_memsz;
+	int seg_count = 0;
         if (verbose) {
             IOFlagSave _(*debug);
             *debug << "scan " << hex << hdr.p_vaddr <<  " to " << hdr.p_vaddr + hdr.p_memsz
@@ -311,13 +311,14 @@ mainExcept(int argc, char *argv[])
                                 << std::dec <<  " ... size=" << found->sym.st_size
                                 << ", diff=" << p - found->memaddr() << endl;
                         found->count++;
+			seg_count++;
                     }
                 }
             }
         }
 
         if (verbose)
-            *debug << endl;
+            *debug << seg_count << endl;
 
     }
     if (verbose)
