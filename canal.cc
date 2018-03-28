@@ -11,6 +11,7 @@
 #include "libpstack/proc.h"
 #include "libpstack/elf.h"
 #include "libpstack/dwarf.h"
+#include "libpstack/python.h"
 
 using namespace std;
 
@@ -88,6 +89,7 @@ operator <<(ostream &os, const Usage &)
 int
 mainExcept(int argc, char *argv[])
 {
+    bool doPython = false;
     DwarfImageCache imageCache;
     std::vector<std::string> patterns;
     shared_ptr<ElfObject> exec;
@@ -107,8 +109,12 @@ mainExcept(int argc, char *argv[])
     int symOffset = -1;
     bool showloaded = false;
 
-    while ((c = getopt(argc, argv, "o:vhr:sp:f:e:S:R:K:lVt")) != -1) {
+    while ((c = getopt(argc, argv, "o:vhr:sp:f:Pe:S:R:K:lVt")) != -1) {
         switch (c) {
+	    case 'P':
+	       doPython = true;
+	       patterns.push_back("Py*_Type");
+	       break;
             case 'V':
                showsyms = true;
                break;
@@ -216,6 +222,8 @@ mainExcept(int argc, char *argv[])
        process = make_shared<CoreProcess>(exec, core, pathReplacements, cache);
     }
     process->load(PstackOptions());
+
+    PythonPrinter *py = doPython ? new PythonPrinter(*process, std::cout) : nullptr;
     if (searchaddrs.size()) {
         std::clog << "finding references to " << dec << searchaddrs.size() << " addresses\n";
         for (auto &addr : searchaddrs)
@@ -310,6 +318,9 @@ mainExcept(int argc, char *argv[])
                                 << found->name << " 0x" << std::hex << loc
                                 << std::dec <<  " ... size=" << found->sym.st_size
                                 << ", diff=" << p - found->memaddr() << endl;
+			if (py) {
+				py->print(Elf_Addr(loc) - sizeof (PyObject) + sizeof (struct _typeobject *));
+			}
                         found->count++;
 			seg_count++;
                     }

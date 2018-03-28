@@ -1,6 +1,7 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/proc.h"
 #include "libpstack/ps_callback.h"
+#include "libpstack/python.h"
 
 #include <sys/types.h>
 
@@ -15,9 +16,6 @@
 #define XSTR(a) #a
 #define STR(a) XSTR(a)
 
-#ifdef WITH_PYTHON
-extern std::ostream & pythonStack(Process &proc, std::ostream &os, const PstackOptions &);
-#endif
 static bool doJson = false;
 
 extern std::ostream & operator << (std::ostream &os, const JSON<ThreadStack, Process *> &jt);
@@ -157,9 +155,10 @@ emain(int argc, char **argv)
                auto doStack = [python, &options] (Process &proc) {
                    proc.load(options);
 #ifdef WITH_PYTHON
-                   if (python)
-                       pythonStack(proc, std::cout, options);
-                   else
+                   if (python) {
+                       PythonPrinter printer(proc, std::cout);
+                       printer.printStacks();
+                   } else
 #endif
                        pstack(proc, std::cout, options);
                };

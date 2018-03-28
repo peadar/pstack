@@ -67,7 +67,7 @@ add_library(dwelf ${LIBTYPE} dump.cc dwarf.cc elf.cc reader.cc util.cc
 add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc
    dwarfproc.cc procdump.cc ${stubsrc})
 
-add_executable(canal canal.cc)
+add_executable(canal canal.cc python.cc)
 add_executable(${PSTACK_BIN} pstack.cc ${pysrc} )
 
 target_link_libraries(procman ${LTHREADDB} dwelf)
@@ -100,6 +100,7 @@ endif()
 
 if (PythonLibs_FOUND OR PYTHONLIBS_FOUND)
    target_link_libraries(${PSTACK_BIN} ${PYTHON_LIBRARIES})
+   target_link_libraries(canal ${PYTHON_LIBRARIES})
 else()
    message(WARNING "no python support found")
 endif()
