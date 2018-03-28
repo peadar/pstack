@@ -105,9 +105,6 @@ Process::processAUXV(const Reader &auxio)
 
         Elf_Addr hdr = aux.a_un.a_val;
         switch (aux.a_type) {
-            case AT_PHDR:
-                std::clog << "phdr at " << (void *)hdr << std::endl;
-                break;
             case AT_ENTRY: {
                 // this provides a reference for relocating the executable when
                 // compared to the entrypoint there.
