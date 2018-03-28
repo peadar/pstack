@@ -14,7 +14,7 @@ pthread_cond_t c = PTHREAD_COND_INITIALIZER;
 
 extern "C" {
 void *
-entry(void * /* unused */)
+entry(void *unused)
 {
    pthread_mutex_lock(&l);
    in_entry++;

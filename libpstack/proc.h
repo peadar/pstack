@@ -103,7 +103,6 @@ class Process : public ps_prochandle {
     Elf_Addr findRDebugAddr();
     Elf_Off entry; // entrypoint of process.
     Elf_Addr interpBase;
-    Elf_Addr vdsoBase;
     void loadSharedObjects(Elf_Addr);
     bool isStatic;
 #ifdef __i386__

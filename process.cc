@@ -41,7 +41,6 @@ Process::Process(std::shared_ptr<ElfObject> exec,
                   DwarfImageCache &cache)
     : entry(0)
     , interpBase(0)
-    , vdsoBase(0)
     , isStatic(false)
     , agent(nullptr)
     , execImage(std::move(exec))
@@ -137,7 +136,7 @@ Process::processAUXV(const Reader &auxio)
                     auto elf = std::make_shared<ElfObject>(imageCache, std::make_shared<OffsetReader>(io, hdr, 65536));
                     addElfObject(elf, hdr);
                     if (verbose >= 2)
-                        *debug << "VDSO " << *elf->io << " loaded at " << std::hex << vdsoBase << "\n";
+                        *debug << "VDSO " << *elf->io << " loaded at " << std::hex << hdr << "\n";
 
                 }
                 catch (const std::exception &ex) {
@@ -621,21 +620,14 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             addElfObject(execImage, map.l_addr);
             continue;
         }
-        if (map.l_addr == vdsoBase) {
-           // we already have the VDSO, and won't be able to read the file.
-           continue;
-        }
-        /* Read the path to the file */
-        if (map.l_name == 0) {
-            IOFlagSave _(*debug);
-            *debug << "warning: no name for object loaded at " << std::hex << map.l_addr << "\n";
+
+        // Read the path to the file
+        if (map.l_name == 0)
             continue;
-        }
+
         std::string path = io->readString(Elf_Off(map.l_name));
-        if (path == "") {
-            *debug << "warning: empty name for object loaded at " << std::hex << map.l_addr << "\n";
+        if (path == "")
             continue;
-        }
 
         std::string startPath = path;
         for (auto &it : pathReplacements) {
