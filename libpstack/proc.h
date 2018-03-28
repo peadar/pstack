@@ -129,7 +129,7 @@ public:
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) = 0;
     void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
     std::shared_ptr<ElfObject> findObject(Elf_Addr addr, Elf_Off *reloc) const;
-    std::shared_ptr<DwarfInfo> getDwarf(std::shared_ptr<ElfObject>, bool debug = true);
+    std::shared_ptr<DwarfInfo> getDwarf(std::shared_ptr<ElfObject>);
     Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> memory, const PathReplacementList &prl, DwarfImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;

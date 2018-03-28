@@ -96,7 +96,7 @@ emain(int argc, char **argv)
             break;
         case 'D': {
             auto dumpobj = std::make_shared<ElfObject>(imageCache, loadFile(optarg));
-            DwarfInfo di(dumpobj->getDebug().shared_from_this(), imageCache);
+            DwarfInfo di(dumpobj, imageCache);
             std::cout << json(di);
             return 0;
         }

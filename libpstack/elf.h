@@ -173,6 +173,7 @@ public:
 
     // Accessing sections.
     const ElfSection &getSection(Elf_Word idx) const;
+    const ElfSection &getLinkedSection(const ElfSection &sec) const;
     const ElfSection &getSection(const std::string &name, Elf_Word type) const;
 
     // Accessing segments.
@@ -185,9 +186,6 @@ public:
     bool findHashedSymbol(const std::string &name, Elf_Sym &sym) { return hash ? hash->findSymbol(sym, name) : false; }
 
     std::shared_ptr<const Reader> io;
-
-    // Gets linked debug object.
-    ElfObject &getDebug();
 
     // Misc operations
     std::string getInterpreter() const;
@@ -208,11 +206,12 @@ private:
     std::map<std::string, ElfSection *> namedSection;
     std::map<Elf_Word, ProgramHeaders> programHeaders;
 
-    std::shared_ptr<ElfObject> debugData; // symbol table data as extracted from .gnu.debugdata
-    std::unique_ptr<ElfSymHash> hash; // Symbol hash table.
-    std::shared_ptr<ElfObject> debugObject; // debug object as per .gnu_debuglink/other.
+    mutable bool debugLoaded; // We've at least attempted to load debugObject: don't try again
+    mutable std::shared_ptr<ElfObject> debugData; // symbol table data as extracted from .gnu.debugdata
+    mutable std::shared_ptr<ElfObject> debugObject; // debug object as per .gnu_debuglink/other.
 
-    bool debugLoaded; // We've at least attempted to load debugObject: don't try again
+    std::unique_ptr<ElfSymHash> hash; // Symbol hash table.
+    ElfObject *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
     friend std::ostream &operator<< (std::ostream &, const JSON<ElfObject> &);
 };
 

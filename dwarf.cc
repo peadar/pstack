@@ -60,7 +60,7 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
 }
 
 static std::shared_ptr<const Reader>
-sectionReader(const ElfObject &obj, const char *name)
+sectionReader(ElfObject &obj, const char *name)
 {
     return obj.getSection(name, SHT_PROGBITS).io;
 }

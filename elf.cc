@@ -118,8 +118,8 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
             }
         }
         auto &tab = getSection(".hash", SHT_HASH);
-        auto &syms = getSection(tab.shdr.sh_link);
-        auto &strings = getSection(syms.shdr.sh_link);
+        auto &syms = getLinkedSection(tab);
+        auto &strings = getLinkedSection(syms);
         if (tab && syms && strings)
             hash = std::make_unique<ElfSymHash>(tab.io, syms.io, strings.io);
     } else {
@@ -128,11 +128,11 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
 
 #ifdef __i386__
     Elf_Sym symbol;
-    if (getDebug().findSymbolByName("__restore_rt", symbol)) {
+    if (findSymbolByName("__restore_rt", symbol)) {
         trampolines[symbol.st_value] = RESTORE_RT;
         std::clog << "found __restore_rt trampoline in " << *io << std::endl;
     }
-    if (getDebug().findSymbolByName("__restore", symbol)) {
+    if (findSymbolByName("__restore", symbol)) {
         trampolines[symbol.st_value] = RESTORE;
         std::clog << "found __restore trampoline in " << *io << std::endl;
     }
@@ -187,7 +187,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
         const auto &symSection = getSection(secname, SHT_NULL);
         if (symSection.shdr.sh_type == SHT_NOBITS)
             continue;
-        SymbolSection syms(symSection.io, getSection(symSection.shdr.sh_link).io);
+        SymbolSection syms(symSection.io, getLinkedSection(symSection).io);
         for (auto syminfo : syms) {
             auto &candidate = syminfo.first;
             if (candidate.st_shndx >= sectionHeaders.size())
@@ -215,15 +215,33 @@ const ElfSection &
 ElfObject::getSection(const std::string &name, Elf_Word type) const
 {
     auto s = namedSection.find(name);
-    if (s == namedSection.end() || (s->second->shdr.sh_type != type && type != SHT_NULL))
+    if (s == namedSection.end() || (s->second->shdr.sh_type != type && type != SHT_NULL)) {
+        ElfObject *debug = getDebug();
+        if (debug)
+            return debug->getSection(name, type);
         return sectionHeaders[0];
+    }
     return *s->second;
 }
 
 const ElfSection &
 ElfObject::getSection(Elf_Word idx) const
 {
-    return sectionHeaders[idx];
+    if (sectionHeaders[idx].shdr.sh_type != SHT_NULL)
+        return sectionHeaders[idx];
+    auto debug = getDebug();
+    if (debug) {
+        return debug->sectionHeaders[idx];
+    }
+    return sectionHeaders[0];
+}
+
+const ElfSection &
+ElfObject::getLinkedSection(const ElfSection &from) const
+{
+    if (&from >= &sectionHeaders[0] && &from <= &sectionHeaders[sectionHeaders.size() - 1])
+        return sectionHeaders[from.shdr.sh_link];
+    return getDebug()->sectionHeaders[from.shdr.sh_link];
 }
 
 SymbolSection
@@ -233,7 +251,7 @@ ElfObject::getSymbols(const std::string &tableName)
     std::string n = stringify(*io);
     if (table.shdr.sh_type == SHT_NOBITS || table.shdr.sh_type == SHT_NULL)
         return SymbolSection(sectionHeaders[0].io, sectionHeaders[0].io);
-    auto &strings = getSection(table.shdr.sh_link);
+    auto &strings = getLinkedSection(table);
     return SymbolSection(table.io, strings.io);
 }
 
@@ -299,14 +317,15 @@ ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
 
 ElfObject::~ElfObject() = default;
 
-ElfObject&
-ElfObject::getDebug()
+ElfObject *
+ElfObject::getDebug() const
 {
     if (!debugLoaded) {
         debugLoaded = true;
         auto &hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
-        if (!hdr)
-           return *this;
+        if (!hdr) {
+            return 0;
+        }
         auto link = hdr.io->readString(0);
         auto dir = dirname(stringify(*io));
         debugObject = imageCache.getDebugImage(dir + "/" + link);
@@ -333,7 +352,7 @@ ElfObject::getDebug()
         if (debugObject && verbose >= 2)
             *debug << "found debug object " << *debugObject->io << " for " << *io << "\n";
     }
-    return debugObject ? *debugObject : *this;
+    return debugObject.get();
 }
 
 /*

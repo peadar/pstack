@@ -86,10 +86,9 @@ Process::load(const PstackOptions &options)
 }
 
 std::shared_ptr<DwarfInfo>
-Process::getDwarf(std::shared_ptr<ElfObject> elf, bool debug)
+Process::getDwarf(std::shared_ptr<ElfObject> elf)
 {
-    ElfObject &delf = debug ? elf->getDebug() : *elf;
-    return imageCache.getDwarf(delf.shared_from_this());
+    return imageCache.getDwarf(elf);
 }
 
 void
@@ -508,7 +507,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             fileName = stringify(*obj->io);
             Elf_Addr objIp = frame->ip - loadAddr;
 
-            std::shared_ptr<DwarfInfo> dwarf = getDwarf(obj, true);
+            std::shared_ptr<DwarfInfo> dwarf = getDwarf(obj);
 
             std::list<std::shared_ptr<DwarfUnit>> units;
             if (dwarf->hasRanges()) {

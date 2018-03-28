@@ -692,7 +692,7 @@ operator<< (std::ostream &os, const JSON<Elf_Sym, std::tuple<const ElfObject &, 
         "STT_LOPROC + 1",
         "STT_HIPROC"
     };
-    auto symStrings = obj.getSection(sec.shdr.sh_link);
+    auto symStrings = obj.getLinkedSection(sec);
 
     return JObject(os)
         .field("name", symStrings.io->readString(t->st_name))
