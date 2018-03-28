@@ -68,6 +68,8 @@ LzmaReader::read(off_t offset, size_t size, char *data) const
             rc = lzma_block_buffer_decode(&block, allocator(),
                     &compressed[0], &compressed_pos, compressed.size(),
                     &uncompressed[0], &uncompressed_pos, uncompressed.size());
+            for (auto i = 0;  block.filters[i].id != LZMA_VLI_UNKNOWN; ++i)
+                allocator()->free(allocator(), block.filters[i].options);
             if ( rc != LZMA_OK)
                 throw (Exception() << "can't decode block buffer: " << rc);
         }
