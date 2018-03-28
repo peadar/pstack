@@ -117,7 +117,7 @@ pythonStack(Process &proc, std::ostream &os, const PstackOptions &)
         std::string module = stringify(*o.object->io);
         if (module.find("python") == std::string::npos)
             continue;
-        auto dwarf = proc.imageCache.getDwarf(ElfObject::getDebug(o.object));
+        auto dwarf = proc.imageCache.getDwarf(o.object->getDebug().shared_from_this());
         if (!dwarf)
             continue;
         for (auto u : dwarf->getUnits()) {

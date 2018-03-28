@@ -105,10 +105,6 @@ class Process : public ps_prochandle {
     Elf_Addr interpBase;
     void loadSharedObjects(Elf_Addr);
     bool isStatic;
-#ifdef __i386__
-    enum TrampolineType { RESTORE_RT, RESTORE };
-    std::map<Elf_Addr, TrampolineType> trampolines;
-#endif
 
 protected:
     td_thragent_t *agent;

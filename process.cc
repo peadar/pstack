@@ -82,26 +82,14 @@ Process::load(const PstackOptions &options)
                 *debug << "failed to load thread agent: " << the << std::endl;
         }
     }
-#ifdef __i386__
-    // i386 signal trampolines are a pain.
-    for (auto &lo : objects) {
-        Elf_Sym symbol;
-        if (ElfObject::getDebug(lo.object)->findSymbolByName("__restore_rt", symbol))
-            trampolines[symbol.st_value + lo.loadAddr] = RESTORE_RT;
-        if (ElfObject::getDebug(lo.object)->findSymbolByName("__restore", symbol)) {
-            trampolines[symbol.st_value + lo.loadAddr] = RESTORE;
-        }
-    }
-    std::clog << std::endl;
-#endif
+
 }
 
 std::shared_ptr<DwarfInfo>
 Process::getDwarf(std::shared_ptr<ElfObject> elf, bool debug)
 {
-    if (debug)
-        elf = ElfObject::getDebug(elf);
-    return imageCache.getDwarf(elf);
+    ElfObject &delf = debug ? elf->getDebug() : *elf;
+    return imageCache.getDwarf(delf.shared_from_this());
 }
 
 void

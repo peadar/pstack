@@ -86,10 +86,14 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
         off += elfHeader.e_phentsize;
     }
 
-    sectionHeaders.resize(elfHeader.e_shnum);
-    for (off = elfHeader.e_shoff, i = 0; i < elfHeader.e_shnum; i++) {
-        sectionHeaders[i].open(io, off);
-        off += elfHeader.e_shentsize;
+    if (elfHeader.e_shnum == 0) {
+        sectionHeaders.push_back(ElfSection());
+    } else {
+        sectionHeaders.resize(elfHeader.e_shnum);
+        for (off = elfHeader.e_shoff, i = 0; i < elfHeader.e_shnum; i++) {
+            sectionHeaders[i].open(io, off);
+            off += elfHeader.e_shentsize;
+        }
     }
 
     if (elfHeader.e_shstrndx != SHN_UNDEF) {
@@ -121,6 +125,19 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
     } else {
         hash = nullptr;
     }
+
+#ifdef __i386__
+    Elf_Sym symbol;
+    if (getDebug().findSymbolByName("__restore_rt", symbol)) {
+        trampolines[symbol.st_value] = RESTORE_RT;
+        std::clog << "found __restore_rt trampoline in " << *io << std::endl;
+    }
+    if (getDebug().findSymbolByName("__restore", symbol)) {
+        trampolines[symbol.st_value] = RESTORE;
+        std::clog << "found __restore trampoline in " << *io << std::endl;
+    }
+    std::clog << "checked " << *io << " for trampolines" << std::endl;
+#endif
 }
 
 const Elf_Phdr *
@@ -282,20 +299,20 @@ ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
 
 ElfObject::~ElfObject() = default;
 
-std::shared_ptr<ElfObject>
-ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
+ElfObject&
+ElfObject::getDebug()
 {
-    if (!in->debugLoaded) {
-        in->debugLoaded = true;
-        auto &hdr = in->getSection(".gnu_debuglink", SHT_PROGBITS);
+    if (!debugLoaded) {
+        debugLoaded = true;
+        auto &hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
         if (!hdr)
-           return in;
+           return *this;
         auto link = hdr.io->readString(0);
-        auto dir = dirname(stringify(*in->io));
-        in->debugObject = in->imageCache.getDebugImage(dir + "/" + link);
+        auto dir = dirname(stringify(*io));
+        debugObject = imageCache.getDebugImage(dir + "/" + link);
 
-        if (!in->debugObject) {
-            for (auto note : in->notes) {
+        if (!debugObject) {
+            for (auto note : notes) {
                 if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
                     std::ostringstream dir;
                     dir << ".build-id/";
@@ -308,15 +325,15 @@ ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
                     for (i = 1; i < note.size(); ++i)
                         dir << std::setw(2) << int(data[i]);
                     dir << ".debug";
-                    in->debugObject = in->imageCache.getDebugImage(dir.str());
+                    debugObject = imageCache.getDebugImage(dir.str());
                     break;
                 }
             }
         }
-        if (in->debugObject && verbose >= 2)
-            *debug << "found debug object " << *in->debugObject->io << " for " << *in->io << "\n";
+        if (debugObject && verbose >= 2)
+            *debug << "found debug object " << *debugObject->io << " for " << *io << "\n";
     }
-    return in->debugObject ? in->debugObject : in;
+    return debugObject ? *debugObject : *this;
 }
 
 /*

@@ -144,6 +144,9 @@ struct ElfSection {
     std::shared_ptr<const Reader> io;
     void open(const std::shared_ptr<const Reader> &image, off_t off);
     operator bool() const { return shdr.sh_type != SHT_NULL; }
+    ElfSection() {
+        shdr.sh_type = SHT_NULL;
+    }
 };
 
 struct ElfNoteIter;
@@ -158,7 +161,7 @@ struct ElfNotes {
    typedef ElfNoteIter iterator;
 };
 
-class ElfObject {
+class ElfObject : public std::enable_shared_from_this<ElfObject> {
 public:
     typedef std::vector<Elf_Phdr> ProgramHeaders;
     typedef std::vector<ElfSection> SectionHeaders;
@@ -184,13 +187,18 @@ public:
     std::shared_ptr<const Reader> io;
 
     // Gets linked debug object.
-    static std::shared_ptr<ElfObject> getDebug(std::shared_ptr<ElfObject> &);
+    ElfObject &getDebug();
 
     // Misc operations
     std::string getInterpreter() const;
     const Elf_Ehdr &getElfHeader() const { return elfHeader; }
     const Elf_Phdr *getSegmentForAddress(Elf_Off) const;
     ElfNotes notes;
+
+#ifdef __i386__
+    enum TrampolineType { RESTORE_RT, RESTORE };
+    std::map<Elf_Addr, TrampolineType> trampolines;
+#endif
 
 private:
     // Elf header, section headers, program headers.
