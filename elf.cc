@@ -65,6 +65,13 @@ ElfNoteDesc::size() const
    return note.n_descsz;
 }
 
+std::pair<const Elf_Sym, const string>
+SymbolIterator::operator *()
+{
+    auto sym = sec->symbols->readObj<Elf_Sym>(off);
+    string name = sec->strings->readString(sym.st_name);
+    return std::make_pair(sym, name);
+}
 
 ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
     : io(std::move(io_))
@@ -168,14 +175,6 @@ ElfObject::getInterpreter() const
     return "";
 }
 
-std::pair<const Elf_Sym, const string>
-SymbolIterator::operator *()
-{
-    auto sym = sec->symbols->readObj<Elf_Sym>(off);
-    string name = sec->strings->readString(sym.st_name);
-    return std::make_pair(sym, name);
-}
-
 /*
  * Find the symbol that represents a particular address.
  */
@@ -255,49 +254,6 @@ ElfObject::getSymbols(const std::string &tableName)
     return SymbolSection(table.io, strings.io);
 }
 
-bool
-SymbolSection::linearSearch(const string &name, Elf_Sym &sym)
-{
-    for (const auto &info : *this) {
-        if (name == info.second) {
-            sym = info.first;
-            return true;
-        }
-    }
-    return false;
-}
-
-ElfSymHash::ElfSymHash(std::shared_ptr<const Reader> hash_,
-      std::shared_ptr<const Reader> syms_, std::shared_ptr<const Reader> strings_)
-    : hash(std::move(hash_))
-    , syms(std::move(syms_))
-    , strings(std::move(strings_))
-{
-    // read the hash table into local memory.
-    size_t words = hash->size() / sizeof (Elf_Word);
-    data.resize(words);
-    hash->readObj(0, &data[0], words);
-    nbucket = data[0];
-    nchain = data[1];
-    buckets = &data[0] + 2;
-    chains = buckets + nbucket;
-}
-
-bool
-ElfSymHash::findSymbol(Elf_Sym &sym, const string &name)
-{
-    uint32_t bucket = elf_hash(name) % nbucket;
-    for (Elf_Word i = buckets[bucket]; i != STN_UNDEF; i = chains[i]) {
-        auto candidate = syms->readObj<Elf_Sym>(i * sizeof (Elf_Sym));
-        auto candidateName = strings->readString(candidate.st_name);
-        if (candidateName == name) {
-            sym = candidate;
-            return true;
-        }
-    }
-    return false;
-}
-
 /*
  * Locate a named symbol in an ELF image.
  */
@@ -306,7 +262,6 @@ ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
 {
     if (hash && hash->findSymbol(sym, name))
         return true;
-
     for (const char *sec : { ".dynsym", ".symtab" }) {
         SymbolSection sect = getSymbols(sec);
         if (sect.linearSearch(name, sym))
@@ -355,6 +310,49 @@ ElfObject::getDebug() const
     return debugObject.get();
 }
 
+
+bool
+SymbolSection::linearSearch(const string &name, Elf_Sym &sym)
+{
+    for (const auto &info : *this) {
+        if (name == info.second) {
+            sym = info.first;
+            return true;
+        }
+    }
+    return false;
+}
+
+ElfSymHash::ElfSymHash(std::shared_ptr<const Reader> hash_,
+      std::shared_ptr<const Reader> syms_, std::shared_ptr<const Reader> strings_)
+    : hash(std::move(hash_))
+    , syms(std::move(syms_))
+    , strings(std::move(strings_))
+{
+    // read the hash table into local memory.
+    size_t words = hash->size() / sizeof (Elf_Word);
+    data.resize(words);
+    hash->readObj(0, &data[0], words);
+    nbucket = data[0];
+    nchain = data[1];
+    buckets = &data[0] + 2;
+    chains = buckets + nbucket;
+}
+
+bool
+ElfSymHash::findSymbol(Elf_Sym &sym, const string &name)
+{
+    uint32_t bucket = elf_hash(name) % nbucket;
+    for (Elf_Word i = buckets[bucket]; i != STN_UNDEF; i = chains[i]) {
+        auto candidate = syms->readObj<Elf_Sym>(i * sizeof (Elf_Sym));
+        auto candidateName = strings->readString(candidate.st_name);
+        if (candidateName == name) {
+            sym = candidate;
+            return true;
+        }
+    }
+    return false;
+}
 /*
  * Culled from System V Application Binary Interface
  */
@@ -370,7 +368,6 @@ elf_hash(const string &text)
     }
     return (h);
 }
-
 
 void
 ElfSection::open(const std::shared_ptr<const Reader> &image, off_t off)
