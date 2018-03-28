@@ -739,25 +739,27 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
 #if defined(__amd64__) || defined(__i386__) // Hail Mary stack unwinding if we can't use DWARF
                // If the first frame fails to unwind, it might be a crash calling an invalid address.
                // pop the instruction pointer off the stack, and try again.
-               if (prevFrame == startFrame) {
-                  frame = new StackFrame();
-                  *frame = *prevFrame;
-                  auto sp = prevFrame->getReg(SPREG);
-                  auto in = p.io->read(sp, sizeof frame->ip, (char *)&frame->ip);
-                  if (in == sizeof frame->ip)
-                     frame->setReg(SPREG, sp + sizeof frame->ip);
-               }
+                if (prevFrame == startFrame) {
+                    frame = new StackFrame();
+                    *frame = *prevFrame;
+                    auto sp = prevFrame->getReg(SPREG);
+                    auto in = p.io->read(sp, sizeof frame->ip, (char *)&frame->ip);
+                    if (in == sizeof frame->ip) {
+                        frame->setReg(SPREG, sp + sizeof frame->ip);
+                        continue;
+                    }
+                }
+                else
 #ifdef __i386__
-               else {
-                   Elf_Addr reloc;
-                   auto obj = p.findObject(prevFrame->ip, &reloc);
-                   if (obj) {
-                       auto it = obj->trampolines.find(prevFrame->ip - reloc);
-                       if (it != obj->trampolines.end()) {
-                           std::clog << "found a trampoline!" << std::endl;
-                       }
-                   }
-               }
+                {
+                    Elf_Addr reloc;
+                    auto obj = p.findObject(prevFrame->ip, &reloc);
+                    if (obj) {
+                        auto it = obj->trampolines.find(prevFrame->ip - reloc);
+                        if (it != obj->trampolines.end())
+                            std::clog << "found a trampoline!" << std::endl;
+                    }
+                }
 #endif
 #endif
                   throw;
