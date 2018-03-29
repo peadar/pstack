@@ -15,7 +15,7 @@ struct PythonPrinter {
     void print(Elf_Addr remoteAddr);
     std::map<Elf_Addr, PyTypeObject> types;
 
-    PythonPrinter(Process &proc_, std::ostream &os_);
+    PythonPrinter(Process &proc_, std::ostream &os_, const PstackOptions &);
     const char *prefix() const;
     void printStacks();
     Elf_Addr printThread(Elf_Addr);
@@ -29,4 +29,5 @@ struct PythonPrinter {
     Process::LoadedObject *libPython;
     std::map<Elf_Addr, PyPrinterEntry> printers;
     PyPrinterEntry *heapPrinter;
+    const PstackOptions &options;
 };

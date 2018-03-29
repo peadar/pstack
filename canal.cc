@@ -111,10 +111,10 @@ mainExcept(int argc, char *argv[])
 
     while ((c = getopt(argc, argv, "o:vhr:sp:f:Pe:S:R:K:lVt")) != -1) {
         switch (c) {
-	    case 'P':
-	       doPython = true;
-	       patterns.push_back("Py*_Type");
-	       break;
+            case 'P':
+               doPython = true;
+               patterns.push_back("Py*_Type");
+               break;
             case 'V':
                showsyms = true;
                break;
@@ -223,7 +223,6 @@ mainExcept(int argc, char *argv[])
     }
     process->load(PstackOptions());
 
-    PythonPrinter *py = doPython ? new PythonPrinter(*process, std::cout) : nullptr;
     if (searchaddrs.size()) {
         std::clog << "finding references to " << dec << searchaddrs.size() << " addresses\n";
         for (auto &addr : searchaddrs)
@@ -278,7 +277,7 @@ mainExcept(int argc, char *argv[])
         Elf_Off p;
         filesize += hdr.p_filesz;
         memsize += hdr.p_memsz;
-	int seg_count = 0;
+        int seg_count = 0;
         if (verbose) {
             IOFlagSave _(*debug);
             *debug << "scan " << hex << hdr.p_vaddr <<  " to " << hdr.p_vaddr + hdr.p_memsz
@@ -318,11 +317,13 @@ mainExcept(int argc, char *argv[])
                                 << found->name << " 0x" << std::hex << loc
                                 << std::dec <<  " ... size=" << found->sym.st_size
                                 << ", diff=" << p - found->memaddr() << endl;
-			if (py) {
-				py->print(Elf_Addr(loc) - sizeof (PyObject) + sizeof (struct _typeobject *));
-			}
+                        if (doPython) {
+                            PstackOptions options;
+                            PythonPrinter py(*process, std::cout, options);
+                            py.print(Elf_Addr(loc) - sizeof (PyObject) + sizeof (struct _typeobject *));
+                        }
                         found->count++;
-			seg_count++;
+                        seg_count++;
                     }
                 }
             }

@@ -156,7 +156,7 @@ emain(int argc, char **argv)
                    proc.load(options);
 #ifdef WITH_PYTHON
                    if (python) {
-                       PythonPrinter printer(proc, std::cout);
+                       PythonPrinter printer(proc, std::cout, options);
                        printer.printStacks();
                    } else
 #endif

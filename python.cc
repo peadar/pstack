@@ -61,16 +61,15 @@ getLine(const Reader &proc, const PyCodeObject *code, const PyFrameObject *frame
 static Elf_Addr
 heapPrint(const PyObject *, const PyTypeObject *pto, PythonPrinter *pc, Elf_Addr remote)
 {
-    pc->os << "new class type ";
-    //pc->print(Elf_Addr(pto->tp_name));
+    pc->os << pc->proc.io->readString(Elf_Addr(pto->tp_name));
     if (pto->tp_dictoffset > 0) {
-	pc->os << "\n";
+        pc->os << "\n";
         pc->depth++;
         PyObject *dictAddr;
         pc->proc.io->readObj(remote + pto->tp_dictoffset, &dictAddr);
         pc->print(Elf_Addr(dictAddr));
         pc->depth--;
-	pc->os << "\n";
+        pc->os << "\n";
     }
 
     return 0;
@@ -109,7 +108,6 @@ boolPrint(const PyObject *pyo, const PyTypeObject *, PythonPrinter *pc, Elf_Addr
     return 0;
 }
 
-
 static Elf_Addr
 modulePrint(const PyObject *, const PyTypeObject *, PythonPrinter *pc, Elf_Addr)
 {
@@ -136,7 +134,6 @@ listPrint(const PyObject *po, const PyTypeObject *, PythonPrinter *pc, Elf_Addr)
     return 0;
 }
 
-
 static Elf_Addr
 classPrint(const PyObject *po, const PyTypeObject *, PythonPrinter *pc, Elf_Addr)
 {
@@ -146,8 +143,6 @@ classPrint(const PyObject *po, const PyTypeObject *, PythonPrinter *pc, Elf_Addr
     pc->os << ">";
     return 0;
 }
-
-
 
 static Elf_Addr
 dictPrint(const PyObject *pyo, const PyTypeObject *, PythonPrinter *pc, Elf_Addr)
@@ -194,7 +189,6 @@ instancePrint(const PyObject *pyo, const PyTypeObject *, PythonPrinter *pc, Elf_
     pc->depth--;
     return 0;
 }
-
 
 static Elf_Addr
 longPrint(const PyObject *pyo, const PyTypeObject *, PythonPrinter *pc, Elf_Addr)
@@ -248,22 +242,25 @@ framePrint(const PyObject *pyo, const PyTypeObject *, PythonPrinter *pc, Elf_Add
         auto file = pc->proc.io->readString(Elf_Addr(code.co_filename) + offsetof(PyStringObject, ob_sval));
         pc->os << pc->prefix() << func << " in " << file << ":" << lineNo << "\n";
 
-        Elf_Addr flocals = remoteAddr + offsetof(PyFrameObject, f_localsplus);
+        if (pc->options(PstackOptions::doargs)) {
 
-        pc->depth++;
+            Elf_Addr flocals = remoteAddr + offsetof(PyFrameObject, f_localsplus);
 
-        printTupleVars(pc, Elf_Addr(code.co_varnames), flocals, "fastlocals", code.co_nlocals);
-        flocals += code.co_nlocals * sizeof (PyObject *);
+            pc->depth++;
 
-        auto cellcount = printTupleVars(pc, Elf_Addr(code.co_cellvars), flocals, "cells");
-        flocals += cellcount * sizeof (PyObject *);
+            printTupleVars(pc, Elf_Addr(code.co_varnames), flocals, "fastlocals", code.co_nlocals);
+            flocals += code.co_nlocals * sizeof (PyObject *);
 
-        printTupleVars(pc, Elf_Addr(code.co_freevars), flocals, "freevars");
+            auto cellcount = printTupleVars(pc, Elf_Addr(code.co_cellvars), flocals, "cells");
+            flocals += cellcount * sizeof (PyObject *);
 
-        --pc->depth;
+            printTupleVars(pc, Elf_Addr(code.co_freevars), flocals, "freevars");
+
+            --pc->depth;
+        }
     }
 
-    if (pfo->f_locals != 0) {
+    if (pc->options(PstackOptions::doargs) && pfo->f_locals != 0) {
         pc->depth++;
         pc->os << pc->prefix() << "locals: " << std::endl;
         pc->print(Elf_Addr(pfo->f_locals));
@@ -311,15 +308,16 @@ PythonPrinter::printStacks()
         ptr = printInterp(ptr);
 }
 
-PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_)
+PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOptions &options_)
     : proc(proc_)
     , os(os_)
     , depth(0)
     , libPython(nullptr)
+    , options(options_)
 {
     for (auto &o : proc.objects) {
         std::string module = stringify(*o.object->io);
-        if (module.find("libpython") == std::string::npos)
+        if (module.find("python") == std::string::npos)
             continue;
         auto dwarf = proc.imageCache.getDwarf(ElfObject::getDebug(o.object));
         if (!dwarf)
@@ -369,8 +367,6 @@ PythonPrinter::print(Elf_Addr remoteAddr)
         return;
     }
     depth++;
-
-
     PyVarObject baseObj;
     try {
         while (remoteAddr) {
@@ -379,44 +375,42 @@ PythonPrinter::print(Elf_Addr remoteAddr)
                 os << "(dead object)";
                 break;
             }
-            const PyTypeObject *pto;
-            // find a printer for this type of object.
 
             const PyPrinterEntry *printer = nullptr;
             auto pi = printers.find(Elf_Addr(baseObj.ob_type));
-            if (pi != printers.end()) {
-                    printer = &pi->second;
-            }
-            auto ti = types.find(Elf_Addr(baseObj.ob_type));
-            if (ti == types.end()) {
-                pto = &types[Elf_Addr(baseObj.ob_type)];
-                proc.io->readObj(Elf_Addr(Elf_Addr(baseObj.ob_type)), pto);
-            } else {
-                pto = &ti->second;
+            if (pi != printers.end())
+                printer = &pi->second;
+
+            bool isNew = (types.find(Elf_Addr(baseObj.ob_type)) == types.end());
+            auto &pto = types[Elf_Addr(baseObj.ob_type)];
+            if (isNew) {
+                proc.io->readObj(Elf_Addr(Elf_Addr(baseObj.ob_type)), &pto);
             }
 
             if (printer == 0) {
                 std::string tn;
-                tn = proc.io->readString(Elf_Addr(pto->tp_name));
+                tn = proc.io->readString(Elf_Addr(pto.tp_name));
                 if (tn == "NoneType") {
                     os << "None";
                     break;
-                } else if (printer == 0 && (pto->tp_flags & Py_TPFLAGS_HEAPTYPE)) {
+                } else if (printer == 0 && (pto.tp_flags & Py_TPFLAGS_HEAPTYPE)) {
                     printer = heapPrinter;
                 } else {
                     os <<  remoteAddr << " unprintable-type-" << tn << "@"<< Elf_Addr(baseObj.ob_type);
                     break;
                 }
             }
+
             if (printer->dupdetect && visited.find(remoteAddr ) != visited.end()) {
                 os << "(already seen)";
                 break;
             }
+
             if (printer->dupdetect)
                 visited.insert(remoteAddr);
 
-            size_t size = pto->tp_basicsize;
-            size_t itemsize = pto->tp_itemsize;
+            size_t size = pto.tp_basicsize;
+            size_t itemsize = pto.tp_itemsize;
             ssize_t fullSize;
             if (itemsize != 0) {
                 // object is a variable length object:
@@ -432,7 +426,7 @@ PythonPrinter::print(Elf_Addr remoteAddr)
             if (fullSize != -1) {
                 char buf[fullSize];
                 proc.io->readObj(remoteAddr, buf, fullSize);
-                remoteAddr = printer->printer((const PyObject *)buf, pto, this, remoteAddr);
+                remoteAddr = printer->printer((const PyObject *)buf, &pto, this, remoteAddr);
             }
         }
     }
