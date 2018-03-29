@@ -200,6 +200,7 @@ public:
     const DwarfFileEntry *file;
     unsigned line;
     unsigned column;
+    unsigned isa;
     bool is_stmt:1;
     bool basic_block:1;
     bool end_sequence:1;

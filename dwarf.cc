@@ -279,6 +279,7 @@ DwarfLineState::DwarfLineState(DwarfLineInfo *li)
     , file { &li->files[1] }
     , line { 1 }
     , column { 0 }
+    , isa { 0 }
     , is_stmt { li->default_is_stmt }
     , basic_block { false }
     , end_sequence { false }
@@ -304,6 +305,10 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
     Elf_Off header_length = r.getuint(unit->version > 2 ? unit->dwarfLen: 4);
     Elf_Off expectedEnd = header_length + r.getOffset();
     int min_insn_length = r.getu8();
+
+    int maximum_operations_per_instruction = version >= 4 ? r.getu8() : 1; // new in DWARF 4.
+    (void)maximum_operations_per_instruction; // XXX: work out what to do with this.
+
     default_is_stmt = r.getu8() != 0;
     int line_base = r.gets8();
     int line_range = r.getu8();
@@ -413,6 +418,9 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
                 break;
             case DW_LNS_set_epilogue_begin:
                 state.epilogue_begin = true;
+                break;
+            case DW_LNS_set_isa:
+                state.isa = r.getuleb128();
                 break;
             default:
                 abort();
