@@ -16,6 +16,7 @@
 
 using std::string;
 using std::make_shared;
+using std::make_unique;
 
 std::ostream *debug = &std::clog;
 int verbose = 0;
@@ -29,7 +30,7 @@ GlobalDebugDirectories::GlobalDebugDirectories() throw()
 }
 
 void
-GlobalDebugDirectories::add(const std::string &str)
+GlobalDebugDirectories::add(const string &str)
 {
    dirs.push_back(str);
 }
@@ -46,7 +47,7 @@ ElfNotes::end() const
    return ElfNoteIter(object, false);
 }
 
-std::string
+string
 ElfNoteDesc::name() const
 {
    return io->readString(sizeof note);
@@ -127,7 +128,7 @@ ElfObject::ElfObject(ImageCache &cache, Reader::csptr io_)
         auto &syms = getLinkedSection(tab);
         auto &strings = getLinkedSection(syms);
         if (tab && syms && strings)
-            hash = std::make_unique<ElfSymHash>(tab.io, syms.io, strings.io);
+            hash = make_unique<ElfSymHash>(tab.io, syms.io, strings.io);
     } else {
         hash = nullptr;
     }
@@ -153,7 +154,7 @@ ElfObject::getSegments(Elf_Word type) const
     return it->second;
 }
 
-std::string
+string
 ElfObject::getInterpreter() const
 {
     for (auto &seg : getSegments(PT_INTERP))
@@ -197,7 +198,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
 }
 
 const ElfSection &
-ElfObject::getSection(const std::string &name, Elf_Word type) const
+ElfObject::getSection(const string &name, Elf_Word type) const
 {
     auto s = namedSection.find(name);
     if (s == namedSection.end() || (s->second->shdr.sh_type != type && type != SHT_NULL)) {
@@ -230,10 +231,10 @@ ElfObject::getLinkedSection(const ElfSection &from) const
 }
 
 SymbolSection
-ElfObject::getSymbols(const std::string &tableName)
+ElfObject::getSymbols(const string &tableName)
 {
     auto &table = getSection(tableName, SHT_NULL);
-    std::string n = stringify(*io);
+    string n = stringify(*io);
     if (table.shdr.sh_type == SHT_NOBITS || table.shdr.sh_type == SHT_NULL)
         return SymbolSection(sectionHeaders[0].io, sectionHeaders[0].io);
     auto &strings = getLinkedSection(table);
@@ -388,32 +389,33 @@ ElfSection::open(const Reader::csptr &image, off_t off)
 
     // Null sections get null readers.
     if (shdr.sh_type == SHT_NULL) {
-        io = std::make_shared<NullReader>();
+        io = make_shared<NullReader>();
         return;
     }
 
-    auto rawIo = std::make_shared<OffsetReader>(image, shdr.sh_offset, shdr.sh_size);
+    auto rawIo = make_shared<OffsetReader>(image, shdr.sh_offset, shdr.sh_size);
     if ((shdr.sh_flags & SHF_COMPRESSED) == 0) {
         io = rawIo;
     } else {
 
 #ifdef WITH_ZLIB
         auto chdr = rawIo->readObj<Elf_Chdr>(0);
-        io = std::make_shared<InflateReader>(chdr.ch_size,
-              OffsetReader(rawIo, sizeof chdr, shdr.sh_size - sizeof chdr));
+        io = make_shared<InflateReader>(chdr.ch_size, OffsetReader(rawIo,
+                 sizeof chdr, shdr.sh_size - sizeof chdr));
 #else
         static bool warned = false;
         if (!warned) {
             warned = true;
-            std::clog <<"warning: no support configured for compressed debug info in " << *image << std::endl;
+            std::clog <<"warning: no support configured for compressed debug info in "
+               << *image << std::endl;
         }
-        io = std::make_shared<NullReader>();
+        io = make_shared<NullReader>();
 #endif
     }
 }
 
 ElfObject::sptr
-ImageCache::getImageForName(const std::string &name) {
+ImageCache::getImageForName(const string &name) {
     bool found;
     auto res = getImageIfLoaded(name, found);
     if (found) {
@@ -423,7 +425,7 @@ ImageCache::getImageForName(const std::string &name) {
         throw (Exception() << "previously failed to load " << name);
     }
     auto &item = cache[name];
-    item = std::make_shared<ElfObject>(*this, loadFile(name));
+    item = make_shared<ElfObject>(*this, loadFile(name));
     return item;
 }
 
@@ -441,7 +443,7 @@ ImageCache::~ImageCache() {
 }
 
 ElfObject::sptr
-ImageCache::getImageIfLoaded(const std::string &name, bool &found)
+ImageCache::getImageIfLoaded(const string &name, bool &found)
 {
     elfLookups++;
     auto it = cache.find(name);
@@ -455,7 +457,7 @@ ImageCache::getImageIfLoaded(const std::string &name, bool &found)
 }
 
 ElfObject::sptr
-ImageCache::getDebugImage(const std::string &name) {
+ImageCache::getDebugImage(const string &name) {
     // XXX: verify checksum.
     for (const auto &dir : globalDebugDirectories.dirs) {
         bool found;

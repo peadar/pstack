@@ -19,6 +19,9 @@
 #include <sstream>
 #include <stack>
 
+using std::make_unique;
+using std::make_shared;
+
 uintmax_t
 DWARFReader::getuleb128shift(int *shift, bool &isSigned)
 {
@@ -116,7 +119,7 @@ DwarfInfo::getUnit(off_t offset)
     if (info == nullptr)
         return DwarfUnit::sptr();
     DWARFReader r(info, offset);
-    unitsm[offset] = std::make_shared<DwarfUnit>(this, r);
+    unitsm[offset] = make_shared<DwarfUnit>(this, r);
     return unitsm[offset];
 }
 
@@ -135,7 +138,7 @@ DwarfInfo::getUnits() const
           auto length = r.getlength(&dwarfLen);
           r.setOffset(r.getOffset() + length);
        } else {
-          unitsm[off] = std::make_shared<DwarfUnit>(this, r);
+          unitsm[off] = make_shared<DwarfUnit>(this, r);
        }
        list.push_back(unitsm[off]);
     }
@@ -1212,7 +1215,7 @@ DwarfImageCache::getDwarf(ElfObject::sptr object)
         return it->second;
     }
 
-    auto dwarf = std::make_shared<DwarfInfo>(object, *this);
+    auto dwarf = make_shared<DwarfInfo>(object, *this);
     dwarfCache[object] = dwarf;
     return dwarf;
 }
