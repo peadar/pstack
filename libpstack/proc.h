@@ -103,7 +103,6 @@ class Process : public ps_prochandle {
     Elf_Addr findRDebugAddr();
     Elf_Off entry; // entrypoint of process.
     Elf_Addr interpBase;
-    Elf_Addr vdsoBase;
     void loadSharedObjects(Elf_Addr);
     bool isStatic;
 
@@ -119,9 +118,9 @@ public:
     DwarfImageCache &imageCache;
 
     struct LoadedObject {
-        Elf_Off reloc;
+        Elf_Off loadAddr;
         std::shared_ptr<ElfObject> object;
-        LoadedObject(Elf_Off reloc_, std::shared_ptr<ElfObject> object_) : reloc(reloc_), object(object_) {}
+        LoadedObject(Elf_Off loadAddr_, std::shared_ptr<ElfObject> object_) : loadAddr(loadAddr_), object(object_) {}
     };
     std::vector<LoadedObject> objects;
     void processAUXV(const Reader &);
@@ -130,7 +129,7 @@ public:
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) = 0;
     void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
     std::shared_ptr<ElfObject> findObject(Elf_Addr addr, Elf_Off *reloc) const;
-    std::shared_ptr<DwarfInfo> getDwarf(std::shared_ptr<ElfObject>, bool debug = true);
+    std::shared_ptr<DwarfInfo> getDwarf(std::shared_ptr<ElfObject>);
     Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> memory, const PathReplacementList &prl, DwarfImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;

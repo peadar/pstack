@@ -1,3 +1,5 @@
+#include <features.h>
+
 #define REGMAP(a,b)
 #include "libpstack/dwarf/archreg.h"
 #include "libpstack/dwarf.h"
@@ -14,6 +16,7 @@
 #include <iostream>
 #include <limits>
 #include <set>
+#include <sys/ucontext.h>
 
 static size_t gMaxFrames = 1024; /* max number of frames to read */
 
@@ -41,7 +44,6 @@ Process::Process(std::shared_ptr<ElfObject> exec,
                   DwarfImageCache &cache)
     : entry(0)
     , interpBase(0)
-    , vdsoBase(0)
     , isStatic(false)
     , agent(nullptr)
     , execImage(std::move(exec))
@@ -50,8 +52,8 @@ Process::Process(std::shared_ptr<ElfObject> exec,
     , imageCache(cache)
     , io(std::make_shared<CacheReader>(memory))
 {
-   if (exec)
-      entry = exec->getElfHeader().e_entry;
+    if (exec)
+        entry = exec->getElfHeader().e_entry;
 }
 
 void
@@ -83,13 +85,12 @@ Process::load(const PstackOptions &options)
                 *debug << "failed to load thread agent: " << the << std::endl;
         }
     }
+
 }
 
 std::shared_ptr<DwarfInfo>
-Process::getDwarf(std::shared_ptr<ElfObject> elf, bool debug)
+Process::getDwarf(std::shared_ptr<ElfObject> elf)
 {
-    if (debug)
-        elf = ElfObject::getDebug(elf);
     return imageCache.getDwarf(elf);
 }
 
@@ -120,10 +121,9 @@ Process::processAUXV(const Reader &auxio)
             case AT_SYSINFO_EHDR: {
                 try {
                     auto elf = std::make_shared<ElfObject>(imageCache, std::make_shared<OffsetReader>(io, hdr, 65536));
-                    vdsoBase = hdr - elf->getBase();
-                    addElfObject(elf, vdsoBase);
+                    addElfObject(elf, hdr);
                     if (verbose >= 2)
-                        *debug << "VDSO " << *elf->io << " loaded at " << std::hex << vdsoBase << "\n";
+                        *debug << "VDSO " << *elf->io << " loaded at " << std::hex << hdr << "\n";
 
                 }
                 catch (const std::exception &ex) {
@@ -179,11 +179,11 @@ operator << (std::ostream &os, const JSON<StackFrame *, Process *> &jt)
     if (frame->ip == proc->sysent) {
         symName = "(syscall)";
     } else {
-        Elf_Off reloc = 0;
-        obj = proc->findObject(frame->ip, &reloc);
+        Elf_Off loadAddr = 0;
+        obj = proc->findObject(frame->ip, &loadAddr);
         if (obj) {
             fileName = stringify(*obj->io);
-            objIp = frame->ip - reloc;
+            objIp = frame->ip - loadAddr;
             obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
         }
     }
@@ -501,13 +501,13 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         std::string fileName = "unknown file";
         std::string symName;
 
-        Elf_Off reloc;
-        auto obj = findObject(frame->ip, &reloc);
+        Elf_Off loadAddr;
+        auto obj = findObject(frame->ip, &loadAddr);
         if (obj) {
             fileName = stringify(*obj->io);
-            Elf_Addr objIp = frame->ip - reloc;
+            Elf_Addr objIp = frame->ip - loadAddr;
 
-            std::shared_ptr<DwarfInfo> dwarf = getDwarf(obj, true);
+            std::shared_ptr<DwarfInfo> dwarf = getDwarf(obj);
 
             std::list<std::shared_ptr<DwarfUnit>> units;
             if (dwarf->hasRanges()) {
@@ -581,13 +581,9 @@ void
 Process::addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load)
 {
     objects.push_back(LoadedObject(load, obj));
-
     if (verbose >= 2) {
         IOFlagSave _(*debug);
-        *debug
-            << "object " << *obj->io
-            << " loaded at address " << std::hex << load
-            << ", base=" << obj->getBase() << std::endl;
+        *debug << "object " << *obj->io << " loaded at address " << std::hex << load << std::endl;
     }
 }
 
@@ -611,27 +607,20 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             addElfObject(execImage, map.l_addr);
             continue;
         }
-        if (map.l_addr == vdsoBase) {
-           // we already have the VDSO, and won't be able to read the file.
-           continue;
-        }
-        /* Read the path to the file */
-        if (map.l_name == 0) {
-            IOFlagSave _(*debug);
-            *debug << "warning: no name for object loaded at " << std::hex << map.l_addr << "\n";
+
+        // Read the path to the file
+        if (map.l_name == 0)
             continue;
-        }
+
         std::string path = io->readString(Elf_Off(map.l_name));
-        if (path == "") {
-            *debug << "warning: empty name for object loaded at " << std::hex << map.l_addr << "\n";
+        if (path == "")
             continue;
-        }
 
         std::string startPath = path;
-        for (auto it = pathReplacements.begin(); it != pathReplacements.end(); ++it) {
-            size_t found = path.find(it->first);
+        for (auto &it : pathReplacements) {
+            size_t found = path.find(it.first);
             if (found != std::string::npos)
-                path.replace(found, it->first.size(), it->second);
+                path.replace(found, it.first.size(), it.second);
         }
         if (verbose > 0 && path != startPath)
             *debug << "replaced " << startPath << " with " << path << std::endl;
@@ -650,25 +639,27 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
 Elf_Addr
 Process::findRDebugAddr()
 {
+    /*
+     * Calculate the address the executable was loaded at - we know the entry
+     * supplied by the kernel, and also the executable's desired entrypoint -
+     * the difference is the load address.
+     */
+    Elf_Off loadAddr = entry - execImage->getElfHeader().e_entry;
+
     // Find DT_DEBUG in the process's dynamic section.
     for (auto &segment : execImage->getSegments(PT_DYNAMIC)) {
-        Elf_Off reloc = entry - execImage->getElfHeader().e_entry;
-        // the dynamic section is in the executable, but the process A/S contains
-        // the modified version.
-        for (Elf_Addr dynOff = 0; dynOff < segment.p_filesz; dynOff += sizeof(Elf_Dyn)) {
-            Elf_Dyn dyn;
-            execImage->io->readObj(segment.p_offset + dynOff, &dyn);
-            if (dyn.d_tag == DT_DEBUG) {
-                // Now, we read this from the _process_ AS, not the executable - the
-                // in-memory one is changed by the linker.
-                io->readObj(segment.p_vaddr + dynOff + reloc, &dyn);
+        // Read from the process, not the executable - the linker will have updated the content.
+        OffsetReader dynReader(io, segment.p_vaddr + loadAddr, segment.p_filesz);
+        ReaderArray<Elf_Dyn> dynamic(dynReader);
+        for (auto dyn : dynamic)
+            if (dyn.d_tag == DT_DEBUG)
                 return dyn.d_un.d_ptr;
-            }
-        }
     }
-    // If there's no DT_DEBUG, we've probably got someone executing a shared library,
-    // which doesn't have an _r_debug symbol. Use the address of _r_debug in the
-    // interpreter
+    /*
+     * If there's no DT_DEBUG, we've probably got someone executing a shared
+     * library, which doesn't have an _r_debug symbol. Use the address of
+     * _r_debug in the interpreter
+     */
     if (interpBase && execImage->getInterpreter() != "") {
         try {
             addElfObject(imageCache.getImageForName(execImage->getInterpreter()), interpBase);
@@ -681,13 +672,13 @@ Process::findRDebugAddr()
 }
 
 std::shared_ptr<ElfObject>
-Process::findObject(Elf_Addr addr, Elf_Off *reloc) const
+Process::findObject(Elf_Addr addr, Elf_Off *loadAddr) const
 {
     for (auto &candidate : objects) {
         for (auto &phdr : candidate.object->getSegments(PT_LOAD)) {
-            Elf_Off addrReloc = addr - candidate.reloc;
-            if (addrReloc >= phdr.p_vaddr && addrReloc < phdr.p_vaddr + phdr.p_memsz) {
-                *reloc = candidate.reloc;
+            Elf_Off objAddr = addr - candidate.loadAddr;
+            if (objAddr >= phdr.p_vaddr && objAddr < phdr.p_vaddr + phdr.p_memsz) {
+                *loadAddr = candidate.loadAddr;
                 return candidate.object;
             }
         }
@@ -713,7 +704,7 @@ Process::findNamedSymbol(const char *objName, const char *symbolName) const
         }
         Elf_Sym sym;
         if (loaded.object->findSymbolByName(symbolName, sym))
-            return sym.st_value + loaded.reloc;
+            return sym.st_value + loaded.loadAddr;
         if (objName)
             break;
     }
@@ -751,14 +742,62 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
 #if defined(__amd64__) || defined(__i386__) // Hail Mary stack unwinding if we can't use DWARF
                // If the first frame fails to unwind, it might be a crash calling an invalid address.
                // pop the instruction pointer off the stack, and try again.
-               if (prevFrame == startFrame) {
-                  frame = new StackFrame();
-                  *frame = *prevFrame;
-                  auto sp = prevFrame->getReg(SPREG);
-                  auto in = p.io->read(sp, sizeof frame->ip, (char *)&frame->ip);
-                  if (in == sizeof frame->ip)
-                     frame->setReg(SPREG, sp + sizeof frame->ip);
-               } else
+                if (prevFrame == startFrame) {
+                    frame = new StackFrame();
+                    *frame = *prevFrame;
+                    auto sp = prevFrame->getReg(SPREG);
+                    auto in = p.io->read(sp, sizeof frame->ip, (char *)&frame->ip);
+                    if (in == sizeof frame->ip) {
+                        frame->setReg(SPREG, sp + sizeof frame->ip);
+                        continue;
+                    }
+                }
+                else
+#ifdef __i386__
+                {
+                    Elf_Addr reloc;
+                    auto obj = p.findObject(prevFrame->ip, &reloc);
+                    if (obj) {
+                        Elf_Sym symbol;
+                        Elf_Addr sigContextAddr;
+                        auto objip = prevFrame->ip - reloc;
+                        if (obj->findSymbolByName("__restore", symbol) && objip == symbol.st_value)
+                            sigContextAddr = prevFrame->getReg(SPREG) + 4;
+                        else if (obj->findSymbolByName("__restore_rt", symbol) && objip == symbol.st_value)
+                            sigContextAddr = p.io->readObj<Elf_Addr>(prevFrame->getReg(SPREG) + 8) + 20;
+                        else
+                            throw;
+                        // This mapping is based on DWARF regnos, and ucontext.h
+                        gregset_t regs;
+                        static const struct {
+                            int dwarf;
+                            int greg;
+                        }  gregmap[] = {
+                            { 1, REG_EAX },
+                            { 2, REG_ECX },
+                            { 3, REG_EBX },
+                            { 4, REG_ESP },
+                            { 5, REG_EBP },
+                            { 6, REG_ESI },
+                            { 7, REG_EDI },
+                            { 8, REG_EIP },
+                            { 9, REG_EFL },
+                            { 10, REG_CS },
+                            { 11, REG_SS },
+                            { 12, REG_DS },
+                            { 13, REG_ES },
+                            { 14, REG_FS }
+                        };
+                        p.io->readObj(sigContextAddr, &regs);
+                        frame = new StackFrame();
+                        *frame = *prevFrame;
+                        for (auto &reg : gregmap)
+                            frame->setReg(reg.dwarf, regs[reg.greg]);
+                        frame->ip = regs[REG_EIP];
+                        continue;
+                    }
+                }
+#endif
 #endif
                   throw;
             }

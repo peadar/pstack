@@ -85,18 +85,16 @@ emain(int argc, char **argv)
     int sleepTime = 0;
     PstackOptions options;
 
-    noDebugLibs = false;
-
     bool python = false;
 
-    while ((c = getopt(argc, argv, "b:d:D:hjsVvnag:pt")) != -1) {
+    while ((c = getopt(argc, argv, "b:d:D:hjsVvag:pt")) != -1) {
         switch (c) {
         case 'g':
             globalDebugDirectories.add(optarg);
             break;
         case 'D': {
             auto dumpobj = std::make_shared<ElfObject>(imageCache, loadFile(optarg));
-            DwarfInfo di(ElfObject::getDebug(dumpobj), imageCache);
+            DwarfInfo di(dumpobj, imageCache);
             std::cout << json(di);
             return 0;
         }
@@ -119,9 +117,6 @@ emain(int argc, char **argv)
             break;
         case 'v':
             verbose++;
-            break;
-        case 'n':
-            noDebugLibs = true;
             break;
         case 'b':
             sleepTime = atoi(optarg);

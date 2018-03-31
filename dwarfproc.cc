@@ -317,29 +317,25 @@ StackFrame::unwind(Process &p)
 {
     elf = p.findObject(ip, &elfReloc);
     if (!elf)
-       throw (Exception() << "no image for instruction address " << std::hex << ip);
+        throw (Exception() << "no image for instruction address " << std::hex << ip);
     Elf_Off objaddr = ip - elfReloc; // relocate process address to object address
     // Try and find DWARF data with debug frame information, or an eh_frame section.
-    for (bool debug : {true, false}) {
-       dwarf = p.getDwarf(elf, debug);
-       if (dwarf) {
-          auto frames = { dwarf->debugFrame.get(), dwarf->ehFrame.get() };
-          for (auto f : frames) {
-             if (f != nullptr) {
-                 fde = f->findFDE(objaddr);
-                 if (fde != nullptr) {
+        dwarf = p.getDwarf(elf);
+    if (dwarf) {
+        auto frames = { dwarf->debugFrame.get(), dwarf->ehFrame.get() };
+        for (auto f : frames) {
+            if (f != nullptr) {
+                fde = f->findFDE(objaddr);
+                if (fde != nullptr) {
                     frameInfo = f;
                     cie = &f->cies[fde->cieOff];
                     break;
-                 }
-             }
-          }
-          if (fde != nullptr)
-              break;
-       }
+                }
+            }
+        }
     }
     if (fde == nullptr)
-       throw (Exception() << "no FDE for instruction address " << std::hex << ip << " in " << *elf->io);
+        throw (Exception() << "no FDE for instruction address " << std::hex << ip << " in " << *elf->io);
 
     DWARFReader r(frameInfo->io, fde->instructions, fde->end);
 
@@ -380,8 +376,7 @@ StackFrame::unwind(Process &p)
             case EXPRESSION: {
                 DwarfExpressionStack stack;
                 stack.push(cfa);
-                DWARFReader reader(frameInfo->io, unwind.u.expression.offset,
-                      unwind.u.expression.offset + unwind.u.expression.length);
+                DWARFReader reader(frameInfo->io, unwind.u.expression.offset, unwind.u.expression.offset + unwind.u.expression.length);
                 auto val = stack.eval(p, reader, this, elfReloc);
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                 if (unwind.type == EXPRESSION)
