@@ -5,7 +5,7 @@
 .Os
 .Sh NAME
 .Nm pstack
-.Nd get stack traces of threads in a running process or a core file
+.Nd print stack traces of threads in a running process or a core file
 .Sh SYNOPSIS
 .Nm
 .Op Fl a
@@ -35,7 +35,12 @@ or from the core file
 .Ar core
 .Pp
 Normal invocation prints the stack trace from a core file or running
-process. Arguments are as follows.
+process. This implementation understands the stack unwinding data in eh_frame
+sections, and properly unwinds through stack frames of code compiled with 
+.Em -fomit-frame-pointer
+and on x86_64
+.Pp
+Arguments are as follows.
 .Bl -tag -width Fl
 .It Fl a
 Show values of arguments passed to functions if possible (requires DWARF debug
@@ -96,8 +101,18 @@ Print usage synopsis
 .Sh SEE ALSO
 .Xr procfs 5
 .Xr ptrace 2
-.Sh BUGS
-.Nm
+.Sh TODO
+.Bl -bullet
+.It
+Support rela for object files
+.It
+This actually works on ARM (i.e., raspi), but needs debug_frame. Apparently,
+ARM has its own magical sections for storing unwind information that it might
+be worth implementing.
+.It
+Support inlined subroutines, so we show the surrounding scopes as part
+  of the stack trace.
+.El
 works on x86_64 and i686 only.
 .Sh AUTHORS
 Peter Edwards <peadar (at) isainmdom dot net>
