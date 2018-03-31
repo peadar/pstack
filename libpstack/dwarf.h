@@ -236,7 +236,7 @@ struct DwarfUnit {
     std::map<off_t, DwarfEntry *> allEntries;
 public:
     const DwarfInfo *dwarf;
-    std::shared_ptr<const Reader> io;
+    Reader::csptr io;
     off_t offset;
     size_t dwarfLen;
     void decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *parent);
@@ -248,6 +248,8 @@ public:
     DwarfUnit(const DwarfInfo *, DWARFReader &);
     std::string name() const;
     ~DwarfUnit();
+    typedef std::shared_ptr<DwarfUnit> sptr;
+    typedef std::shared_ptr<const DwarfUnit> csptr;
 };
 
 struct DwarfFDE {
@@ -311,7 +313,7 @@ struct DwarfCIE {
 struct DwarfFrameInfo {
     const DwarfInfo *dwarf;
     Elf_Word sectionAddr; // virtual address of this section  (may need to be offset by load address)
-    std::shared_ptr<const Reader> io;
+    Reader::csptr io;
     FIType type;
     std::map<Elf_Addr, DwarfCIE> cies;
     std::list<DwarfFDE> fdeList;
@@ -324,6 +326,48 @@ struct DwarfFrameInfo {
     intmax_t decodeAddress(DWARFReader &, int encoding) const;
 };
 
+class DwarfImageCache;
+/*
+ * DwarfInfo represents the interesting bits of the DWARF data.
+ */
+class DwarfInfo {
+
+public:
+    // XXX: info is public because "block" DwarfAttributes need to read from it.
+    typedef std::shared_ptr<DwarfInfo> sptr;
+    typedef std::shared_ptr<const DwarfInfo> csptr;
+    Reader::csptr info;
+    std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
+    ElfObject::sptr elf;
+    std::unique_ptr<DwarfFrameInfo> debugFrame;
+    std::unique_ptr<DwarfFrameInfo> ehFrame;
+    Reader::csptr debugStrings;
+    Reader::csptr abbrev;
+    Reader::csptr lineshdr;
+    DwarfInfo::sptr getAltDwarf() const;
+    std::list<DwarfARangeSet> &ranges() const;
+    const std::list<DwarfPubnameUnit> &pubnames() const;
+    DwarfUnit::sptr getUnit(off_t offset);
+    std::list<DwarfUnit::sptr> getUnits() const;
+    DwarfInfo(ElfObject::sptr, DwarfImageCache &);
+    std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
+
+    ~DwarfInfo();
+    bool hasRanges() { ranges(); return aranges.size() != 0; }
+private:
+
+    mutable std::list<DwarfPubnameUnit> pubnameUnits;
+    mutable std::list<DwarfARangeSet> aranges;
+    // These are mutable so we can lazy-eval them when getters are called, and
+    // maintain logical constness.
+    mutable std::map<Elf_Off, DwarfUnit::sptr> unitsm;
+    mutable DwarfInfo::sptr altDwarf;
+    mutable bool altImageLoaded;
+    DwarfImageCache &imageCache;
+    mutable Reader::csptr pubnamesh;
+    mutable Reader::csptr arangesh;
+};
+
 /*
  * A Dwarf Image Cache is an (Elf) Image Cache, but caches DwarfInfo for the
  * ElfObjects also.
@@ -331,49 +375,12 @@ struct DwarfFrameInfo {
 class DwarfImageCache : public ImageCache {
     int dwarfHits;
     int dwarfLookups;
-    std::map<std::shared_ptr<ElfObject>, std::shared_ptr<DwarfInfo>> dwarfCache;
+    std::map<ElfObject::sptr, DwarfInfo::sptr> dwarfCache;
 public:
-    std::shared_ptr<DwarfInfo> getDwarf(const std::string &);
-    std::shared_ptr<DwarfInfo> getDwarf(std::shared_ptr<ElfObject>);
+    DwarfInfo::sptr getDwarf(const std::string &);
+    DwarfInfo::sptr getDwarf(ElfObject::sptr);
     DwarfImageCache();
     ~DwarfImageCache();
-};
-
-/*
- * DwarfInfo represents the interesting bits of the DWARF data.
- */
-class DwarfInfo {
-    mutable std::list<DwarfPubnameUnit> pubnameUnits;
-    mutable std::list<DwarfARangeSet> aranges;
-
-    // These are mutable so we can lazy-eval them when getters are called, and
-    // maintain logical constness.
-    mutable std::map<Elf_Off, std::shared_ptr<DwarfUnit>> unitsm;
-    mutable std::shared_ptr<DwarfInfo> altDwarf;
-    mutable bool altImageLoaded;
-    DwarfImageCache &imageCache;
-    mutable std::shared_ptr<const Reader> pubnamesh;
-    mutable std::shared_ptr<const Reader> arangesh;
-public:
-    // XXX: info is public because "block" DwarfAttributes need to read from it.
-    std::shared_ptr<const Reader> info;
-    std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
-    std::shared_ptr<ElfObject> elf;
-    std::unique_ptr<DwarfFrameInfo> debugFrame;
-    std::unique_ptr<DwarfFrameInfo> ehFrame;
-    std::shared_ptr<const Reader> debugStrings;
-    std::shared_ptr<const Reader> abbrev;
-    std::shared_ptr<const Reader> lineshdr;
-    std::shared_ptr<DwarfInfo> getAltDwarf() const;
-    std::list<DwarfARangeSet> &ranges() const;
-    const std::list<DwarfPubnameUnit> &pubnames() const;
-    std::shared_ptr<DwarfUnit> getUnit(off_t offset);
-    std::list<std::shared_ptr<DwarfUnit>> getUnits() const;
-    DwarfInfo(std::shared_ptr<ElfObject>, DwarfImageCache &);
-    std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
-
-    ~DwarfInfo();
-    bool hasRanges() { ranges(); return aranges.size() != 0; }
 };
 
 enum DwarfCFAInstruction {
@@ -393,16 +400,14 @@ class DWARFReader {
     Elf_Off end;
     uintmax_t getuleb128shift(int *shift, bool &isSigned);
 public:
-    std::shared_ptr<const Reader> io;
+    Reader::csptr io;
     unsigned addrLen;
 
-    DWARFReader(std::shared_ptr<const Reader> io_, Elf_Off off_ = 0,
-          size_t end_ = std::numeric_limits<size_t>::max())
+    DWARFReader(Reader::csptr io_, Elf_Off off_ = 0, size_t end_ = std::numeric_limits<size_t>::max())
         : off(off_)
         , end(end_ == std::numeric_limits<size_t>::max() ? io_->size() : end_)
-        , io(io_)
-        , addrLen(ELF_BITS / 8)
-    {
+        , io(std::move(io_))
+        , addrLen(ELF_BITS / 8) {
     }
 
     uint32_t getu32() {

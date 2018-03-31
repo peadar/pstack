@@ -257,7 +257,7 @@ operator << (std::ostream &os, const JSON<DwarfAbbreviation, C> &abbr) {
         .field("specs", abbr.object.specs);
 }
 
-std::ostream &operator << (std::ostream &os, const JSON<std::shared_ptr<DwarfUnit>> &unit) {
+std::ostream &operator << (std::ostream &os, const JSON<DwarfUnit::sptr> &unit) {
     return JObject(os)
         .field("length", unit.object->length)
         .field("offset",  unit.object->offset)

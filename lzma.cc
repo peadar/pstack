@@ -12,7 +12,7 @@ static auto allocator() {
    return &alloc;
 };
 
-LzmaReader::LzmaReader(std::shared_ptr<const Reader> upstream_)
+LzmaReader::LzmaReader(Reader::csptr upstream_)
     : index{}
     , upstream{std::move(upstream_)}
 {

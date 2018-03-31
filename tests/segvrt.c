@@ -11,9 +11,6 @@
 void
 sigsegv(int segv, siginfo_t *info, void *ctxv)
 {
-    ucontext_t *ctx = ctxv;
-    struct user_regs_struct *urs = (struct user_regs_struct *)ctx->uc_mcontext.gregs;
-    fprintf(stderr, "%x\n", ctx->uc_mcontext.gregs[REG_EAX]);
     abort();
 }
 

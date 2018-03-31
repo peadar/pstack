@@ -92,8 +92,8 @@ mainExcept(int argc, char *argv[])
     bool doPython = false;
     DwarfImageCache imageCache;
     std::vector<std::string> patterns;
-    shared_ptr<ElfObject> exec;
-    shared_ptr<ElfObject> core;
+    ElfObject::sptr exec;
+    ElfObject::sptr core;
     shared_ptr<Process> process;
     int c;
     int verbose = 0;
@@ -243,10 +243,9 @@ mainExcept(int argc, char *argv[])
     for (auto loaded = process->objects.begin(); loaded != process->objects.end(); ++loaded) {
         size_t count = 0;
 
-
         struct SymbolSection symtabs[2] = {
            loaded->object->getSymbols(".dynsym"),
-           ElfObject::getDebug(loaded->object)->getSymbols(".symtab")
+           loaded->object->getSymbols(".symtab")
         };
 
         for (auto &syms : symtabs) {

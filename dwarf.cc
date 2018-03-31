@@ -59,22 +59,22 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
     }
 }
 
-static std::shared_ptr<const Reader>
+static Reader::csptr
 sectionReader(ElfObject &obj, const char *name)
 {
     return obj.getSection(name, SHT_PROGBITS).io;
 }
 
-DwarfInfo::DwarfInfo(std::shared_ptr<ElfObject> obj, DwarfImageCache &cache_)
-    : altImageLoaded(false)
-    , imageCache(cache_)
-    , pubnamesh(sectionReader(*obj, ".debug_pubnames"))
-    , arangesh(sectionReader(*obj, ".debug_aranges"))
-    , info(sectionReader(*obj, ".debug_info"))
+DwarfInfo::DwarfInfo(ElfObject::sptr obj, DwarfImageCache &cache_)
+    : info(sectionReader(*obj, ".debug_info"))
     , elf(obj)
     , debugStrings(sectionReader(*obj, ".debug_str"))
     , abbrev(sectionReader(*obj, ".debug_abbrev"))
     , lineshdr(sectionReader(*obj, ".debug_line"))
+    , altImageLoaded(false)
+    , imageCache(cache_)
+    , pubnamesh(sectionReader(*obj, ".debug_pubnames"))
+    , arangesh(sectionReader(*obj, ".debug_aranges"))
 {
     auto f = [this, &obj](const char *name, FIType ftype) {
         auto &section = obj->getSection(name, SHT_PROGBITS);
@@ -107,23 +107,23 @@ DwarfInfo::pubnames() const
     return pubnameUnits;
 }
 
-std::shared_ptr<DwarfUnit>
+DwarfUnit::sptr
 DwarfInfo::getUnit(off_t offset)
 {
     auto unit = unitsm.find(offset);
     if (unit != unitsm.end())
         return unit->second;
     if (info == nullptr)
-        return std::shared_ptr<DwarfUnit>();
+        return DwarfUnit::sptr();
     DWARFReader r(info, offset);
     unitsm[offset] = std::make_shared<DwarfUnit>(this, r);
     return unitsm[offset];
 }
 
-std::list<std::shared_ptr<DwarfUnit>>
+std::list<DwarfUnit::sptr>
 DwarfInfo::getUnits() const
 {
-    std::list<std::shared_ptr<DwarfUnit>> list;
+    std::list<DwarfUnit::sptr> list;
     if (info == nullptr)
         return list;
     DWARFReader r(info);
@@ -654,7 +654,7 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
 }
 
 static std::string
-getAltImageName(const std::shared_ptr<ElfObject> &elf)
+getAltImageName(const ElfObject::sptr &elf)
 {
     auto &section = elf->getSection(".gnu_debugaltlink", 0);
     std::string name = section.io->readString(0);
@@ -666,7 +666,7 @@ getAltImageName(const std::shared_ptr<ElfObject> &elf)
     return stringify(exedir, "/", name);
 }
 
-std::shared_ptr<DwarfInfo>
+DwarfInfo::sptr
 DwarfInfo::getAltDwarf() const
 {
     if (altImageLoaded)
@@ -819,7 +819,7 @@ std::vector<std::pair<std::string, int>>
 DwarfInfo::sourceFromAddr(uintmax_t addr)
 {
     std::vector<std::pair<std::string, int>> info;
-    std::list<std::shared_ptr<DwarfUnit>> units;
+    std::list<DwarfUnit::sptr> units;
 
     if (hasRanges()) {
         auto &rangelist = ranges();
@@ -1196,14 +1196,14 @@ DwarfEntry::attrForName(DwarfAttrName name) const
     return nullptr;
 }
 
-std::shared_ptr<DwarfInfo>
+DwarfInfo::sptr
 DwarfImageCache::getDwarf(const std::string &filename)
 {
     return getDwarf(getImageForName(filename));
 }
 
-std::shared_ptr<DwarfInfo>
-DwarfImageCache::getDwarf(std::shared_ptr<ElfObject> object)
+DwarfInfo::sptr
+DwarfImageCache::getDwarf(ElfObject::sptr object)
 {
     auto it = dwarfCache.find(object);
     dwarfLookups++;

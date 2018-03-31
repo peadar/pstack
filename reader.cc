@@ -134,7 +134,7 @@ CacheReader::Page::load(const Reader &r, off_t offset_)
     }
 }
 
-CacheReader::CacheReader(std::shared_ptr<const Reader> upstream_)
+CacheReader::CacheReader(Reader::csptr upstream_)
     : upstream(move(upstream_))
 {
 }

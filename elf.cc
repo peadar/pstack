@@ -16,7 +16,6 @@
 
 using std::string;
 using std::make_shared;
-using std::shared_ptr;
 
 std::ostream *debug = &std::clog;
 int verbose = 0;
@@ -53,10 +52,10 @@ ElfNoteDesc::name() const
    return io->readString(sizeof note);
 }
 
-std::shared_ptr<const Reader>
+Reader::csptr
 ElfNoteDesc::data() const
 {
-   return std::make_shared<OffsetReader>(io, sizeof note + roundup2(note.n_namesz, 4), note.n_descsz);
+   return make_shared<OffsetReader>(io, sizeof note + roundup2(note.n_namesz, 4), note.n_descsz);
 }
 
 size_t
@@ -73,7 +72,7 @@ SymbolIterator::operator *()
     return std::make_pair(sym, name);
 }
 
-ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
+ElfObject::ElfObject(ImageCache &cache, Reader::csptr io_)
     : io(std::move(io_))
     , notes(this)
     , elfHeader(io->readObj<Elf_Ehdr>(0))
@@ -112,8 +111,8 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
             // a symbol table.
             if (name == ".gnu_debugdata") {
 #ifdef WITH_LZMA
-                debugData = std::make_shared<ElfObject>(imageCache,
-                      std::make_shared<const LzmaReader>(h.io));
+                debugData = make_shared<ElfObject>(imageCache,
+                      make_shared<const LzmaReader>(h.io));
 #else
                 static bool warned = false;
                 if (!warned) {
@@ -336,8 +335,8 @@ SymbolSection::linearSearch(const string &name, Elf_Sym &sym)
     return false;
 }
 
-ElfSymHash::ElfSymHash(std::shared_ptr<const Reader> hash_,
-      std::shared_ptr<const Reader> syms_, std::shared_ptr<const Reader> strings_)
+ElfSymHash::ElfSymHash(Reader::csptr hash_,
+      Reader::csptr syms_, Reader::csptr strings_)
     : hash(std::move(hash_))
     , syms(std::move(syms_))
     , strings(std::move(strings_))
@@ -383,7 +382,7 @@ elf_hash(const string &text)
 }
 
 void
-ElfSection::open(const std::shared_ptr<const Reader> &image, off_t off)
+ElfSection::open(const Reader::csptr &image, off_t off)
 {
     image->readObj(off, &shdr);
 
@@ -413,7 +412,7 @@ ElfSection::open(const std::shared_ptr<const Reader> &image, off_t off)
     }
 }
 
-std::shared_ptr<ElfObject>
+ElfObject::sptr
 ImageCache::getImageForName(const std::string &name) {
     bool found;
     auto res = getImageIfLoaded(name, found);
@@ -441,7 +440,7 @@ ImageCache::~ImageCache() {
     }
 }
 
-std::shared_ptr<ElfObject>
+ElfObject::sptr
 ImageCache::getImageIfLoaded(const std::string &name, bool &found)
 {
     elfLookups++;
@@ -452,10 +451,10 @@ ImageCache::getImageIfLoaded(const std::string &name, bool &found)
         return it->second;
     }
     found = false;
-    return std::shared_ptr<ElfObject>();
+    return ElfObject::sptr();
 }
 
-std::shared_ptr<ElfObject>
+ElfObject::sptr
 ImageCache::getDebugImage(const std::string &name) {
     // XXX: verify checksum.
     for (const auto &dir : globalDebugDirectories.dirs) {
@@ -472,5 +471,5 @@ ImageCache::getDebugImage(const std::string &name) {
             continue;
         }
     }
-    return std::shared_ptr<ElfObject>();
+    return ElfObject::sptr();
 }

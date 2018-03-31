@@ -38,10 +38,8 @@ PstackOptions::operator () (PstackOption opt) const
     return values[opt];
 }
 
-Process::Process(std::shared_ptr<ElfObject> exec,
-                  std::shared_ptr<Reader> memory,
-                  const PathReplacementList &prl,
-                  DwarfImageCache &cache)
+Process::Process(ElfObject::sptr exec, Reader::csptr memory,
+                  const PathReplacementList &prl, DwarfImageCache &cache)
     : entry(0)
     , interpBase(0)
     , isStatic(false)
@@ -50,7 +48,7 @@ Process::Process(std::shared_ptr<ElfObject> exec,
     , pathReplacements(prl)
     , sysent(0)
     , imageCache(cache)
-    , io(std::make_shared<CacheReader>(memory))
+    , io(std::make_shared<CacheReader>(std::move(memory)))
 {
     if (exec)
         entry = exec->getElfHeader().e_entry;
@@ -88,8 +86,8 @@ Process::load(const PstackOptions &options)
 
 }
 
-std::shared_ptr<DwarfInfo>
-Process::getDwarf(std::shared_ptr<ElfObject> elf)
+DwarfInfo::sptr
+Process::getDwarf(ElfObject::sptr elf)
 {
     return imageCache.getDwarf(elf);
 }
@@ -172,7 +170,7 @@ operator << (std::ostream &os, const JSON<StackFrame *, Process *> &jt)
     JObject jo(os);
 
     Elf_Addr objIp = 0;
-    std::shared_ptr<ElfObject> obj;
+    ElfObject::sptr obj;
     Elf_Sym sym;
     std::string fileName;
     std::string symName = "unknown";
@@ -507,9 +505,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             fileName = stringify(*obj->io);
             Elf_Addr objIp = frame->ip - loadAddr;
 
-            std::shared_ptr<DwarfInfo> dwarf = getDwarf(obj);
-
-            std::list<std::shared_ptr<DwarfUnit>> units;
+            DwarfInfo::sptr dwarf = getDwarf(obj);
+            std::list<DwarfUnit::sptr> units;
             if (dwarf->hasRanges()) {
                 for (const auto &rangeset : dwarf->ranges()) {
                     for (const auto range : rangeset.ranges) {
@@ -524,9 +521,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                 units = dwarf->getUnits();
             }
 
-
             std::string sigmsg = frame->cie != nullptr && frame->cie->isSignalHandler ?  "[signal handler called]" : "";
-            std::shared_ptr<DwarfUnit> dwarfUnit;
+            DwarfUnit::sptr dwarfUnit;
             for (const auto &u : units) {
                 // find the DIE for this function
                 for (auto &it : u->entries) {
@@ -578,7 +574,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 }
 
 void
-Process::addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load)
+Process::addElfObject(ElfObject::sptr obj, Elf_Addr load)
 {
     objects.push_back(LoadedObject(load, obj));
     if (verbose >= 2) {
@@ -671,7 +667,7 @@ Process::findRDebugAddr()
     return 0;
 }
 
-std::shared_ptr<ElfObject>
+ElfObject::sptr
 Process::findObject(Elf_Addr addr, Elf_Off *loadAddr) const
 {
     for (auto &candidate : objects) {

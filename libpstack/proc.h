@@ -34,9 +34,9 @@ struct StackFrame {
     Elf_Addr ip;
     Elf_Addr cfa;
     std::map<unsigned, cpureg_t> regs;
-    std::shared_ptr<ElfObject> elf;
+    ElfObject::sptr elf;
     Elf_Addr elfReloc;
-    std::shared_ptr<DwarfInfo> dwarf;
+    DwarfInfo::sptr dwarf;
     const DwarfEntry * function;
     DwarfFrameInfo *frameInfo;
     const DwarfFDE *fde;
@@ -108,7 +108,7 @@ class Process : public ps_prochandle {
 
 protected:
     td_thragent_t *agent;
-    std::shared_ptr<ElfObject> execImage;
+    ElfObject::sptr execImage;
     std::string abiPrefix;
     const PathReplacementList &pathReplacements;
 
@@ -119,18 +119,18 @@ public:
 
     struct LoadedObject {
         Elf_Off loadAddr;
-        std::shared_ptr<ElfObject> object;
-        LoadedObject(Elf_Off loadAddr_, std::shared_ptr<ElfObject> object_) : loadAddr(loadAddr_), object(object_) {}
+        ElfObject::sptr object;
+        LoadedObject(Elf_Off loadAddr_, ElfObject::sptr object_) : loadAddr(loadAddr_), object(object_) {}
     };
     std::vector<LoadedObject> objects;
     void processAUXV(const Reader &);
-    std::shared_ptr<Reader> io;
+    Reader::csptr io;
 
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) = 0;
-    void addElfObject(std::shared_ptr<ElfObject> obj, Elf_Addr load);
-    std::shared_ptr<ElfObject> findObject(Elf_Addr addr, Elf_Off *reloc) const;
-    std::shared_ptr<DwarfInfo> getDwarf(std::shared_ptr<ElfObject>);
-    Process(std::shared_ptr<ElfObject> exec, std::shared_ptr<Reader> memory, const PathReplacementList &prl, DwarfImageCache &cache);
+    void addElfObject(ElfObject::sptr obj, Elf_Addr load);
+    ElfObject::sptr findObject(Elf_Addr addr, Elf_Off *reloc) const;
+    DwarfInfo::sptr getDwarf(ElfObject::sptr);
+    Process(ElfObject::sptr exec, Reader::csptr memory, const PathReplacementList &prl, DwarfImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
     virtual void findLWPs() = 0;
@@ -172,7 +172,7 @@ class LiveProcess : public Process {
     pid_t pid;
     friend class LiveReader;
 public:
-    LiveProcess(std::shared_ptr<ElfObject> &, pid_t, const PathReplacementList &, DwarfImageCache &);
+    LiveProcess(ElfObject::sptr &, pid_t, const PathReplacementList &, DwarfImageCache &);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) override;
     virtual void stop(pid_t) override;
     virtual void resume(pid_t) override;
@@ -195,10 +195,10 @@ public:
 };
 
 class CoreProcess : public Process {
-    std::shared_ptr<ElfObject> coreImage;
+    ElfObject::sptr coreImage;
     friend class CoreReader;
 public:
-    CoreProcess(std::shared_ptr<ElfObject> exec, std::shared_ptr<ElfObject> core, const PathReplacementList &, DwarfImageCache &);
+    CoreProcess(ElfObject::sptr exec, ElfObject::sptr core, const PathReplacementList &, DwarfImageCache &);
     virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) override;
     virtual void stop(lwpid_t) override;
     virtual void resume(lwpid_t) override;

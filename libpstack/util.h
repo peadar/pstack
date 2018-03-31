@@ -83,6 +83,8 @@ public:
     virtual void describe(std::ostream &os) const = 0;
     virtual std::string readString(off_t offset) const;
     virtual off_t size() const = 0;
+    typedef std::shared_ptr<Reader> sptr;
+    typedef std::shared_ptr<const Reader> csptr;
 };
 
 static inline std::ostream &operator << (std::ostream &os, const Reader &reader)
@@ -130,7 +132,7 @@ class CacheReader : public Reader {
         bool isNew;
         CacheEnt() : isNew(true) {}
     };
-    std::shared_ptr<const Reader> upstream;
+    Reader::csptr upstream;
     mutable std::unordered_map<off_t, CacheEnt> stringCache;
     static const size_t PAGESIZE = 4096;
     static const size_t MAXPAGES = 16;
@@ -152,7 +154,7 @@ public:
         // FileReader's filename
         os << *upstream;
     }
-    CacheReader(std::shared_ptr<const Reader> upstream_);
+    CacheReader(Reader::csptr upstream_);
     std::string readString(off_t off) const override;
     ~CacheReader();
     off_t size() const override { return upstream->size(); }
@@ -190,7 +192,7 @@ public:
 };
 
 class OffsetReader : public Reader {
-    std::shared_ptr<const Reader> upstream;
+    Reader::csptr upstream;
     off_t offset;
     off_t length;
 public:
@@ -204,7 +206,7 @@ public:
            count = length - off;
         return upstream->read(off + offset, count, ptr);
     }
-    OffsetReader(std::shared_ptr<const Reader> upstream_, off_t offset_,
+    OffsetReader(Reader::csptr upstream_, off_t offset_,
           off_t length_ = std::numeric_limits<off_t>::max())
        : upstream(upstream_)
        , offset(offset_)
@@ -236,7 +238,7 @@ public:
         target.copyfmt(saved);
     }
 };
-std::shared_ptr<const Reader> loadFile(const std::string &path);
+Reader::csptr loadFile(const std::string &path);
 
 // This allows a reader to be treated like an iterator for a type of object.
 

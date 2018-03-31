@@ -80,7 +80,7 @@ emain(int argc, char **argv)
     int i, c;
     pid_t pid;
     std::string execFile;
-    std::shared_ptr<ElfObject> exec;
+    ElfObject::sptr exec;
     DwarfImageCache imageCache;
     int sleepTime = 0;
     PstackOptions options;

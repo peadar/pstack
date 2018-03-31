@@ -23,12 +23,15 @@ procname(pid_t pid, const std::string &base)
 LiveReader::LiveReader(pid_t pid, const std::string &base)
    : FileReader(procname(pid, base)) {}
 
-LiveProcess::LiveProcess(std::shared_ptr<ElfObject> &ex, pid_t pid_, const PathReplacementList &repls, DwarfImageCache &imageCache)
-    : Process(ex ? ex : imageCache.getImageForName(procname(pid_, "exe")), std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")),
-          repls, imageCache)
+LiveProcess::LiveProcess(ElfObject::sptr &ex, pid_t pid_,
+            const PathReplacementList &repls, DwarfImageCache &imageCache)
+    : Process(
+            ex ? ex : imageCache.getImageForName(procname(pid_, "exe")),
+            std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")),
+            repls, imageCache)
     , pid(pid_)
 {
-   (void)ps_getpid(this);
+    (void)ps_getpid(this);
 }
 
 void
@@ -54,7 +57,7 @@ LiveProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
 #endif
 #ifdef __linux__
     stop(pid);
-    bool rc = ptrace(__ptrace_request(PTRACE_GETREGS), pid, 0, reg) != -1;
+    bool rc = ptrace(PTRACE_GETREGS, pid, 0, reg) != -1;
     resume(pid);
     return rc;
 #endif

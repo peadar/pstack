@@ -4,12 +4,8 @@
 
 #include <iostream>
 
-CoreProcess::CoreProcess(
-        std::shared_ptr<ElfObject> exec,
-        std::shared_ptr<ElfObject> core,
-        const PathReplacementList &pathReplacements_,
-        DwarfImageCache &imageCache
-        )
+CoreProcess::CoreProcess(ElfObject::sptr exec, ElfObject::sptr core,
+        const PathReplacementList &pathReplacements_, DwarfImageCache &imageCache)
     : Process(std::move(exec), std::make_shared<CoreReader>(this), pathReplacements_, imageCache)
     , coreImage(std::move(core))
 {

@@ -118,18 +118,16 @@ roundup2(size_t val, size_t align)
  * Helper class to provide a hashed lookup of a symbol table.
  */
 class ElfSymHash {
-    std::shared_ptr<const Reader> hash;
-    std::shared_ptr<const Reader> syms;
-    std::shared_ptr<const Reader> strings;
+    Reader::csptr hash;
+    Reader::csptr syms;
+    Reader::csptr strings;
     Elf_Word nbucket;
     Elf_Word nchain;
     std::vector<Elf_Word> data;
     const Elf_Word *chains;
     const Elf_Word *buckets;
 public:
-    ElfSymHash(std::shared_ptr<const Reader> hash_,
-          std::shared_ptr<const Reader> syms_,
-          std::shared_ptr<const Reader> strings_);
+    ElfSymHash(Reader::csptr hash_, Reader::csptr syms_, Reader::csptr strings_);
     bool findSymbol(Elf_Sym &sym, const std::string &name);
 };
 
@@ -141,8 +139,8 @@ struct SymbolSection;
  */
 struct ElfSection {
     Elf_Shdr shdr;
-    std::shared_ptr<const Reader> io;
-    void open(const std::shared_ptr<const Reader> &image, off_t off);
+    Reader::csptr io;
+    void open(const Reader::csptr &image, off_t off);
     operator bool() const { return shdr.sh_type != SHT_NULL; }
     ElfSection() {
         shdr.sh_type = SHT_NULL;
@@ -163,12 +161,13 @@ struct ElfNotes {
 
 class ElfObject : public std::enable_shared_from_this<ElfObject> {
 public:
+    typedef std::shared_ptr<ElfObject> sptr;
     typedef std::vector<Elf_Phdr> ProgramHeaders;
     typedef std::vector<ElfSection> SectionHeaders;
 
     // construct/destruct. Note you will generally need to use make_shared to
     // create an ElfObject
-    ElfObject(ImageCache &, std::shared_ptr<const Reader>);
+    ElfObject(ImageCache &, Reader::csptr);
     ~ElfObject();
 
     // Accessing sections.
@@ -185,7 +184,7 @@ public:
     bool findSymbolByName(const std::string &name, Elf_Sym &sym);
     bool findHashedSymbol(const std::string &name, Elf_Sym &sym) { return hash ? hash->findSymbol(sym, name) : false; }
 
-    std::shared_ptr<const Reader> io;
+    Reader::csptr io;
 
     // Misc operations
     std::string getInterpreter() const;
@@ -202,8 +201,8 @@ private:
     std::map<Elf_Word, ProgramHeaders> programHeaders;
 
     mutable bool debugLoaded; // We've at least attempted to load debugObject: don't try again
-    mutable std::shared_ptr<ElfObject> debugData; // symbol table data as extracted from .gnu.debugdata
-    mutable std::shared_ptr<ElfObject> debugObject; // debug object as per .gnu_debuglink/other.
+    mutable ElfObject::sptr debugData; // symbol table data as extracted from .gnu.debugdata
+    mutable ElfObject::sptr debugObject; // debug object as per .gnu_debuglink/other.
 
     std::unique_ptr<ElfSymHash> hash; // Symbol hash table.
     ElfObject *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
@@ -234,11 +233,11 @@ struct SymbolIterator {
  * those symbols
  */
 struct SymbolSection {
-    std::shared_ptr<const Reader> symbols;
-    std::shared_ptr<const Reader> strings;
+    Reader::csptr symbols;
+    Reader::csptr strings;
     SymbolIterator begin() { return SymbolIterator(this, 0); }
     SymbolIterator end() { return SymbolIterator(this, symbols ? symbols->size() : 0); }
-    SymbolSection(std::shared_ptr<const Reader> symbols_, std::shared_ptr<const Reader> strings_)
+    SymbolSection(Reader::csptr symbols_, Reader::csptr strings_)
        : symbols(symbols_), strings(strings_)
     {}
     bool linearSearch(const std::string &name, Elf_Sym &);
@@ -257,7 +256,7 @@ typedef struct user_regs_struct CoreRegisters;
 
 class ElfNoteDesc {
    Elf_Note note;
-   std::shared_ptr<const Reader> io;
+   Reader::csptr io;
 public:
 
    ElfNoteDesc(const ElfNoteDesc &rhs)
@@ -267,10 +266,10 @@ public:
    }
 
    std::string name() const;
-   std::shared_ptr<const Reader> data() const;
+   Reader::csptr data() const;
    size_t size() const;
    int type()  const { return note.n_type; }
-   ElfNoteDesc(const Elf_Note &note_, std::shared_ptr<const Reader> io_)
+   ElfNoteDesc(const Elf_Note &note_, Reader::csptr io_)
       : note(note_)
       , io(io_)
    {
@@ -286,7 +285,7 @@ struct ElfNoteIter {
     ElfObject::ProgramHeaders::const_iterator phdrsi;
     Elf_Off offset;
     Elf_Note curNote;
-    std::shared_ptr<const Reader> io;
+    Reader::csptr io;
 
     ElfNoteDesc operator *() {
         return ElfNoteDesc(curNote, std::make_shared<const OffsetReader>(io, offset));
@@ -376,15 +375,15 @@ std::unique_ptr<T> make_unique(Args&&... args)
  * & st_ino + st_dev)
  */
 class ImageCache {
-    std::map<std::string, std::shared_ptr<ElfObject>> cache;
+    std::map<std::string, ElfObject::sptr> cache;
     int elfHits;
     int elfLookups;
 public:
     ImageCache();
     ~ImageCache();
-    std::shared_ptr<ElfObject> getImageForName(const std::string &name);
-    std::shared_ptr<ElfObject> getImageIfLoaded(const std::string &name, bool &found);
-    std::shared_ptr<ElfObject> getDebugImage(const std::string &name);
+    ElfObject::sptr getImageForName(const std::string &name);
+    ElfObject::sptr getImageIfLoaded(const std::string &name, bool &found);
+    ElfObject::sptr getDebugImage(const std::string &name);
 };
 
 #endif /* Guard. */

@@ -120,7 +120,7 @@ listPrint(const PyObject *po, const PyTypeObject *, PythonPrinter *pc, Elf_Addr)
 {
     auto plo = reinterpret_cast<const PyListObject *>(po);
     pc->os << "list: \n";
-    auto size = std::min(plo->ob_size, 100);
+    auto size = std::min(plo->ob_size, Py_ssize_t(100));
     PyObject *objects[size];
     pc->proc.io->readObj(Elf_Addr(plo->ob_item), &objects[0], size);
     pc->depth++;
@@ -297,7 +297,7 @@ PythonPrinter::addPrinter(const char *symbol, python_printfunc func, bool dupDet
     Elf_Sym sym;
     if (!libPython->object->findSymbolByName(symbol, sym))
         throw 999;
-    auto typeptr = sym.st_value + libPython->reloc;
+    auto typeptr = sym.st_value + libPython->loadAddr;
     printers.emplace(std::piecewise_construct, std::forward_as_tuple(typeptr), std::forward_as_tuple(func, dupDetect));
 }
 
@@ -320,7 +320,7 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
         std::string module = stringify(*o.object->io);
         if (module.find("python") == std::string::npos)
             continue;
-        auto dwarf = proc.imageCache.getDwarf(ElfObject::getDebug(o.object));
+        auto dwarf = proc.imageCache.getDwarf(o.object);
         if (!dwarf)
             continue;
         for (auto u : dwarf->getUnits()) {
@@ -332,7 +332,7 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
                 for (const DwarfEntry &var : compile.children) {
                     if (var.type->tag == DW_TAG_variable && var.name() == "interp_head") {
                         DwarfExpressionStack evalStack;
-                        interp_head = evalStack.eval(proc, var.attrForName(DW_AT_location), 0, o.reloc);
+                        interp_head = evalStack.eval(proc, var.attrForName(DW_AT_location), 0, o.loadAddr);
                         libPython = &o;
                         break;
                     }
