@@ -4,7 +4,7 @@
 
 #include <iostream>
 
-CoreProcess::CoreProcess(ElfObject::sptr exec, ElfObject::sptr core,
+CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
         const PathReplacementList &pathReplacements_, DwarfImageCache &imageCache)
     : Process(std::move(exec), std::make_shared<CoreReader>(this), pathReplacements_, imageCache)
     , coreImage(std::move(core))
@@ -32,12 +32,12 @@ void CoreReader::describe(std::ostream &os) const
 }
 
 static size_t
-readFromHdr(const ElfObject &obj, const Elf_Phdr *hdr, Elf_Off addr, char *ptr, Elf_Off size, Elf_Off *toClear)
+readFromHdr(const Elf::Object &obj, const Elf::Phdr *hdr, Elf::Off addr, char *ptr, Elf::Off size, Elf::Off *toClear)
 {
-    Elf_Off rv, off = addr - hdr->p_vaddr; // offset in header of our ptr.
+    Elf::Off rv, off = addr - hdr->p_vaddr; // offset in header of our ptr.
     if (off < hdr->p_filesz) {
         // some of the data is in the file: read min of what we need and // that.
-        Elf_Off fileSize = std::min(hdr->p_filesz - off, size);
+        Elf::Off fileSize = std::min(hdr->p_filesz - off, size);
         rv = obj.io->read(hdr->p_offset + off, fileSize, ptr);
         if (rv != fileSize)
             throw (Exception() << "unexpected short read in core file");
@@ -60,11 +60,11 @@ readFromHdr(const ElfObject &obj, const Elf_Phdr *hdr, Elf_Off addr, char *ptr, 
 size_t
 CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 {
-    Elf_Off start = remoteAddr;
+    Elf::Off start = remoteAddr;
     while (size != 0) {
         auto obj = p->coreImage;
 
-        Elf_Off zeroes = 0;
+        Elf::Off zeroes = 0;
         // Locate "remoteAddr" in the core file
         auto hdr = obj->getSegmentForAddress(remoteAddr);
         if (hdr != nullptr) {
@@ -80,7 +80,7 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
         // Either no data in core, or it was incomplete to this point: search loaded objects.
         hdr = nullptr;
         obj.reset();
-        Elf_Off loadAddr;
+        Elf::Off loadAddr;
         for (auto &candidate : p->objects) {
             hdr = candidate.object->getSegmentForAddress(remoteAddr - candidate.loadAddr);
             if (hdr != nullptr) {
@@ -114,7 +114,7 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 CoreReader::CoreReader(CoreProcess *p_) : p(p_) { }
 
 bool
-CoreProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
+CoreProcess::getRegs(lwpid_t pid, Elf::CoreRegisters *reg)
 {
 #ifdef NT_PRSTATUS
    for (auto note : coreImage->notes) {

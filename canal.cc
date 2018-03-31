@@ -45,24 +45,24 @@ globmatch(const string &pattern, const string &name)
 }
 
 struct ListedSymbol {
-    Elf_Sym sym;
-    Elf_Off objbase;
+    Elf::Sym sym;
+    Elf::Off objbase;
     string name;
     size_t count;
     string objname;
-    ListedSymbol(const Elf_Sym &sym_, Elf_Off objbase_, string name_, string object)
+    ListedSymbol(const Elf::Sym &sym_, Elf::Off objbase_, string name_, string object)
         : sym(sym_)
         , objbase(objbase_)
         , name(name_)
         , count(0)
         , objname(object)
     {}
-    Elf_Off memaddr() const { return  sym.st_value + objbase; }
+    Elf::Off memaddr() const { return  sym.st_value + objbase; }
 };
 
 class Usage {};
 
-bool operator < (const ListedSymbol &sym, Elf_Off addr) {
+bool operator < (const ListedSymbol &sym, Elf::Off addr) {
     return sym.memaddr() + sym.sym.st_size < addr;
 }
 
@@ -92,8 +92,8 @@ mainExcept(int argc, char *argv[])
     bool doPython = false;
     DwarfImageCache imageCache;
     std::vector<std::string> patterns;
-    ElfObject::sptr exec;
-    ElfObject::sptr core;
+    Elf::Object::sptr exec;
+    Elf::Object::sptr core;
     shared_ptr<Process> process;
     int c;
     int verbose = 0;
@@ -101,7 +101,7 @@ mainExcept(int argc, char *argv[])
     bool showsyms = false;
     int rate = 1;
 
-    std::vector<std::pair<Elf_Off, Elf_Off>> searchaddrs;
+    std::vector<std::pair<Elf::Off, Elf::Off>> searchaddrs;
     std::vector<std::pair<std::string, std::string>> pathReplacements;
     char *strbuf = 0;
     char *findstr = 0;
@@ -152,7 +152,7 @@ mainExcept(int argc, char *argv[])
                 break;
 
             case 'f': {
-                Elf_Off start = strtoll(optarg, 0, 0);
+                Elf::Off start = strtoll(optarg, 0, 0);
                 searchaddrs.push_back(make_pair(start, start + 1));
                 break;
             }
@@ -176,10 +176,10 @@ mainExcept(int argc, char *argv[])
                     char *p = buf;
                     while (isspace(*p))
                         p++;
-                    Elf_Off start = strtoll(p, &p, 0);
+                    Elf::Off start = strtoll(p, &p, 0);
                     while (*p && isspace(*p))
                         p++;
-                    Elf_Off end = *p ? strtoll(p, &p, 0) : start + 1;
+                    Elf::Off end = *p ? strtoll(p, &p, 0) : start + 1;
                     searchaddrs.push_back(make_pair(start, end));
                     IOFlagSave _(std::clog);
                     std::clog << "push " << hex << start << ", " << end  << " (" << int(*p) << ")" << std::endl;
@@ -218,7 +218,7 @@ mainExcept(int argc, char *argv[])
        std::clog << "attaching to live process" << std::endl;
        process = make_shared<LiveProcess>(exec, pid, pathReplacements, cache);
     } else {
-       core = make_shared<ElfObject>(cache, loadFile(argv[optind]));
+       core = make_shared<Elf::Object>(cache, loadFile(argv[optind]));
        process = make_shared<CoreProcess>(exec, core, pathReplacements, cache);
     }
     process->load(PstackOptions());
@@ -243,7 +243,7 @@ mainExcept(int argc, char *argv[])
     for (auto loaded = process->objects.begin(); loaded != process->objects.end(); ++loaded) {
         size_t count = 0;
 
-        struct SymbolSection symtabs[2] = {
+        struct Elf::SymbolSection symtabs[2] = {
            loaded->object->getSymbols(".dynsym"),
            loaded->object->getSymbols(".symtab")
         };
@@ -274,7 +274,7 @@ mainExcept(int argc, char *argv[])
     off_t memsize = 0;
     PythonPrinter py(*process, std::cout, PstackOptions());
     for (auto &hdr : core->getSegments(PT_LOAD)) {
-        Elf_Off p;
+        Elf::Off p;
         filesize += hdr.p_filesz;
         memsize += hdr.p_memsz;
         int seg_count = 0;
@@ -318,8 +318,8 @@ mainExcept(int argc, char *argv[])
                                 << std::dec <<  " ... size=" << found->sym.st_size
                                 << ", diff=" << p - found->memaddr() << endl;
                         if (doPython) {
-                            std::cout << "pyo " << Elf_Addr(loc) << " ";
-                            py.print(Elf_Addr(loc) - sizeof (PyObject) + sizeof (struct _typeobject *));
+                            std::cout << "pyo " << Elf::Addr(loc) << " ";
+                            py.print(Elf::Addr(loc) - sizeof (PyObject) + sizeof (struct _typeobject *));
                             std::cout << "\n";
                         }
                         found->count++;

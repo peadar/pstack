@@ -38,7 +38,7 @@ PstackOptions::operator () (PstackOption opt) const
     return values[opt];
 }
 
-Process::Process(ElfObject::sptr exec, Reader::csptr memory,
+Process::Process(Elf::Object::sptr exec, Reader::csptr memory,
                   const PathReplacementList &prl, DwarfImageCache &cache)
     : entry(0)
     , interpBase(0)
@@ -51,7 +51,7 @@ Process::Process(ElfObject::sptr exec, Reader::csptr memory,
     , io(std::make_shared<CacheReader>(std::move(memory)))
 {
     if (exec)
-        entry = exec->getElfHeader().e_entry;
+        entry = exec->getHeader().e_entry;
 }
 
 void
@@ -67,8 +67,8 @@ Process::load(const PstackOptions &options)
     if (!execImage)
         throw (Exception() << "no executable image located for process");
 
-    Elf_Addr r_debug_addr = findRDebugAddr();
-    isStatic = r_debug_addr == 0 || r_debug_addr == Elf_Addr(-1);
+    Elf::Addr r_debug_addr = findRDebugAddr();
+    isStatic = r_debug_addr == 0 || r_debug_addr == Elf::Addr(-1);
     if (isStatic)
         addElfObject(execImage, 0);
     else
@@ -87,7 +87,7 @@ Process::load(const PstackOptions &options)
 }
 
 DwarfInfo::sptr
-Process::getDwarf(ElfObject::sptr elf)
+Process::getDwarf(Elf::Object::sptr elf)
 {
     return imageCache.getDwarf(elf);
 }
@@ -96,7 +96,7 @@ void
 Process::processAUXV(const Reader &auxio)
 {
     for (size_t i = 0;; i++) {
-        Elf_auxv_t aux;
+        Elf::auxv_t aux;
         try {
             auxio.readObj(i * sizeof aux, &aux);
         }
@@ -104,7 +104,7 @@ Process::processAUXV(const Reader &auxio)
             break;
         }
 
-        Elf_Addr hdr = aux.a_un.a_val;
+        Elf::Addr hdr = aux.a_un.a_val;
         switch (aux.a_type) {
             case AT_ENTRY: {
                 // this provides a reference for relocating the executable when
@@ -118,7 +118,7 @@ Process::processAUXV(const Reader &auxio)
             }
             case AT_SYSINFO_EHDR: {
                 try {
-                    auto elf = std::make_shared<ElfObject>(imageCache, std::make_shared<OffsetReader>(io, hdr, 65536));
+                    auto elf = std::make_shared<Elf::Object>(imageCache, std::make_shared<OffsetReader>(io, hdr, 65536));
                     addElfObject(elf, hdr);
                     if (verbose >= 2)
                         *debug << "VDSO " << *elf->io << " loaded at " << std::hex << hdr << "\n";
@@ -140,7 +140,7 @@ Process::processAUXV(const Reader &auxio)
                 if (!execImage) {
                     execImage = imageCache.getImageForName(exeName);
                     if (entry == 0)
-                       entry = execImage->getElfHeader().e_entry;
+                       entry = execImage->getHeader().e_entry;
                 }
 
                 break;
@@ -169,15 +169,15 @@ operator << (std::ostream &os, const JSON<StackFrame *, Process *> &jt)
 
     JObject jo(os);
 
-    Elf_Addr objIp = 0;
-    ElfObject::sptr obj;
-    Elf_Sym sym;
+    Elf::Addr objIp = 0;
+    Elf::Object::sptr obj;
+    Elf::Sym sym;
     std::string fileName;
     std::string symName = "unknown";
     if (frame->ip == proc->sysent) {
         symName = "(syscall)";
     } else {
-        Elf_Off loadAddr = 0;
+        Elf::Off loadAddr = 0;
         obj = proc->findObject(frame->ip, &loadAddr);
         if (obj) {
             fileName = stringify(*obj->io);
@@ -212,51 +212,51 @@ operator << (std::ostream &os, const JSON<ThreadStack, Process *> &ts)
 }
 
 const DwarfEntry *
-findEntryForFunc(Elf_Addr address, const DwarfEntry &entry)
+findEntryForFunc(Elf::Addr address, const DwarfEntry &entry)
 {
-   switch (entry.type->tag) {
-      case DW_TAG_subprogram: {
-         const DwarfAttribute *lowAttr = entry.attrForName(DW_AT_low_pc);
-         const DwarfAttribute *highAttr = entry.attrForName(DW_AT_high_pc);
-         if (lowAttr != nullptr && highAttr != nullptr) {
-            Elf_Addr start, end;
-            switch (lowAttr->form()) {
-               case DW_FORM_addr:
-                  start = uintmax_t(*lowAttr);
-                  break;
-               default:
-                  abort();
-                  break;
-            }
-            switch (highAttr->form()) {
-               case DW_FORM_addr:
-                  end = uintmax_t(*highAttr);
-                  break;
-               case DW_FORM_data1:
-               case DW_FORM_data2:
-               case DW_FORM_data4:
-               case DW_FORM_data8:
-               case DW_FORM_udata:
-                  end = start + uintmax_t(*highAttr);
-                  break;
-               default:
-                  abort();
+    switch (entry.type->tag) {
+        case DW_TAG_subprogram: {
+                const DwarfAttribute *lowAttr = entry.attrForName(DW_AT_low_pc);
+                const DwarfAttribute *highAttr = entry.attrForName(DW_AT_high_pc);
+                if (lowAttr != nullptr && highAttr != nullptr) {
+                    Elf::Addr start, end;
+                    switch (lowAttr->form()) {
+                        case DW_FORM_addr:
+                            start = uintmax_t(*lowAttr);
+                            break;
+                        default:
+                            abort();
+                            break;
+                    }
+                    switch (highAttr->form()) {
+                        case DW_FORM_addr:
+                            end = uintmax_t(*highAttr);
+                            break;
+                        case DW_FORM_data1:
+                        case DW_FORM_data2:
+                        case DW_FORM_data4:
+                        case DW_FORM_data8:
+                        case DW_FORM_udata:
+                            end = start + uintmax_t(*highAttr);
+                            break;
+                        default:
+                            abort();
 
+                    }
+                    if (start <= address && end >= address) // allow for the address to be one byte past the function
+                        return &entry;
+                }
+                break;
             }
-            if (start <= address && end >= address) // allow for the address to be one byte past the function
-               return &entry;
-         }
-         break;
-      }
 
-      default:
-         for (auto &child : entry.children) {
-            auto descendent = findEntryForFunc(address, child);
-            if (descendent != nullptr)
-               return descendent;
-         }
-         break;
-   }
+        default:
+            for (auto &child : entry.children) {
+                auto descendent = findEntryForFunc(address, child);
+                if (descendent != nullptr)
+                    return descendent;
+            }
+            break;
+    }
    return nullptr;
 }
 
@@ -308,9 +308,9 @@ typeName(const DwarfEntry *type)
 
 struct RemoteValue {
     const Process &p;
-    const Elf_Addr addr;
+    const Elf::Addr addr;
     const DwarfEntry *type;
-    RemoteValue(const Process &p_, Elf_Addr addr_, const DwarfEntry *type_)
+    RemoteValue(const Process &p_, Elf::Addr addr_, const DwarfEntry *type_)
         : p(p_)
         , addr(addr_)
         , type(type_)
@@ -424,7 +424,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
                buf.resize(sizeof (void *));
                rv.p.io->read(rv.addr, sizeof (void **), &buf[0]);
             }
-            auto remote = Elf_Addr(*(void **)&buf[0]);
+            auto remote = Elf::Addr(*(void **)&buf[0]);
             auto base = type->referencedEntry(DW_AT_type);
             if (base && base->name() == "char") {
                std::string s = rv.p.io->readString(remote);
@@ -449,7 +449,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
             case DW_TAG_formal_parameter: {
                 auto name = child.name();
                 const DwarfEntry *type = child.referencedEntry(DW_AT_type);
-                Elf_Addr addr = 0;
+                Elf::Addr addr = 0;
                 os << sep << name;
                 if (type != nullptr) {
                     const DwarfAttribute *attr;
@@ -495,15 +495,15 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             os << " ";
         }
 
-        Elf_Sym sym;
+        Elf::Sym sym;
         std::string fileName = "unknown file";
         std::string symName;
 
-        Elf_Off loadAddr;
+        Elf::Off loadAddr;
         auto obj = findObject(frame->ip, &loadAddr);
         if (obj) {
             fileName = stringify(*obj->io);
-            Elf_Addr objIp = frame->ip - loadAddr;
+            Elf::Addr objIp = frame->ip - loadAddr;
 
             DwarfInfo::sptr dwarf = getDwarf(obj);
             std::list<DwarfUnit::sptr> units;
@@ -574,7 +574,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 }
 
 void
-Process::addElfObject(ElfObject::sptr obj, Elf_Addr load)
+Process::addElfObject(Elf::Object::sptr obj, Elf::Addr load)
 {
     objects.push_back(LoadedObject(load, obj));
     if (verbose >= 2) {
@@ -587,7 +587,7 @@ Process::addElfObject(ElfObject::sptr obj, Elf_Addr load)
  * Grovel through the rtld's internals to find any shared libraries.
  */
 void
-Process::loadSharedObjects(Elf_Addr rdebugAddr)
+Process::loadSharedObjects(Elf::Addr rdebugAddr)
 {
 
     struct r_debug rDebug;
@@ -595,11 +595,11 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
 
     /* Iterate over the r_debug structure's entries, loading libraries */
     struct link_map map;
-    for (auto mapAddr = Elf_Addr(rDebug.r_map); mapAddr != 0; mapAddr = Elf_Addr(map.l_next)) {
+    for (auto mapAddr = Elf::Addr(rDebug.r_map); mapAddr != 0; mapAddr = Elf::Addr(map.l_next)) {
         io->readObj(mapAddr, &map);
         // If we see the executable, just add it in and avoid going through the path replacement work
-        if (mapAddr == Elf_Addr(rDebug.r_map)) {
-            assert(map.l_addr == entry - execImage->getElfHeader().e_entry);
+        if (mapAddr == Elf::Addr(rDebug.r_map)) {
+            assert(map.l_addr == entry - execImage->getHeader().e_entry);
             addElfObject(execImage, map.l_addr);
             continue;
         }
@@ -608,7 +608,7 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
         if (map.l_name == 0)
             continue;
 
-        std::string path = io->readString(Elf_Off(map.l_name));
+        std::string path = io->readString(Elf::Off(map.l_name));
         if (path == "")
             continue;
 
@@ -622,7 +622,7 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
             *debug << "replaced " << startPath << " with " << path << std::endl;
 
         try {
-            addElfObject(imageCache.getImageForName(path), Elf_Addr(map.l_addr));
+            addElfObject(imageCache.getImageForName(path), Elf::Addr(map.l_addr));
         }
         catch (const std::exception &e) {
             std::clog << "warning: can't load text for '" << path << "' at " <<
@@ -632,7 +632,7 @@ Process::loadSharedObjects(Elf_Addr rdebugAddr)
     }
 }
 
-Elf_Addr
+Elf::Addr
 Process::findRDebugAddr()
 {
     /*
@@ -640,13 +640,13 @@ Process::findRDebugAddr()
      * supplied by the kernel, and also the executable's desired entrypoint -
      * the difference is the load address.
      */
-    Elf_Off loadAddr = entry - execImage->getElfHeader().e_entry;
+    Elf::Off loadAddr = entry - execImage->getHeader().e_entry;
 
     // Find DT_DEBUG in the process's dynamic section.
     for (auto &segment : execImage->getSegments(PT_DYNAMIC)) {
         // Read from the process, not the executable - the linker will have updated the content.
         OffsetReader dynReader(io, segment.p_vaddr + loadAddr, segment.p_filesz);
-        ReaderArray<Elf_Dyn> dynamic(dynReader);
+        ReaderArray<Elf::Dyn> dynamic(dynReader);
         for (auto dyn : dynamic)
             if (dyn.d_tag == DT_DEBUG)
                 return dyn.d_un.d_ptr;
@@ -667,12 +667,12 @@ Process::findRDebugAddr()
     return 0;
 }
 
-ElfObject::sptr
-Process::findObject(Elf_Addr addr, Elf_Off *loadAddr) const
+Elf::Object::sptr
+Process::findObject(Elf::Addr addr, Elf::Off *loadAddr) const
 {
     for (auto &candidate : objects) {
         for (auto &phdr : candidate.object->getSegments(PT_LOAD)) {
-            Elf_Off objAddr = addr - candidate.loadAddr;
+            Elf::Off objAddr = addr - candidate.loadAddr;
             if (objAddr >= phdr.p_vaddr && objAddr < phdr.p_vaddr + phdr.p_memsz) {
                 *loadAddr = candidate.loadAddr;
                 return candidate.object;
@@ -682,7 +682,7 @@ Process::findObject(Elf_Addr addr, Elf_Off *loadAddr) const
     return 0;
 }
 
-Elf_Addr
+Elf::Addr
 Process::findNamedSymbol(const char *objName, const char *symbolName) const
 {
     if (isStatic) // static exe: ignore object name.
@@ -698,7 +698,7 @@ Process::findNamedSymbol(const char *objName, const char *symbolName) const
                    continue;
             }
         }
-        Elf_Sym sym;
+        Elf::Sym sym;
         if (loaded.object->findSymbolByName(symbolName, sym))
             return sym.st_value + loaded.loadAddr;
         if (objName)
@@ -717,7 +717,7 @@ Process::~Process()
 }
 
 void
-ThreadStack::unwind(Process &p, CoreRegisters &regs)
+ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 {
     stack.clear();
     try {
@@ -751,16 +751,16 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
                 else
 #ifdef __i386__
                 {
-                    Elf_Addr reloc;
+                    Elf::Addr reloc;
                     auto obj = p.findObject(prevFrame->ip, &reloc);
                     if (obj) {
-                        Elf_Sym symbol;
-                        Elf_Addr sigContextAddr;
+                        Elf::Sym symbol;
+                        Elf::Addr sigContextAddr;
                         auto objip = prevFrame->ip - reloc;
                         if (obj->findSymbolByName("__restore", symbol) && objip == symbol.st_value)
                             sigContextAddr = prevFrame->getReg(SPREG) + 4;
                         else if (obj->findSymbolByName("__restore_rt", symbol) && objip == symbol.st_value)
-                            sigContextAddr = p.io->readObj<Elf_Addr>(prevFrame->getReg(SPREG) + 8) + 20;
+                            sigContextAddr = p.io->readObj<Elf::Addr>(prevFrame->getReg(SPREG) + 8) + 20;
                         else
                             throw;
                         // This mapping is based on DWARF regnos, and ucontext.h

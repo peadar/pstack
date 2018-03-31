@@ -47,7 +47,7 @@ DwarfPubname::DwarfPubname(DWARFReader &r, uint32_t offset)
 DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
 {
     length = r.getu32();
-    Elf_Off next = r.getOffset() + length;
+    Elf::Off next = r.getOffset() + length;
 
     version = r.getu16();
     infoOffset = r.getu32();
@@ -63,12 +63,12 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
 }
 
 static Reader::csptr
-sectionReader(ElfObject &obj, const char *name)
+sectionReader(Elf::Object &obj, const char *name)
 {
     return obj.getSection(name, SHT_PROGBITS).io;
 }
 
-DwarfInfo::DwarfInfo(ElfObject::sptr obj, DwarfImageCache &cache_)
+DwarfInfo::DwarfInfo(Elf::Object::sptr obj, DwarfImageCache &cache_)
     : info(sectionReader(*obj, ".debug_info"))
     , elf(obj)
     , debugStrings(sectionReader(*obj, ".debug_str"))
@@ -163,11 +163,11 @@ DwarfInfo::~DwarfInfo() = default;
 DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
 {
     unsigned align, tupleLen;
-    Elf_Off start = r.getOffset();
+    Elf::Off start = r.getOffset();
     size_t dwarfLen;
 
     length = r.getlength(&dwarfLen);
-    Elf_Off next = r.getOffset() + length;
+    Elf::Off next = r.getOffset() + length;
     version = r.getu16();
     debugInfoOffset = r.getu32();
     addrlen = r.getu8();
@@ -178,7 +178,7 @@ DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
     tupleLen = addrlen * 2;
 
     // Align on tupleLen-boundary.
-    Elf_Off used = r.getOffset() - start;
+    Elf::Off used = r.getOffset() - start;
 
     align = tupleLen - used % tupleLen;;
     r.skip(align);
@@ -196,7 +196,7 @@ DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
     , offset(r.getOffset())
 {
     length = r.getlength(&dwarfLen);
-    Elf_Off nextoff = r.getOffset() + length;
+    Elf::Off nextoff = r.getOffset() + length;
     version = r.getu16();
 
     if (version <= 2) // DWARF Version 2 uses the architecture's address size.
@@ -301,12 +301,12 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
 {
     size_t dwarfLen;
     uint32_t total_length = r.getlength(&dwarfLen);
-    Elf_Off end = r.getOffset() + total_length;
+    Elf::Off end = r.getOffset() + total_length;
 
     uint16_t version = r.getu16();
     (void)version;
-    Elf_Off header_length = r.getuint(unit->version > 2 ? unit->dwarfLen: 4);
-    Elf_Off expectedEnd = header_length + r.getOffset();
+    Elf::Off header_length = r.getuint(unit->version > 2 ? unit->dwarfLen: 4);
+    Elf::Off expectedEnd = header_length + r.getOffset();
     int min_insn_length = r.getu8();
 
     int maximum_operations_per_instruction = version >= 4 ? r.getu8() : 1; // new in DWARF 4.
@@ -657,7 +657,7 @@ DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *pare
 }
 
 static std::string
-getAltImageName(const ElfObject::sptr &elf)
+getAltImageName(const Elf::Object::sptr &elf)
 {
     auto &section = elf->getSection(".gnu_debugaltlink", 0);
     std::string name = section.io->readString(0);
@@ -685,7 +685,7 @@ intmax_t
 DwarfFrameInfo::decodeAddress(DWARFReader &f, int encoding) const
 {
     intmax_t base;
-    Elf_Off offset = f.getOffset();
+    Elf::Off offset = f.getOffset();
     switch (encoding & 0xf) {
     case DW_EH_PE_sdata2:
         base = f.getint(2);
@@ -712,7 +712,7 @@ DwarfFrameInfo::decodeAddress(DWARFReader &f, int encoding) const
         base = f.getuleb128();
         break;
     case DW_EH_PE_absptr:
-        base = f.getint(sizeof (Elf_Word));
+        base = f.getint(sizeof (Elf::Word));
         break;
     default:
         abort();
@@ -729,7 +729,7 @@ DwarfFrameInfo::decodeAddress(DWARFReader &f, int encoding) const
     return base;
 }
 
-Elf_Off
+Elf::Off
 DWARFReader::getlength(size_t *addrLen)
 {
     size_t length = getu32();
@@ -749,14 +749,14 @@ DWARFReader::getlength(size_t *addrLen)
     }
 }
 
-Elf_Off
-DwarfFrameInfo::decodeCIEFDEHdr(DWARFReader &r, enum FIType type, Elf_Off *cieOff)
+Elf::Off
+DwarfFrameInfo::decodeCIEFDEHdr(DWARFReader &r, enum FIType type, Elf::Off *cieOff)
 {
     size_t addrLen;
-    Elf_Off length = r.getlength(&addrLen);
+    Elf::Off length = r.getlength(&addrLen);
     if (length == 0)
         return 0;
-    Elf_Off idoff = r.getOffset();
+    Elf::Off idoff = r.getOffset();
     auto id = r.getuint(addrLen);
     if (!isCIE(id))
         *cieOff = type == FI_EH_FRAME ? idoff - id : id;
@@ -766,12 +766,12 @@ DwarfFrameInfo::decodeCIEFDEHdr(DWARFReader &r, enum FIType type, Elf_Off *cieOf
 }
 
 bool
-DwarfFrameInfo::isCIE(Elf_Addr cieid)
+DwarfFrameInfo::isCIE(Elf::Addr cieid)
 {
     return (type == FI_DEBUG_FRAME && cieid == 0xffffffff) || (type == FI_EH_FRAME && cieid == 0);
 }
 
-DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, const ElfSection& section, enum FIType type_)
+DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, const Elf::Section& section, enum FIType type_)
     : dwarf(info)
     , sectionAddr(section.shdr.sh_addr)
     , io(section.io)
@@ -783,12 +783,12 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, const ElfSection& section, enum 
     off_t nextoff;
     for (; !reader.empty();  reader.setOffset(nextoff)) {
         size_t startOffset = reader.getOffset();
-        Elf_Off associatedCIE;
+        Elf::Off associatedCIE;
         nextoff = decodeCIEFDEHdr(reader, type, &associatedCIE);
         if (nextoff == 0)
             break;
 
-        auto ensureCIE = [this, &reader, nextoff] (Elf_Off offset) {
+        auto ensureCIE = [this, &reader, nextoff] (Elf::Off offset) {
             // This is in fact a CIE - add it in if we have not seen it yet.
             if (cies.find(offset) != cies.end())
                 return;
@@ -797,7 +797,7 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, const ElfSection& section, enum 
                         std::forward_as_tuple(this, reader, nextoff));
         };
 
-        if (associatedCIE == Elf_Off(-1)) {
+        if (associatedCIE == Elf::Off(-1)) {
             ensureCIE(startOffset);
         } else {
             // Make sure we have the associated CIE.
@@ -808,7 +808,7 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, const ElfSection& section, enum 
 }
 
 const DwarfFDE *
-DwarfFrameInfo::findFDE(Elf_Addr addr) const
+DwarfFrameInfo::findFDE(Elf::Addr addr) const
 {
     for (const auto &fde : fdeList) {
         // XXX: addr can be just past last instruction in function
@@ -1040,7 +1040,7 @@ DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
     return frame;
 }
 
-DwarfFDE::DwarfFDE(DwarfFrameInfo *fi, DWARFReader &reader, Elf_Off cieOff_, Elf_Off endOff_)
+DwarfFDE::DwarfFDE(DwarfFrameInfo *fi, DWARFReader &reader, Elf::Off cieOff_, Elf::Off endOff_)
     : end(endOff_)
     , cieOff(cieOff_)
 {
@@ -1055,7 +1055,7 @@ DwarfFDE::DwarfFDE(DwarfFrameInfo *fi, DWARFReader &reader, Elf_Off cieOff_, Elf
     instructions = reader.getOffset();
 }
 
-DwarfCIE::DwarfCIE(const DwarfFrameInfo *fi, DWARFReader &r, Elf_Off end_)
+DwarfCIE::DwarfCIE(const DwarfFrameInfo *fi, DWARFReader &r, Elf::Off end_)
     : frameInfo(fi)
     , addressEncoding(0)
     , lsdaEncoding(0)
@@ -1078,7 +1078,7 @@ DwarfCIE::DwarfCIE(const DwarfFrameInfo *fi, DWARFReader &r, Elf_Off end_)
 #endif
 
     bool earlyExit = false;
-    Elf_Off endaugdata = r.getOffset();
+    Elf::Off endaugdata = r.getOffset();
     for (auto aug : augmentation) {
         switch (aug) {
             case 'z':
@@ -1206,7 +1206,7 @@ DwarfImageCache::getDwarf(const std::string &filename)
 }
 
 DwarfInfo::sptr
-DwarfImageCache::getDwarf(ElfObject::sptr object)
+DwarfImageCache::getDwarf(Elf::Object::sptr object)
 {
     auto it = dwarfCache.find(object);
     dwarfLookups++;

@@ -17,25 +17,25 @@ struct ps_prochandle {};
 class Process;
 struct StackFrame;
 
-class DwarfExpressionStack : public std::stack<Elf_Addr> {
+class DwarfExpressionStack : public std::stack<Elf::Addr> {
 public:
     bool isReg;
     int inReg;
-    Elf_Addr poptop() { Elf_Addr tos = top(); pop(); return tos; }
+    Elf::Addr poptop() { Elf::Addr tos = top(); pop(); return tos; }
     DwarfExpressionStack(): isReg(false) {}
-    Elf_Addr eval(const Process &, DWARFReader &r, const StackFrame *frame, Elf_Addr);
-    Elf_Addr eval(const Process &, const DwarfAttribute *, const StackFrame *, Elf_Addr);
+    Elf::Addr eval(const Process &, DWARFReader &r, const StackFrame *frame, Elf::Addr);
+    Elf::Addr eval(const Process &, const DwarfAttribute *, const StackFrame *, Elf::Addr);
 };
 
 // this works for i386 and x86_64 - might need to change for other archs.
 typedef unsigned long cpureg_t;
 
 struct StackFrame {
-    Elf_Addr ip;
-    Elf_Addr cfa;
+    Elf::Addr ip;
+    Elf::Addr cfa;
     std::map<unsigned, cpureg_t> regs;
-    ElfObject::sptr elf;
-    Elf_Addr elfReloc;
+    Elf::Object::sptr elf;
+    Elf::Addr elfReloc;
     DwarfInfo::sptr dwarf;
     const DwarfEntry * function;
     DwarfFrameInfo *frameInfo;
@@ -52,10 +52,10 @@ struct StackFrame {
     {}
     void setReg(unsigned, cpureg_t);
     cpureg_t getReg(unsigned regno) const;
-    Elf_Addr getCFA(const Process &, const DwarfCallFrame &) const;
+    Elf::Addr getCFA(const Process &, const DwarfCallFrame &) const;
     StackFrame *unwind(Process &p);
-    void setCoreRegs(const CoreRegisters &);
-    void getCoreRegs(CoreRegisters &) const;
+    void setCoreRegs(const Elf::CoreRegisters &);
+    void getCoreRegs(Elf::CoreRegisters &) const;
     void getFrameBase(const Process &, intmax_t, DwarfExpressionStack *) const;
 };
 
@@ -69,7 +69,7 @@ struct ThreadStack {
         for (auto i = stack.begin(); i != stack.end(); ++i)
             delete *i;
     }
-    void unwind(Process &, CoreRegisters &regs);
+    void unwind(Process &, Elf::CoreRegisters &regs);
 };
 
 
@@ -100,37 +100,37 @@ struct Lwp {
 
 typedef std::vector<std::pair<std::string, std::string>> PathReplacementList;
 class Process : public ps_prochandle {
-    Elf_Addr findRDebugAddr();
-    Elf_Off entry; // entrypoint of process.
-    Elf_Addr interpBase;
-    void loadSharedObjects(Elf_Addr);
+    Elf::Addr findRDebugAddr();
+    Elf::Off entry; // entrypoint of process.
+    Elf::Addr interpBase;
+    void loadSharedObjects(Elf::Addr);
     bool isStatic;
 
 protected:
     td_thragent_t *agent;
-    ElfObject::sptr execImage;
+    Elf::Object::sptr execImage;
     std::string abiPrefix;
     const PathReplacementList &pathReplacements;
 
 public:
-    Elf_Addr sysent; // for AT_SYSINFO
+    Elf::Addr sysent; // for AT_SYSINFO
     std::map<pid_t, Lwp> lwps;
     DwarfImageCache &imageCache;
 
     struct LoadedObject {
-        Elf_Off loadAddr;
-        ElfObject::sptr object;
-        LoadedObject(Elf_Off loadAddr_, ElfObject::sptr object_) : loadAddr(loadAddr_), object(object_) {}
+        Elf::Off loadAddr;
+        Elf::Object::sptr object;
+        LoadedObject(Elf::Off loadAddr_, Elf::Object::sptr object_) : loadAddr(loadAddr_), object(object_) {}
     };
     std::vector<LoadedObject> objects;
     void processAUXV(const Reader &);
     Reader::csptr io;
 
-    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) = 0;
-    void addElfObject(ElfObject::sptr obj, Elf_Addr load);
-    ElfObject::sptr findObject(Elf_Addr addr, Elf_Off *reloc) const;
-    DwarfInfo::sptr getDwarf(ElfObject::sptr);
-    Process(ElfObject::sptr exec, Reader::csptr memory, const PathReplacementList &prl, DwarfImageCache &cache);
+    virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) = 0;
+    void addElfObject(Elf::Object::sptr obj, Elf::Addr load);
+    Elf::Object::sptr findObject(Elf::Addr addr, Elf::Off *reloc) const;
+    DwarfInfo::sptr getDwarf(Elf::Object::sptr);
+    Process(Elf::Object::sptr exec, Reader::csptr memory, const PathReplacementList &prl, DwarfImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
     virtual void findLWPs() = 0;
@@ -140,7 +140,7 @@ public:
     std::ostream &dumpStackText(std::ostream &, const ThreadStack &, const PstackOptions &);
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &);
     template <typename T> void listThreads(const T &);
-    Elf_Addr findNamedSymbol(const char *objName, const char *symbolName) const;
+    Elf::Addr findNamedSymbol(const char *objName, const char *symbolName) const;
     ~Process();
     virtual void load(const PstackOptions &);
     virtual pid_t getPID() const = 0;
@@ -172,8 +172,8 @@ class LiveProcess : public Process {
     pid_t pid;
     friend class LiveReader;
 public:
-    LiveProcess(ElfObject::sptr &, pid_t, const PathReplacementList &, DwarfImageCache &);
-    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) override;
+    LiveProcess(Elf::Object::sptr &, pid_t, const PathReplacementList &, DwarfImageCache &);
+    virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
     virtual void stop(pid_t) override;
     virtual void resume(pid_t) override;
     void stopProcess() override;
@@ -195,11 +195,11 @@ public:
 };
 
 class CoreProcess : public Process {
-    ElfObject::sptr coreImage;
+    Elf::Object::sptr coreImage;
     friend class CoreReader;
 public:
-    CoreProcess(ElfObject::sptr exec, ElfObject::sptr core, const PathReplacementList &, DwarfImageCache &);
-    virtual bool getRegs(lwpid_t pid, CoreRegisters *reg) override;
+    CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core, const PathReplacementList &, DwarfImageCache &);
+    virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
     virtual void stop(lwpid_t) override;
     virtual void resume(lwpid_t) override;
     void stopProcess() override;

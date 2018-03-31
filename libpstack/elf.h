@@ -55,13 +55,6 @@ extern bool noDebugLibs;
 
 #define ELF_WORDSIZE ((ELF_BITS)/8)
 
-class ImageCache;
-class ElfObject;
-#ifndef __FreeBSD__
-
-#define ElfTypeForBits(type, bits, uscore) typedef Elf##bits##uscore##type Elf##uscore##type ;
-#define ElfType2(type, bits) ElfTypeForBits(type, bits, _)
-#define ElfType(type) ElfType2(type, ELF_BITS)
 
 #ifndef SHF_COMPRESSED // Old headers may not have SHF_COMPRESSED: define it here.
 #define SHF_COMPRESSED (1<<11)
@@ -70,7 +63,6 @@ typedef struct {
    Elf32_Word ch_size;
    Elf32_Word ch_addralign;
 } Elf32_Chdr;
-
 typedef struct {
    Elf64_Word ch_type;
    Elf64_Word ch_size;
@@ -78,22 +70,37 @@ typedef struct {
 } Elf64_Chdr;
 #endif
 
+
+namespace Elf {
+    class Object;
+};
+
+std::ostream &operator<< (std::ostream &, const JSON<Elf::Object> &);
+
+namespace Elf {
+class ImageCache;
+class Object;
+#ifndef __FreeBSD__
 typedef Elf32_Nhdr Elf32_Note;
 typedef Elf64_Nhdr Elf64_Note;
 
-ElfType(Addr)
-ElfType(Ehdr)
-ElfType(Phdr)
-ElfType(Shdr)
-ElfType(Sym)
-ElfType(Dyn)
-ElfType(Word)
-ElfType(Note)
-ElfType(auxv_t)
-ElfType(Off)
-ElfType(Rela)
-ElfType(Chdr)
-ElfType(Sword)
+#define TypeForBits(type, bits, uscore) typedef Elf##bits##uscore##type type
+#define Type2(type, bits) TypeForBits(type, bits, _)
+#define Type(type) Type2(type, ELF_BITS)
+
+Type(Ehdr);
+Type(Phdr);
+Type(Shdr);
+Type(Sym);
+Type(Dyn);
+Type(Word);
+Type(Note);
+Type(auxv_t);
+Type(Off);
+Type(Rela);
+Type(Chdr);
+Type(Sword);
+Type(Addr);
 
 #if ELF_BITS==64
 #define ELF_ST_TYPE ELF64_ST_TYPE
@@ -117,99 +124,99 @@ roundup2(size_t val, size_t align)
 /*
  * Helper class to provide a hashed lookup of a symbol table.
  */
-class ElfSymHash {
+class SymHash {
     Reader::csptr hash;
     Reader::csptr syms;
     Reader::csptr strings;
-    Elf_Word nbucket;
-    Elf_Word nchain;
-    std::vector<Elf_Word> data;
-    const Elf_Word *chains;
-    const Elf_Word *buckets;
+    Word nbucket;
+    Word nchain;
+    std::vector<Word> data;
+    const Word *chains;
+    const Word *buckets;
 public:
-    ElfSymHash(Reader::csptr hash_, Reader::csptr syms_, Reader::csptr strings_);
-    bool findSymbol(Elf_Sym &sym, const std::string &name);
+    SymHash(Reader::csptr hash_, Reader::csptr syms_, Reader::csptr strings_);
+    bool findSymbol(Sym &sym, const std::string &name);
 };
 
 struct SymbolSection;
 
 /*
- * An ELF section is effectively a pair of an Elf_Shdr to describe an ELF
+ * An ELF section is effectively a pair of an Shdr to describe an ELF
  * section, and and a reader object in which to find the content.
  */
-struct ElfSection {
-    Elf_Shdr shdr;
+struct Section {
+    Shdr shdr;
     Reader::csptr io;
     void open(const Reader::csptr &image, off_t off);
     operator bool() const { return shdr.sh_type != SHT_NULL; }
-    ElfSection() {
+    Section() {
         shdr.sh_type = SHT_NULL;
     }
 };
 
-struct ElfNoteIter;
-class ElfNoteDesc;
+struct NoteIter;
+class NoteDesc;
 
-struct ElfNotes {
-   ElfNoteIter begin() const;
-   ElfNoteIter end() const;
-   ElfObject *object;
-   ElfNotes(ElfObject *object_) : object(object_) {}
-   typedef ElfNoteDesc value_type;
-   typedef ElfNoteIter iterator;
+struct Notes {
+   NoteIter begin() const;
+   NoteIter end() const;
+   Object *object;
+   Notes(Object *object_) : object(object_) {}
+   typedef NoteDesc value_type;
+   typedef NoteIter iterator;
 };
 
-class ElfObject : public std::enable_shared_from_this<ElfObject> {
+class Object : public std::enable_shared_from_this<Object> {
 public:
-    typedef std::shared_ptr<ElfObject> sptr;
-    typedef std::vector<Elf_Phdr> ProgramHeaders;
-    typedef std::vector<ElfSection> SectionHeaders;
+    typedef std::shared_ptr<Object> sptr;
+    typedef std::vector<Phdr> ProgramHeaders;
+    typedef std::vector<Section> SectionHeaders;
 
     // construct/destruct. Note you will generally need to use make_shared to
-    // create an ElfObject
-    ElfObject(ImageCache &, Reader::csptr);
-    ~ElfObject();
+    // create an Object
+    Object(ImageCache &, Reader::csptr);
+    ~Object();
 
     // Accessing sections.
-    const ElfSection &getSection(Elf_Word idx) const;
-    const ElfSection &getLinkedSection(const ElfSection &sec) const;
-    const ElfSection &getSection(const std::string &name, Elf_Word type) const;
+    const Section &getSection(Word idx) const;
+    const Section &getLinkedSection(const Section &sec) const;
+    const Section &getSection(const std::string &name, Word type) const;
 
     // Accessing segments.
-    const ProgramHeaders &getSegments(Elf_Word type) const;
+    const ProgramHeaders &getSegments(Word type) const;
 
     // Accessing symbols
     SymbolSection getSymbols(const std::string &tableName);
-    bool findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &, std::string &);
-    bool findSymbolByName(const std::string &name, Elf_Sym &sym);
-    bool findHashedSymbol(const std::string &name, Elf_Sym &sym) { return hash ? hash->findSymbol(sym, name) : false; }
+    bool findSymbolByAddress(Addr addr, int type, Sym &, std::string &);
+    bool findSymbolByName(const std::string &name, Sym &sym);
+    bool findHashedSymbol(const std::string &name, Sym &sym) { return hash ? hash->findSymbol(sym, name) : false; }
 
     Reader::csptr io;
 
     // Misc operations
     std::string getInterpreter() const;
-    const Elf_Ehdr &getElfHeader() const { return elfHeader; }
-    const Elf_Phdr *getSegmentForAddress(Elf_Off) const;
-    ElfNotes notes;
+    const Ehdr &getHeader() const { return elfHeader; }
+    const Phdr *getSegmentForAddress(Off) const;
+    Notes notes;
 
 private:
     // Elf header, section headers, program headers.
-    Elf_Ehdr elfHeader;
+    Ehdr elfHeader;
     ImageCache &imageCache;
     SectionHeaders sectionHeaders;
-    std::map<std::string, ElfSection *> namedSection;
-    std::map<Elf_Word, ProgramHeaders> programHeaders;
+    std::map<std::string, Section *> namedSection;
+    std::map<Word, ProgramHeaders> programHeaders;
 
     mutable bool debugLoaded; // We've at least attempted to load debugObject: don't try again
-    mutable ElfObject::sptr debugData; // symbol table data as extracted from .gnu.debugdata
-    mutable ElfObject::sptr debugObject; // debug object as per .gnu_debuglink/other.
+    mutable Object::sptr debugData; // symbol table data as extracted from .gnu.debugdata
+    mutable Object::sptr debugObject; // debug object as per .gnu_debuglink/other.
 
-    std::unique_ptr<ElfSymHash> hash; // Symbol hash table.
-    ElfObject *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
-    friend std::ostream &operator<< (std::ostream &, const JSON<ElfObject> &);
+    std::unique_ptr<SymHash> hash; // Symbol hash table.
+    Object *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
+    friend std::ostream &::operator<< (std::ostream &, const JSON<Elf::Object> &);
     struct CachedSymbol {
         enum { SYM_FOUND, SYM_NOTFOUND, SYM_NEW } disposition;
-        Elf_Sym sym;
+        Sym sym;
         CachedSymbol() : disposition { SYM_NEW } {}
     };
     std::map<std::string, CachedSymbol> cachedSymbols;
@@ -223,13 +230,13 @@ struct SymbolIterator {
     off_t off;
     SymbolIterator(SymbolSection *sec_, off_t off_) : sec(sec_), off(off_) {}
     bool operator != (const SymbolIterator &rhs) { return rhs.off != off; }
-    SymbolIterator &operator++ () { off += sizeof (Elf_Sym); return *this; }
-    std::pair<const Elf_Sym, const std::string> operator *();
+    SymbolIterator &operator++ () { off += sizeof (Sym); return *this; }
+    std::pair<const Sym, const std::string> operator *();
 };
 
 /*
  * A symbol section represents a symbol table - this requires two sections, the
- * set of Elf_Sym objects, and the section that contains the strings to name
+ * set of Sym objects, and the section that contains the strings to name
  * those symbols
  */
 struct SymbolSection {
@@ -240,7 +247,7 @@ struct SymbolSection {
     SymbolSection(Reader::csptr symbols_, Reader::csptr strings_)
        : symbols(symbols_), strings(strings_)
     {}
-    bool linearSearch(const std::string &name, Elf_Sym &);
+    bool linearSearch(const std::string &name, Sym &);
 };
 
 // These are the architecture specific types representing the NT_PRSTATUS registers.
@@ -254,12 +261,12 @@ typedef struct pt_regs CoreRegisters;
 typedef struct user_regs_struct CoreRegisters;
 #endif
 
-class ElfNoteDesc {
-   Elf_Note note;
+class NoteDesc {
+   Note note;
    Reader::csptr io;
 public:
 
-   ElfNoteDesc(const ElfNoteDesc &rhs)
+   NoteDesc(const NoteDesc &rhs)
       : note(rhs.note)
       , io(rhs.io)
    {
@@ -269,26 +276,26 @@ public:
    Reader::csptr data() const;
    size_t size() const;
    int type()  const { return note.n_type; }
-   ElfNoteDesc(const Elf_Note &note_, Reader::csptr io_)
+   NoteDesc(const Note &note_, Reader::csptr io_)
       : note(note_)
       , io(io_)
    {
       io->readObj(0, &note);
    }
-   ~ElfNoteDesc() {
+   ~NoteDesc() {
    }
 };
 
-struct ElfNoteIter {
-    ElfObject *object;
-    const ElfObject::ProgramHeaders &phdrs;
-    ElfObject::ProgramHeaders::const_iterator phdrsi;
-    Elf_Off offset;
-    Elf_Note curNote;
+struct NoteIter {
+    Object *object;
+    const Object::ProgramHeaders &phdrs;
+    Object::ProgramHeaders::const_iterator phdrsi;
+    Off offset;
+    Note curNote;
     Reader::csptr io;
 
-    ElfNoteDesc operator *() {
-        return ElfNoteDesc(curNote, std::make_shared<const OffsetReader>(io, offset));
+    NoteDesc operator *() {
+        return NoteDesc(curNote, std::make_shared<const OffsetReader>(io, offset));
     }
 
     void startSection() {
@@ -298,7 +305,7 @@ struct ElfNoteIter {
               off_t(phdrsi->p_filesz));
     }
 
-    ElfNoteIter &operator++() {
+    NoteIter &operator++() {
         auto newOff = offset;
         newOff += sizeof curNote + curNote.n_namesz;
         newOff = roundup2(newOff, 4);
@@ -317,7 +324,7 @@ struct ElfNoteIter {
         return *this;
     }
 
-    ElfNoteIter(ElfObject *object_, bool begin)
+    NoteIter(Object *object_, bool begin)
         : object(object_)
         , phdrs(object_->getSegments(PT_NOTE))
         , offset(0)
@@ -332,10 +339,10 @@ struct ElfNoteIter {
     void readNote() {
         io->readObj(offset, &curNote);
     }
-    bool operator == (const ElfNoteIter &rhs) const {
+    bool operator == (const NoteIter &rhs) const {
         return &phdrs == &rhs.phdrs && phdrsi == rhs.phdrsi && offset == rhs.offset;
     }
-    bool operator != (const ElfNoteIter &rhs) const {
+    bool operator != (const NoteIter &rhs) const {
         return !(*this == rhs);
     }
 };
@@ -355,12 +362,12 @@ public:
 };
 extern GlobalDebugDirectories globalDebugDirectories;
 
-std::ostream& operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr &, const Elf_Sym &> &t);
-std::ostream& operator<< (std::ostream &os, const std::pair<const ElfObject *, const Elf_Shdr &> &p);
-std::ostream& operator<< (std::ostream &os, const Elf_Phdr &h);
-std::ostream& operator<< (std::ostream &os, std::tuple<const ElfObject *, const Elf_Shdr &, const Elf_Sym &> &t);
-std::ostream& operator<< (std::ostream &os, const Elf_Dyn &d);
-std::ostream& operator<< (std::ostream &os, const ElfObject &obj);
+std::ostream& operator<< (std::ostream &os, std::tuple<const Object *, const Shdr &, const Sym &> &t);
+std::ostream& operator<< (std::ostream &os, const std::pair<const Object *, const Shdr &> &p);
+std::ostream& operator<< (std::ostream &os, const Phdr &h);
+std::ostream& operator<< (std::ostream &os, std::tuple<const Object *, const Shdr &, const Sym &> &t);
+std::ostream& operator<< (std::ostream &os, const Dyn &d);
+std::ostream& operator<< (std::ostream &os, const Object &obj);
 
 /*
  * A cache of named files to ELF objects. Note no deduping is done for symbolic
@@ -368,15 +375,16 @@ std::ostream& operator<< (std::ostream &os, const ElfObject &obj);
  * & st_ino + st_dev)
  */
 class ImageCache {
-    std::map<std::string, ElfObject::sptr> cache;
+    std::map<std::string, Object::sptr> cache;
     int elfHits;
     int elfLookups;
 public:
     ImageCache();
     ~ImageCache();
-    ElfObject::sptr getImageForName(const std::string &name);
-    ElfObject::sptr getImageIfLoaded(const std::string &name, bool &found);
-    ElfObject::sptr getDebugImage(const std::string &name);
+    Object::sptr getImageForName(const std::string &name);
+    Object::sptr getImageIfLoaded(const std::string &name, bool &found);
+    Object::sptr getDebugImage(const std::string &name);
 };
 
+} // Elf namespace
 #endif /* Guard. */

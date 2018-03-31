@@ -31,7 +31,7 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
         StopProcess here(&proc);
         proc.listThreads([&proc, &threadStacks, &tracedLwps] (const td_thrhandle_t *thr) {
 
-            CoreRegisters regs;
+            Elf::CoreRegisters regs;
             td_err_e the;
 #ifdef __linux__
             the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
@@ -51,7 +51,7 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
             if (tracedLwps.find(lwp.first) == tracedLwps.end()) {
                 threadStacks.push_back(ThreadStack());
                 threadStacks.back().info.ti_lid = lwp.first;
-                CoreRegisters regs;
+                Elf::CoreRegisters regs;
                 proc.getRegs(lwp.first,  &regs);
                 threadStacks.back().unwind(proc, regs);
             }
@@ -80,7 +80,7 @@ emain(int argc, char **argv)
     int i, c;
     pid_t pid;
     std::string execFile;
-    ElfObject::sptr exec;
+    Elf::Object::sptr exec;
     DwarfImageCache imageCache;
     int sleepTime = 0;
     PstackOptions options;
@@ -90,17 +90,17 @@ emain(int argc, char **argv)
     while ((c = getopt(argc, argv, "b:d:D:hjsVvag:pt")) != -1) {
         switch (c) {
         case 'g':
-            globalDebugDirectories.add(optarg);
+            Elf::globalDebugDirectories.add(optarg);
             break;
         case 'D': {
-            auto dumpobj = std::make_shared<ElfObject>(imageCache, loadFile(optarg));
+            auto dumpobj = std::make_shared<Elf::Object>(imageCache, loadFile(optarg));
             DwarfInfo di(dumpobj, imageCache);
             std::cout << json(di);
             return 0;
         }
         case 'd': {
             /* Undocumented option to dump image contents */
-            std::cout << json(ElfObject(imageCache, loadFile(optarg)));
+            std::cout << json(Elf::Object(imageCache, loadFile(optarg)));
             return 0;
         }
         case 'h':
@@ -160,9 +160,9 @@ emain(int argc, char **argv)
                if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
                    // It's a file: should be ELF, treat core and exe differently
                    // Don't put cores in the cache
-                   auto obj = std::make_shared<ElfObject>(imageCache, loadFile(argv[i]));
+                   auto obj = std::make_shared<Elf::Object>(imageCache, loadFile(argv[i]));
 
-                   if (obj->getElfHeader().e_type == ET_CORE) {
+                   if (obj->getHeader().e_type == ET_CORE) {
                        CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
                        doStack(proc);
                    } else {

@@ -23,7 +23,7 @@ procname(pid_t pid, const std::string &base)
 LiveReader::LiveReader(pid_t pid, const std::string &base)
    : FileReader(procname(pid, base)) {}
 
-LiveProcess::LiveProcess(ElfObject::sptr &ex, pid_t pid_,
+LiveProcess::LiveProcess(Elf::Object::sptr &ex, pid_t pid_,
             const PathReplacementList &repls, DwarfImageCache &imageCache)
     : Process(
             ex ? ex : imageCache.getImageForName(procname(pid_, "exe")),
@@ -44,7 +44,7 @@ LiveProcess::load(const PstackOptions &options)
 }
 
 bool
-LiveProcess::getRegs(lwpid_t pid, CoreRegisters *reg)
+LiveProcess::getRegs(lwpid_t pid, Elf::CoreRegisters *reg)
 {
 #ifdef __FreeBSD__
     int rc;

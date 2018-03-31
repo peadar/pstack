@@ -65,7 +65,7 @@ ps_pread(struct ps_prochandle *ph, psaddr_t addr, void *buf, size_t len)
 {
     auto *p = static_cast<const Process *>(ph);
     try {
-        p->io->readObj(Elf_Off(addr), (char *)buf, len);
+        p->io->readObj(Elf::Off(addr), (char *)buf, len);
         return PS_OK;
     }
     catch (...) {
@@ -102,7 +102,7 @@ ps_err_e
 ps_pdread(struct ps_prochandle *p, psaddr_t addr, void *d, size_t l)
 {
     try {
-        static_cast<Process *>(p)->io->readObj(Elf_Off(addr), (char *)d, l);
+        static_cast<Process *>(p)->io->readObj(Elf::Off(addr), (char *)d, l);
         return PS_OK;
     }
     catch (...) {
@@ -156,7 +156,7 @@ ps_err_e ps_lgetfpregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */
 ps_err_e ps_lgetregs(struct ps_prochandle *ph, lwpid_t pid, prgregset_t gregset)
 {
     auto p = static_cast<Process *>(ph);
-    return p->getRegs(pid, (CoreRegisters *)gregset) ? PS_OK : PS_ERR;
+    return p->getRegs(pid, (Elf::CoreRegisters *)gregset) ? PS_OK : PS_ERR;
 }
 
 ps_err_e ps_lsetfpregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */, const prfpregset_t * /* unused */)

@@ -130,7 +130,7 @@ union DwarfValue {
 
 std::ostream &operator << (std::ostream &os, const JSON<DwarfInfo> &);
 
-const DwarfEntry *findEntryForFunc(Elf_Addr address, const DwarfEntry *entry);
+const DwarfEntry *findEntryForFunc(Elf::Addr address, const DwarfEntry *entry);
 
 class DwarfAttribute {
     const DwarfAttributeSpec *spec; /* From abbrev table attached to type */
@@ -255,11 +255,11 @@ public:
 struct DwarfFDE {
     uintmax_t iloc;
     uintmax_t irange;
-    Elf_Off instructions;
-    Elf_Off end;
-    Elf_Off cieOff;
+    Elf::Off instructions;
+    Elf::Off end;
+    Elf::Off cieOff;
     std::vector<unsigned char> augmentation;
-    DwarfFDE(DwarfFrameInfo *, DWARFReader &, Elf_Off cieOff_, Elf_Off endOff_);
+    DwarfFDE(DwarfFrameInfo *, DWARFReader &, Elf::Off cieOff_, Elf::Off endOff_);
 };
 
 enum DwarfRegisterType {
@@ -301,28 +301,28 @@ struct DwarfCIE {
     unsigned codeAlign;
     int dataAlign;
     int rar;
-    Elf_Off instructions;
-    Elf_Off end;
+    Elf::Off instructions;
+    Elf::Off end;
     uintmax_t personality;
     std::string augmentation;
-    DwarfCIE(const DwarfFrameInfo *, DWARFReader &, Elf_Off);
+    DwarfCIE(const DwarfFrameInfo *, DWARFReader &, Elf::Off);
     DwarfCIE() {}
     DwarfCallFrame execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const;
 };
 
 struct DwarfFrameInfo {
     const DwarfInfo *dwarf;
-    Elf_Word sectionAddr; // virtual address of this section  (may need to be offset by load address)
+    Elf::Word sectionAddr; // virtual address of this section  (may need to be offset by load address)
     Reader::csptr io;
     FIType type;
-    std::map<Elf_Addr, DwarfCIE> cies;
+    std::map<Elf::Addr, DwarfCIE> cies;
     std::list<DwarfFDE> fdeList;
-    DwarfFrameInfo(DwarfInfo *, const ElfSection &, FIType);
+    DwarfFrameInfo(DwarfInfo *, const Elf::Section &, FIType);
     DwarfFrameInfo() = delete;
     DwarfFrameInfo(const DwarfFrameInfo &) = delete;
-    Elf_Addr decodeCIEFDEHdr(DWARFReader &, FIType, Elf_Off *cieOff); // cieOFF set to -1 if this is CIE, set to offset of associated CIE for an FDE
-    const DwarfFDE *findFDE(Elf_Addr) const;
-    bool isCIE(Elf_Addr);
+    Elf::Addr decodeCIEFDEHdr(DWARFReader &, FIType, Elf::Off *cieOff); // cieOFF set to -1 if this is CIE, set to offset of associated CIE for an FDE
+    const DwarfFDE *findFDE(Elf::Addr) const;
+    bool isCIE(Elf::Addr);
     intmax_t decodeAddress(DWARFReader &, int encoding) const;
 };
 
@@ -337,8 +337,8 @@ public:
     typedef std::shared_ptr<DwarfInfo> sptr;
     typedef std::shared_ptr<const DwarfInfo> csptr;
     Reader::csptr info;
-    std::map<Elf_Addr, DwarfCallFrame> callFrameForAddr;
-    ElfObject::sptr elf;
+    std::map<Elf::Addr, DwarfCallFrame> callFrameForAddr;
+    Elf::Object::sptr elf;
     std::unique_ptr<DwarfFrameInfo> debugFrame;
     std::unique_ptr<DwarfFrameInfo> ehFrame;
     Reader::csptr debugStrings;
@@ -349,7 +349,7 @@ public:
     const std::list<DwarfPubnameUnit> &pubnames() const;
     DwarfUnit::sptr getUnit(off_t offset);
     std::list<DwarfUnit::sptr> getUnits() const;
-    DwarfInfo(ElfObject::sptr, DwarfImageCache &);
+    DwarfInfo(Elf::Object::sptr, DwarfImageCache &);
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
 
     ~DwarfInfo();
@@ -360,7 +360,7 @@ private:
     mutable std::list<DwarfARangeSet> aranges;
     // These are mutable so we can lazy-eval them when getters are called, and
     // maintain logical constness.
-    mutable std::map<Elf_Off, DwarfUnit::sptr> unitsm;
+    mutable std::map<Elf::Off, DwarfUnit::sptr> unitsm;
     mutable DwarfInfo::sptr altDwarf;
     mutable bool altImageLoaded;
     DwarfImageCache &imageCache;
@@ -370,15 +370,15 @@ private:
 
 /*
  * A Dwarf Image Cache is an (Elf) Image Cache, but caches DwarfInfo for the
- * ElfObjects also.
+ * Objects also.
  */
-class DwarfImageCache : public ImageCache {
+class DwarfImageCache : public Elf::ImageCache {
     int dwarfHits;
     int dwarfLookups;
-    std::map<ElfObject::sptr, DwarfInfo::sptr> dwarfCache;
+    std::map<Elf::Object::sptr, DwarfInfo::sptr> dwarfCache;
 public:
     DwarfInfo::sptr getDwarf(const std::string &);
-    DwarfInfo::sptr getDwarf(ElfObject::sptr);
+    DwarfInfo::sptr getDwarf(Elf::Object::sptr);
     DwarfImageCache();
     ~DwarfImageCache();
 };
@@ -396,14 +396,14 @@ enum DwarfCFAInstruction {
  * encodings from the underlying reader, advancing the offset as it does so.
  */
 class DWARFReader {
-    Elf_Off off;
-    Elf_Off end;
+    Elf::Off off;
+    Elf::Off end;
     uintmax_t getuleb128shift(int *shift, bool &isSigned);
 public:
     Reader::csptr io;
     unsigned addrLen;
 
-    DWARFReader(Reader::csptr io_, Elf_Off off_ = 0, size_t end_ = std::numeric_limits<size_t>::max())
+    DWARFReader(Reader::csptr io_, Elf::Off off_ = 0, size_t end_ = std::numeric_limits<size_t>::max())
         : off(off_)
         , end(end_ == std::numeric_limits<size_t>::max() ? io_->size() : end_)
         , io(std::move(io_))
@@ -480,17 +480,17 @@ public:
         off += s.size() + 1;
         return s;
     }
-    Elf_Off getOffset() const { return off; }
-    Elf_Off getLimit() const { return end; }
-    void setOffset(Elf_Off off_) {
+    Elf::Off getOffset() const { return off; }
+    Elf::Off getLimit() const { return end; }
+    void setOffset(Elf::Off off_) {
        assert(end >= off_);
        off = off_;
     }
     bool empty() const {
        return off == end;
     }
-    Elf_Off getlength(size_t *);
-    void skip(Elf_Off amount) { off += amount; }
+    Elf::Off getlength(size_t *);
+    void skip(Elf::Off amount) { off += amount; }
 };
 
 #define DWARF_OP(op, value, args) op = value,

@@ -3,7 +3,7 @@
 #include <python2.7/longintrepr.h>
 
 struct PythonPrinter;
-typedef Elf_Addr (*python_printfunc)(const PyObject *pyo, const PyTypeObject *, PythonPrinter *pc, Elf_Addr);
+typedef Elf::Addr (*python_printfunc)(const PyObject *pyo, const PyTypeObject *, PythonPrinter *pc, Elf::Addr);
 struct PyPrinterEntry {
     python_printfunc printer;
     bool dupdetect;
@@ -12,22 +12,22 @@ struct PyPrinterEntry {
 
 struct PythonPrinter {
     void addPrinter(const char *symbol, python_printfunc func, bool dupDetect);
-    void print(Elf_Addr remoteAddr);
-    std::map<Elf_Addr, PyTypeObject> types;
+    void print(Elf::Addr remoteAddr);
+    std::map<Elf::Addr, PyTypeObject> types;
 
     PythonPrinter(Process &proc_, std::ostream &os_, const PstackOptions &);
     const char *prefix() const;
     void printStacks();
-    Elf_Addr printThread(Elf_Addr);
-    Elf_Addr printInterp(Elf_Addr);
+    Elf::Addr printThread(Elf::Addr);
+    Elf::Addr printInterp(Elf::Addr);
 
     Process &proc;
     std::ostream &os;
-    std::set<Elf_Addr> visited;
+    std::set<Elf::Addr> visited;
     mutable int depth;
-    Elf_Addr interp_head;
+    Elf::Addr interp_head;
     Process::LoadedObject *libPython;
-    std::map<Elf_Addr, PyPrinterEntry> printers;
+    std::map<Elf::Addr, PyPrinterEntry> printers;
     PyPrinterEntry *heapPrinter;
     const PstackOptions &options;
 };

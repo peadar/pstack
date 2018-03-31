@@ -45,8 +45,8 @@ dwarfDumpCFAInsn(std::ostream &os, DWARFReader *r)
 
     JObject jo(os);
 
-    Elf_Off len;
-    Elf_Word reg;
+    Elf::Off len;
+    Elf::Word reg;
 
     DwarfCFAInstruction insn;
     uint8_t op = r->getu8();
@@ -449,13 +449,13 @@ operator << (std::ostream &os, const JSON<DwarfFDE, const DwarfFrameInfo*> &dfi)
     ;
 }
 
-struct ElfAddrStr {
-   Elf_Addr addr;
-   explicit ElfAddrStr(Elf_Addr addr_) : addr(addr_) {}
+struct AddrStr {
+    Elf::Addr addr;
+   explicit AddrStr(Elf::Addr addr_) : addr(addr_) {}
 };
 
 std::ostream &
-operator << (std::ostream &os, const JSON<ElfAddrStr> &addr)
+operator << (std::ostream &os, const JSON<AddrStr> &addr)
 {
    return os << '"' << addr.object.addr << '"';
 }
@@ -464,7 +464,7 @@ operator << (std::ostream &os, const JSON<ElfAddrStr> &addr)
 std::ostream &
 operator << (std::ostream &os, const JSON<DwarfFrameInfo> &info)
 {
-    Mapper<ElfAddrStr, decltype(info.object.cies)::mapped_type, decltype(info.object.cies)> ciesByString(info.object.cies);
+    Mapper<AddrStr, decltype(info.object.cies)::mapped_type, decltype(info.object.cies)> ciesByString(info.object.cies);
     return JObject(os)
         .field("cielist", ciesByString, &info.object)
         .field("fdelist", info.object.fdeList, &info.object);
@@ -484,7 +484,7 @@ operator << (std::ostream &os, const JSON<DwarfInfo> &di)
     return writer;
 }
 
-std::ostream &operator << (std::ostream &os, const JSON<ElfNoteDesc> &note)
+std::ostream &operator << (std::ostream &os, const JSON<Elf::NoteDesc> &note)
 {
     JObject writer(os);
     writer.field("name", note->name()).field("type", note->type());
@@ -499,7 +499,7 @@ std::ostream &operator << (std::ostream &os, const JSON<ElfNoteDesc> &note)
                 writer.field("prstatus", prstatus);
                 break;
             case NT_AUXV:
-                writer.field("auxv", ReaderArray<Elf_auxv_t>(*data));
+                writer.field("auxv", ReaderArray<Elf::auxv_t>(*data));
                 break;
         }
     }
@@ -536,7 +536,7 @@ std::ostream &operator << (std::ostream &os, const JSON<ProgramHeaderName> &ph)
 /*
  * Debug output of an ELF32 object.
  */
-std::ostream &operator<< (std::ostream &os, const JSON<ElfObject> &elf)
+std::ostream &operator<< (std::ostream &os, const JSON<Elf::Object> &elf)
 {
     static const char *typeNames[] = {
          "ET_NONE",
@@ -562,10 +562,10 @@ std::ostream &operator<< (std::ostream &os, const JSON<ElfObject> &elf)
         "OpenBSD"
     };
 
-    auto &ehdr = elf->getElfHeader();
+    auto &ehdr = elf->getHeader();
     auto brand = ehdr.e_ident[EI_OSABI];
 
-    Mapper<ProgramHeaderName, decltype(elf->programHeaders)::mapped_type, std::map<Elf_Word, ElfObject::ProgramHeaders>> mappedSegments(elf->programHeaders);
+    Mapper<ProgramHeaderName, decltype(elf->programHeaders)::mapped_type, std::map<Elf::Word, Elf::Object::ProgramHeaders>> mappedSegments(elf->programHeaders);
     return JObject(os)
         .field("type", typeNames[ehdr.e_type])
         .field("entry", ehdr.e_entry)
@@ -581,8 +581,8 @@ std::ostream &operator<< (std::ostream &os, const JSON<ElfObject> &elf)
        const char *sep = "";
        off_t dynoff = seg.p_offset;
        off_t edyn = dynoff + seg.p_filesz;
-       for (; dynoff < edyn; dynoff += sizeof (Elf_Dyn)) {
-       Elf_Dyn dyn;
+       for (; dynoff < edyn; dynoff += sizeof (Elf::Dyn)) {
+       Elf::Dyn dyn;
        obj.io->readObj(dynoff, &dyn);
        os << sep << dyn;
        sep = ",\n";
@@ -602,7 +602,7 @@ operator <<(std::ostream &os, const JSON<timeval> &tv)
 }
 
 std::ostream &
-operator <<(std::ostream &os, const JSON<Elf_auxv_t> &a)
+operator <<(std::ostream &os, const JSON<Elf::auxv_t> &a)
 {
     JObject writer(os);
 
@@ -616,7 +616,7 @@ operator <<(std::ostream &os, const JSON<Elf_auxv_t> &a)
 }
 
 std::ostream &
-operator <<(std::ostream &os, const JSON<Elf_Rela> &rela)
+operator <<(std::ostream &os, const JSON<Elf::Rela> &rela)
 {
    return JObject(os)
       .field("r_offset", rela->r_offset)
@@ -626,7 +626,7 @@ operator <<(std::ostream &os, const JSON<Elf_Rela> &rela)
 
 const struct sh_flag_names {
     const char *name;
-    Elf_Word value;
+    Elf::Word value;
 } sh_flag_names[] = {
 #define SHF_FLAG(f) { .name = #f, .value = (f) },
     SHF_FLAG(SHF_WRITE)
@@ -645,14 +645,16 @@ const struct sh_flag_names {
     SHF_FLAG(SHF_MASKOS)
     SHF_FLAG(SHF_MASKPROC)
     SHF_FLAG(SHF_ORDERED)
-    SHF_FLAG((Elf_Word)SHF_EXCLUDE)
+    SHF_FLAG((Elf::Word)SHF_EXCLUDE)
 };
 
 /*
  * Debug output of an Elf symbol.
  */
 std::ostream &
-operator<< (std::ostream &os, const JSON<Elf_Sym, std::tuple<const ElfObject &, const ElfSection &> *> &t)
+operator<< (std::ostream &os,
+        const JSON<Elf::Sym,
+        std::tuple<const Elf::Object &, const Elf::Section &> *> &t)
 {
     auto &obj = std::get<0>(*t.context);
     auto &sec = std::get<1>(*t.context);
@@ -717,14 +719,14 @@ sectionTypeName(intmax_t sectionType)
 }
 
 std::ostream &
-operator <<(std::ostream &os, const JSON<ElfSection, const ElfObject *> &jsection)
+operator <<(std::ostream &os, const JSON<Elf::Section, const Elf::Object *> &jsection)
 {
     JObject writer(os);
 
     auto &o = *jsection.context;
     const auto sec = jsection.object;
-    auto strs = o.getSection(o.getElfHeader().e_shstrndx);
-    const Elf_Shdr &sh = sec.shdr;
+    auto strs = o.getSection(o.getHeader().e_shstrndx);
+    const Elf::Shdr &sh = sec.shdr;
 
     // Secions that have content that's raw text.
     static std::set<std::string> textContent = {
@@ -758,11 +760,11 @@ operator <<(std::ostream &os, const JSON<ElfSection, const ElfObject *> &jsectio
         case SHT_SYMTAB:
         case SHT_DYNSYM: {
             auto context = std::make_tuple(std::ref(o), std::ref(sec));
-            writer.field("symbols", ReaderArray<Elf_Sym>(*sec.io), &context);
+            writer.field("symbols", ReaderArray<Elf::Sym>(*sec.io), &context);
             break;
         }
         case SHT_RELA:
-            writer.field("reloca", ReaderArray<Elf_Rela>(*sec.io));
+            writer.field("reloca", ReaderArray<Elf::Rela>(*sec.io));
             break;
     }
 
@@ -779,7 +781,7 @@ operator <<(std::ostream &os, const JSON<ElfSection, const ElfObject *> &jsectio
  * Debug output of an ELF32 program segment
  */
 template <typename C> std::ostream &
-operator<< (std::ostream &os, const JSON<Elf_Phdr, C> &phdr)
+operator<< (std::ostream &os, const JSON<Elf::Phdr, C> &phdr)
 {
     JObject writer(os);
 
@@ -804,8 +806,8 @@ operator<< (std::ostream &os, const JSON<Elf_Phdr, C> &phdr)
 }
 
 struct DynTag {
-    Elf_Sword tag;
-    explicit DynTag(Elf_Sword tag_) : tag(tag_) {}
+    Elf::Sword tag;
+    explicit DynTag(Elf::Sword tag_) : tag(tag_) {}
 };
 
 std::ostream &
@@ -820,7 +822,7 @@ operator << (std::ostream &os, const JSON<DynTag> &tag)
 }
 
 std::ostream &
-operator<< (std::ostream &os, const JSON<Elf_Dyn> &d)
+operator<< (std::ostream &os, const JSON<Elf::Dyn> &d)
 {
     return JObject(os)
         .field("tag", DynTag(d->d_tag))

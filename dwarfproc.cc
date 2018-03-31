@@ -7,7 +7,7 @@
 #include <stack>
 
 void
-StackFrame::setCoreRegs(const CoreRegisters &sys)
+StackFrame::setCoreRegs(const Elf::CoreRegisters &sys)
 {
 #define REGMAP(number, field) setReg(number, sys.field);
 #include "libpstack/dwarf/archreg.h"
@@ -15,7 +15,7 @@ StackFrame::setCoreRegs(const CoreRegisters &sys)
 }
 
 void
-StackFrame::getCoreRegs(CoreRegisters &core) const
+StackFrame::getCoreRegs(Elf::CoreRegisters &core) const
 {
 #define REGMAP(number, field) core.field = getReg(number);
 #include "libpstack/dwarf/archreg.h"
@@ -33,8 +33,8 @@ StackFrame::getFrameBase(const Process &p, intmax_t offset, DwarfExpressionStack
    stack->push(stack->eval(p, attr, this, elfReloc) + offset);
 }
 
-Elf_Addr
-DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, const StackFrame *frame, Elf_Addr reloc)
+    Elf::Addr
+DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, const StackFrame *frame, Elf::Addr reloc)
 {
     const DwarfInfo *dwarf = attr->entry->unit->dwarf;
     switch (attr->form()) {
@@ -46,7 +46,7 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
             auto unitLow = unitEntry.attrForName(DW_AT_low_pc);
 #ifndef NDEBUG
             auto unitHigh = unitEntry.attrForName(DW_AT_high_pc);
-            Elf_Addr endAddr;
+            Elf::Addr endAddr;
             if (unitHigh) {
                switch (unitHigh->form()) {
                    case DW_FORM_addr:
@@ -61,17 +61,17 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
                assert(objIp >= uintmax_t(*unitLow) && objIp < endAddr);
             }
 #endif
-            Elf_Addr unitIp = objIp - uintmax_t(*unitLow);
+            Elf::Addr unitIp = objIp - uintmax_t(*unitLow);
 
             DWARFReader r(sec.io, uintmax_t(*attr));
             for (;;) {
-                Elf_Addr start = r.getint(sizeof start);
-                Elf_Addr end = r.getint(sizeof end);
+                Elf::Addr start = r.getint(sizeof start);
+                Elf::Addr end = r.getint(sizeof end);
                 if (start == 0 && end == 0)
                     return 0;
                 auto len = r.getuint(2);
                 if (unitIp >= start && unitIp < end) {
-                    DWARFReader exr(r.io, r.getOffset(), r.getOffset() + Elf_Word(len));
+                    DWARFReader exr(r.io, r.getOffset(), r.getOffset() + Elf::Word(len));
                     return eval(proc, exr, frame, frame->elfReloc);
                 }
                 r.skip(len);
@@ -91,8 +91,8 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
     }
 }
 
-Elf_Addr
-DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *frame, Elf_Addr reloc)
+    Elf::Addr
+DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *frame, Elf::Addr reloc)
 {
     isReg = false;
     while (!r.empty()) {
@@ -100,7 +100,7 @@ DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame
         switch (op) {
             case DW_OP_deref: {
                 intmax_t addr = poptop();
-                Elf_Addr value;
+                Elf::Addr value;
                 proc.io->readObj(addr, &value);
                 push(intptr_t(value));
                 break;
@@ -132,15 +132,15 @@ DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame
             }
 
             case DW_OP_minus: {
-                Elf_Addr tos = poptop();
-                Elf_Addr second = poptop();
+                Elf::Addr tos = poptop();
+                Elf::Addr second = poptop();
                 push(second - tos);
                 break;
             }
 
             case DW_OP_plus: {
-                Elf_Addr tos = poptop();
-                Elf_Addr second = poptop();
+                Elf::Addr tos = poptop();
+                Elf::Addr second = poptop();
                 push(second + tos);
                 break;
             }
@@ -153,7 +153,7 @@ DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame
             case DW_OP_breg20: case DW_OP_breg21: case DW_OP_breg22: case DW_OP_breg23:
             case DW_OP_breg24: case DW_OP_breg25: case DW_OP_breg26: case DW_OP_breg27:
             case DW_OP_breg28: case DW_OP_breg29: case DW_OP_breg30: case DW_OP_breg31: {
-                Elf_Off offset = r.getsleb128();
+                Elf::Off offset = r.getsleb128();
                 push(frame->getReg(op - DW_OP_breg0) + offset);
                 break;
             }
@@ -169,71 +169,71 @@ DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame
                 break;
 
             case DW_OP_and: {
-                Elf_Addr lhs = poptop();
-                Elf_Addr rhs = poptop();
+                Elf::Addr lhs = poptop();
+                Elf::Addr rhs = poptop();
                 push(lhs & rhs);
                 break;
             }
 
             case DW_OP_or: {
-                Elf_Addr lhs = poptop();
-                Elf_Addr rhs = poptop();
+                Elf::Addr lhs = poptop();
+                Elf::Addr rhs = poptop();
                 push(lhs | rhs);
                 break;
             }
 
             case DW_OP_le: {
-                Elf_Addr rhs = poptop();
-                Elf_Addr lhs = poptop();
+                Elf::Addr rhs = poptop();
+                Elf::Addr lhs = poptop();
                 push(value_type(lhs <= rhs));
                 break;
             }
 
             case DW_OP_ge: {
-                Elf_Addr rhs = poptop();
-                Elf_Addr lhs = poptop();
+                Elf::Addr rhs = poptop();
+                Elf::Addr lhs = poptop();
                 push(value_type(lhs >= rhs));
                 break;
             }
 
             case DW_OP_eq: {
-                Elf_Addr rhs = poptop();
-                Elf_Addr lhs = poptop();
+                Elf::Addr rhs = poptop();
+                Elf::Addr lhs = poptop();
                 push(value_type(lhs == rhs));
                 break;
             }
 
             case DW_OP_lt: {
-                Elf_Addr rhs = poptop();
-                Elf_Addr lhs = poptop();
+                Elf::Addr rhs = poptop();
+                Elf::Addr lhs = poptop();
                 push(value_type(lhs < rhs));
                 break;
             }
 
             case DW_OP_gt: {
-                Elf_Addr rhs = poptop();
-                Elf_Addr lhs = poptop();
+                Elf::Addr rhs = poptop();
+                Elf::Addr lhs = poptop();
                 push(value_type(lhs > rhs));
                 break;
             }
 
             case DW_OP_ne: {
-                Elf_Addr rhs = poptop();
-                Elf_Addr lhs = poptop();
+                Elf::Addr rhs = poptop();
+                Elf::Addr lhs = poptop();
                 push(value_type(lhs != rhs));
                 break;
             }
 
             case DW_OP_shl: {
-                Elf_Addr rhs = poptop();
-                Elf_Addr lhs = poptop();
+                Elf::Addr rhs = poptop();
+                Elf::Addr lhs = poptop();
                 push(lhs << rhs);
                 break;
             }
 
             case DW_OP_shr: {
-                Elf_Addr rhs = poptop();
-                Elf_Addr lhs = poptop();
+                Elf::Addr rhs = poptop();
+                Elf::Addr lhs = poptop();
                 push(lhs >> rhs);
                 break;
             }
@@ -285,7 +285,7 @@ DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame
     return poptop();
 }
 
-Elf_Addr
+Elf::Addr
 StackFrame::getCFA(const Process &proc, const DwarfCallFrame &dcf) const
 {
     switch (dcf.cfaValue.type) {
@@ -318,7 +318,7 @@ StackFrame::unwind(Process &p)
     elf = p.findObject(ip, &elfReloc);
     if (!elf)
         throw (Exception() << "no image for instruction address " << std::hex << ip);
-    Elf_Off objaddr = ip - elfReloc; // relocate process address to object address
+    Elf::Off objaddr = ip - elfReloc; // relocate process address to object address
     // Try and find DWARF data with debug frame information, or an eh_frame section.
         dwarf = p.getDwarf(elf);
     if (dwarf) {
@@ -363,7 +363,7 @@ StackFrame::unwind(Process &p)
                 out->setReg(regno, getReg(regno));
                 break;
             case OFFSET: {
-                Elf_Addr reg; // XXX: assume addrLen = sizeof Elf_Addr
+                Elf::Addr reg; // XXX: assume addrLen = sizeof Elf_Addr
                 p.io->readObj(cfa + unwind.u.offset, &reg);
                 out->setReg(regno, reg);
                 break;
