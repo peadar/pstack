@@ -1,14 +1,19 @@
+#define _GNU_SOURCE
+#include <features.h>
 #include <stdlib.h>
 #include <ucontext.h>
-#include <sys/ucontext.h>
 #include <signal.h>
 #include <string.h>
+#include <stdio.h>
 #include <unistd.h>
+#include <sys/user.h>
 
 void
 sigsegv(int segv, siginfo_t *info, void *ctxv)
 {
-    struct ucontext_t *ctx = ctx;
+    ucontext_t *ctx = ctxv;
+    struct user_regs_struct *urs = (struct user_regs_struct *)ctx->uc_mcontext.gregs;
+    fprintf(stderr, "%x\n", ctx->uc_mcontext.gregs[REG_EAX]);
     abort();
 }
 

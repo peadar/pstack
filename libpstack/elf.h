@@ -193,11 +193,6 @@ public:
     const Elf_Phdr *getSegmentForAddress(Elf_Off) const;
     ElfNotes notes;
 
-#ifdef __i386__
-    enum TrampolineType { RESTORE_RT, RESTORE };
-    std::map<Elf_Addr, TrampolineType> trampolines;
-#endif
-
 private:
     // Elf header, section headers, program headers.
     Elf_Ehdr elfHeader;
@@ -213,6 +208,12 @@ private:
     std::unique_ptr<ElfSymHash> hash; // Symbol hash table.
     ElfObject *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
     friend std::ostream &operator<< (std::ostream &, const JSON<ElfObject> &);
+    struct CachedSymbol {
+        enum { SYM_FOUND, SYM_NOTFOUND, SYM_NEW } disposition;
+        Elf_Sym sym;
+        CachedSymbol() : disposition { SYM_NEW } {}
+    };
+    std::map<std::string, CachedSymbol> cachedSymbols;
 };
 
 /*

@@ -132,19 +132,6 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
     } else {
         hash = nullptr;
     }
-
-#ifdef __i386__
-    Elf_Sym symbol;
-    if (findSymbolByName("__restore_rt", symbol)) {
-        trampolines[symbol.st_value] = RESTORE_RT;
-        std::clog << "found __restore_rt trampoline in " << *io << std::endl;
-    }
-    if (findSymbolByName("__restore", symbol)) {
-        trampolines[symbol.st_value] = RESTORE;
-        std::clog << "found __restore trampoline in " << *io << std::endl;
-    }
-    std::clog << "checked " << *io << " for trampolines" << std::endl;
-#endif
 }
 
 const Elf_Phdr *
@@ -254,20 +241,46 @@ ElfObject::getSymbols(const std::string &tableName)
     return SymbolSection(table.io, strings.io);
 }
 
+
+static int symcacheAccess = 0;
+static int symcacheHit = 0;
+static struct X {
+    ~X() {
+        if (symcacheAccess)
+            std::clog
+                << "symcache: access " << symcacheAccess
+                << ", hit: " << symcacheHit
+                << ", rate: " << symcacheHit / symcacheAccess
+                << std::endl;
+    }
+} x;
 /*
  * Locate a named symbol in an ELF image.
  */
 bool
 ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
 {
-    if (hash && hash->findSymbol(sym, name))
-        return true;
-    for (const char *sec : { ".dynsym", ".symtab" }) {
-        SymbolSection sect = getSymbols(sec);
-        if (sect.linearSearch(name, sym))
-            return true;
+    auto &syment = cachedSymbols[name];
+
+    auto findUncached  = [&](Elf_Sym &sym) {
+        if (hash && hash->findSymbol(sym, name))
+            return CachedSymbol::SYM_FOUND;
+
+        for (const char *sec : { ".dynsym", ".symtab" }) {
+            SymbolSection sect = getSymbols(sec);
+            if (sect.linearSearch(name, sym))
+                return CachedSymbol::SYM_FOUND;
+        }
+        return CachedSymbol::SYM_NOTFOUND;
+    };
+    symcacheAccess++;
+    if (syment.disposition == CachedSymbol::SYM_NEW) {
+        syment.disposition = findUncached(syment.sym);
+    } else {
+        symcacheHit++;
     }
-    return debugData ? debugData->findSymbolByName(name, sym) : false;
+    sym = syment.sym;
+    return syment.disposition == CachedSymbol::SYM_FOUND;
 }
 
 ElfObject::~ElfObject() = default;

@@ -1,3 +1,5 @@
+#include <features.h>
+
 #define REGMAP(a,b)
 #include "libpstack/dwarf/archreg.h"
 #include "libpstack/dwarf.h"
@@ -14,6 +16,7 @@
 #include <iostream>
 #include <limits>
 #include <set>
+#include <sys/ucontext.h>
 
 static size_t gMaxFrames = 1024; /* max number of frames to read */
 
@@ -755,9 +758,43 @@ ThreadStack::unwind(Process &p, CoreRegisters &regs)
                     Elf_Addr reloc;
                     auto obj = p.findObject(prevFrame->ip, &reloc);
                     if (obj) {
-                        auto it = obj->trampolines.find(prevFrame->ip - reloc);
-                        if (it != obj->trampolines.end())
-                            std::clog << "found a trampoline!" << std::endl;
+                        Elf_Sym symbol;
+                        Elf_Addr sigContextAddr;
+                        auto objip = prevFrame->ip - reloc;
+                        if (obj->findSymbolByName("__restore", symbol) && objip == symbol.st_value)
+                            sigContextAddr = prevFrame->getReg(SPREG) + 4;
+                        else if (obj->findSymbolByName("__restore_rt", symbol) && objip == symbol.st_value)
+                            sigContextAddr = p.io->readObj<Elf_Addr>(prevFrame->getReg(SPREG) + 8) + 20;
+                        else
+                            throw;
+                        // This mapping is based on DWARF regnos, and ucontext.h
+                        gregset_t regs;
+                        static const struct {
+                            int dwarf;
+                            int greg;
+                        }  gregmap[] = {
+                            { 1, REG_EAX },
+                            { 2, REG_ECX },
+                            { 3, REG_EBX },
+                            { 4, REG_ESP },
+                            { 5, REG_EBP },
+                            { 6, REG_ESI },
+                            { 7, REG_EDI },
+                            { 8, REG_EIP },
+                            { 9, REG_EFL },
+                            { 10, REG_CS },
+                            { 11, REG_SS },
+                            { 12, REG_DS },
+                            { 13, REG_ES },
+                            { 14, REG_FS }
+                        };
+                        p.io->readObj(sigContextAddr, &regs);
+                        frame = new StackFrame();
+                        *frame = *prevFrame;
+                        for (auto &reg : gregmap)
+                            frame->setReg(reg.dwarf, regs[reg.greg]);
+                        frame->ip = regs[REG_EIP];
+                        continue;
                     }
                 }
 #endif
