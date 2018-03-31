@@ -60,7 +60,7 @@ DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
 }
 
 static std::shared_ptr<const Reader>
-sectionReader(const ElfObject &obj, const char *name)
+sectionReader(ElfObject &obj, const char *name)
 {
     return obj.getSection(name, SHT_PROGBITS).io;
 }
@@ -720,7 +720,7 @@ DwarfFrameInfo::decodeAddress(DWARFReader &f, int encoding) const
     case 0:
         break;
     case DW_EH_PE_pcrel:
-        base += offset + dwarf->elf->getBase() + sectionOffset;
+        base += offset + sectionAddr;
         break;
     }
     return base;
@@ -770,7 +770,7 @@ DwarfFrameInfo::isCIE(Elf_Addr cieid)
 
 DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, const ElfSection& section, enum FIType type_)
     : dwarf(info)
-    , sectionOffset(section.shdr.sh_offset)
+    , sectionAddr(section.shdr.sh_addr)
     , io(section.io)
     , type(type_)
 {
@@ -831,9 +831,9 @@ DwarfInfo::sourceFromAddr(uintmax_t addr)
                 }
             }
         }
-    } else {
-        units = getUnits();
     }
+    if (units.empty())
+        units = getUnits();
     for (const auto &unit : units) {
         for (auto i = unit->lines.matrix.begin(); i != unit->lines.matrix.end(); ++i) {
             if (i->end_sequence)

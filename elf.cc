@@ -21,7 +21,6 @@ using std::shared_ptr;
 std::ostream *debug = &std::clog;
 int verbose = 0;
 static uint32_t elf_hash(const string &text);
-bool noDebugLibs;
 
 GlobalDebugDirectories globalDebugDirectories;
 GlobalDebugDirectories::GlobalDebugDirectories() throw()
@@ -66,6 +65,13 @@ ElfNoteDesc::size() const
    return note.n_descsz;
 }
 
+std::pair<const Elf_Sym, const string>
+SymbolIterator::operator *()
+{
+    auto sym = sec->symbols->readObj<Elf_Sym>(off);
+    string name = sec->strings->readString(sym.st_name);
+    return std::make_pair(sym, name);
+}
 
 ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
     : io(std::move(io_))
@@ -87,10 +93,14 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
         off += elfHeader.e_phentsize;
     }
 
-    sectionHeaders.resize(elfHeader.e_shnum);
-    for (off = elfHeader.e_shoff, i = 0; i < elfHeader.e_shnum; i++) {
-        sectionHeaders[i].open(io, off);
-        off += elfHeader.e_shentsize;
+    if (elfHeader.e_shnum == 0) {
+        sectionHeaders.push_back(ElfSection());
+    } else {
+        sectionHeaders.resize(elfHeader.e_shnum);
+        for (off = elfHeader.e_shoff, i = 0; i < elfHeader.e_shnum; i++) {
+            sectionHeaders[i].open(io, off);
+            off += elfHeader.e_shentsize;
+        }
     }
 
     if (elfHeader.e_shstrndx != SHN_UNDEF) {
@@ -115,8 +125,8 @@ ElfObject::ElfObject(ImageCache &cache, shared_ptr<const Reader> io_)
             }
         }
         auto &tab = getSection(".hash", SHT_HASH);
-        auto &syms = getSection(tab.shdr.sh_link);
-        auto &strings = getSection(syms.shdr.sh_link);
+        auto &syms = getLinkedSection(tab);
+        auto &strings = getLinkedSection(syms);
         if (tab && syms && strings)
             hash = std::make_unique<ElfSymHash>(tab.io, syms.io, strings.io);
     } else {
@@ -144,31 +154,12 @@ ElfObject::getSegments(Elf_Word type) const
     return it->second;
 }
 
-Elf_Addr
-ElfObject::getBase() const
-{
-    auto base = std::numeric_limits<Elf_Off>::max();
-    auto &segments = getSegments(PT_LOAD);
-    for (auto &seg : segments)
-        if (Elf_Off(seg.p_vaddr) <= base)
-            base = Elf_Off(seg.p_vaddr);
-    return base;
-}
-
 std::string
 ElfObject::getInterpreter() const
 {
     for (auto &seg : getSegments(PT_INTERP))
         return io->readString(seg.p_offset);
     return "";
-}
-
-std::pair<const Elf_Sym, const string>
-SymbolIterator::operator *()
-{
-    auto sym = sec->symbols->readObj<Elf_Sym>(off);
-    string name = sec->strings->readString(sym.st_name);
-    return std::make_pair(sym, name);
 }
 
 /*
@@ -182,7 +173,7 @@ ElfObject::findSymbolByAddress(Elf_Addr addr, int type, Elf_Sym &sym, string &na
         const auto &symSection = getSection(secname, SHT_NULL);
         if (symSection.shdr.sh_type == SHT_NOBITS)
             continue;
-        SymbolSection syms(symSection.io, getSection(symSection.shdr.sh_link).io);
+        SymbolSection syms(symSection.io, getLinkedSection(symSection).io);
         for (auto syminfo : syms) {
             auto &candidate = syminfo.first;
             if (candidate.st_shndx >= sectionHeaders.size())
@@ -210,15 +201,33 @@ const ElfSection &
 ElfObject::getSection(const std::string &name, Elf_Word type) const
 {
     auto s = namedSection.find(name);
-    if (s == namedSection.end() || (s->second->shdr.sh_type != type && type != SHT_NULL))
+    if (s == namedSection.end() || (s->second->shdr.sh_type != type && type != SHT_NULL)) {
+        ElfObject *debug = getDebug();
+        if (debug)
+            return debug->getSection(name, type);
         return sectionHeaders[0];
+    }
     return *s->second;
 }
 
 const ElfSection &
 ElfObject::getSection(Elf_Word idx) const
 {
-    return sectionHeaders[idx];
+    if (sectionHeaders[idx].shdr.sh_type != SHT_NULL)
+        return sectionHeaders[idx];
+    auto debug = getDebug();
+    if (debug) {
+        return debug->sectionHeaders[idx];
+    }
+    return sectionHeaders[0];
+}
+
+const ElfSection &
+ElfObject::getLinkedSection(const ElfSection &from) const
+{
+    if (&from >= &sectionHeaders[0] && &from <= &sectionHeaders[sectionHeaders.size() - 1])
+        return sectionHeaders[from.shdr.sh_link];
+    return getDebug()->sectionHeaders[from.shdr.sh_link];
 }
 
 SymbolSection
@@ -228,9 +237,92 @@ ElfObject::getSymbols(const std::string &tableName)
     std::string n = stringify(*io);
     if (table.shdr.sh_type == SHT_NOBITS || table.shdr.sh_type == SHT_NULL)
         return SymbolSection(sectionHeaders[0].io, sectionHeaders[0].io);
-    auto &strings = getSection(table.shdr.sh_link);
+    auto &strings = getLinkedSection(table);
     return SymbolSection(table.io, strings.io);
 }
+
+
+static int symcacheAccess = 0;
+static int symcacheHit = 0;
+static struct X {
+    ~X() {
+        if (symcacheAccess)
+            std::clog
+                << "symcache: access " << symcacheAccess
+                << ", hit: " << symcacheHit
+                << ", rate: " << symcacheHit / symcacheAccess
+                << std::endl;
+    }
+} x;
+/*
+ * Locate a named symbol in an ELF image.
+ */
+bool
+ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
+{
+    auto &syment = cachedSymbols[name];
+
+    auto findUncached  = [&](Elf_Sym &sym) {
+        if (hash && hash->findSymbol(sym, name))
+            return CachedSymbol::SYM_FOUND;
+
+        for (const char *sec : { ".dynsym", ".symtab" }) {
+            SymbolSection sect = getSymbols(sec);
+            if (sect.linearSearch(name, sym))
+                return CachedSymbol::SYM_FOUND;
+        }
+        return CachedSymbol::SYM_NOTFOUND;
+    };
+    symcacheAccess++;
+    if (syment.disposition == CachedSymbol::SYM_NEW) {
+        syment.disposition = findUncached(syment.sym);
+    } else {
+        symcacheHit++;
+    }
+    sym = syment.sym;
+    return syment.disposition == CachedSymbol::SYM_FOUND;
+}
+
+ElfObject::~ElfObject() = default;
+
+ElfObject *
+ElfObject::getDebug() const
+{
+    if (!debugLoaded) {
+        debugLoaded = true;
+        auto &hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
+        if (!hdr) {
+            return 0;
+        }
+        auto link = hdr.io->readString(0);
+        auto dir = dirname(stringify(*io));
+        debugObject = imageCache.getDebugImage(dir + "/" + link);
+
+        if (!debugObject) {
+            for (auto note : notes) {
+                if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
+                    std::ostringstream dir;
+                    dir << ".build-id/";
+                    size_t i;
+                    auto io = note.data();
+                    std::vector<unsigned char> data(io->size());
+                    io->readObj(0, &data[0], io->size());
+                    dir << std::hex << std::setw(2) << std::setfill('0') << int(data[0]);
+                    dir << "/";
+                    for (i = 1; i < note.size(); ++i)
+                        dir << std::setw(2) << int(data[i]);
+                    dir << ".debug";
+                    debugObject = imageCache.getDebugImage(dir.str());
+                    break;
+                }
+            }
+        }
+        if (debugObject && verbose >= 2)
+            *debug << "found debug object " << *debugObject->io << " for " << *io << "\n";
+    }
+    return debugObject.get();
+}
+
 
 bool
 SymbolSection::linearSearch(const string &name, Elf_Sym &sym)
@@ -274,66 +366,6 @@ ElfSymHash::findSymbol(Elf_Sym &sym, const string &name)
     }
     return false;
 }
-
-/*
- * Locate a named symbol in an ELF image.
- */
-bool
-ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
-{
-    if (hash && hash->findSymbol(sym, name))
-        return true;
-
-    for (const char *sec : { ".dynsym", ".symtab" }) {
-        SymbolSection sect = getSymbols(sec);
-        if (sect.linearSearch(name, sym))
-            return true;
-    }
-    return debugData ? debugData->findSymbolByName(name, sym) : false;
-}
-
-ElfObject::~ElfObject() = default;
-
-std::shared_ptr<ElfObject>
-ElfObject::getDebug(std::shared_ptr<ElfObject> &in)
-{
-    if (noDebugLibs)
-        return in;
-
-    if (!in->debugLoaded) {
-        in->debugLoaded = true;
-        auto &hdr = in->getSection(".gnu_debuglink", SHT_PROGBITS);
-        if (!hdr)
-           return in;
-        auto link = hdr.io->readString(0);
-        auto dir = dirname(stringify(*in->io));
-        in->debugObject = in->imageCache.getDebugImage(dir + "/" + link);
-
-        if (!in->debugObject) {
-            for (auto note : in->notes) {
-                if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
-                    std::ostringstream dir;
-                    dir << ".build-id/";
-                    size_t i;
-                    auto io = note.data();
-                    std::vector<unsigned char> data(io->size());
-                    io->readObj(0, &data[0], io->size());
-                    dir << std::hex << std::setw(2) << std::setfill('0') << int(data[0]);
-                    dir << "/";
-                    for (i = 1; i < note.size(); ++i)
-                        dir << std::setw(2) << int(data[i]);
-                    dir << ".debug";
-                    in->debugObject = in->imageCache.getDebugImage(dir.str());
-                    break;
-                }
-            }
-        }
-        if (in->debugObject && verbose >= 2)
-            *debug << "found debug object " << *in->debugObject->io << " for " << *in->io << "\n";
-    }
-    return in->debugObject ? in->debugObject : in;
-}
-
 /*
  * Culled from System V Application Binary Interface
  */
@@ -349,7 +381,6 @@ elf_hash(const string &text)
     }
     return (h);
 }
-
 
 void
 ElfSection::open(const std::shared_ptr<const Reader> &image, off_t off)
