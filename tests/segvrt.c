@@ -11,7 +11,7 @@
 void
 sigsegv(int segv, siginfo_t *info, void *ctxv)
 {
-    abort();
+    my_abort();
 }
 
 void g()
