@@ -1,24 +1,32 @@
 .\" $Id: pstack.1,v 1.2 2007/02/28 00:36:13 peadar Exp $
 .\"
-.Dd Dec 8, 2004
+.Dd Mar 29, 2018
 .Dt PSTACK 1
 .Os
 .Sh NAME
 .Nm pstack
-.Nd get stack traces of threads in a running process
+.Nd get stack traces of threads in a running process or a core file
 .Sh SYNOPSIS
 .Nm
-.Op Fl a Ar arg-count
-.Op Fl e Ar executable-file
-.Op Fl f Ar frame-count
-.Op Fl o
-.Op Fl O
+.Op Fl a
+.Op Fl j
+.Op Fl n
+.Op Fl p
+.Op Fl s
 .Op Fl t
 .Op Fl v
-.Ar pid | core
+.Op Fl b Ar seconds
+.Op Fl g Ar directory
+.Aq Ar executable | pid | core
+*
 .Nm
-.Op Fl s Ar snaplen
-.Op Fl d Ar elf-file
+.Fl d Ar elf-file
+.Nm
+.Fl D Ar elf-file
+.Nm
+.Fl V
+.Nm
+.Fl h
 .Sh DESCRIPTION
 Displays the stack traces of each thread in the running process with process
 id
@@ -26,64 +34,70 @@ id
 or from the core file
 .Ar core
 .Pp
-Options are as follows:
+Normal invocation prints the stack trace from a core file or running
+process. Arguments are as follows.
 .Bl -tag -width Fl
-.It Fl a Ar arg-count
-Attempt to read
-.Ar arg-count
-word-size arguments from the stack for each frame.
-.It Fl f Ar frame-count
-Do not attempt to read any more than
-.Ar frame-count
-stack frames for each stack.
-.It Fl d
-Causes
-.Nm
-to print a dump of the ELF information in an object file,
-and exit.
-.It Fl e Ar file
-Specify an alternate executable to use for locating symbols in the
-process.  This is useful if the process was started from a stripped
-version of an executable, and you have the unstripped version
-available. pstack may also have difficulty locating the executable
-used to create a process, in which case this argument must be specified.
-(see
-.Sx BUGS
-)
-.It Fl o
-For each stack frame, display the name of the object in which the current
-function lies
-.It Fl O
-For each stack frame, display the full path to the object in which
-the current function lies
+.It Fl a
+Show values of arguments passed to functions if possible (requires DWARF debug
+data for function's code)
+.It Fl j
+Use JSON format for the stack output
+.It Fl n
+Do not attempt to find external debug information. DWARF debug information
+and symbol tables may be contained in separate ELF objects, as referenced
+by either the .gnu_debuglink or inferred by the GNU "build ID" ELF note.
+.It Fl p
+Attempt to print the stack trace from any discovered python interpreters
+and threads. This feature is experimental, and only works with Python 2.7
+.It Fl s
+Do not attempt to locate source code information (file and line number) for
+each frame. Finding the source locations may slow down stack tracing.
 .It Fl t
-Display the amount of time that the process was suspended by
-.Nm
+Do not use the thread_db library to associate userland thread data
+structures with kernel level LWPs. For modern linux systems, LWPs and
+user mode threads are effectively the same thing. At this point the only
+benefit of using this library is to associated pthread IDs with the LWPs.
 .It Fl v
-verbose. Display debugging and diagnostics.
+Produce more verbose diagnostics. Can be repeated to increase verbosity further.
+.It Fl b Ar N
+Poll-mode: repeatedly trace stacks every
+.Ar N
+seconds, until interrupted.
+.It Fl g Ar directory
+Use
+.Ar directory
+as a potential location to find debug ELF images, as referred to by a build-id note
+or gnu_debuglink section. The default directory is
+.Pa /usr/lib/debug
+.It Aq Ar executable | core | pid
+List of core files or PIDs to trace. An executable image specified on
+the command line will override the executable derived from the core
+or processes specified after it until a different executable image
+is provided
+.El
+.Pp
+There are some options to aid debugging issues with ELF and DWARF binaries. Namely
+.Bl -tag -width Fl
+.It Nm Fl D Ar ELF-image
+Format DWARF debugging information of the provided
+.Ar ELF-image
+in JSON
+.It Nm Fl d Ar ELF-image
+Format ELF information of the provided
+.Ar ELF-image
+in JSON
+.It Nm Fl V
+Print git commit-id used to build
+.Nm
+.It Nm Fl h
+Print usage synopsis
+.Nm
 .El
 .Sh SEE ALSO
 .Xr procfs 5
 .Xr ptrace 2
 .Sh BUGS
 .Nm
-works for x86 only.
-.Pp
-Because of a non-obvious interaction between wait(), ptrace() and
-processes started with rfork(RFLINUXTHPN), there's some hackery
-involved in detecting that the child process has been stopped
-successfully by
-.Nm
-Adding "-DMISC_39201_FIXED" to CFLAGS when compiling
-.Nm
-removes the associated hackery.
-.Pp
-The automatic detection of the file from which a process was created is ad hoc at best. For running processes,
-it requires 
-.Xr procfs 5
-to be mounted on "/proc", which itself only provides a best-effort
-facility for locating executables.  Core file support is limited
-by the content of the process state information in the core, which
-generally does not contain a full path.
+works on x86_64 and i686 only.
 .Sh AUTHORS
-Peter Edwards <peadar@freebsd.org>
+Peter Edwards <peadar (at) isainmdom dot net>
