@@ -241,19 +241,6 @@ ElfObject::getSymbols(const string &tableName)
     return SymbolSection(table.io, strings.io);
 }
 
-
-static int symcacheAccess = 0;
-static int symcacheHit = 0;
-static struct X {
-    ~X() {
-        if (symcacheAccess)
-            std::clog
-                << "symcache: access " << symcacheAccess
-                << ", hit: " << symcacheHit
-                << ", rate: " << symcacheHit / symcacheAccess
-                << std::endl;
-    }
-} x;
 /*
  * Locate a named symbol in an ELF image.
  */
@@ -261,11 +248,9 @@ bool
 ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
 {
     auto &syment = cachedSymbols[name];
-
     auto findUncached  = [&](Elf_Sym &sym) {
         if (hash && hash->findSymbol(sym, name))
             return CachedSymbol::SYM_FOUND;
-
         for (const char *sec : { ".dynsym", ".symtab" }) {
             SymbolSection sect = getSymbols(sec);
             if (sect.linearSearch(name, sym))
@@ -273,12 +258,8 @@ ElfObject::findSymbolByName(const string &name, Elf_Sym &sym)
         }
         return CachedSymbol::SYM_NOTFOUND;
     };
-    symcacheAccess++;
-    if (syment.disposition == CachedSymbol::SYM_NEW) {
+    if (syment.disposition == CachedSymbol::SYM_NEW)
         syment.disposition = findUncached(syment.sym);
-    } else {
-        symcacheHit++;
-    }
     sym = syment.sym;
     return syment.disposition == CachedSymbol::SYM_FOUND;
 }
@@ -291,13 +272,11 @@ ElfObject::getDebug() const
     if (!debugLoaded) {
         debugLoaded = true;
         auto &hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
-        if (!hdr) {
+        if (!hdr)
             return 0;
-        }
         auto link = hdr.io->readString(0);
         auto dir = dirname(stringify(*io));
         debugObject = imageCache.getDebugImage(dir + "/" + link);
-
         if (!debugObject) {
             for (auto note : notes) {
                 if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
@@ -322,7 +301,6 @@ ElfObject::getDebug() const
     }
     return debugObject.get();
 }
-
 
 bool
 SymbolSection::linearSearch(const string &name, Elf_Sym &sym)
@@ -366,6 +344,7 @@ ElfSymHash::findSymbol(Elf_Sym &sym, const string &name)
     }
     return false;
 }
+
 /*
  * Culled from System V Application Binary Interface
  */
@@ -386,18 +365,15 @@ void
 ElfSection::open(const Reader::csptr &image, off_t off)
 {
     image->readObj(off, &shdr);
-
     // Null sections get null readers.
     if (shdr.sh_type == SHT_NULL) {
         io = make_shared<NullReader>();
         return;
     }
-
     auto rawIo = make_shared<OffsetReader>(image, shdr.sh_offset, shdr.sh_size);
     if ((shdr.sh_flags & SHF_COMPRESSED) == 0) {
         io = rawIo;
     } else {
-
 #ifdef WITH_ZLIB
         auto chdr = rawIo->readObj<Elf_Chdr>(0);
         io = make_shared<InflateReader>(chdr.ch_size, OffsetReader(rawIo,
