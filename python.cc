@@ -120,8 +120,9 @@ listPrint(const PyObject *po, const PyTypeObject *, PythonPrinter *pc, Elf_Addr)
 {
     auto plo = reinterpret_cast<const PyListObject *>(po);
     pc->os << "list: \n";
-    PyObject *objects[plo->ob_size];
-    pc->proc.io->readObj(Elf_Addr(plo->ob_item), &objects[0], plo->ob_size);
+    auto size = std::min(plo->ob_size, 100);
+    PyObject *objects[size];
+    pc->proc.io->readObj(Elf_Addr(plo->ob_item), &objects[0], size);
     pc->depth++;
     for (auto addr : objects) {
       pc->os << pc->prefix();
@@ -416,18 +417,15 @@ PythonPrinter::print(Elf_Addr remoteAddr)
                 // object is a variable length object:
                 if (baseObj.ob_size > 65536 || baseObj.ob_size < 0) {
                     os << "(skip massive object " << baseObj.ob_size << ")";
-                    fullSize = -1;
-                } else {
-                    fullSize = size + itemsize * baseObj.ob_size;
+                    break;
                 }
+                fullSize = size + itemsize * baseObj.ob_size;
             } else {
                 fullSize = size;
             }
-            if (fullSize != -1) {
-                char buf[fullSize];
-                proc.io->readObj(remoteAddr, buf, fullSize);
-                remoteAddr = printer->printer((const PyObject *)buf, &pto, this, remoteAddr);
-            }
+            char buf[fullSize];
+            proc.io->readObj(remoteAddr, buf, fullSize);
+            remoteAddr = printer->printer((const PyObject *)buf, &pto, this, remoteAddr);
         }
     }
     catch (...) {

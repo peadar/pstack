@@ -273,6 +273,7 @@ mainExcept(int argc, char *argv[])
     // Now run through the corefile, searching for virtual objects.
     off_t filesize = 0;
     off_t memsize = 0;
+    PythonPrinter py(*process, std::cout, PstackOptions());
     for (auto &hdr : core->getSegments(PT_LOAD)) {
         Elf_Off p;
         filesize += hdr.p_filesz;
@@ -318,9 +319,9 @@ mainExcept(int argc, char *argv[])
                                 << std::dec <<  " ... size=" << found->sym.st_size
                                 << ", diff=" << p - found->memaddr() << endl;
                         if (doPython) {
-                            PstackOptions options;
-                            PythonPrinter py(*process, std::cout, options);
+                            std::cout << "pyo " << Elf_Addr(loc) << " ";
                             py.print(Elf_Addr(loc) - sizeof (PyObject) + sizeof (struct _typeobject *));
+                            std::cout << "\n";
                         }
                         found->count++;
                         seg_count++;
