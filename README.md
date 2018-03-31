@@ -31,7 +31,6 @@ memory leaks.
 * Support rela for object files
    * Can't do much with object files, but at least having the dump functions
      work would be nice.
-* The manual page could do with some care and attention
 * This actually works on ARM (i.e., raspi), but needs debug_frame. Apparently,
   ARM has its own magical sections for storing unwind information that it might
   be worth implementing.
