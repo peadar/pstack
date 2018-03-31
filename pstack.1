@@ -44,7 +44,7 @@ Arguments are as follows.
 .Bl -tag -width Fl
 .It Fl a
 Show values of arguments passed to functions if possible (requires DWARF debug
-data for function's code)
+data for function's code). This also works in python mode.
 .It Fl j
 Use JSON format for the stack output
 .It Fl n
@@ -53,7 +53,7 @@ and symbol tables may be contained in separate ELF objects, as referenced
 by either the .gnu_debuglink or inferred by the GNU "build ID" ELF note.
 .It Fl p
 Attempt to print the stack trace from any discovered python interpreters
-and threads. This feature is experimental, and only works with Python 2.7
+and threads. This feature is experimental, and only works with Python 2.7.
 .It Fl s
 Do not attempt to locate source code information (file and line number) for
 each frame. Finding the source locations may slow down stack tracing.

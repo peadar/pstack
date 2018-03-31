@@ -2,9 +2,7 @@
 You'll need cmake and a C++ compiler. Build/install with cmake. Eg:
 <pre>
 cd pstack/
-mkdir `hostname`
-cd `hostname`
-cmake ..
+cmake .
 make
 sudo make install
 </pre>

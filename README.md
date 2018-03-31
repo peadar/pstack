@@ -46,7 +46,7 @@ Arguments are as follows.
 **-a**
 
 > Show values of arguments passed to functions if possible (requires DWARF debug
-> data for function's code)
+> data for function's code). This also works in python mode.
 
 **-j**
 
@@ -61,7 +61,7 @@ Arguments are as follows.
 **-p**
 
 > Attempt to print the stack trace from any discovered python interpreters
-> and threads. This feature is experimental, and only works with Python 2.7
+> and threads. This feature is experimental, and only works with Python 2.7.
 
 **-s**
 
