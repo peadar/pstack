@@ -14,7 +14,7 @@ and xz-devel, and zlib-devel on .rpm systems.
 
 If the development packages are not found, the cmake process will generate a warning.
 
-# Python support.
+## Python support.
 There is rudimentary support for backtracing python processes. If you
 have the python 2.7 headers installed, that support is compiled in. At
 runtime, you'll need the python debug symbols installed for it to work.
