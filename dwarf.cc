@@ -831,9 +831,9 @@ DwarfInfo::sourceFromAddr(uintmax_t addr)
                 }
             }
         }
-    } else {
-        units = getUnits();
     }
+    if (units.empty())
+        units = getUnits();
     for (const auto &unit : units) {
         for (auto i = unit->lines.matrix.begin(); i != unit->lines.matrix.end(); ++i) {
             if (i->end_sequence)
