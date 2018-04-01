@@ -6,6 +6,7 @@
 #include <limits>
 #include <stack>
 
+namespace Dwarf {
 void
 StackFrame::setCoreRegs(const Elf::CoreRegisters &sys)
 {
@@ -23,9 +24,9 @@ StackFrame::getCoreRegs(Elf::CoreRegisters &core) const
 }
 
 void
-StackFrame::getFrameBase(const Process &p, intmax_t offset, DwarfExpressionStack *stack) const
+StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *stack) const
 {
-   const DwarfAttribute *attr;
+   const Attribute *attr;
    if (function == nullptr || (attr = function->attrForName(DW_AT_frame_base)) == nullptr) {
       stack->push(0);
       return;
@@ -33,16 +34,17 @@ StackFrame::getFrameBase(const Process &p, intmax_t offset, DwarfExpressionStack
    stack->push(stack->eval(p, attr, this, elfReloc) + offset);
 }
 
-    Elf::Addr
-DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, const StackFrame *frame, Elf::Addr reloc)
+
+Elf::Addr
+ExpressionStack::eval(const Process &proc, const Attribute *attr, const StackFrame *frame, Elf::Addr reloc)
 {
-    const DwarfInfo *dwarf = attr->entry->unit->dwarf;
+    const Info *dwarf = attr->entry->unit->dwarf;
     switch (attr->form()) {
         case DW_FORM_sec_offset: {
             auto sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
             auto objIp = frame->ip - reloc;
             // convert this object-relative addr to a unit-relative one
-            const DwarfEntry &unitEntry = *attr->entry->unit->entries.begin();
+            const Entry &unitEntry = *attr->entry->unit->entries.begin();
             auto unitLow = unitEntry.attrForName(DW_AT_low_pc);
 #ifndef NDEBUG
             auto unitHigh = unitEntry.attrForName(DW_AT_high_pc);
@@ -91,12 +93,12 @@ DwarfExpressionStack::eval(const Process &proc, const DwarfAttribute *attr, cons
     }
 }
 
-    Elf::Addr
-DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *frame, Elf::Addr reloc)
+Elf::Addr
+ExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *frame, Elf::Addr reloc)
 {
     isReg = false;
     while (!r.empty()) {
-        auto op = DwarfExpressionOp(r.getu8());
+        auto op = ExpressionOp(r.getu8());
         switch (op) {
             case DW_OP_deref: {
                 intmax_t addr = poptop();
@@ -286,7 +288,7 @@ DwarfExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame
 }
 
 Elf::Addr
-StackFrame::getCFA(const Process &proc, const DwarfCallFrame &dcf) const
+StackFrame::getCFA(const Process &proc, const CallFrame &dcf) const
 {
     switch (dcf.cfaValue.type) {
         case SAME:
@@ -302,7 +304,7 @@ StackFrame::getCFA(const Process &proc, const DwarfCallFrame &dcf) const
         case OFFSET:
             return getReg(dcf.cfaReg) + dcf.cfaValue.u.offset;
         case EXPRESSION: {
-            DwarfExpressionStack stack;
+            ExpressionStack stack;
             auto start = dcf.cfaValue.u.expression.offset;
             auto end = start + dcf.cfaValue.u.expression.length;
             DWARFReader r(frameInfo->io, start, end);
@@ -343,7 +345,7 @@ StackFrame::unwind(Process &p)
     if (iter == dwarf->callFrameForAddr.end())
         dwarf->callFrameForAddr[objaddr] = cie->execInsns(r, fde->iloc, objaddr);
 
-    const DwarfCallFrame &dcf = dwarf->callFrameForAddr[objaddr];
+    const CallFrame &dcf = dwarf->callFrameForAddr[objaddr];
 
     // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
     cfa = getCFA(p, dcf);
@@ -374,7 +376,7 @@ StackFrame::unwind(Process &p)
 
             case VAL_EXPRESSION:
             case EXPRESSION: {
-                DwarfExpressionStack stack;
+                ExpressionStack stack;
                 stack.push(cfa);
                 DWARFReader reader(frameInfo->io, unwind.u.expression.offset, unwind.u.expression.offset + unwind.u.expression.length);
                 auto val = stack.eval(p, reader, this, elfReloc);
@@ -414,4 +416,5 @@ StackFrame::getReg(unsigned regno) const
 {
     auto i = regs.find(regno);
     return i != regs.end() ? i->second : 0;
+}
 }

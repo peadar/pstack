@@ -22,6 +22,8 @@
 using std::make_unique;
 using std::make_shared;
 
+namespace Dwarf {
+
 uintmax_t
 DWARFReader::getuleb128shift(int *shift, bool &isSigned)
 {
@@ -38,13 +40,13 @@ DWARFReader::getuleb128shift(int *shift, bool &isSigned)
     return result;
 }
 
-DwarfPubname::DwarfPubname(DWARFReader &r, uint32_t offset)
+Pubname::Pubname(DWARFReader &r, uint32_t offset)
     : offset(offset)
     , name(r.getstring())
 {
 }
 
-DwarfPubnameUnit::DwarfPubnameUnit(DWARFReader &r)
+PubnameUnit::PubnameUnit(DWARFReader &r)
 {
     length = r.getu32();
     Elf::Off next = r.getOffset() + length;
@@ -68,7 +70,7 @@ sectionReader(Elf::Object &obj, const char *name)
     return obj.getSection(name, SHT_PROGBITS).io;
 }
 
-DwarfInfo::DwarfInfo(Elf::Object::sptr obj, DwarfImageCache &cache_)
+Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     : info(sectionReader(*obj, ".debug_info"))
     , elf(obj)
     , debugStrings(sectionReader(*obj, ".debug_str"))
@@ -82,24 +84,24 @@ DwarfInfo::DwarfInfo(Elf::Object::sptr obj, DwarfImageCache &cache_)
     auto f = [this, &obj](const char *name, FIType ftype) {
         auto &section = obj->getSection(name, SHT_PROGBITS);
         if (!section)
-            return std::unique_ptr<DwarfFrameInfo>();
+            return std::unique_ptr<FrameInfo>();
 
         try {
-            return make_unique<DwarfFrameInfo>(this, section, ftype);
+            return make_unique<FrameInfo>(this, section, ftype);
         }
         catch (const Exception &ex) {
             std::clog << "can't decode " << name << " for " << *obj->io << ": " << ex.what() << "\n";
         }
 
-        return std::unique_ptr<DwarfFrameInfo>();
+        return std::unique_ptr<FrameInfo>();
     };
 
     ehFrame = f(".eh_frame", FI_EH_FRAME);
     debugFrame = f(".debug_frame", FI_DEBUG_FRAME);
 }
 
-const std::list<DwarfPubnameUnit> &
-DwarfInfo::pubnames() const
+const std::list<PubnameUnit> &
+Info::pubnames() const
 {
     if (pubnamesh) {
         DWARFReader r(pubnamesh);
@@ -110,23 +112,23 @@ DwarfInfo::pubnames() const
     return pubnameUnits;
 }
 
-DwarfUnit::sptr
-DwarfInfo::getUnit(off_t offset)
+Unit::sptr
+Info::getUnit(off_t offset)
 {
     auto unit = unitsm.find(offset);
     if (unit != unitsm.end())
         return unit->second;
     if (info == nullptr)
-        return DwarfUnit::sptr();
+        return Unit::sptr();
     DWARFReader r(info, offset);
-    unitsm[offset] = make_shared<DwarfUnit>(this, r);
+    unitsm[offset] = make_shared<Unit>(this, r);
     return unitsm[offset];
 }
 
-std::list<DwarfUnit::sptr>
-DwarfInfo::getUnits() const
+std::list<Unit::sptr>
+Info::getUnits() const
 {
-    std::list<DwarfUnit::sptr> list;
+    std::list<Unit::sptr> list;
     if (info == nullptr)
         return list;
     DWARFReader r(info);
@@ -138,7 +140,7 @@ DwarfInfo::getUnits() const
           auto length = r.getlength(&dwarfLen);
           r.setOffset(r.getOffset() + length);
        } else {
-          unitsm[off] = make_shared<DwarfUnit>(this, r);
+          unitsm[off] = make_shared<Unit>(this, r);
        }
        list.push_back(unitsm[off]);
     }
@@ -146,8 +148,8 @@ DwarfInfo::getUnits() const
 }
 
 
-std::list<DwarfARangeSet> &
-DwarfInfo::ranges() const
+std::list<ARangeSet> &
+Info::ranges() const
 {
     if (arangesh) {
         DWARFReader r(arangesh);
@@ -158,9 +160,9 @@ DwarfInfo::ranges() const
     return aranges;
 }
 
-DwarfInfo::~DwarfInfo() = default;
+Info::~Info() = default;
 
-DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
+ARangeSet::ARangeSet(DWARFReader &r)
 {
     unsigned align, tupleLen;
     Elf::Off start = r.getOffset();
@@ -190,7 +192,7 @@ DwarfARangeSet::DwarfARangeSet(DWARFReader &r)
     }
 }
 
-DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
+Unit::Unit(const Info *di, DWARFReader &r)
     : dwarf(di)
     , io(r.io)
     , offset(r.getOffset())
@@ -209,10 +211,10 @@ DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
     while ((code = abbR.getuleb128()) != 0)
 #ifdef NOTYET
         abbreviations.emplace( std::piecewise_construct,
-                std::forward_as_tuple(DwarfTag(code)),
+                std::forward_as_tuple(Tag(code)),
                 std::forward_as_tuple(abbR, code));
 #else
-        abbreviations[DwarfTag(code)] = DwarfAbbreviation(abbR, code);
+        abbreviations[Tag(code)] = Abbreviation(abbR, code);
 #endif
     DWARFReader entriesR(r.io, r.getOffset(), nextoff);
     assert(nextoff <= r.getLimit());
@@ -221,30 +223,30 @@ DwarfUnit::DwarfUnit(const DwarfInfo *di, DWARFReader &r)
 }
 
 std::string
-DwarfUnit::name() const
+Unit::name() const
 {
     assert(entries.begin() != entries.end());
     return (*entries.begin()).name();
 }
 
-DwarfUnit::~DwarfUnit() = default;
+Unit::~Unit() = default;
 
-DwarfAbbreviation::DwarfAbbreviation(DWARFReader &r, intmax_t code_)
+Abbreviation::Abbreviation(DWARFReader &r, intmax_t code_)
     : code(code_)
 {
-    tag = DwarfTag(r.getuleb128());
-    hasChildren = DwarfHasChildren(r.getu8()) == DW_CHILDREN_yes;
+    tag = Tag(r.getuleb128());
+    hasChildren = HasChildren(r.getu8()) == DW_CHILDREN_yes;
     for (;;) {
         uintmax_t name, form;
         name = r.getuleb128();
         form = r.getuleb128();
         if (name == 0 && form == 0)
             break;
-        specs.emplace_back(DwarfAttrName(name), DwarfForm(form));
+        specs.emplace_back(AttrName(name), Form(form));
     }
 }
 
-DwarfAttribute::operator intmax_t() const
+Attribute::operator intmax_t() const
 {
     switch (spec->form) {
     case DW_FORM_data1:
@@ -260,7 +262,7 @@ DwarfAttribute::operator intmax_t() const
         abort();
     }
 }
-DwarfAttribute::operator uintmax_t() const
+Attribute::operator uintmax_t() const
 {
     switch (spec->form) {
     case DW_FORM_data1:
@@ -277,7 +279,7 @@ DwarfAttribute::operator uintmax_t() const
     }
 }
 
-DwarfLineState::DwarfLineState(DwarfLineInfo *li)
+LineState::LineState(LineInfo *li)
     : addr { 0 }
     , file { &li->files[1] }
     , line { 1 }
@@ -291,13 +293,13 @@ DwarfLineState::DwarfLineState(DwarfLineInfo *li)
 {}
 
 static void
-dwarfStateAddRow(DwarfLineInfo *li, const DwarfLineState &state)
+dwarfStateAddRow(LineInfo *li, const LineState &state)
 {
     li->matrix.push_back(state);
 }
 
 void
-DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
+LineInfo::build(DWARFReader &r, const Unit *unit)
 {
     size_t dwarfLen;
     uint32_t total_length = r.getlength(&dwarfLen);
@@ -349,7 +351,7 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
         r.skip(diff);
     }
 
-    DwarfLineState state(this);
+    LineState state(this);
     while (r.getOffset() < end) {
         unsigned c = r.getu8();
         if (c >= opcode_base) {
@@ -365,12 +367,12 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
         } else if (c == 0) {
             /* Extended opcode */
             int len = r.getuleb128();
-            auto code = DwarfLineEOpcode(r.getu8());
+            auto code = LineEOpcode(r.getu8());
             switch (code) {
             case DW_LNE_end_sequence:
                 state.end_sequence = true;
                 dwarfStateAddRow(this, state);
-                state = DwarfLineState(this);
+                state = LineState(this);
                 break;
             case DW_LNE_set_address:
                 state.addr = r.getuint(unit->addrlen);
@@ -385,7 +387,7 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
             }
         } else {
             /* Standard opcode. */
-            auto opcode = DwarfLineSOpcode(c);
+            auto opcode = LineSOpcode(c);
             int argCount, i;
             switch (opcode) {
             case DW_LNS_const_add_pc:
@@ -438,7 +440,7 @@ DwarfLineInfo::build(DWARFReader &r, const DwarfUnit *unit)
     }
 }
 
-DwarfFileEntry::DwarfFileEntry(std::string name_, std::string dir_, unsigned lastMod_, unsigned length_)
+FileEntry::FileEntry(std::string name_, std::string dir_, unsigned lastMod_, unsigned length_)
     : name(std::move(name_))
     , directory(std::move(dir_))
     , lastMod(lastMod_)
@@ -446,7 +448,7 @@ DwarfFileEntry::DwarfFileEntry(std::string name_, std::string dir_, unsigned las
 {
 }
 
-DwarfFileEntry::DwarfFileEntry(DWARFReader &r, DwarfLineInfo *info)
+FileEntry::FileEntry(DWARFReader &r, LineInfo *info)
     : name(r.getstring())
     , directory(info->directories[r.getuleb128()])
     , lastMod(r.getuleb128())
@@ -454,18 +456,18 @@ DwarfFileEntry::DwarfFileEntry(DWARFReader &r, DwarfLineInfo *info)
 {
 }
 
-DwarfAttribute::operator std::string() const
+Attribute::operator std::string() const
 {
-    const DwarfInfo *dwarf = entry->unit->dwarf;
+    const Info *dwarf = entry->unit->dwarf;
     assert(dwarf != nullptr);
     switch (spec->form) {
 
     case DW_FORM_GNU_strp_alt: {
-        const auto &altDwarf = dwarf->getAltDwarf();
-        if (!altDwarf) {
+        const auto &alt = dwarf->getAltDwarf();
+        if (!alt) {
             return "(alt string table unavailable)";
         }
-        auto &strs = altDwarf->debugStrings;
+        auto &strs = alt->debugStrings;
         if (!strs) {
             return "(alt string table unavailable)";
         }
@@ -483,7 +485,7 @@ DwarfAttribute::operator std::string() const
     }
 }
 
-DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const DwarfAttributeSpec *spec_)
+Attribute::Attribute(DWARFReader &r, const Entry *entry_, const AttributeSpec *spec_)
     : spec(spec_)
     , value { }
     , entry(entry_)
@@ -608,7 +610,7 @@ DwarfAttribute::DwarfAttribute(DWARFReader &r, const DwarfEntry *entry_, const D
     }
 }
 
-DwarfEntry::DwarfEntry(DWARFReader &r, DwarfTag code, DwarfUnit *unit_, intmax_t offset_, DwarfEntry *parent_)
+Entry::Entry(DWARFReader &r, Tag code, Unit *unit_, intmax_t offset_, Entry *parent_)
     : parent(parent_)
     , unit(unit_)
     , type(&unit->abbreviations.find(code)->second)
@@ -621,7 +623,7 @@ DwarfEntry::DwarfEntry(DWARFReader &r, DwarfTag code, DwarfUnit *unit_, intmax_t
                 std::forward_as_tuple(spec->name),
                 std::forward_as_tuple(r, this, &(*spec)));
 #else
-        attributes[spec.name] = DwarfAttribute(r, this, &spec);
+        attributes[spec.name] = Attribute(r, this, &spec);
 #endif
     }
 
@@ -644,14 +646,14 @@ DwarfEntry::DwarfEntry(DWARFReader &r, DwarfTag code, DwarfUnit *unit_, intmax_t
 }
 
 void
-DwarfUnit::decodeEntries(DWARFReader &r, DwarfEntries &entries, DwarfEntry *parent)
+Unit::decodeEntries(DWARFReader &r, Entries &entries, Entry *parent)
 {
     while (!r.empty()) {
         intmax_t offset = r.getOffset();
         intmax_t tagUleb = r.getuleb128();
         if (tagUleb == 0)
             return;
-        entries.emplace_back(r, DwarfTag(tagUleb), this, offset, parent);
+        entries.emplace_back(r, Tag(tagUleb), this, offset, parent);
         allEntries[offset] = &entries.back();
     }
 }
@@ -669,8 +671,8 @@ getAltImageName(const Elf::Object::sptr &elf)
     return stringify(exedir, "/", name);
 }
 
-DwarfInfo::sptr
-DwarfInfo::getAltDwarf() const
+Info::sptr
+Info::getAltDwarf() const
 {
     if (altImageLoaded)
         return altDwarf;
@@ -682,7 +684,7 @@ DwarfInfo::getAltDwarf() const
 }
 
 intmax_t
-DwarfFrameInfo::decodeAddress(DWARFReader &f, int encoding) const
+FrameInfo::decodeAddress(DWARFReader &f, int encoding) const
 {
     intmax_t base;
     Elf::Off offset = f.getOffset();
@@ -750,7 +752,7 @@ DWARFReader::getlength(size_t *addrLen)
 }
 
 Elf::Off
-DwarfFrameInfo::decodeCIEFDEHdr(DWARFReader &r, enum FIType type, Elf::Off *cieOff)
+FrameInfo::decodeCIEFDEHdr(DWARFReader &r, enum FIType type, Elf::Off *cieOff)
 {
     size_t addrLen;
     Elf::Off length = r.getlength(&addrLen);
@@ -766,12 +768,12 @@ DwarfFrameInfo::decodeCIEFDEHdr(DWARFReader &r, enum FIType type, Elf::Off *cieO
 }
 
 bool
-DwarfFrameInfo::isCIE(Elf::Addr cieid)
+FrameInfo::isCIE(Elf::Addr cieid)
 {
     return (type == FI_DEBUG_FRAME && cieid == 0xffffffff) || (type == FI_EH_FRAME && cieid == 0);
 }
 
-DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, const Elf::Section& section, enum FIType type_)
+FrameInfo::FrameInfo(Info *info, const Elf::Section& section, enum FIType type_)
     : dwarf(info)
     , sectionAddr(section.shdr.sh_addr)
     , io(section.io)
@@ -807,8 +809,8 @@ DwarfFrameInfo::DwarfFrameInfo(DwarfInfo *info, const Elf::Section& section, enu
     }
 }
 
-const DwarfFDE *
-DwarfFrameInfo::findFDE(Elf::Addr addr) const
+const FDE *
+FrameInfo::findFDE(Elf::Addr addr) const
 {
     for (const auto &fde : fdeList) {
         // XXX: addr can be just past last instruction in function
@@ -819,10 +821,10 @@ DwarfFrameInfo::findFDE(Elf::Addr addr) const
 }
 
 std::vector<std::pair<std::string, int>>
-DwarfInfo::sourceFromAddr(uintmax_t addr)
+Info::sourceFromAddr(uintmax_t addr)
 {
     std::vector<std::pair<std::string, int>> info;
-    std::list<DwarfUnit::sptr> units;
+    std::list<Unit::sptr> units;
 
     if (hasRanges()) {
         auto &rangelist = ranges();
@@ -849,7 +851,7 @@ DwarfInfo::sourceFromAddr(uintmax_t addr)
     return info;
 }
 
-DwarfCallFrame::DwarfCallFrame()
+CallFrame::CallFrame()
     : cfaReg(0)
     , cfaValue{ .type = UNDEF, .u = { .arch = 0  } }
 {
@@ -863,17 +865,17 @@ DwarfCallFrame::DwarfCallFrame()
 #endif
 }
 
-DwarfCallFrame
-DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
+CallFrame
+CIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
 {
-    std::stack<DwarfCallFrame> stack;
-    DwarfCallFrame frame;
+    std::stack<CallFrame> stack;
+    CallFrame frame;
 
     uintmax_t offset;
     int reg, reg2;
 
     // default frame for this CIE.
-    DwarfCallFrame dframe;
+    CallFrame dframe;
     if (addr != 0 || wantAddr != 0) {
         DWARFReader r2(r.io, instructions, end);
         dframe = execInsns(r2, 0, 0);
@@ -884,7 +886,7 @@ DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
             return frame;
         uint8_t rawOp = r.getu8();
         reg = rawOp &0x3f;
-        auto op = DwarfCFAInstruction(rawOp & ~0x3f);
+        auto op = CFAInstruction(rawOp & ~0x3f);
         switch (op) {
         case DW_CFA_advance_loc:
             addr += reg * codeAlign;
@@ -902,7 +904,7 @@ DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
         }
 
         case 0:
-            op = DwarfCFAInstruction(rawOp & 0x3f);
+            op = CFAInstruction(rawOp & 0x3f);
             switch (op) {
             case DW_CFA_nop:
                 break;
@@ -1040,7 +1042,7 @@ DwarfCIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
     return frame;
 }
 
-DwarfFDE::DwarfFDE(DwarfFrameInfo *fi, DWARFReader &reader, Elf::Off cieOff_, Elf::Off endOff_)
+FDE::FDE(FrameInfo *fi, DWARFReader &reader, Elf::Off cieOff_, Elf::Off endOff_)
     : end(endOff_)
     , cieOff(cieOff_)
 {
@@ -1055,7 +1057,7 @@ DwarfFDE::DwarfFDE(DwarfFrameInfo *fi, DWARFReader &reader, Elf::Off cieOff_, El
     instructions = reader.getOffset();
 }
 
-DwarfCIE::DwarfCIE(const DwarfFrameInfo *fi, DWARFReader &r, Elf::Off end_)
+CIE::CIE(const FrameInfo *fi, DWARFReader &r, Elf::Off end_)
     : frameInfo(fi)
     , addressEncoding(0)
     , lsdaEncoding(0)
@@ -1118,8 +1120,8 @@ DwarfCIE::DwarfCIE(const DwarfFrameInfo *fi, DWARFReader &r, Elf::Off end_)
     r.setOffset(end);
 }
 
-const DwarfEntry *
-DwarfEntry::referencedEntry(DwarfAttrName name) const
+const Entry *
+Entry::referencedEntry(AttrName name) const
 {
     auto attr = attrForName(name);
     try {
@@ -1130,11 +1132,11 @@ DwarfEntry::referencedEntry(DwarfAttrName name) const
     }
 }
 
-const DwarfEntry &
-DwarfAttribute::getReference() const
+const Entry &
+Attribute::getReference() const
 {
 
-    const DwarfInfo *dwarf = entry->unit->dwarf;
+    const Info *dwarf = entry->unit->dwarf;
     off_t off;
     switch (spec->form) {
         case DW_FORM_ref_addr:
@@ -1160,7 +1162,7 @@ DwarfAttribute::getReference() const
     }
     const auto otherEntry = entry->unit->allEntries.find(off);
 
-    // Try this unit first (if we're dealing with the same DwarfInfo)
+    // Try this unit first (if we're dealing with the same Info)
     if (dwarf == entry->unit->dwarf && otherEntry != entry->unit->allEntries.end())
         return *otherEntry->second;
 
@@ -1175,15 +1177,15 @@ DwarfAttribute::getReference() const
     throw (Exception() << "reference not found");
 }
 
-const DwarfAttribute *
-DwarfEntry::attrForName(DwarfAttrName name) const
+const Attribute *
+Entry::attrForName(AttrName name) const
 {
     auto it = attributes.find(name);
     if (it != attributes.end())
         return &it->second;
 
     // If we have attributes of any of these types, we can look for other attributes in the referenced entry.
-    static std::set<DwarfAttrName> derefs = {
+    static std::set<AttrName> derefs = {
         DW_AT_abstract_origin,
         DW_AT_specification
     };
@@ -1199,14 +1201,14 @@ DwarfEntry::attrForName(DwarfAttrName name) const
     return nullptr;
 }
 
-DwarfInfo::sptr
-DwarfImageCache::getDwarf(const std::string &filename)
+Info::sptr
+ImageCache::getDwarf(const std::string &filename)
 {
     return getDwarf(getImageForName(filename));
 }
 
-DwarfInfo::sptr
-DwarfImageCache::getDwarf(Elf::Object::sptr object)
+Info::sptr
+ImageCache::getDwarf(Elf::Object::sptr object)
 {
     auto it = dwarfCache.find(object);
     dwarfLookups++;
@@ -1215,16 +1217,109 @@ DwarfImageCache::getDwarf(Elf::Object::sptr object)
         return it->second;
     }
 
-    auto dwarf = make_shared<DwarfInfo>(object, *this);
+    auto dwarf = make_shared<Info>(object, *this);
     dwarfCache[object] = dwarf;
     return dwarf;
 }
 
-DwarfImageCache::DwarfImageCache() : dwarfHits(0), dwarfLookups(0)
+ImageCache::ImageCache() : dwarfHits(0), dwarfLookups(0)
 {
 }
 
-DwarfImageCache::~DwarfImageCache() {
+ImageCache::~ImageCache() {
     if (verbose >= 2)
         *debug << "DWARF image cache: lookups: " << dwarfLookups << ", hits=" << dwarfHits << std::endl;
+}
+
+std::string
+typeName(const Entry *type)
+{
+    if (type == nullptr) {
+        return "void";
+    }
+    std::string name = type->name();
+    if (name != "") {
+        return name;
+    }
+    const Entry *base = type->referencedEntry(DW_AT_type);
+    std::string s, sep;
+    switch (type->type->tag) {
+        case DW_TAG_pointer_type:
+            return typeName(base) + " *";
+        case DW_TAG_const_type:
+            return typeName(base) + " const";
+        case DW_TAG_volatile_type:
+            return typeName(base) + " volatile";
+        case DW_TAG_subroutine_type:
+            s = typeName(base) + "(";
+            sep = "";
+            for (auto &arg : type->children) {
+                if (arg.type->tag != DW_TAG_formal_parameter)
+                    continue;
+                s += sep;
+                s += typeName(arg.referencedEntry(DW_AT_type));
+                sep = ", ";
+            }
+            s += ")";
+            return s;
+        case DW_TAG_reference_type:
+            return typeName(base) + "&";
+        default: {
+            return stringify("(unhandled tag ", type->type->tag, ")");
+        }
+
+    }
+}
+
+
+const Entry *
+findEntryForFunc(Elf::Addr address, const Entry &entry)
+{
+    switch (entry.type->tag) {
+        case DW_TAG_subprogram: {
+            const Attribute *lowAttr = entry.attrForName(DW_AT_low_pc);
+            const Attribute *highAttr = entry.attrForName(DW_AT_high_pc);
+            if (lowAttr != nullptr && highAttr != nullptr) {
+                Elf::Addr start, end;
+                switch (lowAttr->form()) {
+                    case DW_FORM_addr:
+                        start = uintmax_t(*lowAttr);
+                        break;
+                    default:
+                        abort();
+                        break;
+                }
+                switch (highAttr->form()) {
+                    case DW_FORM_addr:
+                        end = uintmax_t(*highAttr);
+                        break;
+                    case DW_FORM_data1:
+                    case DW_FORM_data2:
+                    case DW_FORM_data4:
+                    case DW_FORM_data8:
+                    case DW_FORM_udata:
+                        end = start + uintmax_t(*highAttr);
+                        break;
+                    default:
+                        abort();
+
+                }
+                if (start <= address && end >= address) // allow for the address to be one byte past the function
+                    return &entry;
+            }
+            break;
+        }
+
+        default:
+            for (auto &child : entry.children) {
+                auto descendent = findEntryForFunc(address, child);
+                if (descendent != nullptr)
+                    return descendent;
+            }
+            break;
+    }
+   return nullptr;
+}
+
+
 }

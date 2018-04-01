@@ -15,16 +15,18 @@ extern "C" {
 struct ps_prochandle {};
 
 class Process;
-struct StackFrame;
 
-class DwarfExpressionStack : public std::stack<Elf::Addr> {
+namespace Dwarf {
+struct StackFrame;
+class ExpressionStack : public std::stack<Elf::Addr> {
 public:
     bool isReg;
     int inReg;
+
+    ExpressionStack(): isReg(false) {}
     Elf::Addr poptop() { Elf::Addr tos = top(); pop(); return tos; }
-    DwarfExpressionStack(): isReg(false) {}
-    Elf::Addr eval(const Process &, DWARFReader &r, const StackFrame *frame, Elf::Addr);
-    Elf::Addr eval(const Process &, const DwarfAttribute *, const StackFrame *, Elf::Addr);
+    Elf::Addr eval(const Process &, Dwarf::DWARFReader &r, const StackFrame *frame, Elf::Addr);
+    Elf::Addr eval(const Process &, const Dwarf::Attribute *, const StackFrame *, Elf::Addr);
 };
 
 // this works for i386 and x86_64 - might need to change for other archs.
@@ -36,11 +38,11 @@ struct StackFrame {
     std::map<unsigned, cpureg_t> regs;
     Elf::Object::sptr elf;
     Elf::Addr elfReloc;
-    DwarfInfo::sptr dwarf;
-    const DwarfEntry * function;
-    DwarfFrameInfo *frameInfo;
-    const DwarfFDE *fde;
-    const DwarfCIE *cie;
+    Dwarf::Info::sptr dwarf;
+    const Dwarf::Entry * function;
+    Dwarf::FrameInfo *frameInfo;
+    const Dwarf::FDE *fde;
+    const Dwarf::CIE *cie;
     StackFrame()
         : ip(-1)
         , cfa(0)
@@ -52,16 +54,17 @@ struct StackFrame {
     {}
     void setReg(unsigned, cpureg_t);
     cpureg_t getReg(unsigned regno) const;
-    Elf::Addr getCFA(const Process &, const DwarfCallFrame &) const;
+    Elf::Addr getCFA(const Process &, const Dwarf::CallFrame &) const;
     StackFrame *unwind(Process &p);
     void setCoreRegs(const Elf::CoreRegisters &);
     void getCoreRegs(Elf::CoreRegisters &) const;
-    void getFrameBase(const Process &, intmax_t, DwarfExpressionStack *) const;
+    void getFrameBase(const Process &, intmax_t, ExpressionStack *) const;
 };
+}
 
 struct ThreadStack {
     td_thrinfo_t info;
-    std::vector<StackFrame *> stack;
+    std::vector<Dwarf::StackFrame *> stack;
     ThreadStack() {
         memset(&info, 0, sizeof info);
     }
@@ -115,7 +118,7 @@ protected:
 public:
     Elf::Addr sysent; // for AT_SYSINFO
     std::map<pid_t, Lwp> lwps;
-    DwarfImageCache &imageCache;
+    Dwarf::ImageCache &imageCache;
 
     struct LoadedObject {
         Elf::Off loadAddr;
@@ -129,8 +132,8 @@ public:
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) = 0;
     void addElfObject(Elf::Object::sptr obj, Elf::Addr load);
     Elf::Object::sptr findObject(Elf::Addr addr, Elf::Off *reloc) const;
-    DwarfInfo::sptr getDwarf(Elf::Object::sptr);
-    Process(Elf::Object::sptr exec, Reader::csptr memory, const PathReplacementList &prl, DwarfImageCache &cache);
+    Dwarf::Info::sptr getDwarf(Elf::Object::sptr);
+    Process(Elf::Object::sptr exec, Reader::csptr memory, const PathReplacementList &prl, Dwarf::ImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
     virtual void findLWPs() = 0;
@@ -172,7 +175,7 @@ class LiveProcess : public Process {
     pid_t pid;
     friend class LiveReader;
 public:
-    LiveProcess(Elf::Object::sptr &, pid_t, const PathReplacementList &, DwarfImageCache &);
+    LiveProcess(Elf::Object::sptr &, pid_t, const PathReplacementList &, Dwarf::ImageCache &);
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
     virtual void stop(pid_t) override;
     virtual void resume(pid_t) override;
@@ -198,7 +201,7 @@ class CoreProcess : public Process {
     Elf::Object::sptr coreImage;
     friend class CoreReader;
 public:
-    CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core, const PathReplacementList &, DwarfImageCache &);
+    CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core, const PathReplacementList &, Dwarf::ImageCache &);
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
     virtual void stop(lwpid_t) override;
     virtual void resume(lwpid_t) override;

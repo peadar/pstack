@@ -90,7 +90,7 @@ int
 mainExcept(int argc, char *argv[])
 {
     bool doPython = false;
-    DwarfImageCache imageCache;
+    Dwarf::ImageCache imageCache;
     std::vector<std::string> patterns;
     Elf::Object::sptr exec;
     Elf::Object::sptr core;
@@ -212,14 +212,13 @@ mainExcept(int argc, char *argv[])
     }
 
     pid_t pid = 0;
-    DwarfImageCache cache;
     std::istringstream(argv[optind]) >> pid;
     if (pid != 0 && kill(pid, 0) == 0) {
        std::clog << "attaching to live process" << std::endl;
-       process = make_shared<LiveProcess>(exec, pid, pathReplacements, cache);
+       process = make_shared<LiveProcess>(exec, pid, pathReplacements, imageCache);
     } else {
-       core = make_shared<Elf::Object>(cache, loadFile(argv[optind]));
-       process = make_shared<CoreProcess>(exec, core, pathReplacements, cache);
+       core = make_shared<Elf::Object>(imageCache, loadFile(argv[optind]));
+       process = make_shared<CoreProcess>(exec, core, pathReplacements, imageCache);
     }
     process->load(PstackOptions());
 

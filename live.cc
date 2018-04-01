@@ -24,7 +24,7 @@ LiveReader::LiveReader(pid_t pid, const std::string &base)
    : FileReader(procname(pid, base)) {}
 
 LiveProcess::LiveProcess(Elf::Object::sptr &ex, pid_t pid_,
-            const PathReplacementList &repls, DwarfImageCache &imageCache)
+            const PathReplacementList &repls, Dwarf::ImageCache &imageCache)
     : Process(
             ex ? ex : imageCache.getImageForName(procname(pid_, "exe")),
             std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")),

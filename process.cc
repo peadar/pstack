@@ -39,7 +39,7 @@ PstackOptions::operator () (PstackOption opt) const
 }
 
 Process::Process(Elf::Object::sptr exec, Reader::csptr memory,
-                  const PathReplacementList &prl, DwarfImageCache &cache)
+                  const PathReplacementList &prl, Dwarf::ImageCache &cache)
     : entry(0)
     , interpBase(0)
     , isStatic(false)
@@ -86,7 +86,7 @@ Process::load(const PstackOptions &options)
 
 }
 
-DwarfInfo::sptr
+Dwarf::Info::sptr
 Process::getDwarf(Elf::Object::sptr elf)
 {
     return imageCache.getDwarf(elf);
@@ -162,7 +162,7 @@ operator << (std::ostream &os, const JSON<td_thr_type_e, ctx> &jt)
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<StackFrame *, Process *> &jt)
+operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
 {
     auto &frame =jt.object;
     auto proc = jt.context;
@@ -211,106 +211,17 @@ operator << (std::ostream &os, const JSON<ThreadStack, Process *> &ts)
         .field("ti_stack", ts->stack, ts.context);
 }
 
-const DwarfEntry *
-findEntryForFunc(Elf::Addr address, const DwarfEntry &entry)
-{
-    switch (entry.type->tag) {
-        case DW_TAG_subprogram: {
-                const DwarfAttribute *lowAttr = entry.attrForName(DW_AT_low_pc);
-                const DwarfAttribute *highAttr = entry.attrForName(DW_AT_high_pc);
-                if (lowAttr != nullptr && highAttr != nullptr) {
-                    Elf::Addr start, end;
-                    switch (lowAttr->form()) {
-                        case DW_FORM_addr:
-                            start = uintmax_t(*lowAttr);
-                            break;
-                        default:
-                            abort();
-                            break;
-                    }
-                    switch (highAttr->form()) {
-                        case DW_FORM_addr:
-                            end = uintmax_t(*highAttr);
-                            break;
-                        case DW_FORM_data1:
-                        case DW_FORM_data2:
-                        case DW_FORM_data4:
-                        case DW_FORM_data8:
-                        case DW_FORM_udata:
-                            end = start + uintmax_t(*highAttr);
-                            break;
-                        default:
-                            abort();
-
-                    }
-                    if (start <= address && end >= address) // allow for the address to be one byte past the function
-                        return &entry;
-                }
-                break;
-            }
-
-        default:
-            for (auto &child : entry.children) {
-                auto descendent = findEntryForFunc(address, child);
-                if (descendent != nullptr)
-                    return descendent;
-            }
-            break;
-    }
-   return nullptr;
-}
-
 struct ArgPrint {
     const Process &p;
-    const struct StackFrame *frame;
-    ArgPrint(const Process &p_, const StackFrame *frame_) : p(p_), frame(frame_) {}
+    const struct Dwarf::StackFrame *frame;
+    ArgPrint(const Process &p_, const Dwarf::StackFrame *frame_) : p(p_), frame(frame_) {}
 };
-
-std::string
-typeName(const DwarfEntry *type)
-{
-    if (type == nullptr) {
-        return "void";
-    }
-    std::string name = type->name();
-    if (name != "") {
-        return name;
-    }
-    const DwarfEntry *base = type->referencedEntry(DW_AT_type);
-    std::string s, sep;
-    switch (type->type->tag) {
-        case DW_TAG_pointer_type:
-            return typeName(base) + " *";
-        case DW_TAG_const_type:
-            return typeName(base) + " const";
-        case DW_TAG_volatile_type:
-            return typeName(base) + " volatile";
-        case DW_TAG_subroutine_type:
-            s = typeName(base) + "(";
-            sep = "";
-            for (auto &arg : type->children) {
-                if (arg.type->tag != DW_TAG_formal_parameter)
-                    continue;
-                s += sep;
-                s += typeName(arg.referencedEntry(DW_AT_type));
-                sep = ", ";
-            }
-            s += ")";
-            return s;
-        case DW_TAG_reference_type:
-            return typeName(base) + "&";
-        default: {
-            return stringify("(unhandled tag ", type->type->tag, ")");
-        }
-
-    }
-}
 
 struct RemoteValue {
     const Process &p;
     const Elf::Addr addr;
-    const DwarfEntry *type;
-    RemoteValue(const Process &p_, Elf::Addr addr_, const DwarfEntry *type_)
+    const Dwarf::Entry *type;
+    RemoteValue(const Process &p_, Elf::Addr addr_, const Dwarf::Entry *type_)
         : p(p_)
         , addr(addr_)
         , type(type_)
@@ -320,6 +231,7 @@ struct RemoteValue {
 std::ostream &
 operator << (std::ostream &os, const RemoteValue &rv)
 {
+    using namespace Dwarf;
     if (rv.addr == 0)
        return os << "(null)";
     auto type = rv.type;
@@ -443,19 +355,20 @@ operator << (std::ostream &os, const RemoteValue &rv)
 std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
+    using namespace Dwarf;
     const char *sep = "";
     for (auto &child : ap.frame->function->children) {
         switch (child.type->tag) {
             case DW_TAG_formal_parameter: {
                 auto name = child.name();
-                const DwarfEntry *type = child.referencedEntry(DW_AT_type);
+                const Dwarf::Entry *type = child.referencedEntry(DW_AT_type);
                 Elf::Addr addr = 0;
                 os << sep << name;
                 if (type != nullptr) {
-                    const DwarfAttribute *attr;
+                    const Dwarf::Attribute *attr;
 
-                    if ((attr = child.attrForName(DW_AT_location)) != nullptr) {
-                        DwarfExpressionStack fbstack;
+                    if ((attr = child.attrForName(Dwarf::DW_AT_location)) != nullptr) {
+                        Dwarf::ExpressionStack fbstack;
                         addr = fbstack.eval(ap.p, attr, ap.frame, ap.frame->elfReloc);
                         os << "=";
                         if (fbstack.isReg) {
@@ -463,7 +376,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
                         } else {
                            os << RemoteValue(ap.p, addr, type);
                         }
-                    } else if ((attr = child.attrForName(DW_AT_const_value)) != nullptr) {
+                    } else if ((attr = child.attrForName(Dwarf::DW_AT_const_value)) != nullptr) {
                         os << "=" << intmax_t(*attr);
                     }
                 }
@@ -505,8 +418,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             fileName = stringify(*obj->io);
             Elf::Addr objIp = frame->ip - loadAddr;
 
-            DwarfInfo::sptr dwarf = getDwarf(obj);
-            std::list<DwarfUnit::sptr> units;
+            Dwarf::Info::sptr dwarf = getDwarf(obj);
+            std::list<Dwarf::Unit::sptr> units;
             if (dwarf->hasRanges()) {
                 for (const auto &rangeset : dwarf->ranges()) {
                     for (const auto range : rangeset.ranges) {
@@ -522,11 +435,11 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             }
 
             std::string sigmsg = frame->cie != nullptr && frame->cie->isSignalHandler ?  "[signal handler called]" : "";
-            DwarfUnit::sptr dwarfUnit;
+            Dwarf::Unit::sptr dwarfUnit;
             for (const auto &u : units) {
                 // find the DIE for this function
                 for (auto &it : u->entries) {
-                    const DwarfEntry *de = findEntryForFunc(objIp, it);
+                    const Dwarf::Entry *de = Dwarf::findEntryForFunc(objIp, it);
                     if (de != nullptr) {
                         symName = de->name();
                         if (symName == "") {
@@ -538,8 +451,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         }
                         frame->function = de;
                         frame->dwarf = dwarf; // hold on to 'de'
-                        os << "in " << symName << sigmsg << "+" << objIp - uintmax_t(*de->attrForName(DW_AT_low_pc)) << "(";
-                        if (options(PstackOptions::doargs)) {
+                        os << "in " << symName << sigmsg << "+" << objIp - uintmax_t(*de->attrForName(Dwarf::DW_AT_low_pc)) << "(";
+                        if (options(::PstackOptions::doargs)) {
                             os << ArgPrint(*this, frame);
                         }
                         os << ")";
@@ -721,14 +634,14 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 {
     stack.clear();
     try {
-        auto prevFrame = new StackFrame();
+        auto prevFrame = new Dwarf::StackFrame();
         auto startFrame = prevFrame;
 
         // Set up the first frame using the machine context registers
         prevFrame->setCoreRegs(regs);
         prevFrame->ip = prevFrame->getReg(IPREG); // use the IP address in current frame
 
-        StackFrame *frame;
+        Dwarf::StackFrame *frame;
         for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++, prevFrame = frame) {
             stack.push_back(prevFrame);
             try {
@@ -739,7 +652,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                // If the first frame fails to unwind, it might be a crash calling an invalid address.
                // pop the instruction pointer off the stack, and try again.
                 if (prevFrame == startFrame) {
-                    frame = new StackFrame();
+                    frame = new Dwarf::StackFrame();
                     *frame = *prevFrame;
                     auto sp = prevFrame->getReg(SPREG);
                     auto in = p.io->read(sp, sizeof frame->ip, (char *)&frame->ip);

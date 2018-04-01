@@ -81,7 +81,7 @@ emain(int argc, char **argv)
     pid_t pid;
     std::string execFile;
     Elf::Object::sptr exec;
-    DwarfImageCache imageCache;
+    Dwarf::ImageCache imageCache;
     int sleepTime = 0;
     PstackOptions options;
 
@@ -94,7 +94,7 @@ emain(int argc, char **argv)
             break;
         case 'D': {
             auto dumpobj = std::make_shared<Elf::Object>(imageCache, loadFile(optarg));
-            DwarfInfo di(dumpobj, imageCache);
+            Dwarf::Info di(dumpobj, imageCache);
             std::cout << json(di);
             return 0;
         }

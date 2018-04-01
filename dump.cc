@@ -17,19 +17,19 @@
 #error "Non-32, non-64-bit platform?"
 #endif
 
-struct DwarfDumpCFAInsns {
+struct DumpCFAInsns {
     off_t start;
     off_t end;
-    explicit DwarfDumpCFAInsns(off_t start_, off_t end_)
+    explicit DumpCFAInsns(off_t start_, off_t end_)
           : start(start_)
           , end(end_)
     {}
 };
 
-std::ostream &operator <<(std::ostream &os, const JSON<DwarfCFAInstruction> &j)
+std::ostream &operator <<(std::ostream &os, const JSON<Dwarf::CFAInstruction> &j)
 {
-   DwarfCFAInstruction insn = j.object;
-#define DWARF_CFA_INSN(x,y) case x: return os << json(#x);
+    Dwarf::CFAInstruction insn = j.object;
+#define DWARF_CFA_INSN(x,y) case Dwarf::x: return os << json(#x);
     switch (insn) {
 #include "libpstack/dwarf/cfainsns.h"
     default: return os << json(int(insn));
@@ -40,23 +40,24 @@ std::ostream &operator <<(std::ostream &os, const JSON<DwarfCFAInstruction> &j)
 }
 
 void
-dwarfDumpCFAInsn(std::ostream &os, DWARFReader *r)
+dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
 {
+    using namespace Dwarf;
 
     JObject jo(os);
 
     Elf::Off len;
     Elf::Word reg;
 
-    DwarfCFAInstruction insn;
+    CFAInstruction insn;
     uint8_t op = r->getu8();
 
     switch (op & 0xc0) {
         case 0:
-            insn = DwarfCFAInstruction(op);
+            insn = CFAInstruction(op);
             break;
         default:
-            insn = DwarfCFAInstruction(op & 0xc0);
+            insn = CFAInstruction(op & 0xc0);
             break;
     }
 
@@ -186,21 +187,21 @@ dwarfDumpCFAInsn(std::ostream &os, DWARFReader *r)
 
 template <typename C>
 static std::ostream &
-operator << (std::ostream &os, const JSON<DwarfDumpCFAInsns, C> &jinsns)
+operator << (std::ostream &os, const JSON<DumpCFAInsns, C> &jinsns)
 {
-    DWARFReader r(jinsns.context->io, jinsns.object.start, jinsns.object.end);
+    Dwarf::DWARFReader r(jinsns.context->io, jinsns.object.start, jinsns.object.end);
     os << "[ ";
     std::string sep;
     while (!r.empty()) {
         os << sep;
-        dwarfDumpCFAInsn(os, &r);
+        dumpCFAInsn(os, &r);
         sep = ",\n";
     }
     os << "]";
     return os;
 }
 
-std::ostream &operator << (std::ostream &os, const JSON<DwarfFileEntry> &jobj) {
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::FileEntry> &jobj) {
     auto &fe = jobj.object;
     return JObject(os)
         .field("name", fe.name)
@@ -209,7 +210,7 @@ std::ostream &operator << (std::ostream &os, const JSON<DwarfFileEntry> &jobj) {
 }
 
 template <typename C>
-std::ostream &operator << (std::ostream &os, const JSON<DwarfLineState, C> &jo) {
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::LineState, C> &jo) {
     auto &ls = jo.object;
     return JObject(os)
         .field("file", *ls.file)
@@ -218,7 +219,7 @@ std::ostream &operator << (std::ostream &os, const JSON<DwarfLineState, C> &jo) 
 }
 
 template <typename C>
-std::ostream &operator << (std::ostream &os, const JSON<DwarfLineInfo, C> &jo) {
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::LineInfo, C> &jo) {
     auto &lines = jo.object;
     return JObject(os)
         .field("default_is_stmt",  lines.default_is_stmt)
@@ -230,7 +231,7 @@ std::ostream &operator << (std::ostream &os, const JSON<DwarfLineInfo, C> &jo) {
 }
 
 template <typename C>
-std::ostream & operator << (std::ostream &os, const JSON<DwarfEntry, C> &jo) {
+std::ostream & operator << (std::ostream &os, const JSON<Dwarf::Entry, C> &jo) {
     auto &entry = jo.object;
     JObject o(os);
     o.field("type", entry.type->tag);
@@ -242,7 +243,7 @@ std::ostream & operator << (std::ostream &os, const JSON<DwarfEntry, C> &jo) {
 }
 
 template <typename C>
-std::ostream &operator << (std::ostream &os, const JSON<DwarfAttributeSpec, C> spec) {
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::AttributeSpec, C> spec) {
     return JObject(os)
         .field("name", spec.object.name)
         .field("form", spec.object.form);
@@ -250,14 +251,14 @@ std::ostream &operator << (std::ostream &os, const JSON<DwarfAttributeSpec, C> s
 
 template <typename C>
 std::ostream &
-operator << (std::ostream &os, const JSON<DwarfAbbreviation, C> &abbr) {
+operator << (std::ostream &os, const JSON<Dwarf::Abbreviation, C> &abbr) {
     return JObject(os)
         .field("code", abbr.object.code)
         .field("has_children", abbr.object.hasChildren)
         .field("specs", abbr.object.specs);
 }
 
-std::ostream &operator << (std::ostream &os, const JSON<DwarfUnit::sptr> &unit) {
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Unit::sptr> &unit) {
     return JObject(os)
         .field("length", unit.object->length)
         .field("offset",  unit.object->offset)
@@ -267,13 +268,13 @@ std::ostream &operator << (std::ostream &os, const JSON<DwarfUnit::sptr> &unit) 
         .field("entries", unit.object->entries);
 }
 
-std::ostream & operator << (std::ostream &os, const JSON<DwarfARange> &range) {
+std::ostream & operator << (std::ostream &os, const JSON<Dwarf::ARange> &range) {
     return JObject(os)
         .field("start", range.object.start)
         .field("length", range.object.length);
 }
 
-std::ostream & operator << (std::ostream &os, const JSON<DwarfARangeSet> &ranges) {
+std::ostream & operator << (std::ostream &os, const JSON<Dwarf::ARangeSet> &ranges) {
     return JObject(os)
         .field("length", ranges.object.length)
         .field("version", int(ranges.object.version))
@@ -283,8 +284,8 @@ std::ostream & operator << (std::ostream &os, const JSON<DwarfARangeSet> &ranges
         .field("ranges", ranges.object.ranges);
 }
 
-std::ostream & operator << (std::ostream &os, const JSON<DwarfTag> &tag) {
-#define DWARF_TAG(x,y) case x: return os << json(#x);
+std::ostream & operator << (std::ostream &os, const JSON<Dwarf::Tag> &tag) {
+#define DWARF_TAG(x,y) case Dwarf::x: return os << json(#x);
     switch (tag.object) {
 #include "libpstack/dwarf/tags.h"
     default: return os << json(int(tag.object));
@@ -292,8 +293,8 @@ std::ostream & operator << (std::ostream &os, const JSON<DwarfTag> &tag) {
 #undef DWARF_TAG
 }
 
-std::ostream &operator << (std::ostream &os, JSON<DwarfLineEOpcode> code) {
-#define DWARF_LINE_E(x,y) case x: return os << json(#x);
+std::ostream &operator << (std::ostream &os, JSON<Dwarf::LineEOpcode> code) {
+#define DWARF_LINE_E(x,y) case Dwarf::x: return os << json(#x);
     switch (code.object) {
 #include "libpstack/dwarf/line_e.h"
     default: return os << json(int(code.object));
@@ -301,8 +302,8 @@ std::ostream &operator << (std::ostream &os, JSON<DwarfLineEOpcode> code) {
 #undef DWARF_LINE_E
 }
 
-std::ostream &operator << (std::ostream &os, const JSON<DwarfForm> &code) {
-#define DWARF_FORM(x,y) case x: return os << json(#x);
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Form> &code) {
+#define DWARF_FORM(x,y) case Dwarf::x: return os << json(#x);
     switch (code.object) {
 #include "libpstack/dwarf/forms.h"
     default: return os << json("(unknown)");
@@ -311,8 +312,8 @@ std::ostream &operator << (std::ostream &os, const JSON<DwarfForm> &code) {
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<DwarfAttrName> &code) {
-#define DWARF_ATTR(x,y) case x: return os << json(#x) ;
+operator << (std::ostream &os, const JSON<Dwarf::AttrName> &code) {
+#define DWARF_ATTR(x,y) case Dwarf::x: return os << json(#x) ;
     switch (code.object) {
 #include "libpstack/dwarf/attr.h"
     default: return os << '"' << int(code.object) << '"';
@@ -321,14 +322,14 @@ operator << (std::ostream &os, const JSON<DwarfAttrName> &code) {
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<DwarfPubname> &name) {
+operator << (std::ostream &os, const JSON<Dwarf::Pubname> &name) {
    return JObject(os)
       .field("offset", name.object.offset)
       .field("name", name.object.name);
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<DwarfPubnameUnit> &jo) {
+operator << (std::ostream &os, const JSON<Dwarf::PubnameUnit> &jo) {
     const auto &unit = jo.object;
     return JObject(os)
         .field("length", unit.length)
@@ -339,7 +340,7 @@ operator << (std::ostream &os, const JSON<DwarfPubnameUnit> &jo) {
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<DwarfBlock> &b)
+operator << (std::ostream &os, const JSON<Dwarf::Block> &b)
 {
     return JObject(os)
         .field("offset", b.object.offset)
@@ -347,8 +348,8 @@ operator << (std::ostream &os, const JSON<DwarfBlock> &b)
 }
 
 struct EntryReference {
-   const DwarfEntry *entry;
-   explicit EntryReference(const DwarfEntry *entry_) : entry(entry_) {}
+   const Dwarf::Entry *entry;
+   explicit EntryReference(const Dwarf::Entry *entry_) : entry(entry_) {}
 };
 
 std::ostream &
@@ -362,8 +363,9 @@ operator << (std::ostream &os, const JSON<EntryReference> &jer)
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<DwarfAttribute> &o)
+operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
 {
+    using namespace Dwarf;
     auto &attr = o.object;
     JObject writer(os);
 
@@ -424,7 +426,7 @@ operator << (std::ostream &os, const JSON<DwarfAttribute> &o)
 }
 
 std::ostream &
-operator <<(std::ostream &os, const JSON<DwarfCIE, const DwarfFrameInfo *> &dcie)
+operator <<(std::ostream &os, const JSON<Dwarf::CIE, const Dwarf::FrameInfo *> &dcie)
 {
     return JObject(os)
     .field("version", int(dcie.object.version))
@@ -434,18 +436,18 @@ operator <<(std::ostream &os, const JSON<DwarfCIE, const DwarfFrameInfo *> &dcie
     .field("return address reg", dcie.object.rar)
     .field("instruction length", dcie.object.end - dcie.object.instructions)
     .field("LSDA encoding", int(dcie.object.lsdaEncoding))
-    .field("instructions", DwarfDumpCFAInsns(dcie.object.instructions, dcie.object.end), dcie.context);
+    .field("instructions", DumpCFAInsns(dcie.object.instructions, dcie.object.end), dcie.context);
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<DwarfFDE, const DwarfFrameInfo*> &dfi)
+operator << (std::ostream &os, const JSON<Dwarf::FDE, const Dwarf::FrameInfo*> &dfi)
 {
-    DWARFReader r(dfi.context->io, dfi->instructions, dfi->end);
+    Dwarf::DWARFReader r(dfi.context->io, dfi->instructions, dfi->end);
     return JObject(os)
         .field("cie", dfi->cieOff)
         .field( "loc", dfi->iloc)
         .field("range", dfi->irange)
-        .field("instructions", DwarfDumpCFAInsns(dfi->instructions, dfi->end), dfi.context);
+        .field("instructions", DumpCFAInsns(dfi->instructions, dfi->end), dfi.context);
     ;
 }
 
@@ -462,7 +464,7 @@ operator << (std::ostream &os, const JSON<AddrStr> &addr)
 
 
 std::ostream &
-operator << (std::ostream &os, const JSON<DwarfFrameInfo> &info)
+operator << (std::ostream &os, const JSON<Dwarf::FrameInfo> &info)
 {
     Mapper<AddrStr, decltype(info.object.cies)::mapped_type, decltype(info.object.cies)> ciesByString(info.object.cies);
     return JObject(os)
@@ -471,7 +473,7 @@ operator << (std::ostream &os, const JSON<DwarfFrameInfo> &info)
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<DwarfInfo> &di)
+operator << (std::ostream &os, const JSON<Dwarf::Info> &di)
 {
     JObject writer(os);
     writer.field("units", di->getUnits())
@@ -830,9 +832,9 @@ operator<< (std::ostream &os, const JSON<Elf::Dyn> &d)
 }
 
 std::ostream &
-operator<< (std::ostream &os, const JSON<DwarfExpressionOp> op)
+operator<< (std::ostream &os, const JSON<Dwarf::ExpressionOp> op)
 {
-#define DWARF_OP(name, value, args) case name: return os << json(#name);
+#define DWARF_OP(name, value, args) case Dwarf::name: return os << json(#name);
     switch (op.object) {
 #include "libpstack/dwarf/ops.h"
         default: return os << json(int(op.object));
