@@ -35,7 +35,6 @@ std::ostream &operator <<(std::ostream &os, const JSON<Dwarf::CFAInstruction> &j
     default: return os << json(int(insn));
     }
 #undef DWARF_CFA_INSN
-
    return os;
 }
 
@@ -152,13 +151,13 @@ dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
             break;
 
         case DW_CFA_val_expression:
-	    
-	    reg = r->getuleb128();
-	    len = r->getuleb128();
+
+            reg = r->getuleb128();
+            len = r->getuleb128();
             jo
-		.field("register", reg)
-		.field("length", len)
-		.field("offset", r->getOffset());
+                .field("register", reg)
+                .field("length", len)
+                .field("offset", r->getOffset());
             r->skip(len);
             break;
         case DW_CFA_GNU_args_size:
@@ -174,7 +173,7 @@ dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
                 .field("scale", r->getsleb128());
             break;
 
-	// these instructions have no arguments, so nothing more to show
+        // these instructions have no arguments, so nothing more to show
         case DW_CFA_nop:
         case DW_CFA_remember_state:
         case DW_CFA_restore_state:
@@ -448,12 +447,11 @@ operator << (std::ostream &os, const JSON<Dwarf::FDE, const Dwarf::FrameInfo*> &
         .field( "loc", dfi->iloc)
         .field("range", dfi->irange)
         .field("instructions", DumpCFAInsns(dfi->instructions, dfi->end), dfi.context);
-    ;
 }
 
 struct AddrStr {
     Elf::Addr addr;
-   explicit AddrStr(Elf::Addr addr_) : addr(addr_) {}
+    explicit AddrStr(Elf::Addr addr_) : addr(addr_) {}
 };
 
 std::ostream &
@@ -461,7 +459,6 @@ operator << (std::ostream &os, const JSON<AddrStr> &addr)
 {
    return os << '"' << addr.object.addr << '"';
 }
-
 
 std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::FrameInfo> &info)

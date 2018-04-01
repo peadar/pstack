@@ -71,7 +71,7 @@ sectionReader(Elf::Object &obj, const char *name)
 }
 
 Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
-    : info(sectionReader(*obj, ".debug_info"))
+    : io(sectionReader(*obj, ".debug_info"))
     , elf(obj)
     , debugStrings(sectionReader(*obj, ".debug_str"))
     , abbrev(sectionReader(*obj, ".debug_abbrev"))
@@ -118,9 +118,9 @@ Info::getUnit(off_t offset)
     auto unit = unitsm.find(offset);
     if (unit != unitsm.end())
         return unit->second;
-    if (info == nullptr)
+    if (io == nullptr)
         return Unit::sptr();
-    DWARFReader r(info, offset);
+    DWARFReader r(io, offset);
     unitsm[offset] = make_shared<Unit>(this, r);
     return unitsm[offset];
 }
@@ -129,9 +129,9 @@ std::list<Unit::sptr>
 Info::getUnits() const
 {
     std::list<Unit::sptr> list;
-    if (info == nullptr)
+    if (io == nullptr)
         return list;
-    DWARFReader r(info);
+    DWARFReader r(io);
 
     while (!r.empty()) {
        auto off = r.getOffset();
@@ -307,7 +307,7 @@ LineInfo::build(DWARFReader &r, const Unit *unit)
 
     uint16_t version = r.getu16();
     (void)version;
-    Elf::Off header_length = r.getuint(unit->version > 2 ? unit->dwarfLen: 4);
+    Elf::Off header_length = r.getuint(version > 2 ? dwarfLen: 4);
     Elf::Off expectedEnd = header_length + r.getOffset();
     int min_insn_length = r.getu8();
 

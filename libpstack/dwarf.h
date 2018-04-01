@@ -23,7 +23,7 @@ class Info;
 class LineInfo;
 class DWARFReader;
 struct CIE;
-struct FrameInfo;
+struct CFI;
 struct Unit;
 
 // The DWARF Unit's allEntries map contains the underlying data for the tree.
@@ -262,7 +262,7 @@ struct FDE {
     Elf::Off end;
     Elf::Off cieOff;
     std::vector<unsigned char> augmentation;
-    FDE(FrameInfo *, DWARFReader &, Elf::Off cieOff_, Elf::Off endOff_);
+    FDE(CFI *, DWARFReader &, Elf::Off cieOff_, Elf::Off endOff_);
 };
 
 enum RegisterType {
@@ -296,7 +296,7 @@ struct CallFrame {
 };
 
 struct CIE {
-    const FrameInfo *frameInfo;
+    const CFI *frameInfo;
     uint8_t version;
     uint8_t addressEncoding;
     unsigned char lsdaEncoding;
@@ -308,21 +308,24 @@ struct CIE {
     Elf::Off end;
     uintmax_t personality;
     std::string augmentation;
-    CIE(const FrameInfo *, DWARFReader &, Elf::Off);
+    CIE(const CFI *, DWARFReader &, Elf::Off);
     CIE() {}
     CallFrame execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const;
 };
 
-struct FrameInfo {
+/*
+ * CFI represents call frame information (generally contents of .debug_frame or .eh_frame)
+ */
+struct CFI {
     const Info *dwarf;
     Elf::Word sectionAddr; // virtual address of this section  (may need to be offset by load address)
     Reader::csptr io;
     FIType type;
     std::map<Elf::Addr, CIE> cies;
     std::list<FDE> fdeList;
-    FrameInfo(Info *, const Elf::Section &, FIType);
-    FrameInfo() = delete;
-    FrameInfo(const FrameInfo &) = delete;
+    CFI(Info *, const Elf::Section &, FIType);
+    CFI() = delete;
+    CFI(const CFI &) = delete;
     Elf::Addr decodeCIEFDEHdr(DWARFReader &, FIType, Elf::Off *cieOff); // cieOFF set to -1 if this is CIE, set to offset of associated CIE for an FDE
     const FDE *findFDE(Elf::Addr) const;
     bool isCIE(Elf::Addr);
@@ -331,19 +334,19 @@ struct FrameInfo {
 
 class ImageCache;
 /*
- * Info represents the interesting bits of the DWARF data.
+ * Info represents all the interesting bits of the DWARF data.
  */
 class Info {
-
 public:
-    // XXX: info is public because "block" Attributes need to read from it.
+    Info(Elf::Object::sptr, ImageCache &);
+    ~Info();
     typedef std::shared_ptr<Info> sptr;
     typedef std::shared_ptr<const Info> csptr;
-    Reader::csptr info;
+    Reader::csptr io; // XXX: io is public because "block" Attributes need to read from it.
     std::map<Elf::Addr, CallFrame> callFrameForAddr;
     Elf::Object::sptr elf;
-    std::unique_ptr<FrameInfo> debugFrame;
-    std::unique_ptr<FrameInfo> ehFrame;
+    std::unique_ptr<CFI> debugFrame;
+    std::unique_ptr<CFI> ehFrame;
     Reader::csptr debugStrings;
     Reader::csptr abbrev;
     Reader::csptr lineshdr;
@@ -352,13 +355,10 @@ public:
     const std::list<PubnameUnit> &pubnames() const;
     Unit::sptr getUnit(off_t offset);
     std::list<Unit::sptr> getUnits() const;
-    Info(Elf::Object::sptr, ImageCache &);
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
-
-    ~Info();
     bool hasRanges() { ranges(); return aranges.size() != 0; }
-private:
 
+private:
     mutable std::list<PubnameUnit> pubnameUnits;
     mutable std::list<ARangeSet> aranges;
     // These are mutable so we can lazy-eval them when getters are called, and
@@ -372,7 +372,7 @@ private:
 };
 
 /*
- * A Dwarf Image Cache is an (Elf) Image Cache, but caches Info for the
+ * A Dwarf Image Cache is an (Elf) ImageCache, but caches Dwarf::Info for the
  * Objects also.
  */
 class ImageCache : public Elf::ImageCache {

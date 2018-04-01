@@ -34,7 +34,6 @@ StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *sta
    stack->push(stack->eval(p, attr, this, elfReloc) + offset);
 }
 
-
 Elf::Addr
 ExpressionStack::eval(const Process &proc, const Attribute *attr, const StackFrame *frame, Elf::Addr reloc)
 {
@@ -85,7 +84,7 @@ ExpressionStack::eval(const Process &proc, const Attribute *attr, const StackFra
         case DW_FORM_block:
         case DW_FORM_exprloc: {
             auto &block = attr->block();
-            DWARFReader r(dwarf->info, block.offset, block.offset + block.length);
+            DWARFReader r(dwarf->io, block.offset, block.offset + block.length);
             return eval(proc, r, frame, reloc);
         }
         default:
