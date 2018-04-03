@@ -425,7 +425,7 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
 }
 
 std::ostream &
-operator <<(std::ostream &os, const JSON<Dwarf::CIE, const Dwarf::FrameInfo *> &dcie)
+operator <<(std::ostream &os, const JSON<Dwarf::CIE, const Dwarf::CFI *> &dcie)
 {
     return JObject(os)
     .field("version", int(dcie.object.version))
@@ -439,7 +439,7 @@ operator <<(std::ostream &os, const JSON<Dwarf::CIE, const Dwarf::FrameInfo *> &
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<Dwarf::FDE, const Dwarf::FrameInfo*> &dfi)
+operator << (std::ostream &os, const JSON<Dwarf::FDE, const Dwarf::CFI*> &dfi)
 {
     Dwarf::DWARFReader r(dfi.context->io, dfi->instructions, dfi->end);
     return JObject(os)
@@ -461,7 +461,7 @@ operator << (std::ostream &os, const JSON<AddrStr> &addr)
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<Dwarf::FrameInfo> &info)
+operator << (std::ostream &os, const JSON<Dwarf::CFI> &info)
 {
     Mapper<AddrStr, decltype(info.object.cies)::mapped_type, decltype(info.object.cies)> ciesByString(info.object.cies);
     return JObject(os)

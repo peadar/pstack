@@ -38,11 +38,11 @@ struct StackFrame {
     std::map<unsigned, cpureg_t> regs;
     Elf::Object::sptr elf;
     Elf::Addr elfReloc;
-    Dwarf::Info::sptr dwarf;
+    Info::sptr dwarf;
     const Dwarf::Entry * function;
-    Dwarf::FrameInfo *frameInfo;
-    const Dwarf::FDE *fde;
-    const Dwarf::CIE *cie;
+    CFI *frameInfo;
+    const FDE *fde;
+    const CIE *cie;
     StackFrame()
         : ip(-1)
         , cfa(0)
@@ -54,7 +54,7 @@ struct StackFrame {
     {}
     void setReg(unsigned, cpureg_t);
     cpureg_t getReg(unsigned regno) const;
-    Elf::Addr getCFA(const Process &, const Dwarf::CallFrame &) const;
+    Elf::Addr getCFA(const Process &, const CallFrame &) const;
     StackFrame *unwind(Process &p);
     void setCoreRegs(const Elf::CoreRegisters &);
     void getCoreRegs(Elf::CoreRegisters &) const;
@@ -143,7 +143,7 @@ public:
     std::ostream &dumpStackText(std::ostream &, const ThreadStack &, const PstackOptions &);
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &);
     template <typename T> void listThreads(const T &);
-    Elf::Addr findNamedSymbol(const char *objName, const char *symbolName) const;
+    Elf::Addr findSymbolByName(const char *objName, const char *symbolName) const;
     ~Process();
     virtual void load(const PstackOptions &);
     virtual pid_t getPID() const = 0;

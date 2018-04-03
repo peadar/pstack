@@ -147,8 +147,8 @@ struct SymbolSection;
 struct Section {
     Shdr shdr;
     Reader::csptr io;
-    void open(const Reader::csptr &image, off_t off);
     operator bool() const { return shdr.sh_type != SHT_NULL; }
+    Section(const Reader::csptr &image, off_t off);
     Section() {
         shdr.sh_type = SHT_NULL;
     }

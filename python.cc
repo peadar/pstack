@@ -15,7 +15,7 @@ pthreadTidOffset(const Process &proc, size_t *offsetp)
     static enum { notDone, notFound, found } status;
     if (status == notDone) {
         try {
-            auto addr = proc.findNamedSymbol(0, "_thread_db_pthread_tid");
+            auto addr = proc.findSymbolByName(0, "_thread_db_pthread_tid");
             uint32_t desc[3];
             proc.io->readObj(addr, &desc[0], 3);
             offset = desc[2];

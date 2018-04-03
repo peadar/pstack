@@ -97,9 +97,8 @@ Object::Object(ImageCache &cache, Reader::csptr io_)
     if (elfHeader.e_shnum == 0) {
         sectionHeaders.push_back(Section());
     } else {
-        sectionHeaders.resize(elfHeader.e_shnum);
         for (off = elfHeader.e_shoff, i = 0; i < elfHeader.e_shnum; i++) {
-            sectionHeaders[i].open(io, off);
+            sectionHeaders.emplace_back(io, off);
             off += elfHeader.e_shentsize;
         }
     }
@@ -261,8 +260,13 @@ Object::findSymbolByName(const string &name, Sym &sym)
     };
     if (syment.disposition == CachedSymbol::SYM_NEW)
         syment.disposition = findUncached(syment.sym);
-    sym = syment.sym;
-    return syment.disposition == CachedSymbol::SYM_FOUND;
+    if (syment.disposition == CachedSymbol::SYM_FOUND) {
+        sym = syment.sym;
+        return true;
+    }
+    if (debugData)
+        return debugData->findSymbolByName(name, sym);
+    return false;
 }
 
 Object::~Object() = default;
@@ -362,8 +366,7 @@ elf_hash(const string &text)
     return (h);
 }
 
-void
-Section::open(const Reader::csptr &image, off_t off)
+Section::Section(const Reader::csptr &image, off_t off)
 {
     image->readObj(off, &shdr);
     // Null sections get null readers.

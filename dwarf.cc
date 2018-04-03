@@ -84,16 +84,16 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     auto f = [this, &obj](const char *name, FIType ftype) {
         auto &section = obj->getSection(name, SHT_PROGBITS);
         if (!section)
-            return std::unique_ptr<FrameInfo>();
+            return std::unique_ptr<CFI>();
 
         try {
-            return make_unique<FrameInfo>(this, section, ftype);
+            return make_unique<CFI>(this, section, ftype);
         }
         catch (const Exception &ex) {
             std::clog << "can't decode " << name << " for " << *obj->io << ": " << ex.what() << "\n";
         }
 
-        return std::unique_ptr<FrameInfo>();
+        return std::unique_ptr<CFI>();
     };
 
     ehFrame = f(".eh_frame", FI_EH_FRAME);
@@ -684,7 +684,7 @@ Info::getAltDwarf() const
 }
 
 intmax_t
-FrameInfo::decodeAddress(DWARFReader &f, int encoding) const
+CFI::decodeAddress(DWARFReader &f, int encoding) const
 {
     intmax_t base;
     Elf::Off offset = f.getOffset();
@@ -752,7 +752,7 @@ DWARFReader::getlength(size_t *addrLen)
 }
 
 Elf::Off
-FrameInfo::decodeCIEFDEHdr(DWARFReader &r, enum FIType type, Elf::Off *cieOff)
+CFI::decodeCIEFDEHdr(DWARFReader &r, enum FIType type, Elf::Off *cieOff)
 {
     size_t addrLen;
     Elf::Off length = r.getlength(&addrLen);
@@ -768,12 +768,12 @@ FrameInfo::decodeCIEFDEHdr(DWARFReader &r, enum FIType type, Elf::Off *cieOff)
 }
 
 bool
-FrameInfo::isCIE(Elf::Addr cieid)
+CFI::isCIE(Elf::Addr cieid)
 {
     return (type == FI_DEBUG_FRAME && cieid == 0xffffffff) || (type == FI_EH_FRAME && cieid == 0);
 }
 
-FrameInfo::FrameInfo(Info *info, const Elf::Section& section, enum FIType type_)
+CFI::CFI(Info *info, const Elf::Section& section, enum FIType type_)
     : dwarf(info)
     , sectionAddr(section.shdr.sh_addr)
     , io(section.io)
@@ -810,7 +810,7 @@ FrameInfo::FrameInfo(Info *info, const Elf::Section& section, enum FIType type_)
 }
 
 const FDE *
-FrameInfo::findFDE(Elf::Addr addr) const
+CFI::findFDE(Elf::Addr addr) const
 {
     for (const auto &fde : fdeList) {
         // XXX: addr can be just past last instruction in function
@@ -1042,7 +1042,7 @@ CIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
     return frame;
 }
 
-FDE::FDE(FrameInfo *fi, DWARFReader &reader, Elf::Off cieOff_, Elf::Off endOff_)
+FDE::FDE(CFI *fi, DWARFReader &reader, Elf::Off cieOff_, Elf::Off endOff_)
     : end(endOff_)
     , cieOff(cieOff_)
 {
@@ -1057,7 +1057,7 @@ FDE::FDE(FrameInfo *fi, DWARFReader &reader, Elf::Off cieOff_, Elf::Off endOff_)
     instructions = reader.getOffset();
 }
 
-CIE::CIE(const FrameInfo *fi, DWARFReader &r, Elf::Off end_)
+CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
     : frameInfo(fi)
     , addressEncoding(0)
     , lsdaEncoding(0)

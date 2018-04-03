@@ -572,7 +572,7 @@ Process::findRDebugAddr()
     if (interpBase && execImage->getInterpreter() != "") {
         try {
             addElfObject(imageCache.getImageForName(execImage->getInterpreter()), interpBase);
-            return findNamedSymbol(execImage->getInterpreter().c_str(), "_r_debug");
+            return findSymbolByName(execImage->getInterpreter().c_str(), "_r_debug");
         }
         catch (...) {
         }
@@ -596,7 +596,7 @@ Process::findObject(Elf::Addr addr, Elf::Off *loadAddr) const
 }
 
 Elf::Addr
-Process::findNamedSymbol(const char *objName, const char *symbolName) const
+Process::findSymbolByName(const char *objName, const char *symbolName) const
 {
     if (isStatic) // static exe: ignore object name.
         objName = 0;
