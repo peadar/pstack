@@ -40,7 +40,7 @@ ExpressionStack::eval(const Process &proc, const Attribute *attr, const StackFra
     const Info *dwarf = attr->entry->unit->dwarf;
     switch (attr->form()) {
         case DW_FORM_sec_offset: {
-            auto sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
+            auto &sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
             auto objIp = frame->ip - reloc;
             // convert this object-relative addr to a unit-relative one
             const Entry &unitEntry = *attr->entry->unit->entries.begin();

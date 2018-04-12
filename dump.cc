@@ -693,7 +693,7 @@ operator<< (std::ostream &os,
         "STT_LOPROC + 1",
         "STT_HIPROC"
     };
-    auto symStrings = obj.getLinkedSection(sec);
+    auto &symStrings = obj.getLinkedSection(sec);
 
     return JObject(os)
         .field("name", symStrings.io->readString(t->st_name))
@@ -723,8 +723,8 @@ operator <<(std::ostream &os, const JSON<Elf::Section, const Elf::Object *> &jse
     JObject writer(os);
 
     auto &o = *jsection.context;
-    const auto sec = jsection.object;
-    auto strs = o.getSection(o.getHeader().e_shstrndx);
+    const auto &sec = jsection.object;
+    auto &strs = o.getSection(o.getHeader().e_shstrndx);
     const Elf::Shdr &sh = sec.shdr;
 
     // Secions that have content that's raw text.

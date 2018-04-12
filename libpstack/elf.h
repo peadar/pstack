@@ -149,9 +149,8 @@ struct Section {
     Reader::csptr io;
     operator bool() const { return shdr.sh_type != SHT_NULL; }
     Section(const Reader::csptr &image, off_t off);
-    Section() {
-        shdr.sh_type = SHT_NULL;
-    }
+    Section() { shdr.sh_type = SHT_NULL; }
+    Section(const Section &) = default;
 };
 
 struct NoteIter;

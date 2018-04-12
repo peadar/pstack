@@ -95,7 +95,7 @@ Object::Object(ImageCache &cache, Reader::csptr io_)
         programHeaders[hdr.p_type].push_back(hdr);
 
     if (elfHeader.e_shnum == 0) {
-        sectionHeaders.push_back(Section());
+        sectionHeaders.emplace_back();
     } else {
         for (off = elfHeader.e_shoff, i = 0; i < elfHeader.e_shnum; i++) {
             sectionHeaders.emplace_back(io, off);
