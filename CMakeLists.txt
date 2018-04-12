@@ -98,10 +98,7 @@ else()
    message(WARNING "no LZMA support found")
 endif()
 
-if (PythonLibs_FOUND OR PYTHONLIBS_FOUND)
-   target_link_libraries(${PSTACK_BIN} ${PYTHON_LIBRARIES})
-   target_link_libraries(canal ${PYTHON_LIBRARIES})
-else()
+if (NOT (PythonLibs_FOUND OR PYTHONLIBS_FOUND))
    message(WARNING "no python support found")
 endif()
 
