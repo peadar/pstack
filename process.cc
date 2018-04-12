@@ -48,7 +48,7 @@ Process::Process(Elf::Object::sptr exec, Reader::csptr memory,
     , pathReplacements(prl)
     , sysent(0)
     , imageCache(cache)
-    , io(std::make_shared<CacheReader>(std::move(memory)))
+    , io(std::move(memory))
 {
     if (exec)
         entry = exec->getHeader().e_entry;
@@ -698,7 +698,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                             { 14, REG_FS }
                         };
                         p.io->readObj(sigContextAddr, &regs);
-                        frame = new StackFrame();
+                        frame = new Dwarf::StackFrame();
                         *frame = *prevFrame;
                         for (auto &reg : gregmap)
                             frame->setReg(reg.dwarf, regs[reg.greg]);
