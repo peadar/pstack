@@ -81,7 +81,6 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     , pubnamesh(sectionReader(*obj, ".debug_pubnames"))
     , arangesh(sectionReader(*obj, ".debug_aranges"))
 {
-    std::clog << "DWARF info in " << *io << std::endl;
     auto f = [this, &obj](const char *name, FIType ftype) {
         auto &section = obj->getSection(name, SHT_PROGBITS);
         if (!section)
