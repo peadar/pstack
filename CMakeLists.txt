@@ -21,7 +21,7 @@ endif()
 find_library(LTHREADDB NAMES thread_db PATHS (/usr/lib /usr/local/lib))
 find_package(LibLZMA)
 find_package(ZLIB)
-find_package(PythonLibs)
+find_package(PythonLibs 2)
 
 find_package(Git)
 if (GIT_FOUND)
