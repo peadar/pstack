@@ -359,6 +359,7 @@ public:
     bool hasRanges() { ranges(); return aranges.size() != 0; }
 
 private:
+    std::string getAltImageName() const;
     mutable std::list<PubnameUnit> pubnameUnits;
     mutable std::list<ARangeSet> aranges;
     // These are mutable so we can lazy-eval them when getters are called, and

@@ -81,6 +81,7 @@ public:
     template <typename Obj> Obj readObj(off_t offset) const;
     virtual size_t read(off_t off, size_t count, char *ptr) const = 0;
     virtual void describe(std::ostream &os) const = 0;
+    virtual std::string filename() const = 0;
     virtual std::string readString(off_t offset) const;
     virtual off_t size() const = 0;
     typedef std::shared_ptr<Reader> sptr;
@@ -123,6 +124,7 @@ public:
     FileReader(std::string name_);
     ~FileReader();
     void describe(std::ostream &os) const  override { os << name; }
+    std::string filename() const { return name; }
     off_t size() const override;
 };
 
@@ -158,6 +160,7 @@ public:
     std::string readString(off_t off) const override;
     ~CacheReader();
     off_t size() const override { return upstream->size(); }
+    std::string filename() const { return upstream->filename(); }
 };
 
 class MemReader : public Reader {
@@ -169,6 +172,7 @@ public:
     MemReader(size_t, const char *);
     void describe(std::ostream &) const override;
     off_t size() const override { return len; }
+    std::string filename() const override { return "in-memory"; }
 };
 
 class AllocMemReader : public MemReader {
@@ -189,6 +193,7 @@ public:
         os << "empty reader";
     }
     off_t size() const override { return 0; }
+    std::string filename() const override { return "nowhere"; }
 };
 
 class OffsetReader : public Reader {
@@ -216,6 +221,7 @@ public:
         os << *upstream << "[" << offset << "," << offset + length << "]";
     }
     off_t size() const override { return length; }
+    std::string filename() const { return upstream->filename(); }
 };
 
 std::string linkResolve(std::string name);

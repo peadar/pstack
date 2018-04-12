@@ -81,6 +81,7 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     , pubnamesh(sectionReader(*obj, ".debug_pubnames"))
     , arangesh(sectionReader(*obj, ".debug_aranges"))
 {
+    std::clog << "DWARF info in " << *io << std::endl;
     auto f = [this, &obj](const char *name, FIType ftype) {
         auto &section = obj->getSection(name, SHT_PROGBITS);
         if (!section)
@@ -658,8 +659,8 @@ Unit::decodeEntries(DWARFReader &r, Entries &entries, Entry *parent)
     }
 }
 
-static std::string
-getAltImageName(const Elf::Object::sptr &elf)
+std::string
+Info::getAltImageName() const
 {
     auto &section = elf->getSection(".gnu_debugaltlink", 0);
     std::string name = section.io->readString(0);
@@ -667,7 +668,7 @@ getAltImageName(const Elf::Object::sptr &elf)
         return name;
 
     // Not relative - prefix it with dirname of the image
-    std::string exedir = dirname(stringify(*elf->io));
+    std::string exedir = dirname(io->filename());
     return stringify(exedir, "/", name);
 }
 
@@ -676,7 +677,7 @@ Info::getAltDwarf() const
 {
     if (altImageLoaded)
         return altDwarf;
-    altDwarf = imageCache.getDwarf(getAltImageName(elf));
+    altDwarf = imageCache.getDwarf(getAltImageName());
     altImageLoaded = true;
     if (altDwarf == nullptr)
         throw (Exception() << "no alt-dwarf found");
