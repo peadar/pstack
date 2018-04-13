@@ -104,7 +104,7 @@ endif()
 
 install(TARGETS ${PSTACK_BIN} canal DESTINATION bin)
 install(TARGETS dwelf procman DESTINATION lib${LIB_SUFFIX})
-install(FILES ${CMAKE_SOURCE_DIR}/pstack.1 DESTINATION man/man1 RENAME ${PSTACK_BIN}.1 )
+install(FILES ${CMAKE_SOURCE_DIR}/pstack.1 DESTINATION share/man/man1 RENAME ${PSTACK_BIN}.1 )
 install(DIRECTORY libpstack DESTINATION include)
 install(CODE "execute_process (COMMAND setcap cap_sys_ptrace+ep ${CMAKE_INSTALL_PREFIX}/bin/${PSTACK_BIN})")
 
