@@ -8,9 +8,14 @@
 #include <unistd.h>
 #include <sys/user.h>
 
+extern void my_abort();
+
 void
 sigsegv(int segv, siginfo_t *info, void *ctxv)
 {
+    (void)segv;
+    (void)info;
+    (void)ctxv;
     my_abort();
 }
 
@@ -22,6 +27,8 @@ void g()
 
 void f(int argc, char *argv[])
 {
+    (void)argc;
+    (void)argv;
     g();
     pause();
 }

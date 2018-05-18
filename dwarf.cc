@@ -21,6 +21,7 @@
 
 using std::make_unique;
 using std::make_shared;
+using std::string;
 
 namespace Dwarf {
 
@@ -209,20 +210,16 @@ Unit::Unit(const Info *di, DWARFReader &r)
     r.addrLen = addrlen = r.getu8();
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
-#ifdef NOTYET
         abbreviations.emplace( std::piecewise_construct,
                 std::forward_as_tuple(Tag(code)),
                 std::forward_as_tuple(abbR, code));
-#else
-        abbreviations[Tag(code)] = Abbreviation(abbR, code);
-#endif
     DWARFReader entriesR(r.io, r.getOffset(), nextoff);
     assert(nextoff <= r.getLimit());
     decodeEntries(entriesR, entries, nullptr);
     r.setOffset(nextoff);
 }
 
-std::string
+string
 Unit::name() const
 {
     assert(entries.begin() != entries.end());
@@ -326,13 +323,13 @@ LineInfo::build(DWARFReader &r, const Unit *unit)
     directories.emplace_back(".");
     int count;
     for (count = 0;; count++) {
-        std::string s = r.getstring();
+        const auto &s = r.getstring();
         if (s == "")
             break;
         directories.push_back(s);
     }
 
-    files.emplace_back(std::string("unknown"), std::string("unknown"), 0U, 0U); // index 0 is special
+    files.emplace_back("unknown", "unknown", 0U, 0U); // index 0 is special
     for (count = 1;; count++) {
         char c;
         r.io->readObj(r.getOffset(), &c);
@@ -440,7 +437,7 @@ LineInfo::build(DWARFReader &r, const Unit *unit)
     }
 }
 
-FileEntry::FileEntry(std::string name_, std::string dir_, unsigned lastMod_, unsigned length_)
+FileEntry::FileEntry(string name_, string dir_, unsigned lastMod_, unsigned length_)
     : name(std::move(name_))
     , directory(std::move(dir_))
     , lastMod(lastMod_)
@@ -456,32 +453,31 @@ FileEntry::FileEntry(DWARFReader &r, LineInfo *info)
 {
 }
 
-Attribute::operator std::string() const
+Attribute::operator string() const
 {
     const Info *dwarf = entry->unit->dwarf;
     assert(dwarf != nullptr);
     switch (spec->form) {
 
-    case DW_FORM_GNU_strp_alt: {
-        const auto &alt = dwarf->getAltDwarf();
-        if (!alt) {
-            return "(alt string table unavailable)";
+        case DW_FORM_GNU_strp_alt: {
+            const auto &alt = dwarf->getAltDwarf();
+            if (!alt) {
+                return "(alt string table unavailable)";
+            }
+            auto &strs = alt->debugStrings;
+            if (!strs) {
+                return "(alt string table unavailable)";
+            }
+            return strs->readString(value.addr);
         }
-        auto &strs = alt->debugStrings;
-        if (!strs) {
-            return "(alt string table unavailable)";
-        }
-        return strs->readString(value.addr);
-                               }
+        case DW_FORM_strp:
+            return dwarf->debugStrings->readString(value.addr);
 
-    case DW_FORM_strp:
-        return dwarf->debugStrings->readString(value.addr);
+        case DW_FORM_string:
+            return entry->unit->io->readString(value.addr);
 
-    case DW_FORM_string:
-        return entry->unit->io->readString(value.addr);
-
-    default:
-        abort();
+        default:
+            abort();
     }
 }
 
@@ -618,13 +614,9 @@ Entry::Entry(DWARFReader &r, Tag code, Unit *unit_, intmax_t offset_, Entry *par
 {
 
     for (auto &spec : type->specs) {
-#ifdef NOTYET
         attributes.emplace(std::piecewise_construct,
-                std::forward_as_tuple(spec->name),
-                std::forward_as_tuple(r, this, &(*spec)));
-#else
-        attributes[spec.name] = Attribute(r, this, &spec);
-#endif
+                std::forward_as_tuple(spec.name),
+                std::forward_as_tuple(r, this, &spec));
     }
 
     switch (type->tag) {
@@ -658,16 +650,16 @@ Unit::decodeEntries(DWARFReader &r, Entries &entries, Entry *parent)
     }
 }
 
-std::string
+string
 Info::getAltImageName() const
 {
     auto &section = elf->getSection(".gnu_debugaltlink", 0);
-    std::string name = section.io->readString(0);
+    const auto &name = section.io->readString(0);
     if (name[0] == '/')
         return name;
 
     // Not relative - prefix it with dirname of the image
-    std::string exedir = dirname(io->filename());
+    const auto &exedir = dirname(io->filename());
     return stringify(exedir, "/", name);
 }
 
@@ -820,10 +812,10 @@ CFI::findFDE(Elf::Addr addr) const
     return nullptr;
 }
 
-std::vector<std::pair<std::string, int>>
+std::vector<std::pair<string, int>>
 Info::sourceFromAddr(uintmax_t addr)
 {
-    std::vector<std::pair<std::string, int>> info;
+    std::vector<std::pair<string, int>> info;
     std::list<Unit::sptr> units;
 
     if (hasRanges()) {
@@ -1202,7 +1194,7 @@ Entry::attrForName(AttrName name) const
 }
 
 Info::sptr
-ImageCache::getDwarf(const std::string &filename)
+ImageCache::getDwarf(const string &filename)
 {
     return getDwarf(getImageForName(filename));
 }
@@ -1231,18 +1223,18 @@ ImageCache::~ImageCache() {
         *debug << "DWARF image cache: lookups: " << dwarfLookups << ", hits=" << dwarfHits << std::endl;
 }
 
-std::string
+string
 typeName(const Entry *type)
 {
     if (type == nullptr) {
         return "void";
     }
-    std::string name = type->name();
+    const auto &name = type->name();
     if (name != "") {
         return name;
     }
     const Entry *base = type->referencedEntry(DW_AT_type);
-    std::string s, sep;
+    string s, sep;
     switch (type->type->tag) {
         case DW_TAG_pointer_type:
             return typeName(base) + " *";

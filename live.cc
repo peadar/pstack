@@ -145,7 +145,7 @@ LiveProcess::resumeProcess()
 {
     if (verbose >= 1)
         *debug << "resuming process " << pid << "\n";
-    listThreads([this] (const td_thrhandle_t *thr) {
+    listThreads([] (const td_thrhandle_t *thr) {
         if (td_thr_dbresume(thr) == TD_NOCAPAB) {
             td_thrinfo_t info;
             td_thr_get_info(thr, &info);

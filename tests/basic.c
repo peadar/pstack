@@ -5,10 +5,12 @@ extern void my_abort();
 
 void g(int two)
 {
+    (void)two;
     abort();
 }
 void f(int one)
 {
+    (void)one;
     g(2);
 }
 

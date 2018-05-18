@@ -124,7 +124,7 @@ public:
     FileReader(std::string name_);
     ~FileReader();
     void describe(std::ostream &os) const  override { os << name; }
-    std::string filename() const { return name; }
+    std::string filename() const override { return name; }
     off_t size() const override;
 };
 
@@ -160,7 +160,7 @@ public:
     std::string readString(off_t off) const override;
     ~CacheReader();
     off_t size() const override { return upstream->size(); }
-    std::string filename() const { return upstream->filename(); }
+    std::string filename() const override { return upstream->filename(); }
 };
 
 class MemReader : public Reader {
@@ -182,7 +182,6 @@ public:
    AllocMemReader(size_t s, char *buf_) : MemReader(s, buf_) {}
    ~AllocMemReader() { delete[] data; }
 };
-
 
 class NullReader : public Reader {
 public:
@@ -221,7 +220,7 @@ public:
         os << *upstream << "[" << offset << "," << offset + length << "]";
     }
     off_t size() const override { return length; }
-    std::string filename() const { return upstream->filename(); }
+    std::string filename() const override { return upstream->filename(); }
 };
 
 std::string linkResolve(std::string name);

@@ -25,7 +25,7 @@ public:
     size_t read(off_t, size_t, char *) const override;
     void describe(std::ostream &) const override;
     off_t size() const override;
-    std::string filename() const { return upstream->filename(); }
+    std::string filename() const override { return upstream->filename(); }
 };
 
 #endif

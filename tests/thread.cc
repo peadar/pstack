@@ -16,6 +16,7 @@ extern "C" {
 void *
 entry(void *unused)
 {
+   (void)unused;
    pthread_mutex_lock(&l);
    in_entry++;
    pthread_cond_signal(&c);

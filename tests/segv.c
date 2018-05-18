@@ -8,6 +8,7 @@ extern void my_abort();
 void
 sigsegv(int segv)
 {
+    (void)segv;
     my_abort();
 }
 
@@ -19,6 +20,8 @@ void g()
 
 void f(int argc, char *argv[])
 {
+    (void)argc;
+    (void)argv;
     g();
     pause();
 }

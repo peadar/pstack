@@ -195,7 +195,7 @@ public:
     CoreReader (CoreProcess *);
     virtual void describe(std::ostream &os) const override;
     off_t size() const override { return std::numeric_limits<off_t>::max(); }
-    std::string filename() const { return "process memory"; }
+    std::string filename() const override { return "process memory"; }
 };
 
 class CoreProcess : public Process {
