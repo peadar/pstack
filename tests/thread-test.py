@@ -16,6 +16,6 @@ for thread in threads:
             assert frame['source'][0]['first'] == 'thread.cc'
             lineNo = frame['source'][0]['second']
             # we should be between unlocking the mutex and pausing
-            assert lineNo >= 22 and lineNo <= 23
+            assert lineNo >= 23 and lineNo <= 24
 assert entryThreads == 10
 

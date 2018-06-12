@@ -43,6 +43,7 @@ Process::Process(Elf::Object::sptr exec, Reader::csptr memory,
     : entry(0)
     , interpBase(0)
     , isStatic(false)
+    , vdsoBase(0)
     , agent(nullptr)
     , execImage(std::move(exec))
     , pathReplacements(prl)
@@ -119,6 +120,7 @@ Process::processAUXV(const Reader &auxio)
             case AT_SYSINFO_EHDR: {
                 try {
                     auto elf = std::make_shared<Elf::Object>(imageCache, std::make_shared<OffsetReader>(io, hdr, 65536));
+                    vdsoBase = hdr;
                     addElfObject(elf, hdr);
                     if (verbose >= 2)
                         *debug << "VDSO " << *elf->io << " loaded at " << std::hex << hdr << "\n";
@@ -510,6 +512,10 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
     struct link_map map;
     for (auto mapAddr = Elf::Addr(rDebug.r_map); mapAddr != 0; mapAddr = Elf::Addr(map.l_next)) {
         io->readObj(mapAddr, &map);
+
+        // If we've loaded the VDSO, and we see it in the link map, just skip it.
+        if (map.l_addr == vdsoBase)
+           continue;
         // If we see the executable, just add it in and avoid going through the path replacement work
         if (mapAddr == Elf::Addr(rDebug.r_map)) {
             assert(map.l_addr == entry - execImage->getHeader().e_entry);

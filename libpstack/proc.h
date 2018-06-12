@@ -108,6 +108,7 @@ class Process : public ps_prochandle {
     Elf::Addr interpBase;
     void loadSharedObjects(Elf::Addr);
     bool isStatic;
+    Elf::Addr vdsoBase;
 
 protected:
     td_thragent_t *agent;
