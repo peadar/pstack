@@ -219,6 +219,7 @@ private:
         CachedSymbol() : disposition { SYM_NEW } {}
     };
     std::map<std::string, CachedSymbol> cachedSymbols;
+    mutable const Phdr *lastSegmentForAddress; // cache of last segment returned for a specific address.
 };
 
 /*

@@ -81,6 +81,7 @@ Object::Object(ImageCache &cache, Reader::csptr io_)
     , notes(this)
     , elfHeader(io->readObj<Ehdr>(0))
     , imageCache(cache)
+    , lastSegmentForAddress(nullptr)
 {
     debugLoaded = false;
     int i;
@@ -93,6 +94,10 @@ Object::Object(ImageCache &cache, Reader::csptr io_)
     OffsetReader headers(io, elfHeader.e_phoff, elfHeader.e_phnum * sizeof (Phdr));
     for (auto hdr : ReaderArray<Phdr>(headers))
         programHeaders[hdr.p_type].push_back(hdr);
+
+    for (auto &phdrs : programHeaders) {
+        std::sort(phdrs.second.begin(), phdrs.second.end(), [] (const Phdr &lhs, const Phdr &rhs) { return lhs.p_vaddr < rhs.p_vaddr; });
+    }
 
     if (elfHeader.e_shnum == 0) {
         sectionHeaders.emplace_back();
@@ -137,9 +142,19 @@ Object::Object(ImageCache &cache, Reader::csptr io_)
 const Phdr *
 Object::getSegmentForAddress(Off a) const
 {
-    for (const auto &hdr : getSegments(PT_LOAD))
-        if (hdr.p_vaddr <= a && hdr.p_vaddr + hdr.p_memsz > a)
-            return &hdr;
+    if (lastSegmentForAddress != nullptr &&
+          lastSegmentForAddress->p_vaddr <= a &&
+          lastSegmentForAddress->p_vaddr + lastSegmentForAddress->p_memsz > a)
+       return lastSegmentForAddress;
+    const auto &hdrs = getSegments(PT_LOAD);
+
+    auto pos = std::lower_bound(hdrs.begin(), hdrs.end(), a,
+            [] (const Elf::Phdr &header, Elf::Off addr) {
+            return header.p_vaddr + header.p_memsz < addr; });
+    if (pos != hdrs.end() && pos->p_vaddr <= a) {
+        lastSegmentForAddress = &*pos;
+        return lastSegmentForAddress;
+    }
     return nullptr;
 }
 
