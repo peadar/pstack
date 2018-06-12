@@ -77,6 +77,7 @@ class Reader {
     Reader(const Reader &);
 public:
     Reader() {}
+    virtual ~Reader() {}
     template <typename Obj> void readObj(off_t offset, Obj *object, size_t count = 1) const;
     template <typename Obj> Obj readObj(off_t offset) const;
     virtual size_t read(off_t off, size_t count, char *ptr) const = 0;

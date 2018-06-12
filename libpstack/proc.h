@@ -144,7 +144,7 @@ public:
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &);
     template <typename T> void listThreads(const T &);
     Elf::Addr findSymbolByName(const char *objName, const char *symbolName) const;
-    ~Process();
+    virtual ~Process();
     virtual void load(const PstackOptions &);
     virtual pid_t getPID() const = 0;
 };
