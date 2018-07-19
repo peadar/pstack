@@ -68,6 +68,7 @@ DWARF_ATTR(DW_AT_ranges, 0x55)
 DWARF_ATTR(DW_AT_trampoline, 0x56)
 DWARF_ATTR(DW_AT_call_column, 0x57)
 DWARF_ATTR(DW_AT_call_file, 0x58)
+DWARF_ATTR(DW_AT_linkage_name, 0x6E)
 
 DWARF_ATTR(DW_AT_lo_user, 0x2000)
 DWARF_ATTR(DW_AT_hi_user, 0x3fff)
