@@ -215,7 +215,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
                 std::forward_as_tuple(abbR, code));
     DWARFReader entriesR(r.io, r.getOffset(), nextoff);
     assert(nextoff <= r.getLimit());
-    decodeEntries(entriesR, entries, nullptr);
+    decodeEntries(entriesR, entries);
     r.setOffset(nextoff);
 }
 
@@ -606,9 +606,8 @@ Attribute::Attribute(DWARFReader &r, const Entry *entry_, const AttributeSpec *s
     }
 }
 
-Entry::Entry(DWARFReader &r, Tag code, Unit *unit_, intmax_t offset_, Entry *parent_)
-    : parent(parent_)
-    , unit(unit_)
+Entry::Entry(DWARFReader &r, Tag code, Unit *unit_, intmax_t offset_)
+    : unit(unit_)
     , type(&unit->abbreviations.find(code)->second)
     , offset(offset_)
 {
@@ -634,18 +633,18 @@ Entry::Entry(DWARFReader &r, Tag code, Unit *unit_, intmax_t offset_, Entry *par
         break;
     }
     if (type->hasChildren)
-        unit_->decodeEntries(r, children, this);
+        unit_->decodeEntries(r, children);
 }
 
 void
-Unit::decodeEntries(DWARFReader &r, Entries &entries, Entry *parent)
+Unit::decodeEntries(DWARFReader &r, Entries &entries)
 {
     while (!r.empty()) {
         intmax_t offset = r.getOffset();
         intmax_t tagUleb = r.getuleb128();
         if (tagUleb == 0)
             return;
-        entries.emplace_back(r, Tag(tagUleb), this, offset, parent);
+        entries.emplace_back(r, Tag(tagUleb), this, offset);
         allEntries[offset] = &entries.back();
     }
 }

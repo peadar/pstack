@@ -156,7 +156,6 @@ class Entry {
     Entry() = delete;
     Entry(const Entry &) = delete;
 public:
-    Entry *parent;
     Entries children;
     const Unit *unit;
     const Abbreviation *type;
@@ -168,7 +167,7 @@ public:
 #endif
     const Attribute *attrForName(AttrName name) const;
     const Entry *referencedEntry(AttrName name) const;
-    Entry(DWARFReader &, Tag, Unit *, intmax_t, Entry *);
+    Entry(DWARFReader &, Tag, Unit *, intmax_t);
     std::string name() const {
         const Attribute *attr = attrForName(DW_AT_name);
         if (attr != nullptr)
@@ -242,7 +241,7 @@ public:
     Reader::csptr io;
     off_t offset;
     size_t dwarfLen;
-    void decodeEntries(DWARFReader &r, Entries &entries, Entry *parent);
+    void decodeEntries(DWARFReader &r, Entries &entries);
     uint32_t length;
     uint16_t version;
     uint8_t addrlen;
