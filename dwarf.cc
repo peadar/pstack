@@ -555,28 +555,32 @@ DIE::readValue(DWARFReader &r, Form form, Value &value)
         break;
 
     case DW_FORM_block1:
-        value.block.length = r.getu8();
-        value.block.offset = r.getOffset();
-        r.skip(value.block.length);
+        value.block = new Block();
+        value.block->length = r.getu8();
+        value.block->offset = r.getOffset();
+        r.skip(value.block->length);
         break;
 
     case DW_FORM_block2:
-        value.block.length = r.getu16();
-        value.block.offset = r.getOffset();
-        r.skip(value.block.length);
+        value.block = new Block();
+        value.block->length = r.getu16();
+        value.block->offset = r.getOffset();
+        r.skip(value.block->length);
         break;
 
     case DW_FORM_block4:
-        value.block.length = r.getu32();
-        value.block.offset = r.getOffset();
-        r.skip(value.block.length);
+        value.block = new Block();
+        value.block->length = r.getu32();
+        value.block->offset = r.getOffset();
+        r.skip(value.block->length);
         break;
 
     case DW_FORM_exprloc:
     case DW_FORM_block:
-        value.block.length = r.getuleb128();
-        value.block.offset = r.getOffset();
-        r.skip(value.block.length);
+        value.block = new Block();
+        value.block->length = r.getuleb128();
+        value.block->offset = r.getOffset();
+        r.skip(value.block->length);
         break;
 
     case DW_FORM_flag:
@@ -599,6 +603,25 @@ DIE::readValue(DWARFReader &r, Form form, Value &value)
         value.addr = 0;
         abort();
         break;
+    }
+}
+
+DIE::~DIE()
+{
+    int i = 0;
+    for (auto form : type->forms) {
+        switch (form) {
+            case DW_FORM_exprloc:
+            case DW_FORM_block:
+            case DW_FORM_block1:
+            case DW_FORM_block2:
+            case DW_FORM_block4:
+                delete values[i].block;
+                break;
+            default:
+                break;
+        }
+        ++i;
     }
 }
 

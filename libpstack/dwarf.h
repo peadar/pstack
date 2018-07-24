@@ -120,7 +120,7 @@ union Value {
     uintmax_t addr;
     uintmax_t udata;
     intmax_t sdata;
-    Block block;
+    Block *block;
     bool flag;
 };
 
@@ -142,7 +142,7 @@ public:
     explicit operator uintmax_t() const;
     explicit operator bool() const { return value().flag; }
     const DIE *getReference() const;
-    const Block &block() const { return value().block; }
+    const Block &block() const { return *value().block; }
     friend class DIE;
 };
 
@@ -158,6 +158,8 @@ public:
     bool attrForName(AttrName name, Attribute &) const;
     const DIE *referencedEntry(AttrName name) const;
     DIE(DWARFReader &, size_t, Unit *);
+    ~DIE();
+
     std::string name() const {
         Attribute name;
         return attrForName(DW_AT_name, name) ? std::string(name) : "";
