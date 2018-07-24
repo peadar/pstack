@@ -240,13 +240,14 @@ std::ostream & operator << (std::ostream &os, const JSON<Dwarf::Entry, C> &jo) {
     return o;
 }
 
+/*
 template <typename C>
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::AttributeSpec, C> spec) {
     return JObject(os)
         .field("name", spec.object.name)
         .field("form", spec.object.form);
 }
-
+*/
 template <typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::Abbreviation, C> &abbr) {
@@ -388,6 +389,7 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
         writer.field("value", std::string(attr));
         break;
 
+        /*
     case DW_FORM_ref_addr:
     case DW_FORM_ref2:
     case DW_FORM_ref4:
@@ -399,6 +401,7 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
            writer.field("value", EntryReference(entry));
         break;
     }
+    */
     case DW_FORM_exprloc:
     case DW_FORM_block1:
     case DW_FORM_block2:

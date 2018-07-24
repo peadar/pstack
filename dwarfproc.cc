@@ -44,7 +44,8 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFra
             auto objIp = frame->ip - reloc;
             // convert this object-relative addr to a unit-relative one
             const Entry &unitEntry = *attr.entry->unit->entries.begin();
-            auto unitLow = unitEntry.attrForName(DW_AT_low_pc);
+            Attribute unitLow;
+            unitEntry.attrForName(DW_AT_low_pc, unitLow);
 #ifndef NDEBUG
             Attribute unitHigh;
 

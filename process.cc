@@ -261,7 +261,9 @@ operator << (std::ostream &os, const RemoteValue &rv)
             if (size == 0) {
                 os << "unrepresentable(1)";
             }
-            auto encoding = uintmax_t(type->attrForName(DW_AT_encoding));
+            Attribute encoding;
+            if (!type->attrForName(DW_AT_encoding, encoding))
+                throw (Exception() << "no encoding specified for base type");
 
             union {
                int8_t *int8;
@@ -273,7 +275,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
             } u;
             u.cp = &buf[0];
 
-            switch (encoding) {
+            switch (uintmax_t(encoding)) {
                 case DW_ATE_address:
                     os << *u.voidp;
                     break;
@@ -454,7 +456,11 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         }
                         frame->function = de;
                         frame->dwarf = dwarf; // hold on to 'de'
-                        os << "in " << symName << sigmsg << "+" << objIp - uintmax_t(de->attrForName(Dwarf::DW_AT_low_pc)) << "(";
+                        os << "in " << symName << sigmsg;
+                        Dwarf::Attribute lowpc;
+                        if (de->attrForName(Dwarf::DW_AT_low_pc, lowpc))
+                            os << "+" << objIp - uintmax_t(lowpc);
+                        os << "(";
                         if (options(::PstackOptions::doargs)) {
                             os << ArgPrint(*this, frame);
                         }

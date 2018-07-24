@@ -237,14 +237,14 @@ Abbreviation::Abbreviation(DWARFReader &r)
         auto form = Form(r.getuleb128());
         if (name == 0 && form == 0)
             break;
-        specs.emplace_back(name, form);
+        forms.emplace_back(form);
         attrName2Idx[name] = i;
     }
 }
 
 Attribute::operator intmax_t() const
 {
-    switch (spec->form) {
+    switch (*formp) {
     case DW_FORM_data1:
     case DW_FORM_data2:
     case DW_FORM_data4:
@@ -261,7 +261,7 @@ Attribute::operator intmax_t() const
 
 Attribute::operator uintmax_t() const
 {
-    switch (spec->form) {
+    switch (*formp) {
     case DW_FORM_data1:
     case DW_FORM_data2:
     case DW_FORM_data4:
@@ -457,17 +457,15 @@ Attribute::operator string() const
 {
     const Info *dwarf = entry->unit->dwarf;
     assert(dwarf != nullptr);
-    switch (spec->form) {
+    switch (*formp) {
 
         case DW_FORM_GNU_strp_alt: {
             const auto &alt = dwarf->getAltDwarf();
-            if (!alt) {
+            if (!alt)
                 return "(alt string table unavailable)";
-            }
             auto &strs = alt->debugStrings;
-            if (!strs) {
+            if (!strs)
                 return "(alt string table unavailable)";
-            }
             return strs->readString(value().addr);
         }
         case DW_FORM_strp:
@@ -482,9 +480,9 @@ Attribute::operator string() const
 }
 
 void
-Entry::readValue(DWARFReader &r, const AttributeSpec &spec, Value &value)
+Entry::readValue(DWARFReader &r, Form form, Value &value)
 {
-    switch (spec.form) {
+    switch (form) {
 
     case DW_FORM_GNU_strp_alt: {
         value.addr = r.getint(unit->dwarfLen);
@@ -607,12 +605,12 @@ Entry::readValue(DWARFReader &r, const AttributeSpec &spec, Value &value)
 Entry::Entry(DWARFReader &r, size_t abbrev, Unit *unit_)
     : unit(unit_)
     , type(&unit->abbreviations.find(abbrev)->second)
-    , values(type->specs.size())
+    , values(type->forms.size())
 {
 
     int i = 0;
-    for (auto &spec : type->specs)
-        readValue(r, spec, values[i++]);
+    for (auto form : type->forms)
+        readValue(r, form, values[i++]);
 
     switch (type->tag) {
     case DW_TAG_partial_unit:
@@ -661,10 +659,10 @@ Info::getAltImageName() const
 Info::sptr
 Info::getAltDwarf() const
 {
-    if (altImageLoaded)
-        return altDwarf;
-    altDwarf = imageCache.getDwarf(getAltImageName());
-    altImageLoaded = true;
+    if (!altImageLoaded) {
+        altDwarf = imageCache.getDwarf(getAltImageName());
+        altImageLoaded = true;
+    }
     if (altDwarf == nullptr)
         throw (Exception() << "no alt-dwarf found");
     return altDwarf;
@@ -1110,21 +1108,17 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
 const Entry *
 Entry::referencedEntry(AttrName name) const
 {
-    try {
-        return &attrForName(name).getReference();
-    }
-    catch (...) {
-        return nullptr;
-    }
+    Attribute attr;
+    return attrForName(name, attr) ? attr.getReference() : nullptr;
 }
 
-const Entry &
+const Entry *
 Attribute::getReference() const
 {
 
     const Info *dwarf = entry->unit->dwarf;
     off_t off;
-    switch (spec->form) {
+    switch (*formp) {
         case DW_FORM_ref_addr:
             off = value().addr;
             break;
@@ -1150,7 +1144,7 @@ Attribute::getReference() const
 
     // Try this unit first (if we're dealing with the same Info)
     if (dwarf == entry->unit->dwarf && otherEntry != entry->unit->allEntries.end())
-        return *otherEntry->second;
+        return otherEntry->second;
 
     // Nope - try other units.
     for (const auto &u : dwarf->getUnits()) {
@@ -1158,18 +1152,9 @@ Attribute::getReference() const
             continue;
         const auto &otherEntry = u->allEntries.find(off);
         if (otherEntry != u->allEntries.end())
-            return *otherEntry->second;
+            return otherEntry->second;
     }
     throw (Exception() << "reference not found");
-}
-
-const Attribute
-Entry::attrForName(AttrName name) const
-{
-    Attribute attr;
-    if (!attrForName(name, attr))
-        throw (Exception() << "no such attribute " << name);
-    return attr;
 }
 
 bool
@@ -1177,7 +1162,7 @@ Entry::attrForName(AttrName name, Attribute &attr) const
 {
     auto loc = type->attrName2Idx.find(name);
     if (loc != type->attrName2Idx.end()) {
-        attr.spec = &type->specs.at(loc->second);
+        attr.formp = &type->forms.at(loc->second);
         attr.entry = this;
         return true;
     }

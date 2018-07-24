@@ -332,7 +332,10 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
                 for (const auto &var : compile.children) {
                     if (var.type->tag == Dwarf::DW_TAG_variable && var.name() == "interp_head") {
                         Dwarf::ExpressionStack evalStack;
-                        interp_head = evalStack.eval(proc, var.attrForName(Dwarf::DW_AT_location), 0, o.loadAddr);
+                        Dwarf::Attribute location;
+                        if (!var.attrForName(Dwarf::DW_AT_location, location))
+                                throw Exception() << "no DW_AT_location for interpreter";
+                        interp_head = evalStack.eval(proc, location, 0, o.loadAddr);
                         libPython = &o;
                         break;
                     }

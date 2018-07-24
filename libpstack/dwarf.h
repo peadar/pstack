@@ -71,16 +71,10 @@ enum LineEOpcode {
 };
 #undef DWARF_LINE_E
 
-struct AttributeSpec {
-    enum AttrName name;
-    enum Form form;
-    AttributeSpec(AttrName name_, Form form_) : name(name_), form(form_) { }
-};
-
 struct Abbreviation {
     Tag tag;
     bool hasChildren;
-    std::vector<AttributeSpec> specs;
+    std::vector<Form> forms;
     std::unordered_map<AttrName, size_t> attrName2Idx;
     Abbreviation(DWARFReader &);
     Abbreviation() {}
@@ -134,21 +128,20 @@ union Value {
 const Entry *findEntryForFunc(Elf::Addr address, const Entry *entry);
 
 class Attribute {
-    const AttributeSpec *spec; /* From abbrev table attached to type */
+    const Form *formp; /* From abbrev table attached to type */
 public:
     const Entry *entry;
-    Form form() const { return spec->form; }
-    AttrName name() const { return spec->name; }
+    Form form() const { return *formp; }
     ~Attribute() { }
-    Attribute(const AttributeSpec *spec_ = nullptr, const Entry *entry_ = nullptr)
-       : spec(spec_), entry(entry_) {}
+    Attribute(const Form *formp_ = nullptr, const Entry *entry_ = nullptr)
+       : formp(formp_), entry(entry_) {}
     const Value &value() const;
     Value &value();
     explicit operator std::string() const;
     explicit operator intmax_t() const;
     explicit operator uintmax_t() const;
     explicit operator bool() const { return value().flag; }
-    const Entry &getReference() const;
+    const Entry *getReference() const;
     const Block &block() const { return value().block; }
     friend class Entry;
 };
@@ -156,18 +149,19 @@ public:
 class Entry {
     Entry() = delete;
     Entry(const Entry &) = delete;
-    friend class Attribute;
-    void readValue(DWARFReader &, const AttributeSpec &spec, Value &value);
+    void readValue(DWARFReader &, Form form, Value &value);
 public:
     Entries children;
     const Unit *unit;
     const Abbreviation *type;
     std::vector<Value> values;
-    const Attribute attrForName(AttrName name) const;
     bool attrForName(AttrName name, Attribute &) const;
     const Entry *referencedEntry(AttrName name) const;
     Entry(DWARFReader &, size_t, Unit *);
-    std::string name() const { return std::string(attrForName(DW_AT_name)); }
+    std::string name() const {
+        Attribute name;
+        return attrForName(DW_AT_name, name) ? std::string(name) : "";
+    }
 };
 
 enum FIType {
@@ -485,7 +479,7 @@ public:
 
 std::string typeName(const Dwarf::Entry *type);
 const Entry *findEntryForFunc(Elf::Addr address, const Entry &entry);
-inline const Value &Attribute::value() const { return entry->values.at(entry->type->attrName2Idx.find(spec->name)->second); }
+inline const Value &Attribute::value() const { return entry->values.at(formp - &entry->type->forms[0]); }
 
 #define DWARF_OP(op, value, args) op = value,
 enum ExpressionOp {
