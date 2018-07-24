@@ -230,7 +230,7 @@ std::ostream &operator << (std::ostream &os, const JSON<Dwarf::LineInfo, C> &jo)
 }
 
 template <typename C>
-std::ostream & operator << (std::ostream &os, const JSON<Dwarf::Entry, C> &jo) {
+std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIE, C> &jo) {
     auto &entry = jo.object;
     JObject o(os);
     o.field("type", entry.type->tag);
@@ -347,8 +347,8 @@ operator << (std::ostream &os, const JSON<Dwarf::Block> &b)
 }
 
 struct EntryReference {
-   const Dwarf::Entry *entry;
-   explicit EntryReference(const Dwarf::Entry *entry_) : entry(entry_) {}
+   const Dwarf::DIE *entry;
+   explicit EntryReference(const Dwarf::DIE *entry_) : entry(entry_) {}
 };
 
 std::ostream &

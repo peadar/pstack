@@ -17,7 +17,7 @@ namespace Dwarf {
 enum HasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
 
 class Attribute;
-class Entry;
+class DIE;
 class ExpressionStack;
 class Info;
 class LineInfo;
@@ -27,7 +27,7 @@ struct CFI;
 struct Unit;
 
 // The DWARF Unit's allEntries map contains the underlying data for the tree.
-typedef std::list<Entry> Entries;
+typedef std::list<DIE> Entries;
 
 #define DWARF_TAG(a,b) a = b,
 enum Tag {
@@ -125,15 +125,15 @@ union Value {
 };
 
 
-const Entry *findEntryForFunc(Elf::Addr address, const Entry *entry);
+const DIE *findEntryForFunc(Elf::Addr address, const DIE *entry);
 
 class Attribute {
     const Form *formp; /* From abbrev table attached to type */
 public:
-    const Entry *entry;
+    const DIE *entry;
     Form form() const { return *formp; }
     ~Attribute() { }
-    Attribute(const Form *formp_ = nullptr, const Entry *entry_ = nullptr)
+    Attribute(const Form *formp_ = nullptr, const DIE *entry_ = nullptr)
        : formp(formp_), entry(entry_) {}
     const Value &value() const;
     Value &value();
@@ -141,14 +141,14 @@ public:
     explicit operator intmax_t() const;
     explicit operator uintmax_t() const;
     explicit operator bool() const { return value().flag; }
-    const Entry *getReference() const;
+    const DIE *getReference() const;
     const Block &block() const { return value().block; }
-    friend class Entry;
+    friend class DIE;
 };
 
-class Entry {
-    Entry() = delete;
-    Entry(const Entry &) = delete;
+class DIE {
+    DIE() = delete;
+    DIE(const DIE &) = delete;
     void readValue(DWARFReader &, Form form, Value &value);
 public:
     Entries children;
@@ -156,8 +156,8 @@ public:
     const Abbreviation *type;
     std::vector<Value> values;
     bool attrForName(AttrName name, Attribute &) const;
-    const Entry *referencedEntry(AttrName name) const;
-    Entry(DWARFReader &, size_t, Unit *);
+    const DIE *referencedEntry(AttrName name) const;
+    DIE(DWARFReader &, size_t, Unit *);
     std::string name() const {
         Attribute name;
         return attrForName(DW_AT_name, name) ? std::string(name) : "";
@@ -216,7 +216,7 @@ struct Unit {
     Unit() = delete;
     Unit(const Unit &) = delete;
     std::unordered_map<size_t, Abbreviation> abbreviations;
-    std::map<off_t, Entry *> allEntries;
+    std::map<off_t, DIE *> allEntries;
 public:
     const Info *dwarf;
     Reader::csptr io;
@@ -477,8 +477,8 @@ public:
     void skip(Elf::Off amount) { off += amount; }
 };
 
-std::string typeName(const Dwarf::Entry *type);
-const Entry *findEntryForFunc(Elf::Addr address, const Entry &entry);
+std::string typeName(const DIE *type);
+const DIE *findEntryForFunc(Elf::Addr address, const DIE &entry);
 inline const Value &Attribute::value() const { return entry->values.at(formp - &entry->type->forms[0]); }
 
 #define DWARF_OP(op, value, args) op = value,

@@ -39,7 +39,7 @@ struct StackFrame {
     Elf::Object::sptr elf;
     Elf::Addr elfReloc;
     Info::sptr dwarf;
-    const Dwarf::Entry * function;
+    const Dwarf::DIE * function;
     CFI *frameInfo;
     const FDE *fde;
     const CIE *cie;

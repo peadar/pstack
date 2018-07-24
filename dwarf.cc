@@ -480,7 +480,7 @@ Attribute::operator string() const
 }
 
 void
-Entry::readValue(DWARFReader &r, Form form, Value &value)
+DIE::readValue(DWARFReader &r, Form form, Value &value)
 {
     switch (form) {
 
@@ -602,7 +602,7 @@ Entry::readValue(DWARFReader &r, Form form, Value &value)
     }
 }
 
-Entry::Entry(DWARFReader &r, size_t abbrev, Unit *unit_)
+DIE::DIE(DWARFReader &r, size_t abbrev, Unit *unit_)
     : unit(unit_)
     , type(&unit->abbreviations.find(abbrev)->second)
     , values(type->forms.size())
@@ -1105,14 +1105,14 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
     r.setOffset(end);
 }
 
-const Entry *
-Entry::referencedEntry(AttrName name) const
+const DIE *
+DIE::referencedEntry(AttrName name) const
 {
     Attribute attr;
     return attrForName(name, attr) ? attr.getReference() : nullptr;
 }
 
-const Entry *
+const DIE *
 Attribute::getReference() const
 {
 
@@ -1158,7 +1158,7 @@ Attribute::getReference() const
 }
 
 bool
-Entry::attrForName(AttrName name, Attribute &attr) const
+DIE::attrForName(AttrName name, Attribute &attr) const
 {
     auto loc = type->attrName2Idx.find(name);
     if (loc != type->attrName2Idx.end()) {
@@ -1215,7 +1215,7 @@ ImageCache::~ImageCache() {
 }
 
 string
-typeName(const Entry *type)
+typeName(const DIE *type)
 {
     if (type == nullptr) {
         return "void";
@@ -1224,7 +1224,7 @@ typeName(const Entry *type)
     if (name != "") {
         return name;
     }
-    const Entry *base = type->referencedEntry(DW_AT_type);
+    const DIE *base = type->referencedEntry(DW_AT_type);
     string s, sep;
     switch (type->type->tag) {
         case DW_TAG_pointer_type:
@@ -1255,8 +1255,8 @@ typeName(const Entry *type)
 }
 
 
-const Entry *
-findEntryForFunc(Elf::Addr address, const Entry &entry)
+const DIE *
+findEntryForFunc(Elf::Addr address, const DIE &entry)
 {
     switch (entry.type->tag) {
         case DW_TAG_subprogram: {

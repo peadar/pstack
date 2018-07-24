@@ -222,8 +222,8 @@ struct ArgPrint {
 struct RemoteValue {
     const Process &p;
     const Elf::Addr addr;
-    const Dwarf::Entry *type;
-    RemoteValue(const Process &p_, Elf::Addr addr_, const Dwarf::Entry *type_)
+    const Dwarf::DIE *type;
+    RemoteValue(const Process &p_, Elf::Addr addr_, const Dwarf::DIE *type_)
         : p(p_)
         , addr(addr_)
         , type(type_)
@@ -366,7 +366,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
         switch (child.type->tag) {
             case DW_TAG_formal_parameter: {
                 auto name = child.name();
-                const Dwarf::Entry *type = child.referencedEntry(DW_AT_type);
+                const Dwarf::DIE *type = child.referencedEntry(DW_AT_type);
                 Elf::Addr addr = 0;
                 os << sep << name;
                 if (type != nullptr) {
@@ -444,7 +444,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             for (const auto &u : units) {
                 // find the DIE for this function
                 for (auto &it : u->entries) {
-                    const Dwarf::Entry *de = Dwarf::findEntryForFunc(objIp, it);
+                    const Dwarf::DIE *de = Dwarf::findEntryForFunc(objIp, it);
                     if (de != nullptr) {
                         symName = de->name();
                         if (symName == "") {

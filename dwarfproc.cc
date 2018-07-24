@@ -43,7 +43,7 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFra
             auto &sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
             auto objIp = frame->ip - reloc;
             // convert this object-relative addr to a unit-relative one
-            const Entry &unitEntry = *attr.entry->unit->entries.begin();
+            const DIE &unitEntry = *attr.entry->unit->entries.begin();
             Attribute unitLow;
             unitEntry.attrForName(DW_AT_low_pc, unitLow);
 #ifndef NDEBUG
