@@ -605,10 +605,9 @@ Attribute::Attribute(DWARFReader &r, const Entry *entry_, const AttributeSpec *s
     }
 }
 
-Entry::Entry(DWARFReader &r, size_t abbrev, Unit *unit_, intmax_t offset_)
+Entry::Entry(DWARFReader &r, size_t abbrev, Unit *unit_)
     : unit(unit_)
     , type(&unit->abbreviations.find(abbrev)->second)
-    , offset(offset_)
 {
 
     for (auto &spec : type->specs) {
@@ -643,7 +642,7 @@ Unit::decodeEntries(DWARFReader &r, Entries &entries)
         size_t abbrev = r.getuleb128();
         if (abbrev == 0)
             return;
-        entries.emplace_back(r, abbrev, this, offset);
+        entries.emplace_back(r, abbrev, this);
         allEntries[offset] = &entries.back();
     }
 }

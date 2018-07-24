@@ -234,7 +234,6 @@ std::ostream & operator << (std::ostream &os, const JSON<Dwarf::Entry, C> &jo) {
     auto &entry = jo.object;
     JObject o(os);
     o.field("type", entry.type->tag);
-    o.field("offset", entry.offset);
     o.field("attributes", entry.attributes);
     if (entry.type->hasChildren)
         o.field("children", entry.children);
@@ -357,7 +356,6 @@ operator << (std::ostream &os, const JSON<EntryReference> &jer)
    const auto &e = jer.object.entry;
    return JObject(os)
       .field("file", stringify(*e->unit->dwarf->elf->io))
-      .field("offset", e->offset)
       .field("name", e->name());
 }
 

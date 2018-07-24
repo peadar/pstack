@@ -158,7 +158,6 @@ public:
     Entries children;
     const Unit *unit;
     const Abbreviation *type;
-    intmax_t offset;
 #ifdef NOTYET
     std::unordered_map<AttrName, Attribute> attributes;
 #else
@@ -166,7 +165,7 @@ public:
 #endif
     const Attribute *attrForName(AttrName name) const;
     const Entry *referencedEntry(AttrName name) const;
-    Entry(DWARFReader &, size_t, Unit *, intmax_t);
+    Entry(DWARFReader &, size_t, Unit *);
     std::string name() const {
         const Attribute *attr = attrForName(DW_AT_name);
         if (attr != nullptr)
