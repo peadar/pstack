@@ -166,7 +166,7 @@ public:
 #endif
     const Attribute *attrForName(AttrName name) const;
     const Entry *referencedEntry(AttrName name) const;
-    Entry(DWARFReader &, Tag, Unit *, intmax_t);
+    Entry(DWARFReader &, size_t, Unit *, intmax_t);
     std::string name() const {
         const Attribute *attr = attrForName(DW_AT_name);
         if (attr != nullptr)
@@ -222,18 +222,11 @@ public:
 };
 }
 
-// Override hash for Tag
-namespace std {
-template <> class hash<Dwarf::Tag> { public: size_t operator() (Dwarf::Tag tag) const {
-    return std::hash<int>()(int(tag));
-}};
-};
-
 namespace Dwarf {
 struct Unit {
     Unit() = delete;
     Unit(const Unit &) = delete;
-    std::unordered_map<Tag, Abbreviation> abbreviations;
+    std::unordered_map<size_t, Abbreviation> abbreviations;
     std::map<off_t, Entry *> allEntries;
 public:
     const Info *dwarf;

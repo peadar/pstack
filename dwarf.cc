@@ -211,7 +211,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
         abbreviations.emplace( std::piecewise_construct,
-                std::forward_as_tuple(Tag(code)),
+                std::forward_as_tuple(code),
                 std::forward_as_tuple(abbR));
     DWARFReader entriesR(r.io, r.getOffset(), nextoff);
     assert(nextoff <= r.getLimit());
@@ -605,9 +605,9 @@ Attribute::Attribute(DWARFReader &r, const Entry *entry_, const AttributeSpec *s
     }
 }
 
-Entry::Entry(DWARFReader &r, Tag code, Unit *unit_, intmax_t offset_)
+Entry::Entry(DWARFReader &r, size_t abbrev, Unit *unit_, intmax_t offset_)
     : unit(unit_)
-    , type(&unit->abbreviations.find(code)->second)
+    , type(&unit->abbreviations.find(abbrev)->second)
     , offset(offset_)
 {
 
@@ -640,10 +640,10 @@ Unit::decodeEntries(DWARFReader &r, Entries &entries)
 {
     while (!r.empty()) {
         intmax_t offset = r.getOffset();
-        intmax_t tagUleb = r.getuleb128();
-        if (tagUleb == 0)
+        size_t abbrev = r.getuleb128();
+        if (abbrev == 0)
             return;
-        entries.emplace_back(r, Tag(tagUleb), this, offset);
+        entries.emplace_back(r, abbrev, this, offset);
         allEntries[offset] = &entries.back();
     }
 }
