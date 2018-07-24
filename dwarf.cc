@@ -212,7 +212,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
     while ((code = abbR.getuleb128()) != 0)
         abbreviations.emplace( std::piecewise_construct,
                 std::forward_as_tuple(Tag(code)),
-                std::forward_as_tuple(abbR, code));
+                std::forward_as_tuple(abbR));
     DWARFReader entriesR(r.io, r.getOffset(), nextoff);
     assert(nextoff <= r.getLimit());
     decodeEntries(entriesR, entries);
@@ -228,8 +228,7 @@ Unit::name() const
 
 Unit::~Unit() = default;
 
-Abbreviation::Abbreviation(DWARFReader &r, intmax_t code_)
-    : code(code_)
+Abbreviation::Abbreviation(DWARFReader &r)
 {
     tag = Tag(r.getuleb128());
     hasChildren = HasChildren(r.getu8()) == DW_CHILDREN_yes;

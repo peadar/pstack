@@ -78,11 +78,10 @@ struct AttributeSpec {
 };
 
 struct Abbreviation {
-    intmax_t code;
     Tag tag;
     bool hasChildren;
     std::list<AttributeSpec> specs;
-    Abbreviation(DWARFReader &, intmax_t);
+    Abbreviation(DWARFReader &);
     Abbreviation() {}
 };
 
