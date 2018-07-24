@@ -26,7 +26,7 @@ public:
     ExpressionStack(): isReg(false) {}
     Elf::Addr poptop() { Elf::Addr tos = top(); pop(); return tos; }
     Elf::Addr eval(const Process &, Dwarf::DWARFReader &r, const StackFrame *frame, Elf::Addr);
-    Elf::Addr eval(const Process &, const Dwarf::Attribute *, const StackFrame *, Elf::Addr);
+    Elf::Addr eval(const Process &, const Dwarf::Attribute &, const StackFrame *, Elf::Addr);
 };
 
 // this works for i386 and x86_64 - might need to change for other archs.

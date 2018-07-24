@@ -239,11 +239,13 @@ operator << (std::ostream &os, const RemoteValue &rv)
     auto type = rv.type;
     while (type->type->tag == DW_TAG_typedef || type->type->tag == DW_TAG_const_type)
        type = type->referencedEntry(DW_AT_type);
-    auto sizeAttr = type->attrForName(DW_AT_byte_size);
-    std::vector<char> buf;
+
+
     uintmax_t size;
-    if (sizeAttr != nullptr) {
-        size = uintmax_t(*sizeAttr);
+    Attribute sizeAttr;
+    std::vector<char> buf;
+    if (type->attrForName(DW_AT_byte_size, sizeAttr)) {
+        size = uintmax_t(sizeAttr);
         buf.resize(size);
         auto rc = rv.p.io->read(rv.addr, size, &buf[0]);
         if (rc != size) {
@@ -259,8 +261,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
             if (size == 0) {
                 os << "unrepresentable(1)";
             }
-            auto encodingAttr = type->attrForName(DW_AT_encoding);
-            auto encoding = uintmax_t(*encodingAttr);
+            auto encoding = uintmax_t(type->attrForName(DW_AT_encoding));
 
             union {
                int8_t *int8;
@@ -367,9 +368,9 @@ operator << (std::ostream &os, const ArgPrint &ap)
                 Elf::Addr addr = 0;
                 os << sep << name;
                 if (type != nullptr) {
-                    const Dwarf::Attribute *attr;
+                    Dwarf::Attribute attr;
 
-                    if ((attr = child.attrForName(Dwarf::DW_AT_location)) != nullptr) {
+                    if (child.attrForName(Dwarf::DW_AT_location, attr)) {
                         Dwarf::ExpressionStack fbstack;
                         addr = fbstack.eval(ap.p, attr, ap.frame, ap.frame->elfReloc);
                         os << "=";
@@ -378,8 +379,8 @@ operator << (std::ostream &os, const ArgPrint &ap)
                         } else {
                            os << RemoteValue(ap.p, addr, type);
                         }
-                    } else if ((attr = child.attrForName(Dwarf::DW_AT_const_value)) != nullptr) {
-                        os << "=" << intmax_t(*attr);
+                    } else if (child.attrForName(Dwarf::DW_AT_const_value, attr)) {
+                        os << "=" << intmax_t(attr);
                     }
                 }
                 sep = ", ";
@@ -453,7 +454,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         }
                         frame->function = de;
                         frame->dwarf = dwarf; // hold on to 'de'
-                        os << "in " << symName << sigmsg << "+" << objIp - uintmax_t(*de->attrForName(Dwarf::DW_AT_low_pc)) << "(";
+                        os << "in " << symName << sigmsg << "+" << objIp - uintmax_t(de->attrForName(Dwarf::DW_AT_low_pc)) << "(";
                         if (options(::PstackOptions::doargs)) {
                             os << ArgPrint(*this, frame);
                         }

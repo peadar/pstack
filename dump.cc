@@ -234,7 +234,7 @@ std::ostream & operator << (std::ostream &os, const JSON<Dwarf::Entry, C> &jo) {
     auto &entry = jo.object;
     JObject o(os);
     o.field("type", entry.type->tag);
-    o.field("attributes", entry.attributes);
+    // o.field("attributes", entry.attributes);
     if (entry.type->hasChildren)
         o.field("children", entry.children);
     return o;
@@ -398,9 +398,7 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
         if (entry != nullptr)
            writer.field("value", EntryReference(entry));
         break;
-
     }
-
     case DW_FORM_exprloc:
     case DW_FORM_block1:
     case DW_FORM_block2:

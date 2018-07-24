@@ -232,13 +232,13 @@ Abbreviation::Abbreviation(DWARFReader &r)
 {
     tag = Tag(r.getuleb128());
     hasChildren = HasChildren(r.getu8()) == DW_CHILDREN_yes;
-    for (;;) {
-        uintmax_t name, form;
-        name = r.getuleb128();
-        form = r.getuleb128();
+    for (size_t i = 0;; ++i) {
+        auto name = AttrName(r.getuleb128());
+        auto form = Form(r.getuleb128());
         if (name == 0 && form == 0)
             break;
-        specs.emplace_back(AttrName(name), Form(form));
+        specs.emplace_back(name, form);
+        attrName2Idx[name] = i;
     }
 }
 
@@ -251,13 +251,14 @@ Attribute::operator intmax_t() const
     case DW_FORM_data8:
     case DW_FORM_sdata:
     case DW_FORM_udata:
-        return value.sdata;
+        return value().sdata;
     case DW_FORM_sec_offset:
-        return value.addr;
+        return value().addr;
     default:
         abort();
     }
 }
+
 Attribute::operator uintmax_t() const
 {
     switch (spec->form) {
@@ -266,10 +267,10 @@ Attribute::operator uintmax_t() const
     case DW_FORM_data4:
     case DW_FORM_data8:
      case DW_FORM_udata:
-        return value.udata;
+        return value().udata;
     case DW_FORM_addr:
     case DW_FORM_sec_offset:
-        return value.addr;
+        return value().addr;
     default:
         abort();
     }
@@ -467,41 +468,39 @@ Attribute::operator string() const
             if (!strs) {
                 return "(alt string table unavailable)";
             }
-            return strs->readString(value.addr);
+            return strs->readString(value().addr);
         }
         case DW_FORM_strp:
-            return dwarf->debugStrings->readString(value.addr);
+            return dwarf->debugStrings->readString(value().addr);
 
         case DW_FORM_string:
-            return entry->unit->io->readString(value.addr);
+            return entry->unit->io->readString(value().addr);
 
         default:
             abort();
     }
 }
 
-Attribute::Attribute(DWARFReader &r, const Entry *entry_, const AttributeSpec *spec_)
-    : spec(spec_)
-    , value { }
-    , entry(entry_)
+void
+Entry::readValue(DWARFReader &r, const AttributeSpec &spec, Value &value)
 {
-    switch (spec->form) {
+    switch (spec.form) {
 
     case DW_FORM_GNU_strp_alt: {
-        value.addr = r.getint(entry->unit->dwarfLen);
+        value.addr = r.getint(unit->dwarfLen);
         break;
     }
 
     case DW_FORM_strp:
-        value.addr = r.getint(entry->unit->version <= 2 ? 4 : entry->unit->dwarfLen);
+        value.addr = r.getint(unit->version <= 2 ? 4 : unit->dwarfLen);
         break;
 
     case DW_FORM_GNU_ref_alt:
-        value.addr = r.getuint(entry->unit->dwarfLen);
+        value.addr = r.getuint(unit->dwarfLen);
         break;
 
     case DW_FORM_addr:
-        value.addr = r.getuint(entry->unit->addrlen);
+        value.addr = r.getuint(unit->addrlen);
         break;
 
     case DW_FORM_data1:
@@ -545,7 +544,7 @@ Attribute::Attribute(DWARFReader &r, const Entry *entry_, const AttributeSpec *s
         break;
 
     case DW_FORM_ref_addr:
-        value.addr = r.getuint(entry->unit->dwarfLen);
+        value.addr = r.getuint(unit->dwarfLen);
         break;
 
     case DW_FORM_ref8:
@@ -591,7 +590,7 @@ Attribute::Attribute(DWARFReader &r, const Entry *entry_, const AttributeSpec *s
         break;
 
     case DW_FORM_sec_offset:
-        value.addr = r.getint(entry->unit->dwarfLen);
+        value.addr = r.getint(unit->dwarfLen);
         break;
 
     case DW_FORM_ref_sig8:
@@ -608,20 +607,19 @@ Attribute::Attribute(DWARFReader &r, const Entry *entry_, const AttributeSpec *s
 Entry::Entry(DWARFReader &r, size_t abbrev, Unit *unit_)
     : unit(unit_)
     , type(&unit->abbreviations.find(abbrev)->second)
+    , values(type->specs.size())
 {
 
-    for (auto &spec : type->specs) {
-        attributes.emplace(std::piecewise_construct,
-                std::forward_as_tuple(spec.name),
-                std::forward_as_tuple(r, this, &spec));
-    }
+    int i = 0;
+    for (auto &spec : type->specs)
+        readValue(r, spec, values[i++]);
 
     switch (type->tag) {
     case DW_TAG_partial_unit:
     case DW_TAG_compile_unit: {
-        auto stmtsAttr = attrForName(DW_AT_stmt_list);
-        if (unit->dwarf->lineshdr && stmtsAttr != nullptr) {
-            auto stmts = off_t(*stmtsAttr);
+        Attribute stmtsAttr;
+        if (unit->dwarf->lineshdr && attrForName(DW_AT_stmt_list, stmtsAttr)) {
+            auto stmts = off_t(stmtsAttr);
             DWARFReader r2(unit->dwarf->lineshdr, stmts);
             unit_->lines.build(r2, unit);
         }
@@ -1112,9 +1110,8 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
 const Entry *
 Entry::referencedEntry(AttrName name) const
 {
-    auto attr = attrForName(name);
     try {
-        return attr != nullptr ? &attr->getReference() : nullptr;
+        return &attrForName(name).getReference();
     }
     catch (...) {
         return nullptr;
@@ -1129,20 +1126,20 @@ Attribute::getReference() const
     off_t off;
     switch (spec->form) {
         case DW_FORM_ref_addr:
-            off = value.addr;
+            off = value().addr;
             break;
         case DW_FORM_ref_udata:
         case DW_FORM_ref1:
         case DW_FORM_ref2:
         case DW_FORM_ref4:
         case DW_FORM_ref8:
-            off = value.addr + entry->unit->offset;
+            off = value().addr + entry->unit->offset;
             break;
         case DW_FORM_GNU_ref_alt: {
             dwarf = dwarf->getAltDwarf().get();
             if (dwarf == nullptr)
                 throw (Exception() << "no alt reference");
-            off = value.addr;
+            off = value().addr;
             break;
         }
         default:
@@ -1166,12 +1163,25 @@ Attribute::getReference() const
     throw (Exception() << "reference not found");
 }
 
-const Attribute *
+const Attribute
 Entry::attrForName(AttrName name) const
 {
-    auto it = attributes.find(name);
-    if (it != attributes.end())
-        return &it->second;
+    Attribute attr;
+    if (!attrForName(name, attr))
+        throw (Exception() << "no such attribute " << name);
+    return attr;
+}
+
+bool
+Entry::attrForName(AttrName name, Attribute &attr) const
+{
+    auto loc = type->attrName2Idx.find(name);
+    if (loc != type->attrName2Idx.end()) {
+        attr.spec = &type->specs.at(loc->second);
+        attr.entry = this;
+        return true;
+    }
+
 
     // If we have attributes of any of these types, we can look for other attributes in the referenced entry.
     static std::set<AttrName> derefs = {
@@ -1183,11 +1193,10 @@ Entry::attrForName(AttrName name) const
         for (auto alt : derefs) {
             auto ao = referencedEntry(alt);
             if (ao != nullptr && ao != this)
-                return ao->attrForName(name);
+                return ao->attrForName(name, attr);
         }
     }
-
-    return nullptr;
+    return false;
 }
 
 Info::sptr
@@ -1266,28 +1275,27 @@ findEntryForFunc(Elf::Addr address, const Entry &entry)
 {
     switch (entry.type->tag) {
         case DW_TAG_subprogram: {
-            const Attribute *lowAttr = entry.attrForName(DW_AT_low_pc);
-            const Attribute *highAttr = entry.attrForName(DW_AT_high_pc);
-            if (lowAttr != nullptr && highAttr != nullptr) {
-                Elf::Addr start, end;
-                switch (lowAttr->form()) {
+            Attribute low, high;
+            Elf::Addr start, end;
+            if (entry.attrForName(DW_AT_low_pc, low) && entry.attrForName(DW_AT_high_pc, high)) {
+                switch (low.form()) {
                     case DW_FORM_addr:
-                        start = uintmax_t(*lowAttr);
+                        start = uintmax_t(low);
                         break;
                     default:
                         abort();
                         break;
                 }
-                switch (highAttr->form()) {
+                switch (high.form()) {
                     case DW_FORM_addr:
-                        end = uintmax_t(*highAttr);
+                        end = uintmax_t(high);
                         break;
                     case DW_FORM_data1:
                     case DW_FORM_data2:
                     case DW_FORM_data4:
                     case DW_FORM_data8:
                     case DW_FORM_udata:
-                        end = start + uintmax_t(*highAttr);
+                        end = start + uintmax_t(high);
                         break;
                     default:
                         abort();

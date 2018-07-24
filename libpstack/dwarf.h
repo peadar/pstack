@@ -80,7 +80,8 @@ struct AttributeSpec {
 struct Abbreviation {
     Tag tag;
     bool hasChildren;
-    std::list<AttributeSpec> specs;
+    std::vector<AttributeSpec> specs;
+    std::unordered_map<AttrName, size_t> attrName2Idx;
     Abbreviation(DWARFReader &);
     Abbreviation() {}
 };
@@ -134,40 +135,39 @@ const Entry *findEntryForFunc(Elf::Addr address, const Entry *entry);
 
 class Attribute {
     const AttributeSpec *spec; /* From abbrev table attached to type */
-    Value value;
 public:
     const Entry *entry;
-    Attribute(DWARFReader &, const Entry *, const AttributeSpec *);
     Form form() const { return spec->form; }
     AttrName name() const { return spec->name; }
     ~Attribute() { }
-    Attribute() : spec(0), entry(0) {}
+    Attribute(const AttributeSpec *spec_ = nullptr, const Entry *entry_ = nullptr)
+       : spec(spec_), entry(entry_) {}
+    const Value &value() const;
+    Value &value();
     explicit operator std::string() const;
     explicit operator intmax_t() const;
     explicit operator uintmax_t() const;
-    explicit operator bool() const { return value.flag; }
+    explicit operator bool() const { return value().flag; }
     const Entry &getReference() const;
-    Block &block() { return value.block; }
-    const Block &block() const { return value.block; }
+    const Block &block() const { return value().block; }
+    friend class Entry;
 };
 
 class Entry {
     Entry() = delete;
     Entry(const Entry &) = delete;
+    friend class Attribute;
+    void readValue(DWARFReader &, const AttributeSpec &spec, Value &value);
 public:
     Entries children;
     const Unit *unit;
     const Abbreviation *type;
-    std::unordered_map<AttrName, Attribute> attributes;
-    const Attribute *attrForName(AttrName name) const;
+    std::vector<Value> values;
+    const Attribute attrForName(AttrName name) const;
+    bool attrForName(AttrName name, Attribute &) const;
     const Entry *referencedEntry(AttrName name) const;
     Entry(DWARFReader &, size_t, Unit *);
-    std::string name() const {
-        const Attribute *attr = attrForName(DW_AT_name);
-        if (attr != nullptr)
-           return std::string(*attr);
-        return "";
-    }
+    std::string name() const { return std::string(attrForName(DW_AT_name)); }
 };
 
 enum FIType {
@@ -485,6 +485,7 @@ public:
 
 std::string typeName(const Dwarf::Entry *type);
 const Entry *findEntryForFunc(Elf::Addr address, const Entry &entry);
+inline const Value &Attribute::value() const { return entry->values.at(entry->type->attrName2Idx.find(spec->name)->second); }
 
 #define DWARF_OP(op, value, args) op = value,
 enum ExpressionOp {

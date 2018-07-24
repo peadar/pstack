@@ -26,8 +26,8 @@ StackFrame::getCoreRegs(Elf::CoreRegisters &core) const
 void
 StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *stack) const
 {
-   const Attribute *attr;
-   if (function == nullptr || (attr = function->attrForName(DW_AT_frame_base)) == nullptr) {
+   Attribute attr;
+   if (function == nullptr || !function->attrForName(DW_AT_frame_base, attr)) {
       stack->push(0);
       return;
    }
@@ -35,36 +35,37 @@ StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *sta
 }
 
 Elf::Addr
-ExpressionStack::eval(const Process &proc, const Attribute *attr, const StackFrame *frame, Elf::Addr reloc)
+ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFrame *frame, Elf::Addr reloc)
 {
-    const Info *dwarf = attr->entry->unit->dwarf;
-    switch (attr->form()) {
+    const Info *dwarf = attr.entry->unit->dwarf;
+    switch (attr.form()) {
         case DW_FORM_sec_offset: {
             auto &sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
             auto objIp = frame->ip - reloc;
             // convert this object-relative addr to a unit-relative one
-            const Entry &unitEntry = *attr->entry->unit->entries.begin();
+            const Entry &unitEntry = *attr.entry->unit->entries.begin();
             auto unitLow = unitEntry.attrForName(DW_AT_low_pc);
 #ifndef NDEBUG
-            auto unitHigh = unitEntry.attrForName(DW_AT_high_pc);
+            Attribute unitHigh;
+
             Elf::Addr endAddr;
-            if (unitHigh) {
-               switch (unitHigh->form()) {
+            if (unitEntry.attrForName(DW_AT_high_pc, unitHigh)) {
+               switch (unitHigh.form()) {
                    case DW_FORM_addr:
-                       endAddr = uintmax_t(*unitHigh);
+                       endAddr = uintmax_t(unitHigh);
                        break;
                    case DW_FORM_data1: case DW_FORM_data2: case DW_FORM_data4: case DW_FORM_data8: case DW_FORM_udata:
-                       endAddr = intmax_t(*unitHigh) + uintmax_t(*unitLow);
+                       endAddr = intmax_t(unitHigh) + uintmax_t(unitLow);
                        break;
                    default:
                        abort();
                }
-               assert(objIp >= uintmax_t(*unitLow) && objIp < endAddr);
+               assert(objIp >= uintmax_t(unitLow) && objIp < endAddr);
             }
 #endif
-            Elf::Addr unitIp = objIp - uintmax_t(*unitLow);
+            Elf::Addr unitIp = objIp - uintmax_t(unitLow);
 
-            DWARFReader r(sec.io, uintmax_t(*attr));
+            DWARFReader r(sec.io, uintmax_t(attr));
             for (;;) {
                 Elf::Addr start = r.getint(sizeof start);
                 Elf::Addr end = r.getint(sizeof end);
@@ -83,7 +84,7 @@ ExpressionStack::eval(const Process &proc, const Attribute *attr, const StackFra
         case DW_FORM_block1:
         case DW_FORM_block:
         case DW_FORM_exprloc: {
-            auto &block = attr->block();
+            auto &block = attr.block();
             DWARFReader r(dwarf->io, block.offset, block.offset + block.length);
             return eval(proc, r, frame, reloc);
         }
