@@ -43,6 +43,12 @@ InflateReader::InflateReader(size_t inflatedSize, const Reader &upstream)
                 throw (Exception() << "inflate failed");
         }
     }
+    inflateEnd(&stream);
     if (verbose >= 2)
         *debug << " total " << inflatedSize << "\n";
+}
+
+InflateReader::~InflateReader()
+{
+   delete[] data;
 }

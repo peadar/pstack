@@ -9,7 +9,7 @@ class InflateReader : public MemReader {
     InflateReader() = delete;
 public:
     InflateReader(size_t inflatedSize, const Reader &upstream);
-    ~InflateReader() { delete[] data; }
+    ~InflateReader();
 };
 
 #endif // LIBPSTACK_INFLATEREADER_H
