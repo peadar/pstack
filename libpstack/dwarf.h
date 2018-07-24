@@ -158,11 +158,7 @@ public:
     Entries children;
     const Unit *unit;
     const Abbreviation *type;
-#ifdef NOTYET
     std::unordered_map<AttrName, Attribute> attributes;
-#else
-    std::map<AttrName, Attribute> attributes;
-#endif
     const Attribute *attrForName(AttrName name) const;
     const Entry *referencedEntry(AttrName name) const;
     Entry(DWARFReader &, size_t, Unit *);
