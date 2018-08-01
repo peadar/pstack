@@ -143,6 +143,7 @@ public:
     explicit operator bool() const { return value().flag; }
     const DIE *getReference() const;
     const Block &block() const { return *value().block; }
+    AttrName name() const;
     friend class DIE;
 };
 

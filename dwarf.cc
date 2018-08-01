@@ -242,6 +242,17 @@ Abbreviation::Abbreviation(DWARFReader &r)
     }
 }
 
+AttrName
+Attribute::name() const
+{
+    size_t off = formp - &entry->type->forms[0];
+    for (auto ent : entry->type->attrName2Idx) {
+        if (ent.second == off)
+            return ent.first;
+    }
+    return DW_AT_none;
+}
+
 Attribute::operator intmax_t() const
 {
     switch (*formp) {

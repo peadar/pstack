@@ -234,20 +234,18 @@ std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIE, C> &jo) {
     auto &entry = jo.object;
     JObject o(os);
     o.field("type", entry.type->tag);
-    // o.field("attributes", entry.attributes);
+    o.field("key", intptr_t(&entry));
+    std::map<Dwarf::AttrName, Dwarf::Attribute> attributes;
+    for (auto at : entry.type->attrName2Idx) {
+       auto &attr = attributes[at.first];
+       entry.attrForName(at.first, attr);
+    }
+    o.field("attributes", attributes);
     if (entry.type->hasChildren)
         o.field("children", entry.children);
     return o;
 }
 
-/*
-template <typename C>
-std::ostream &operator << (std::ostream &os, const JSON<Dwarf::AttributeSpec, C> spec) {
-    return JObject(os)
-        .field("name", spec.object.name)
-        .field("form", spec.object.form);
-}
-*/
 template <typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::Abbreviation, C> &abbr) {
@@ -357,7 +355,8 @@ operator << (std::ostream &os, const JSON<EntryReference> &jer)
    const auto &e = jer.object.entry;
    return JObject(os)
       .field("file", stringify(*e->unit->dwarf->elf->io))
-      .field("name", e->name());
+      .field("name", e->name())
+      .field("key", intptr_t(e));
 }
 
 std::ostream &
@@ -389,7 +388,6 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
         writer.field("value", std::string(attr));
         break;
 
-        /*
     case DW_FORM_ref_addr:
     case DW_FORM_ref2:
     case DW_FORM_ref4:
@@ -401,7 +399,6 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
            writer.field("value", EntryReference(entry));
         break;
     }
-    */
     case DW_FORM_exprloc:
     case DW_FORM_block1:
     case DW_FORM_block2:
