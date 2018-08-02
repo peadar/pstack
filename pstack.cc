@@ -107,13 +107,13 @@ emain(int argc, char **argv)
             usage();
             return (0);
         case 'a':
-            options += PstackOptions::doargs;
+            options.set(PstackOption::doargs);
             break;
         case 'j':
             doJson = true;
             break;
         case 's':
-            options += PstackOptions::nosrc;
+            options.set(PstackOption::nosrc);
             break;
         case 'v':
             verbose++;
@@ -129,7 +129,7 @@ emain(int argc, char **argv)
 #endif
             break;
         case 't':
-            options += PstackOptions::nothreaddb;
+            options.set(PstackOption::nothreaddb);
             break;
 
         case 'V':

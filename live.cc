@@ -38,8 +38,7 @@ void
 LiveProcess::load(const PstackOptions &options)
 {
     StopLWP here(this, pid);
-    LiveReader live(pid, "auxv");
-    processAUXV(live);
+    processAUXV(LiveReader(pid, "auxv"));
     Process::load(options);
 }
 
@@ -109,8 +108,6 @@ LiveProcess::getPID() const
 void
 LiveProcess::stopProcess()
 {
-    if (verbose >= 1)
-        *debug << "stopping process " << pid << "\n";
     stop(pid); // suspend the main process itself first.
     findLWPs();
 
@@ -125,8 +122,6 @@ LiveProcess::stopProcess()
         if (td_thr_dbsuspend(thr) == TD_NOCAPAB) {
             if (verbose >= 3)
                 *debug << "can't suspend thread "  << thr << ": will suspend it's LWP " << info.ti_lid << "\n";
-        } else if (verbose >= 3) {
-            *debug << "suspended thread "  << thr << "(LWP " << info.ti_lid << ")\n";
         }
     });
 
@@ -136,21 +131,18 @@ LiveProcess::stopProcess()
         stop(lwp.first);
         i++;
     }
-    if (verbose >= 1)
+    if (verbose >= 2)
         *debug << "stopped process " << pid << "\n";
 }
 
 void
 LiveProcess::resumeProcess()
 {
-    if (verbose >= 1)
-        *debug << "resuming process " << pid << "\n";
     listThreads([] (const td_thrhandle_t *thr) {
         if (td_thr_dbresume(thr) == TD_NOCAPAB) {
-            td_thrinfo_t info;
-            td_thr_get_info(thr, &info);
+            // this doesn't work in general, but it's ok, we'll suspend the LWP
             if (verbose >= 3)
-                *debug << "can't resume thread "  << thr << ": will resume it's LWP" << info.ti_lid << "\n";
+                *debug << "can't resume thread "  << thr << "\n";
         }
     });
 
@@ -158,8 +150,6 @@ LiveProcess::resumeProcess()
         resume(lwp.first);
 
     resume(pid);
-    if (verbose >= 1)
-        *debug << "resumed process " << pid << "\n";
 }
 
 void
@@ -177,10 +167,6 @@ LiveProcess::stop(lwpid_t pid)
 
     int status;
     pid_t waitedpid = waitpid(pid, &status, pid == this->pid ? 0 : __WCLONE);
-    if (waitedpid == -1) {
+    if (waitedpid == -1)
         *debug << "failed to stop LWP " << pid << ": wait failed: " << strerror(errno) << "\n";
-        return;
-    }
-    if (verbose >= 1)
-        *debug << "stopped LWP " << pid << "\n";
 }

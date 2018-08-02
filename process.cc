@@ -20,24 +20,6 @@
 
 static size_t gMaxFrames = 1024; /* max number of frames to read */
 
-void
-PstackOptions::operator += (PstackOption opt)
-{
-    values.set(opt);
-}
-
-void
-PstackOptions::operator -= (PstackOption opt)
-{
-    values.reset(opt);
-}
-
-bool
-PstackOptions::operator () (PstackOption opt) const
-{
-    return values[opt];
-}
-
 Process::Process(Elf::Object::sptr exec, Reader::csptr memory,
                   const PathReplacementList &prl, Dwarf::ImageCache &cache)
     : entry(0)
@@ -75,7 +57,7 @@ Process::load(const PstackOptions &options)
     else
         loadSharedObjects(r_debug_addr);
 
-    if (!options(PstackOptions::nothreaddb)) {
+    if (!options[PstackOption::nothreaddb]) {
         td_err_e the;
         the = td_ta_new(this, &agent);
         if (the != TD_OK) {
@@ -463,7 +445,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         if (lowpc.valid())
                             os << "+" << objIp - uintmax_t(lowpc);
                         os << "(";
-                        if (options(::PstackOptions::doargs)) {
+                        if (options[PstackOption::doargs]) {
                             os << ArgPrint(*this, frame);
                         }
                         os << ")";
@@ -484,7 +466,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             }
 
             os << " at " << fileName;
-            if (!options(PstackOptions::nosrc) && dwarf) {
+            if (!options[PstackOption::nosrc] && dwarf) {
                 auto source = dwarf->sourceFromAddr(objIp - 1);
                 for (auto ent : source)
                     os << " at " << ent.first << ":" << std::dec << ent.second;

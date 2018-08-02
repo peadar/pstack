@@ -243,7 +243,7 @@ framePrint(const PyObject *pyo, const PyTypeObject *, PythonPrinter *pc, Elf::Ad
         auto file = pc->proc.io->readString(Elf::Addr(code.co_filename) + offsetof(PyStringObject, ob_sval));
         pc->os << pc->prefix() << func << " in " << file << ":" << lineNo << "\n";
 
-        if (pc->options(PstackOptions::doargs)) {
+        if (pc->options[PstackOption::doargs]) {
 
             Elf::Addr flocals = remoteAddr + offsetof(PyFrameObject, f_localsplus);
 
@@ -261,7 +261,7 @@ framePrint(const PyObject *pyo, const PyTypeObject *, PythonPrinter *pc, Elf::Ad
         }
     }
 
-    if (pc->options(PstackOptions::doargs) && pfo->f_locals != 0) {
+    if (pc->options[PstackOption::doargs] && pfo->f_locals != 0) {
         pc->depth++;
         pc->os << pc->prefix() << "locals: " << std::endl;
         pc->print(Elf::Addr(pfo->f_locals));

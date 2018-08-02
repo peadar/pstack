@@ -75,20 +75,14 @@ struct ThreadStack {
     void unwind(Process &, Elf::CoreRegisters &regs);
 };
 
-
-class PstackOptions {
-public:
-    enum PstackOption {
-        nosrc,
-        doargs,
-        nothreaddb,
-        maxopt // leave this last
-    };
-    void operator += (PstackOption);
-    void operator -= (PstackOption);
-    bool operator() (PstackOption) const;
-    std::bitset<maxopt> values;
+enum PstackOption {
+    nosrc,
+    doargs,
+    nothreaddb,
+    maxopt // leave this last
 };
+
+using PstackOptions = std::bitset<PstackOption::maxopt>;
 
 /*
  * This contains information about an LWP.  In linux, since NPTL, this is
@@ -104,7 +98,7 @@ struct Lwp {
 typedef std::vector<std::pair<std::string, std::string>> PathReplacementList;
 class Process : public ps_prochandle {
     Elf::Addr findRDebugAddr();
-    Elf::Off entry; // entrypoint of process.
+    Elf::Addr entry;
     Elf::Addr interpBase;
     void loadSharedObjects(Elf::Addr);
     bool isStatic;

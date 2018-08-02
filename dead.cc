@@ -15,7 +15,6 @@ void
 CoreProcess::load(const PstackOptions &options)
 {
 #ifdef __linux__
-    /* Find the linux-gate VDSO, and treat as an ELF file */
     for (auto note : coreImage->notes) {
        if (note.name() == "CORE" && note.type() == NT_AUXV) {
            processAUXV(*note.data());
