@@ -5,7 +5,7 @@
 // A Reader that zlib inflates the underlying downstream reader.
 // Currently requires knowing the resulting output size.
 class InflateReader : public MemReader {
-    InflateReader(const AllocMemReader &) = delete;
+    InflateReader(const InflateReader &) = delete;
     InflateReader() = delete;
 public:
     InflateReader(size_t inflatedSize, const Reader &upstream);

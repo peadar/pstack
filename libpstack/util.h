@@ -176,14 +176,6 @@ public:
     std::string filename() const override { return "in-memory"; }
 };
 
-class AllocMemReader : public MemReader {
-   AllocMemReader(const AllocMemReader &) = delete;
-   AllocMemReader() = delete;
-public:
-   AllocMemReader(size_t s, char *buf_) : MemReader(s, buf_) {}
-   ~AllocMemReader() { delete[] data; }
-};
-
 class NullReader : public Reader {
 public:
     virtual size_t read(off_t, size_t, char *) const override {
