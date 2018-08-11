@@ -238,7 +238,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
        return os << "(null)";
     auto type = rv.type;
     while (type.tag() == DW_TAG_typedef || type.tag() == DW_TAG_const_type)
-       type = type.referencedEntry(DW_AT_type);
+       type = DIE(type.attribute(DW_AT_type));
 
 
     uintmax_t size;
@@ -342,7 +342,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
                rv.p.io->read(rv.addr, sizeof (void **), &buf[0]);
             }
             auto remote = Elf::Addr(*(void **)&buf[0]);
-            auto base = type.referencedEntry(DW_AT_type);
+            auto base = DIE(type.attribute(DW_AT_type));
             if (base && base.name() == "char") {
                std::string s = rv.p.io->readString(remote);
                os << "\"" << s << "\"";
@@ -366,7 +366,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
         switch (child.tag()) {
             case DW_TAG_formal_parameter: {
                 auto name = child.name();
-                auto type = child.referencedEntry(DW_AT_type);
+                auto type = DIE(child.attribute(DW_AT_type));
                 Elf::Addr addr = 0;
                 os << sep << name;
                 if (type) {

@@ -279,6 +279,8 @@ Attribute::name() const
 
 Attribute::operator intmax_t() const
 {
+    if (!valid())
+        return 0;
     switch (*formp) {
     case DW_FORM_data1:
     case DW_FORM_data2:
@@ -296,6 +298,8 @@ Attribute::operator intmax_t() const
 
 Attribute::operator uintmax_t() const
 {
+    if (!valid())
+        return 0;
     switch (*formp) {
     case DW_FORM_data1:
     case DW_FORM_data2:
@@ -490,6 +494,8 @@ FileEntry::FileEntry(DWARFReader &r, LineInfo *info)
 
 Attribute::operator std::string() const
 {
+    if (!valid())
+        return "";
     const Info *dwarf = dieref.unit->dwarf;
     assert(dwarf != nullptr);
     switch (*formp) {
@@ -1181,15 +1187,10 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
     r.setOffset(end);
 }
 
-DIE
-DIE::referencedEntry(AttrName name) const
-{
-    auto attr = attribute(name);
-    return attr.valid() ? DIE(attr) : DIE();
-}
-
 Attribute::operator DIE() const
 {
+    if (!valid())
+        return DIE();
 
     const Info *dwarf = dieref.unit->dwarf;
     off_t off;
@@ -1249,7 +1250,7 @@ DIE::attribute(AttrName name) const
 
     if (derefs.find(name) == derefs.end()) {
         for (auto alt : derefs) {
-            auto ao = referencedEntry(alt);
+            auto ao = DIE(attribute(alt));
             if (ao && ao.die != die)
                 return ao.attribute(name);
         }
@@ -1296,7 +1297,7 @@ typeName(const DIE &type)
     const auto &name = type.name();
     if (name != "")
         return name;
-    auto base = type.referencedEntry(DW_AT_type);
+    auto base = DIE(type.attribute(DW_AT_type));
     string s, sep;
     switch (type.tag()) {
         case DW_TAG_pointer_type:
@@ -1312,7 +1313,7 @@ typeName(const DIE &type)
                 if (arg.tag() != DW_TAG_formal_parameter)
                     continue;
                 s += sep;
-                s += typeName(arg.referencedEntry(DW_AT_type));
+                s += typeName(DIE(arg.attribute(DW_AT_type)));
                 sep = ", ";
             }
             s += ")";

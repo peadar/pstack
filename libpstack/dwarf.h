@@ -183,7 +183,7 @@ struct DIEAttributes {
     DIEAttributes(const DIE &die) : die(die) {}
 };
 
-class DIE {
+struct DIE {
     const Unit *unit;
     size_t offset;
     const RawDIE *die;
@@ -192,7 +192,6 @@ class DIE {
     operator bool() const { return unit != nullptr; }
     bool hasChildren() const;
     Attribute attribute(AttrName name) const;
-    DIE referencedEntry(AttrName name) const;
     inline std::string name() const;
     DIEList children() const;
     DIEAttributes attributes() const { return DIEAttributes(*this); }
@@ -213,11 +212,11 @@ public:
     Attribute() : formp(nullptr) {}
     ~Attribute() { }
 
-    bool valid() { return formp != nullptr; }
+    bool valid() const { return formp != nullptr; }
     explicit operator std::string() const;
     explicit operator intmax_t() const;
     explicit operator uintmax_t() const;
-    explicit operator bool() const { return value().flag; }
+    explicit operator bool() const { return valid() && value().flag; }
     explicit operator DIE() const;
     explicit operator const Block &() const { return *value().block; }
     AttrName name() const;
