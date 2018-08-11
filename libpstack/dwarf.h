@@ -75,7 +75,8 @@ struct Abbreviation {
     Tag tag;
     bool hasChildren;
     std::vector<Form> forms;
-    std::unordered_map<AttrName, size_t> attrName2Idx;
+    using AttrNameMap = std::unordered_map<AttrName, size_t>;
+    AttrNameMap attrName2Idx;
     Abbreviation(DWARFReader &);
     Abbreviation() {}
 };
@@ -124,8 +125,62 @@ union Value {
     bool flag;
 };
 
-const DIE *findEntryForFunc(Elf::Addr address, const DIE *entry);
 struct DIERef;
+
+struct DIERefIter {
+    const Unit *u;
+    Entries::const_iterator rawIter;
+    DIERef operator *() const;
+    DIERefIter &operator++() {
+        ++rawIter;
+        return *this;
+    }
+    DIERefIter(const Unit *unit_, Entries::const_iterator rawIter_) :
+        u(unit_), rawIter(rawIter_) {}
+    bool operator == (const DIERefIter &rhs) const {
+        return rawIter == rhs.rawIter;
+    }
+    bool operator != (const DIERefIter &rhs) const {
+        return rawIter != rhs.rawIter;
+    }
+};
+
+struct DIERefList {
+    using const_iterator = DIERefIter;
+    using value_type = DIERef;
+    const Unit *unit;
+    const Entries &dies;
+    DIERefIter begin() const;
+    DIERefIter end() const;
+    DIERefList(const Unit *unit_, const Entries &dies_)
+        : unit(unit_), dies(dies_) {}
+};
+
+struct DIEAttributes {
+    const DIERef &die;
+    using value_type = Attribute;
+    struct const_iterator {
+        const DIERef &die;
+        Abbreviation::AttrNameMap::const_iterator rawIter;
+        std::pair<AttrName, Attribute> operator *() const;
+        const_iterator &operator++() {
+            ++rawIter;
+            return *this;
+        }
+        const_iterator(const DIERef &die_, Abbreviation::AttrNameMap::const_iterator rawIter_) : 
+            die(die_), rawIter(rawIter_) {}
+        bool operator == (const const_iterator &rhs) const {
+            return rawIter == rhs.rawIter;
+        }
+        bool operator != (const const_iterator &rhs) const {
+            return rawIter != rhs.rawIter;
+        }
+    };
+    const_iterator begin() const;
+    const_iterator end() const;
+    DIEAttributes(const DIERef &die) : die(die) {}
+};
+
 
 struct DIERef {
     const Unit *unit;
@@ -133,34 +188,37 @@ struct DIERef {
     DIERef(const Unit *unit, const DIE *die) : unit(unit), die(die) {}
     DIERef() : unit(nullptr) {}
     operator bool() const { return unit != nullptr; }
+    bool hasChildren() const;
     Attribute attribute(AttrName name) const;
     DIERef referencedEntry(AttrName name) const;
     inline std::string name() const;
+    DIERefList children() const;
+    DIEAttributes attributes() const { return DIEAttributes(*this); }
+    Tag tag() const;
 };
 
-struct Attribute {
+class Attribute {
     DIERef dieref;
     const Form *formp; /* From abbrev table attached to type */
-    Form form() const { return *formp; }
-    ~Attribute() { }
 
+    Value &value();
+public:
+    const Unit *unit() const { return dieref.unit; }
+    const Value &value() const;
+    Form form() const { return *formp; }
     Attribute(const DIERef &dieref_, const Form *formp_)
        : dieref(dieref_), formp(formp_) {}
-    Attribute() {
-        formp = nullptr;
-    }
-    bool valid() { return formp != nullptr; }
+    Attribute() : formp(nullptr) {}
+    ~Attribute() { }
 
-    const Value &value() const;
-    Value &value();
+    bool valid() { return formp != nullptr; }
     explicit operator std::string() const;
     explicit operator intmax_t() const;
     explicit operator uintmax_t() const;
     explicit operator bool() const { return value().flag; }
-    DIERef getReference() const;
-    const Block &block() const { return *value().block; }
+    explicit operator DIERef() const;
+    explicit operator const Block &() const { return *value().block; }
     AttrName name() const;
-    friend class DIE;
 };
 
 std::string
@@ -169,19 +227,6 @@ DIERef::name() const
     auto attr = attribute(DW_AT_name);
     return attr.valid() ? std::string(attr) : "";
 }
-
-class DIE {
-    DIE() = delete;
-    DIE(const DIE &) = delete;
-    void readValue(DWARFReader &, Form form, Value &value, const Unit *);
-public:
-    Entries children;
-    const Abbreviation *type;
-    std::vector<Value> values;
-    DIE(DWARFReader &, size_t, Unit *);
-    ~DIE();
-
-};
 
 enum FIType {
     FI_DEBUG_FRAME,
@@ -235,9 +280,12 @@ class Unit {
     Unit() = delete;
     Unit(const Unit &) = delete;
     std::unique_ptr<LineInfo> lines;
-public:
-    std::unordered_map<size_t, Abbreviation> abbreviations;
+    Entries entries;
     std::map<off_t, DIE *> allEntries;
+public:
+    DIERefList topLevelDIEs() const { return DIERefList(this, entries); }
+    DIERef offsetToDIE(size_t offset) const;
+    std::unordered_map<size_t, Abbreviation> abbreviations;
     const Info *dwarf;
     Reader::csptr io;
     off_t offset;
@@ -246,7 +294,6 @@ public:
     uint32_t length;
     uint16_t version;
     uint8_t addrlen;
-    Entries entries;
     Unit(const Info *, DWARFReader &);
     std::string name() const;
     const LineInfo *getLines();
@@ -497,11 +544,9 @@ public:
     void skip(Elf::Off amount) { off += amount; }
 };
 
-std::string typeName(const DIE *type);
+std::string typeName(const DIERef &);
 DIERef findEntryForFunc(Elf::Addr address, const DIERef &entry);
-inline const Value &Attribute::value() const {
-    return dieref.die->values.at(formp - &dieref.die->type->forms[0]);
-}
+
 
 #define DWARF_OP(op, value, args) op = value,
 enum ExpressionOp {

@@ -40,13 +40,13 @@ StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *sta
 Elf::Addr
 ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFrame *frame, Elf::Addr reloc)
 {
-    const Info *dwarf = attr.dieref.unit->dwarf;
+    const Info *dwarf = attr.unit()->dwarf;
     switch (attr.form()) {
         case DW_FORM_sec_offset: {
             auto &sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
             auto objIp = frame->ip - reloc;
             // convert this object-relative addr to a unit-relative one
-            auto unitEntry = DIERef(attr.dieref.unit, &*attr.dieref.unit->entries.begin());
+            auto unitEntry = *attr.unit()->topLevelDIEs().begin();
             Attribute unitLow = unitEntry.attribute(DW_AT_low_pc);
 #ifndef NDEBUG
             auto unitHigh = unitEntry.attribute(DW_AT_high_pc);
@@ -86,7 +86,7 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFra
         case DW_FORM_block1:
         case DW_FORM_block:
         case DW_FORM_exprloc: {
-            auto &block = attr.block();
+            const auto &block = Block(attr);
             DWARFReader r(dwarf->io, block.offset, block.offset + block.length);
             return eval(proc, r, frame, reloc);
         }

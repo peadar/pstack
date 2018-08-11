@@ -325,13 +325,12 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
             continue;
         for (auto u : dwarf->getUnits()) {
             // For each unit
-            for (const auto &compile : u->entries) {
-                if (compile.type->tag != Dwarf::DW_TAG_compile_unit)
+            for (const auto &compile : u->topLevelDIEs()) {
+                if (compile.tag() != Dwarf::DW_TAG_compile_unit)
                     continue;
                 // Do we have a global variable called interp_head?
-                for (const auto &rawvar : compile.children) {
-                    Dwarf::DIERef var(u.get(), &rawvar);
-                    if (var.die->type->tag == Dwarf::DW_TAG_variable && var.name() == "interp_head") {
+                for (const auto &var : compile.children()) {
+                    if (var.tag() == Dwarf::DW_TAG_variable && var.name() == "interp_head") {
                         Dwarf::ExpressionStack evalStack;
                         auto location = var.attribute(Dwarf::DW_AT_location);
                         if (!location.valid())

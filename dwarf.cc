@@ -25,6 +25,21 @@ using std::string;
 
 namespace Dwarf {
 
+class DIE {
+    DIE() = delete;
+    DIE(const DIE &) = delete;
+    void readValue(DWARFReader &, Form form, Value &value, const Unit *);
+    Entries children;
+    const Abbreviation *type;
+    std::vector<Value> values;
+public:
+    DIE(DWARFReader &, size_t, Unit *);
+    ~DIE();
+    friend class Attribute;
+    friend class DIERef;
+    friend class DIEAttributes;
+};
+
 uintmax_t
 DWARFReader::getuleb128shift(int *shift, bool &isSigned)
 {
@@ -217,6 +232,13 @@ Unit::Unit(const Info *di, DWARFReader &r)
     assert(nextoff <= r.getLimit());
     decodeEntries(entriesR, entries);
     r.setOffset(nextoff);
+}
+
+DIERef
+Unit::offsetToDIE(size_t offset) const
+{
+    auto it = allEntries.find(offset);
+    return it != allEntries.end() ? DIERef(this, it->second) : DIERef();
 }
 
 string
@@ -641,10 +663,10 @@ Unit::getLines()
 {
     if (lines != nullptr)
         return lines.get();
-    for (const auto &entry : entries) {
-        if (entry.type->tag == DW_TAG_partial_unit || entry.type->tag == DW_TAG_compile_unit) {
+    for (const auto &entry : topLevelDIEs()) {
+        if (entry.tag() == DW_TAG_partial_unit || entry.tag() == DW_TAG_compile_unit) {
             if (dwarf->lineshdr) {
-                auto attr = DIERef(this, &entry).attribute(DW_AT_stmt_list);
+                auto attr = entry.attribute(DW_AT_stmt_list);
                 if (!attr.valid())
                     continue;
                 auto stmts = off_t(attr);
@@ -1152,11 +1174,10 @@ DIERef
 DIERef::referencedEntry(AttrName name) const
 {
     auto attr = attribute(name);
-    return attr.valid() ? attr.getReference() : DIERef();
+    return attr.valid() ? DIERef(attr) : DIERef();
 }
 
-DIERef
-Attribute::getReference() const
+Attribute::operator DIERef() const
 {
 
     const Info *dwarf = dieref.unit->dwarf;
@@ -1183,19 +1204,21 @@ Attribute::getReference() const
             abort();
             break;
     }
-    const auto otherEntry = dieref.unit->allEntries.find(off);
 
     // Try this unit first (if we're dealing with the same Info)
-    if (dwarf == dieref.unit->dwarf && otherEntry != dieref.unit->allEntries.end())
-        return DIERef(dieref.unit, otherEntry->second);
+    if (dwarf == dieref.unit->dwarf) {
+        const auto otherEntry = dieref.unit->offsetToDIE(off);
+        if (otherEntry)
+            return otherEntry;
+    }
 
     // Nope - try other units.
     for (const auto &u : dwarf->getUnits()) {
         if (u.get() == dieref.unit)
             continue;
-        const auto &otherEntry = u->allEntries.find(off);
-        if (otherEntry != u->allEntries.end())
-            return DIERef(u.get(), otherEntry->second);
+        const auto &otherEntry = u->offsetToDIE(off);
+        if (otherEntry)
+            return otherEntry;
     }
     throw (Exception() << "reference not found");
 }
@@ -1264,7 +1287,7 @@ typeName(const DIERef &type)
         return name;
     auto base = type.referencedEntry(DW_AT_type);
     string s, sep;
-    switch (type.die->type->tag) {
+    switch (type.tag()) {
         case DW_TAG_pointer_type:
             return typeName(base) + " *";
         case DW_TAG_const_type:
@@ -1274,11 +1297,11 @@ typeName(const DIERef &type)
         case DW_TAG_subroutine_type:
             s = typeName(base) + "(";
             sep = "";
-            for (auto &arg : type.die->children) {
-                if (arg.type->tag != DW_TAG_formal_parameter)
+            for (auto arg : type.children()) {
+                if (arg.tag() != DW_TAG_formal_parameter)
                     continue;
                 s += sep;
-                s += typeName(DIERef(type.unit, &arg).referencedEntry(DW_AT_type));
+                s += typeName(arg.referencedEntry(DW_AT_type));
                 sep = ", ";
             }
             s += ")";
@@ -1286,16 +1309,15 @@ typeName(const DIERef &type)
         case DW_TAG_reference_type:
             return typeName(base) + "&";
         default: {
-            return stringify("(unhandled tag ", type.die->type->tag, ")");
+            return stringify("(unhandled tag ", type.tag(), ")");
         }
-
     }
 }
 
 DIERef
 findEntryForFunc(Elf::Addr address, const DIERef &entry)
 {
-    switch (entry.die->type->tag) {
+    switch (entry.tag()) {
         case DW_TAG_subprogram: {
             Elf::Addr start, end;
             auto low = entry.attribute(DW_AT_low_pc);
@@ -1322,17 +1344,15 @@ findEntryForFunc(Elf::Addr address, const DIERef &entry)
                         break;
                     default:
                         abort();
-
                 }
                 if (start <= address && end >= address) // allow for the address to be one byte past the function
                     return entry;
             }
             break;
         }
-
         default:
-            for (auto &child : entry.die->children) {
-                auto descendent = findEntryForFunc(address, DIERef(entry.unit, &child));
+            for (auto child : entry.children()) {
+                auto descendent = findEntryForFunc(address, child);
                 if (descendent)
                     return descendent;
             }
@@ -1341,5 +1361,39 @@ findEntryForFunc(Elf::Addr address, const DIERef &entry)
    return DIERef();
 }
 
+DIERef
+DIERefIter::operator *() const {
+    return DIERef(u, &*rawIter);
+}
 
+DIERefIter
+DIERefList::begin() const {
+    return const_iterator(unit, dies.begin());
+}
+
+DIERefIter
+DIERefList::end() const {
+    return const_iterator(unit, dies.end());
+}
+
+std::pair<AttrName, Attribute>
+DIEAttributes::const_iterator::operator *() const {
+    return std::make_pair(
+            rawIter->first,
+            Attribute(die, &die.die->type->forms[rawIter->second]));
+}
+
+DIEAttributes::const_iterator
+DIEAttributes::begin() const {
+    return const_iterator(die, die.die->type->attrName2Idx.begin());
+}
+
+DIEAttributes::const_iterator
+DIEAttributes::end() const {
+    return const_iterator(die, die.die->type->attrName2Idx.end());
+}
+const Value &Attribute::value() const { return dieref.die->values.at(formp - &dieref.die->type->forms[0]); }
+Tag DIERef::tag() const { return die->type->tag; }
+bool DIERef::hasChildren() const { return die->type->hasChildren; }
+DIERefList DIERef::children() const { return DIERefList(unit, die->children); }
 }

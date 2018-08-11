@@ -17,6 +17,14 @@
 #error "Non-32, non-64-bit platform?"
 #endif
 
+template <typename C>
+std::ostream &
+operator << (std::ostream &os, const JSON<std::pair<Dwarf::AttrName, Dwarf::Attribute>, C> &json) {
+   return JObject(os)
+       .field("name", json.object.first)
+       .field("value", json.object.second);
+}
+
 struct DumpCFAInsns {
     off_t start;
     off_t end;
@@ -230,19 +238,14 @@ std::ostream &operator << (std::ostream &os, const JSON<Dwarf::LineInfo, C> &jo)
 }
 
 template <typename C>
-std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIE, C> &jo) {
+std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIERef, C> &jo) {
     auto &entry = jo.object;
     JObject o(os);
-    o.field("type", entry.type->tag);
-    o.field("key", intptr_t(&entry));
-    std::map<Dwarf::AttrName, Dwarf::Attribute> attributes;
-    for (auto at : entry.type->attrName2Idx) {
-       auto &attr = attributes[at.first];
-       entry.attribute(at.first, attr);
-    }
-    o.field("attributes", attributes);
-    if (entry.type->hasChildren)
-        o.field("children", entry.children);
+    o.field("type", entry.tag());
+    o.field("key", intptr_t(entry.die));
+    o.field("attributes", entry.attributes());
+    if (entry.hasChildren())
+        o.field("children", entry.children());
     return o;
 }
 
@@ -260,10 +263,9 @@ std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Unit::sptr> &unit
 
     fmt.field("length", unit.object->length)
         .field("offset",  unit.object->offset)
-        .field("version",  int(unit.object->version))
-        .field("addrlen",  int(unit.object->addrlen))
-        /* .field("entries", unit.object->entries); */
-        ;
+        .field("version", int(unit.object->version))
+        .field("addrlen", int(unit.object->addrlen))
+        .field("entries", unit.object->topLevelDIEs());
     if (unit.object->getLines())
         fmt.field("linenumbers", *unit.object->getLines());
     return fmt;
@@ -370,8 +372,6 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
     auto &attr = o.object;
     JObject writer(os);
 
-    auto dwarf = attr.dieref.unit->dwarf;
-    auto elf = dwarf->elf;
     writer.field("form", attr.form());
     switch (attr.form()) {
     case DW_FORM_addr:
@@ -398,7 +398,7 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
     case DW_FORM_ref8:
     case DW_FORM_GNU_ref_alt:
     case DW_FORM_ref_udata: {
-        const auto entry = attr.dieref.referencedEntry(attr.name());
+        const auto entry = DIERef(attr);
         if (entry)
            writer.field("value", EntryReference(entry));
         break;
@@ -408,7 +408,7 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
     case DW_FORM_block2:
     case DW_FORM_block4:
     case DW_FORM_block:
-        writer.field("value", attr.block());
+        writer.field("value", Dwarf::Block(attr));
         break;
 
     case DW_FORM_flag:
@@ -572,24 +572,9 @@ std::ostream &operator<< (std::ostream &os, const JSON<Elf::Object> &elf)
         .field("sections", elf->sectionHeaders, &elf.object)
         .field("segments", mappedSegments, &elf.object)
         .field("interpreter", elf->getInterpreter())
-        .field("notes", elf->notes);
-/*
- * XXX: TODO post JSON fixups.
-       for (auto &seg :  obj.getSegments(PT_DYNAMIC)) {
-       os << ", \"dynamic\": [";
-       const char *sep = "";
-       off_t dynoff = seg.p_offset;
-       off_t edyn = dynoff + seg.p_filesz;
-       for (; dynoff < edyn; dynoff += sizeof (Elf::Dyn)) {
-       Elf::Dyn dyn;
-       obj.io->readObj(dynoff, &dyn);
-       os << sep << dyn;
-       sep = ",\n";
-       }
-       os << "]";
-       break;
-    }
-*/
+        .field("notes", elf->notes)
+        .field("dynamic", elf->notes)
+        ;
 }
 
 std::ostream &

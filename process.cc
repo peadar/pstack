@@ -237,7 +237,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
     if (rv.addr == 0)
        return os << "(null)";
     auto type = rv.type;
-    while (type.die->type->tag == DW_TAG_typedef || type.die->type->tag == DW_TAG_const_type)
+    while (type.tag() == DW_TAG_typedef || type.tag() == DW_TAG_const_type)
        type = type.referencedEntry(DW_AT_type);
 
 
@@ -256,7 +256,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
     }
 
     IOFlagSave _(os);
-    switch (type.die->type->tag) {
+    switch (type.tag()) {
         case DW_TAG_base_type: {
             if (size == 0) {
                 os << "unrepresentable(1)";
@@ -352,7 +352,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
             break;
         }
         default:
-            os << "<unprintable type " << type.die->type->tag << ">";
+            os << "<unprintable type " << type.tag() << ">";
     }
     return os;
 }
@@ -362,9 +362,8 @@ operator << (std::ostream &os, const ArgPrint &ap)
 {
     using namespace Dwarf;
     const char *sep = "";
-    for (auto &childraw : ap.frame->function.die->children) {
-        DIERef child(ap.frame->function.unit, &childraw);
-        switch (childraw.type->tag) {
+    for (const auto &child : ap.frame->function.children()) {
+        switch (child.tag()) {
             case DW_TAG_formal_parameter: {
                 auto name = child.name();
                 auto type = child.referencedEntry(DW_AT_type);
@@ -446,8 +445,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             Dwarf::Unit::sptr dwarfUnit;
             for (const auto &u : units) {
                 // find the DIE for this function
-                for (auto &it : u->entries) {
-                    auto de = Dwarf::findEntryForFunc(objIp, Dwarf::DIERef(u.get(), &it));
+                for (const auto &it : u->topLevelDIEs()) {
+                    auto de = Dwarf::findEntryForFunc(objIp, it);
                     if (de) {
                         symName = de.name();
                         if (symName == "") {

@@ -362,13 +362,6 @@ public:
 };
 extern GlobalDebugDirectories globalDebugDirectories;
 
-std::ostream& operator<< (std::ostream &os, std::tuple<const Object *, const Shdr &, const Sym &> &t);
-std::ostream& operator<< (std::ostream &os, const std::pair<const Object *, const Shdr &> &p);
-std::ostream& operator<< (std::ostream &os, const Phdr &h);
-std::ostream& operator<< (std::ostream &os, std::tuple<const Object *, const Shdr &, const Sym &> &t);
-std::ostream& operator<< (std::ostream &os, const Dyn &d);
-std::ostream& operator<< (std::ostream &os, const Object &obj);
-
 /*
  * A cache of named files to ELF objects. Note no deduping is done for symbolic
  * links, hard links, or canonicalization of filenames. (XXX: do this with stat
