@@ -17,7 +17,7 @@ namespace Dwarf {
 enum HasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
 
 class Attribute;
-class DIE;
+class RawDIE;
 class ExpressionStack;
 class Info;
 class LineInfo;
@@ -27,7 +27,7 @@ struct CFI;
 struct Unit;
 
 // The DWARF Unit's allEntries map contains the underlying data for the tree.
-typedef std::list<DIE> Entries;
+typedef std::list<RawDIE> Entries;
 
 #define DWARF_TAG(a,b) a = b,
 enum Tag {
@@ -184,8 +184,8 @@ struct DIEAttributes {
 
 struct DIERef {
     const Unit *unit;
-    const DIE *die;
-    DIERef(const Unit *unit, const DIE *die) : unit(unit), die(die) {}
+    const RawDIE *die;
+    DIERef(const Unit *unit, const RawDIE *die) : unit(unit), die(die) {}
     DIERef() : unit(nullptr) {}
     operator bool() const { return unit != nullptr; }
     bool hasChildren() const;
@@ -281,7 +281,7 @@ class Unit {
     Unit(const Unit &) = delete;
     std::unique_ptr<LineInfo> lines;
     Entries entries;
-    std::map<off_t, DIE *> allEntries;
+    std::map<off_t, RawDIE *> allEntries;
 public:
     DIERefList topLevelDIEs() const { return DIERefList(this, entries); }
     DIERef offsetToDIE(size_t offset) const;

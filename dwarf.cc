@@ -25,16 +25,16 @@ using std::string;
 
 namespace Dwarf {
 
-class DIE {
-    DIE() = delete;
-    DIE(const DIE &) = delete;
+class RawDIE {
+    RawDIE() = delete;
+    RawDIE(const RawDIE &) = delete;
     void readValue(DWARFReader &, Form form, Value &value, const Unit *);
     Entries children;
     const Abbreviation *type;
     std::vector<Value> values;
 public:
-    DIE(DWARFReader &, size_t, Unit *);
-    ~DIE();
+    RawDIE(DWARFReader &, size_t, Unit *);
+    ~RawDIE();
     friend class Attribute;
     friend class DIERef;
     friend class DIEAttributes;
@@ -247,6 +247,7 @@ Unit::name() const
     assert(entries.begin() != entries.end());
     for (const auto &top : topLevelDIEs())
         return top.name();
+    return "";
 }
 
 Unit::~Unit() = default;
@@ -514,7 +515,7 @@ Attribute::operator std::string() const
 }
 
 void
-DIE::readValue(DWARFReader &r, Form form, Value &value, const Unit *unit)
+RawDIE::readValue(DWARFReader &r, Form form, Value &value, const Unit *unit)
 {
     switch (form) {
 
@@ -640,7 +641,7 @@ DIE::readValue(DWARFReader &r, Form form, Value &value, const Unit *unit)
     }
 }
 
-DIE::~DIE()
+RawDIE::~RawDIE()
 {
     int i = 0;
     for (auto form : type->forms) {
@@ -681,7 +682,7 @@ Unit::getLines()
     return nullptr;
 }
 
-DIE::DIE(DWARFReader &r, size_t abbrev, Unit *unit)
+RawDIE::RawDIE(DWARFReader &r, size_t abbrev, Unit *unit)
     : type(&unit->abbreviations.find(abbrev)->second)
     , values(type->forms.size())
 {
