@@ -238,7 +238,7 @@ std::ostream &operator << (std::ostream &os, const JSON<Dwarf::LineInfo, C> &jo)
 }
 
 template <typename C>
-std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIERef, C> &jo) {
+std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIE, C> &jo) {
     auto &entry = jo.object;
     JObject o(os);
     o.field("type", entry.tag());
@@ -351,8 +351,8 @@ operator << (std::ostream &os, const JSON<Dwarf::Block> &b)
 }
 
 struct EntryReference {
-   const Dwarf::DIERef die;
-   explicit EntryReference(const Dwarf::DIERef &die) : die(die) {}
+   const Dwarf::DIE die;
+   explicit EntryReference(const Dwarf::DIE &die) : die(die) {}
 };
 
 std::ostream &
@@ -398,7 +398,7 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
     case DW_FORM_ref8:
     case DW_FORM_GNU_ref_alt:
     case DW_FORM_ref_udata: {
-        const auto entry = DIERef(attr);
+        const auto entry = DIE(attr);
         if (entry)
            writer.field("value", EntryReference(entry));
         break;

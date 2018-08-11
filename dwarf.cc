@@ -36,7 +36,7 @@ public:
     RawDIE(DWARFReader &, size_t, Unit *);
     ~RawDIE();
     friend class Attribute;
-    friend class DIERef;
+    friend class DIE;
     friend class DIEAttributes;
 };
 
@@ -234,11 +234,11 @@ Unit::Unit(const Info *di, DWARFReader &r)
     r.setOffset(nextoff);
 }
 
-DIERef
+DIE
 Unit::offsetToDIE(size_t offset) const
 {
     auto it = allEntries.find(offset);
-    return it != allEntries.end() ? DIERef(this, it->second) : DIERef();
+    return it != allEntries.end() ? DIE(this, it->second) : DIE();
 }
 
 string
@@ -1172,14 +1172,14 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
     r.setOffset(end);
 }
 
-DIERef
-DIERef::referencedEntry(AttrName name) const
+DIE
+DIE::referencedEntry(AttrName name) const
 {
     auto attr = attribute(name);
-    return attr.valid() ? DIERef(attr) : DIERef();
+    return attr.valid() ? DIE(attr) : DIE();
 }
 
-Attribute::operator DIERef() const
+Attribute::operator DIE() const
 {
 
     const Info *dwarf = dieref.unit->dwarf;
@@ -1226,7 +1226,7 @@ Attribute::operator DIERef() const
 }
 
 Attribute
-DIERef::attribute(AttrName name) const
+DIE::attribute(AttrName name) const
 {
     auto loc = die->type->attrName2Idx.find(name);
     if (loc != die->type->attrName2Idx.end())
@@ -1279,7 +1279,7 @@ ImageCache::~ImageCache() {
 }
 
 string
-typeName(const DIERef &type)
+typeName(const DIE &type)
 {
     if (!type)
         return "void";
@@ -1316,8 +1316,8 @@ typeName(const DIERef &type)
     }
 }
 
-DIERef
-findEntryForFunc(Elf::Addr address, const DIERef &entry)
+DIE
+findEntryForFunc(Elf::Addr address, const DIE &entry)
 {
     switch (entry.tag()) {
         case DW_TAG_subprogram: {
@@ -1360,21 +1360,21 @@ findEntryForFunc(Elf::Addr address, const DIERef &entry)
             }
             break;
     }
-   return DIERef();
+   return DIE();
 }
 
-DIERef
-DIERefIter::operator *() const {
-    return DIERef(u, &*rawIter);
+DIE
+DIEIter::operator *() const {
+    return DIE(u, &*rawIter);
 }
 
-DIERefIter
-DIERefList::begin() const {
+DIEIter
+DIEList::begin() const {
     return const_iterator(unit, dies.begin());
 }
 
-DIERefIter
-DIERefList::end() const {
+DIEIter
+DIEList::end() const {
     return const_iterator(unit, dies.end());
 }
 
@@ -1395,7 +1395,7 @@ DIEAttributes::end() const {
     return const_iterator(die, die.die->type->attrName2Idx.end());
 }
 const Value &Attribute::value() const { return dieref.die->values.at(formp - &dieref.die->type->forms[0]); }
-Tag DIERef::tag() const { return die->type->tag; }
-bool DIERef::hasChildren() const { return die->type->hasChildren; }
-DIERefList DIERef::children() const { return DIERefList(unit, die->children); }
+Tag DIE::tag() const { return die->type->tag; }
+bool DIE::hasChildren() const { return die->type->hasChildren; }
+DIEList DIE::children() const { return DIEList(unit, die->children); }
 }

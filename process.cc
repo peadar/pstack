@@ -222,8 +222,8 @@ struct ArgPrint {
 struct RemoteValue {
     const Process &p;
     const Elf::Addr addr;
-    const Dwarf::DIERef type;
-    RemoteValue(const Process &p_, Elf::Addr addr_, Dwarf::DIERef type_)
+    const Dwarf::DIE type;
+    RemoteValue(const Process &p_, Elf::Addr addr_, Dwarf::DIE type_)
         : p(p_)
         , addr(addr_)
         , type(type_)

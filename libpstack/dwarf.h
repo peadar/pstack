@@ -125,49 +125,49 @@ union Value {
     bool flag;
 };
 
-struct DIERef;
+struct DIE;
 
-struct DIERefIter {
+struct DIEIter {
     const Unit *u;
     Entries::const_iterator rawIter;
-    DIERef operator *() const;
-    DIERefIter &operator++() {
+    DIE operator *() const;
+    DIEIter &operator++() {
         ++rawIter;
         return *this;
     }
-    DIERefIter(const Unit *unit_, Entries::const_iterator rawIter_) :
+    DIEIter(const Unit *unit_, Entries::const_iterator rawIter_) :
         u(unit_), rawIter(rawIter_) {}
-    bool operator == (const DIERefIter &rhs) const {
+    bool operator == (const DIEIter &rhs) const {
         return rawIter == rhs.rawIter;
     }
-    bool operator != (const DIERefIter &rhs) const {
+    bool operator != (const DIEIter &rhs) const {
         return rawIter != rhs.rawIter;
     }
 };
 
-struct DIERefList {
-    using const_iterator = DIERefIter;
-    using value_type = DIERef;
+struct DIEList {
+    using const_iterator = DIEIter;
+    using value_type = DIE;
     const Unit *unit;
     const Entries &dies;
-    DIERefIter begin() const;
-    DIERefIter end() const;
-    DIERefList(const Unit *unit_, const Entries &dies_)
+    DIEIter begin() const;
+    DIEIter end() const;
+    DIEList(const Unit *unit_, const Entries &dies_)
         : unit(unit_), dies(dies_) {}
 };
 
 struct DIEAttributes {
-    const DIERef &die;
+    const DIE &die;
     using value_type = Attribute;
     struct const_iterator {
-        const DIERef &die;
+        const DIE &die;
         Abbreviation::AttrNameMap::const_iterator rawIter;
         std::pair<AttrName, Attribute> operator *() const;
         const_iterator &operator++() {
             ++rawIter;
             return *this;
         }
-        const_iterator(const DIERef &die_, Abbreviation::AttrNameMap::const_iterator rawIter_) : 
+        const_iterator(const DIE &die_, Abbreviation::AttrNameMap::const_iterator rawIter_) : 
             die(die_), rawIter(rawIter_) {}
         bool operator == (const const_iterator &rhs) const {
             return rawIter == rhs.rawIter;
@@ -178,27 +178,27 @@ struct DIEAttributes {
     };
     const_iterator begin() const;
     const_iterator end() const;
-    DIEAttributes(const DIERef &die) : die(die) {}
+    DIEAttributes(const DIE &die) : die(die) {}
 };
 
 
-struct DIERef {
+struct DIE {
     const Unit *unit;
     const RawDIE *die;
-    DIERef(const Unit *unit, const RawDIE *die) : unit(unit), die(die) {}
-    DIERef() : unit(nullptr) {}
+    DIE(const Unit *unit, const RawDIE *die) : unit(unit), die(die) {}
+    DIE() : unit(nullptr) {}
     operator bool() const { return unit != nullptr; }
     bool hasChildren() const;
     Attribute attribute(AttrName name) const;
-    DIERef referencedEntry(AttrName name) const;
+    DIE referencedEntry(AttrName name) const;
     inline std::string name() const;
-    DIERefList children() const;
+    DIEList children() const;
     DIEAttributes attributes() const { return DIEAttributes(*this); }
     Tag tag() const;
 };
 
 class Attribute {
-    DIERef dieref;
+    DIE dieref;
     const Form *formp; /* From abbrev table attached to type */
 
     Value &value();
@@ -206,7 +206,7 @@ public:
     const Unit *unit() const { return dieref.unit; }
     const Value &value() const;
     Form form() const { return *formp; }
-    Attribute(const DIERef &dieref_, const Form *formp_)
+    Attribute(const DIE &dieref_, const Form *formp_)
        : dieref(dieref_), formp(formp_) {}
     Attribute() : formp(nullptr) {}
     ~Attribute() { }
@@ -216,13 +216,13 @@ public:
     explicit operator intmax_t() const;
     explicit operator uintmax_t() const;
     explicit operator bool() const { return value().flag; }
-    explicit operator DIERef() const;
+    explicit operator DIE() const;
     explicit operator const Block &() const { return *value().block; }
     AttrName name() const;
 };
 
 std::string
-DIERef::name() const
+DIE::name() const
 {
     auto attr = attribute(DW_AT_name);
     return attr.valid() ? std::string(attr) : "";
@@ -283,8 +283,8 @@ class Unit {
     Entries entries;
     std::map<off_t, RawDIE *> allEntries;
 public:
-    DIERefList topLevelDIEs() const { return DIERefList(this, entries); }
-    DIERef offsetToDIE(size_t offset) const;
+    DIEList topLevelDIEs() const { return DIEList(this, entries); }
+    DIE offsetToDIE(size_t offset) const;
     std::unordered_map<size_t, Abbreviation> abbreviations;
     const Info *dwarf;
     Reader::csptr io;
@@ -544,8 +544,8 @@ public:
     void skip(Elf::Off amount) { off += amount; }
 };
 
-std::string typeName(const DIERef &);
-DIERef findEntryForFunc(Elf::Addr address, const DIERef &entry);
+std::string typeName(const DIE &);
+DIE findEntryForFunc(Elf::Addr address, const DIE &entry);
 
 
 #define DWARF_OP(op, value, args) op = value,
