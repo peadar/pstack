@@ -238,7 +238,7 @@ DIE
 Unit::offsetToDIE(size_t offset) const
 {
     auto it = allEntries.find(offset);
-    return it != allEntries.end() ? DIE(this, it->second) : DIE();
+    return it != allEntries.end() ? DIE(this, offset, &it->second) : DIE();
 }
 
 string
@@ -683,7 +683,7 @@ Unit::getLines()
 }
 
 RawDIE::RawDIE(DWARFReader &r, size_t abbrev, Unit *unit)
-    : type(&unit->abbreviations.find(abbrev)->second)
+    : type(unit->findAbbreviation(abbrev))
     , values(type->forms.size())
 {
     size_t i = 0;
@@ -691,6 +691,13 @@ RawDIE::RawDIE(DWARFReader &r, size_t abbrev, Unit *unit)
         readValue(r, form, values[i++], unit);
     if (type->hasChildren)
         unit->decodeEntries(r, children);
+}
+
+const Abbreviation *
+Unit::findAbbreviation(size_t offset) const
+{
+    auto it = abbreviations.find(offset);
+    return it != abbreviations.end() ? &it->second : nullptr;
 }
 
 void
@@ -701,8 +708,10 @@ Unit::decodeEntries(DWARFReader &r, Entries &entries)
         size_t abbrev = r.getuleb128();
         if (abbrev == 0)
             return;
-        entries.emplace_back(r, abbrev, this);
-        allEntries[offset] = &entries.back();
+        allEntries.emplace(std::piecewise_construct,
+                        std::forward_as_tuple(offset),
+                        std::forward_as_tuple(r, abbrev, this));
+        entries.push_back(offset);
     }
 }
 
@@ -1365,7 +1374,7 @@ findEntryForFunc(Elf::Addr address, const DIE &entry)
 
 DIE
 DIEIter::operator *() const {
-    return DIE(u, &*rawIter);
+    return u->offsetToDIE(*rawIter);
 }
 
 DIEIter

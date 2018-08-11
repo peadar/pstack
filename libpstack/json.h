@@ -9,6 +9,31 @@
 #include <typeinfo>
 #include <map>
 
+/*
+ * General purpose way of printing out JSON objects.
+ * Given an std::ostream &s, we can do:
+ * s << json(anytype)
+ * And have it print out.
+ * For your own structures, you define:
+ * std::ostream &operator << (std::ostream &, const JSON<mytype, context> &)
+ * This function can use "JObject" below to describe its fields, eg:
+ *    std::ostream &operator << (std::ostream &os, const JSON<MyType> &json) {
+ *       MyType &myObject = json.object;
+ *       JObject o(os);
+ *       o.field("foo", myObject.foo);
+ *       return os;
+ *    }
+ * Calls to field return the JObject, so you can chain-call them, and it also
+ * converts to an ostream, so you can do:
+ *     return JObject(o).field("foo", myObject.foo).field("bar", myObject.bar());
+ *
+ * There are wrappers for arrays, and C++ containers to do the right thing.
+ */
+
+/*
+ * A wrapper for objects so we can serialize them as JSON.
+ * You can hold some context information in the printer to make life easier.
+ */
 template <typename T, typename C = char> class JSON {
 public:
    const T& object;
@@ -18,6 +43,18 @@ public:
    JSON() = delete;
 };
 
+/*
+ * Easy way to create a JSON object, with a given context
+ */
+template <typename T, typename C = char>
+JSON<T, C>
+json(const T &object, const C context = C()) {
+   return JSON<T, C>(object, context);
+}
+
+/*
+ * A field in a JSON object - arbitrary key and value.
+ */
 template <typename K, typename V>
 struct Field {
    const K &k;
@@ -27,41 +64,43 @@ struct Field {
    Field(const Field<K, V> &) = delete;
 };
 
-template <template <typename, typename> class M, class K, class V, class C> std::ostream &
-operator << (std::ostream &os, JSON<const M<K, V>, C> &json);
-
+/*
+ * A printer for JSON integral types - just serialize directly from C type.
+ */
 template <typename T, typename C>
 typename std::enable_if<std::is_integral<T>::value, std::ostream>::type &
 operator << (std::ostream &os, const JSON<T, C>&json) { return os << json.object; }
 
+/*
+ * A printer for JSON boolean types: print "true" or "false"
+ */
 template <typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<bool, C> &json)
    { return os << (json.object ? "true" : "false"); }
 
-template <typename T, typename C>
-JSON<T, C>
-json(const T &object, const C context);
-
-template <typename T>
-JSON<T, char>
-json(const T &object) { return json(object, '.'); }
-
+/*
+ * printers for arrays. char[N] is special, we treat that as a string.
+ */
 template <typename C, size_t N>
 std::ostream &
-operator << (std::ostream &os, const JSON<char[N], C> &json);
+operator << (std::ostream &os, const JSON<char[N], C> &json)
+    { return os << JSON<const char *, C>(&json.object[0], json.context); }
 
 template <typename T, size_t N, typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<T[N], C> &json)
 {
-   os << "[";
-   for (size_t i = 0; i < N; ++i) {
-      os << (i ? ",\n" : "") << json.object[i];
-   }
-   return os << "]";
+    os << "[";
+    for (size_t i = 0; i < N; ++i) {
+        os << (i ? ",\n" : "") << json.object[i];
+    }
+    return os << "]";
 }
 
+/*
+ * Print a field of an object
+ */
 template <typename K, typename V, typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<Field<K,V>, C> &o)
@@ -70,35 +109,67 @@ operator << (std::ostream &os, const JSON<Field<K,V>, C> &o)
 }
 
 /*
- * Real arrays can be printed as a JSON array.
+ * is_associative_container: returns true_type for containers with "mapped_type"
  */
-template <template <typename...> class Container, typename C, typename ...Args, typename = typename Container<Args...>::value_type>
-std::ostream &
-operator << (std::ostream &os, const JSON<Container<Args...>, C> &container) {
-   os << "[ ";
-   const char *sep = "";
-   for (const auto &field : container.object) {
-      os << sep << json(field, container.context);
-      sep = ",\n";
-   }
-   return os << " ]";
+constexpr std::false_type is_associative_container(...) {
+    return std::false_type{};
+}
+
+template <typename C, typename = typename C::mapped_type>
+constexpr std::true_type is_associative_container(const C &) {
+    return std::true_type{};
 }
 
 /*
- * Iterable objects can be printed as an array.
+ * Print a non-associative container
  */
-template <typename Container, typename C, typename = typename Container::value_type>
-std::ostream &
-operator << (std::ostream &os, const JSON<Container, C> &container) {
+template <typename Container, typename Context>
+void print_container(std::ostream &os, const Container &container, Context ctx, std::false_type)
+{
    os << "[ ";
    const char *sep = "";
-   for (const auto &field : container.object) {
-      os << sep << json(field, container.context);
+   for (const auto &field : container) {
+      os << sep << json(field, ctx);
       sep = ",\n";
    }
-   return os << " ]";
+   os << " ]";
 }
 
+/*
+ * Print an associative container
+ */
+template <typename Container,
+         typename Context,
+         typename = std::true_type,
+         typename K = typename Container::key_type,
+         typename V = typename Container::mapped_type
+         >
+void
+print_container(std::ostream &os, const Container &container, Context ctx, std::true_type)
+{
+   os << "{";
+   const char *sep = "";
+   for (const auto &field : container) {
+      Field<K,V> jfield(field.first, field.second);
+      os << sep << json(jfield, ctx);
+      sep = ", ";
+   }
+   os << "}";
+}
+
+/*
+ * Print any type of container
+ */
+template <class Container, typename Context, typename = typename Container::value_type>
+std::ostream &
+operator << (std::ostream &os, const JSON<Container, Context> &container) {
+    print_container(os, container.object, container.context, is_associative_container(container.object));
+    return os;
+}
+
+/*
+ * Print a JSON string (std::string, char *, etc)
+ */
 template <typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<std::string, C> &json) {
@@ -111,39 +182,10 @@ operator << (std::ostream &os, const JSON<const char *, C> &json) {
    return os << "\"" << json.object << "\"";
 }
 
-
-template <typename C, size_t N>
-std::ostream &
-operator << (std::ostream &os, const JSON<char[N], C> &json) {
-   return os << JSON<const char *, C>(&json.object[0], json.context);
-}
-
-template <typename T, typename C = char>
-JSON<T, C>
-json(const T &object, const C context) {
-   return JSON<T, C>(object, context);
-}
 /*
- * Print any container with a mapped type as a JSON object.
+ * A mapping type that converts the entries in a container to a different type
+ * as you iterate over the original container.
  */
-template <template <typename...> class Container,
-         typename Context,
-         typename K,
-         typename V,
-         typename ...Args,
-         typename = typename Container<K, V, Args...>::mapped_type>
-std::ostream &
-operator << (std::ostream &os, const JSON<Container<K, V, Args...>, Context> &container) {
-   os << "{";
-   const char *sep = "";
-   for (const auto &field : container.object) {
-      Field<K,V> jfield(field.first, field.second);
-      os << sep << json(jfield, container.context);
-      sep = ", ";
-   }
-   return os << "}";
-}
-
 template <class NK, class V, class Container> class Mapper {
     const Container &container;
 public:
@@ -194,6 +236,9 @@ class JObject {
       operator std::ostream &() { return os; }
 };
 
+/*
+ * Fallback printer for pairs.
+ */
 template <typename F, typename S, typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<std::pair<F, S>, C> &json) {

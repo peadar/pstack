@@ -17,14 +17,6 @@
 #error "Non-32, non-64-bit platform?"
 #endif
 
-template <typename C>
-std::ostream &
-operator << (std::ostream &os, const JSON<std::pair<Dwarf::AttrName, Dwarf::Attribute>, C> &json) {
-   return JObject(os)
-       .field("name", json.object.first)
-       .field("value", json.object.second);
-}
-
 struct DumpCFAInsns {
     off_t start;
     off_t end;
@@ -241,9 +233,12 @@ template <typename C>
 std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIE, C> &jo) {
     auto &entry = jo.object;
     JObject o(os);
-    o.field("type", entry.tag());
-    o.field("key", intptr_t(entry.die));
-    o.field("attributes", entry.attributes());
+
+    o
+        .field("type", entry.tag())
+        .field("offset", entry.offset)
+        .field("attributes", entry.attributes());
+
     if (entry.hasChildren())
         o.field("children", entry.children());
     return o;
@@ -362,7 +357,7 @@ operator << (std::ostream &os, const JSON<EntryReference> &jer)
    return JObject(os)
       .field("file", stringify(*e.unit->dwarf->elf->io))
       .field("name", e.name())
-      .field("key", intptr_t(e));
+      .field("offset", e.offset);
 }
 
 std::ostream &

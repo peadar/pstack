@@ -22,12 +22,13 @@ class ExpressionStack;
 class Info;
 class LineInfo;
 class DWARFReader;
+class DIE;
 struct CIE;
 struct CFI;
 struct Unit;
 
 // The DWARF Unit's allEntries map contains the underlying data for the tree.
-typedef std::list<RawDIE> Entries;
+typedef std::vector<size_t> Entries;
 
 #define DWARF_TAG(a,b) a = b,
 enum Tag {
@@ -125,7 +126,6 @@ union Value {
     bool flag;
 };
 
-struct DIE;
 
 struct DIEIter {
     const Unit *u;
@@ -158,7 +158,9 @@ struct DIEList {
 
 struct DIEAttributes {
     const DIE &die;
-    using value_type = Attribute;
+    using value_type = std::pair<AttrName, Attribute>;
+    using mapped_type = Attribute;
+    using key_type = AttrName;
     struct const_iterator {
         const DIE &die;
         Abbreviation::AttrNameMap::const_iterator rawIter;
@@ -181,11 +183,11 @@ struct DIEAttributes {
     DIEAttributes(const DIE &die) : die(die) {}
 };
 
-
-struct DIE {
+class DIE {
     const Unit *unit;
+    size_t offset;
     const RawDIE *die;
-    DIE(const Unit *unit, const RawDIE *die) : unit(unit), die(die) {}
+    DIE(const Unit *unit, size_t offset_, const RawDIE *die) : unit(unit), offset(offset_), die(die) {}
     DIE() : unit(nullptr) {}
     operator bool() const { return unit != nullptr; }
     bool hasChildren() const;
@@ -280,12 +282,13 @@ class Unit {
     Unit() = delete;
     Unit(const Unit &) = delete;
     std::unique_ptr<LineInfo> lines;
+    std::unordered_map<size_t, Abbreviation> abbreviations;
     Entries entries;
-    std::map<off_t, RawDIE *> allEntries;
+    std::map<off_t, RawDIE> allEntries;
 public:
+    const Abbreviation *findAbbreviation(size_t) const;
     DIEList topLevelDIEs() const { return DIEList(this, entries); }
     DIE offsetToDIE(size_t offset) const;
-    std::unordered_map<size_t, Abbreviation> abbreviations;
     const Info *dwarf;
     Reader::csptr io;
     off_t offset;
