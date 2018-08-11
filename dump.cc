@@ -238,7 +238,7 @@ std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIE, C> &jo) {
     std::map<Dwarf::AttrName, Dwarf::Attribute> attributes;
     for (auto at : entry.type->attrName2Idx) {
        auto &attr = attributes[at.first];
-       entry.attrForName(at.first, attr);
+       entry.attribute(at.first, attr);
     }
     o.field("attributes", attributes);
     if (entry.type->hasChildren)
@@ -256,13 +256,16 @@ operator << (std::ostream &os, const JSON<Dwarf::Abbreviation, C> &abbr) {
 }
 
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Unit::sptr> &unit) {
-    return JObject(os)
-        .field("length", unit.object->length)
+    JObject fmt(os);
+
+    fmt.field("length", unit.object->length)
         .field("offset",  unit.object->offset)
         .field("version",  int(unit.object->version))
         .field("addrlen",  int(unit.object->addrlen))
-        .field("linenumbers", unit.object->lines)
         .field("entries", unit.object->entries);
+    if (unit.object->getLines())
+        fmt.field("linenumbers", *unit.object->getLines());
+    return fmt;
 }
 
 std::ostream & operator << (std::ostream &os, const JSON<Dwarf::ARange> &range) {

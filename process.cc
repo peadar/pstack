@@ -244,7 +244,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
     uintmax_t size;
     Attribute sizeAttr;
     std::vector<char> buf;
-    if (type->attrForName(DW_AT_byte_size, sizeAttr)) {
+    if (type->attribute(DW_AT_byte_size, sizeAttr)) {
         size = uintmax_t(sizeAttr);
         buf.resize(size);
         auto rc = rv.p.io->read(rv.addr, size, &buf[0]);
@@ -262,7 +262,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
                 os << "unrepresentable(1)";
             }
             Attribute encoding;
-            if (!type->attrForName(DW_AT_encoding, encoding))
+            if (!type->attribute(DW_AT_encoding, encoding))
                 throw (Exception() << "no encoding specified for base type");
 
             union {
@@ -372,7 +372,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
                 if (type != nullptr) {
                     Dwarf::Attribute attr;
 
-                    if (child.attrForName(Dwarf::DW_AT_location, attr)) {
+                    if (child.attribute(Dwarf::DW_AT_location, attr)) {
                         Dwarf::ExpressionStack fbstack;
                         addr = fbstack.eval(ap.p, attr, ap.frame, ap.frame->elfReloc);
                         os << "=";
@@ -381,7 +381,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
                         } else {
                            os << RemoteValue(ap.p, addr, type);
                         }
-                    } else if (child.attrForName(Dwarf::DW_AT_const_value, attr)) {
+                    } else if (child.attribute(Dwarf::DW_AT_const_value, attr)) {
                         os << "=" << intmax_t(attr);
                     }
                 }
@@ -458,7 +458,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         frame->dwarf = dwarf; // hold on to 'de'
                         os << "in " << symName << sigmsg;
                         Dwarf::Attribute lowpc;
-                        if (de->attrForName(Dwarf::DW_AT_low_pc, lowpc))
+                        if (de->attribute(Dwarf::DW_AT_low_pc, lowpc))
                             os << "+" << objIp - uintmax_t(lowpc);
                         os << "(";
                         if (options(::PstackOptions::doargs)) {

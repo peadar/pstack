@@ -156,14 +156,14 @@ public:
     const Unit *unit;
     const Abbreviation *type;
     std::vector<Value> values;
-    bool attrForName(AttrName name, Attribute &) const;
+    bool attribute(AttrName name, Attribute &) const;
     const DIE *referencedEntry(AttrName name) const;
     DIE(DWARFReader &, size_t, Unit *);
     ~DIE();
 
     std::string name() const {
         Attribute name;
-        return attrForName(DW_AT_name, name) ? std::string(name) : "";
+        return attribute(DW_AT_name, name) ? std::string(name) : "";
     }
 };
 
@@ -215,12 +215,13 @@ public:
 }
 
 namespace Dwarf {
-struct Unit {
+class Unit {
     Unit() = delete;
     Unit(const Unit &) = delete;
+    std::unique_ptr<LineInfo> lines;
+public:
     std::unordered_map<size_t, Abbreviation> abbreviations;
     std::map<off_t, DIE *> allEntries;
-public:
     const Info *dwarf;
     Reader::csptr io;
     off_t offset;
@@ -230,9 +231,9 @@ public:
     uint16_t version;
     uint8_t addrlen;
     Entries entries;
-    LineInfo lines;
     Unit(const Info *, DWARFReader &);
     std::string name() const;
+    const LineInfo *getLines();
     ~Unit();
     typedef std::shared_ptr<Unit> sptr;
     typedef std::shared_ptr<const Unit> csptr;

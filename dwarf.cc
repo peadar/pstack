@@ -636,30 +636,34 @@ DIE::~DIE()
     }
 }
 
+const LineInfo *
+Unit::getLines()
+{
+    if (lines != nullptr)
+        return lines.get();
+    for (const auto &entry : entries) {
+        if (entry.type->tag == DW_TAG_partial_unit || entry.type->tag == DW_TAG_compile_unit) {
+            Attribute stmtsAttr;
+            if (dwarf->lineshdr && entry.attribute(DW_AT_stmt_list, stmtsAttr)) {
+                auto stmts = off_t(stmtsAttr);
+                DWARFReader r2(dwarf->lineshdr, stmts);
+                lines.reset(new LineInfo());
+                lines->build(r2, this);
+                return lines.get();
+            }
+        }
+    }
+    return nullptr;
+}
+
 DIE::DIE(DWARFReader &r, size_t abbrev, Unit *unit_)
     : unit(unit_)
     , type(&unit->abbreviations.find(abbrev)->second)
     , values(type->forms.size())
 {
-
-    int i = 0;
+    size_t i = 0;
     for (auto form : type->forms)
         readValue(r, form, values[i++]);
-
-    switch (type->tag) {
-    case DW_TAG_partial_unit:
-    case DW_TAG_compile_unit: {
-        Attribute stmtsAttr;
-        if (unit->dwarf->lineshdr && attrForName(DW_AT_stmt_list, stmtsAttr)) {
-            auto stmts = off_t(stmtsAttr);
-            DWARFReader r2(unit->dwarf->lineshdr, stmts);
-            unit_->lines.build(r2, unit);
-        }
-        break;
-    }
-    default: // not otherwise interested for the mo.
-        break;
-    }
     if (type->hasChildren)
         unit_->decodeEntries(r, children);
 }
@@ -859,13 +863,17 @@ Info::sourceFromAddr(uintmax_t addr)
     if (units.empty())
         units = getUnits();
     for (const auto &unit : units) {
-        for (auto i = unit->lines.matrix.begin(); i != unit->lines.matrix.end(); ++i) {
-            if (i->end_sequence)
-                continue;
-            auto next = i+1;
-            if (i->addr <= addr && next->addr > addr)
-                info.emplace_back(i->file->name, i->line);
+        auto lines = unit->getLines();
+        if (lines) {
+            for (auto i = lines->matrix.begin(); i != lines->matrix.end(); ++i) {
+                if (i->end_sequence)
+                    continue;
+                auto next = i+1;
+                if (i->addr <= addr && next->addr > addr)
+                    info.emplace_back(i->file->name, i->line);
+            }
         }
+
     }
     return info;
 }
@@ -1143,7 +1151,7 @@ const DIE *
 DIE::referencedEntry(AttrName name) const
 {
     Attribute attr;
-    return attrForName(name, attr) ? attr.getReference() : nullptr;
+    return attribute(name, attr) ? attr.getReference() : nullptr;
 }
 
 const DIE *
@@ -1192,7 +1200,7 @@ Attribute::getReference() const
 }
 
 bool
-DIE::attrForName(AttrName name, Attribute &attr) const
+DIE::attribute(AttrName name, Attribute &attr) const
 {
     auto loc = type->attrName2Idx.find(name);
     if (loc != type->attrName2Idx.end()) {
@@ -1212,7 +1220,7 @@ DIE::attrForName(AttrName name, Attribute &attr) const
         for (auto alt : derefs) {
             auto ao = referencedEntry(alt);
             if (ao != nullptr && ao != this)
-                return ao->attrForName(name, attr);
+                return ao->attribute(name, attr);
         }
     }
     return false;
@@ -1296,7 +1304,7 @@ findEntryForFunc(Elf::Addr address, const DIE &entry)
         case DW_TAG_subprogram: {
             Attribute low, high;
             Elf::Addr start, end;
-            if (entry.attrForName(DW_AT_low_pc, low) && entry.attrForName(DW_AT_high_pc, high)) {
+            if (entry.attribute(DW_AT_low_pc, low) && entry.attribute(DW_AT_high_pc, high)) {
                 switch (low.form()) {
                     case DW_FORM_addr:
                         start = uintmax_t(low);

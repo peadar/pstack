@@ -27,7 +27,7 @@ void
 StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *stack) const
 {
    Attribute attr;
-   if (function == nullptr || !function->attrForName(DW_AT_frame_base, attr)) {
+   if (function == nullptr || !function->attribute(DW_AT_frame_base, attr)) {
       stack->push(0);
       return;
    }
@@ -45,12 +45,12 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFra
             // convert this object-relative addr to a unit-relative one
             const DIE &unitEntry = *attr.entry->unit->entries.begin();
             Attribute unitLow;
-            unitEntry.attrForName(DW_AT_low_pc, unitLow);
+            unitEntry.attribute(DW_AT_low_pc, unitLow);
 #ifndef NDEBUG
             Attribute unitHigh;
 
             Elf::Addr endAddr;
-            if (unitEntry.attrForName(DW_AT_high_pc, unitHigh)) {
+            if (unitEntry.attribute(DW_AT_high_pc, unitHigh)) {
                switch (unitHigh.form()) {
                    case DW_FORM_addr:
                        endAddr = uintmax_t(unitHigh);
