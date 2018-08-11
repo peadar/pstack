@@ -245,7 +245,8 @@ string
 Unit::name() const
 {
     assert(entries.begin() != entries.end());
-    return DIERef(this, &(*entries.begin())).name();
+    for (const auto &top : topLevelDIEs())
+        return top.name();
 }
 
 Unit::~Unit() = default;
