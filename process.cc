@@ -222,8 +222,8 @@ struct ArgPrint {
 struct RemoteValue {
     const Process &p;
     const Elf::Addr addr;
-    const Dwarf::DIE *type;
-    RemoteValue(const Process &p_, Elf::Addr addr_, const Dwarf::DIE *type_)
+    const Dwarf::DIERef type;
+    RemoteValue(const Process &p_, Elf::Addr addr_, Dwarf::DIERef type_)
         : p(p_)
         , addr(addr_)
         , type(type_)
@@ -237,14 +237,14 @@ operator << (std::ostream &os, const RemoteValue &rv)
     if (rv.addr == 0)
        return os << "(null)";
     auto type = rv.type;
-    while (type->type->tag == DW_TAG_typedef || type->type->tag == DW_TAG_const_type)
-       type = type->referencedEntry(DW_AT_type);
+    while (type.die->type->tag == DW_TAG_typedef || type.die->type->tag == DW_TAG_const_type)
+       type = type.referencedEntry(DW_AT_type);
 
 
     uintmax_t size;
-    Attribute sizeAttr;
     std::vector<char> buf;
-    if (type->attribute(DW_AT_byte_size, sizeAttr)) {
+    auto sizeAttr = type.attribute(DW_AT_byte_size);
+    if (sizeAttr.valid()) {
         size = uintmax_t(sizeAttr);
         buf.resize(size);
         auto rc = rv.p.io->read(rv.addr, size, &buf[0]);
@@ -256,13 +256,13 @@ operator << (std::ostream &os, const RemoteValue &rv)
     }
 
     IOFlagSave _(os);
-    switch (type->type->tag) {
+    switch (type.die->type->tag) {
         case DW_TAG_base_type: {
             if (size == 0) {
                 os << "unrepresentable(1)";
             }
-            Attribute encoding;
-            if (!type->attribute(DW_AT_encoding, encoding))
+            auto encoding = type.attribute(DW_AT_encoding);
+            if (!encoding.valid())
                 throw (Exception() << "no encoding specified for base type");
 
             union {
@@ -342,8 +342,8 @@ operator << (std::ostream &os, const RemoteValue &rv)
                rv.p.io->read(rv.addr, sizeof (void **), &buf[0]);
             }
             auto remote = Elf::Addr(*(void **)&buf[0]);
-            auto base = type->referencedEntry(DW_AT_type);
-            if (base && base->name() == "char") {
+            auto base = type.referencedEntry(DW_AT_type);
+            if (base && base.name() == "char") {
                std::string s = rv.p.io->readString(remote);
                os << "\"" << s << "\"";
             } else {
@@ -352,7 +352,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
             break;
         }
         default:
-            os << "<unprintable type " << type->type->tag << ">";
+            os << "<unprintable type " << type.die->type->tag << ">";
     }
     return os;
 }
@@ -362,17 +362,18 @@ operator << (std::ostream &os, const ArgPrint &ap)
 {
     using namespace Dwarf;
     const char *sep = "";
-    for (auto &child : ap.frame->function->children) {
-        switch (child.type->tag) {
+    for (auto &childraw : ap.frame->function.die->children) {
+        DIERef child(ap.frame->function.unit, &childraw);
+        switch (childraw.type->tag) {
             case DW_TAG_formal_parameter: {
                 auto name = child.name();
-                const Dwarf::DIE *type = child.referencedEntry(DW_AT_type);
+                auto type = child.referencedEntry(DW_AT_type);
                 Elf::Addr addr = 0;
                 os << sep << name;
-                if (type != nullptr) {
-                    Dwarf::Attribute attr;
+                if (type) {
+                    auto attr = child.attribute(Dwarf::DW_AT_location);
 
-                    if (child.attribute(Dwarf::DW_AT_location, attr)) {
+                    if (attr.valid()) {
                         Dwarf::ExpressionStack fbstack;
                         addr = fbstack.eval(ap.p, attr, ap.frame, ap.frame->elfReloc);
                         os << "=";
@@ -381,8 +382,10 @@ operator << (std::ostream &os, const ArgPrint &ap)
                         } else {
                            os << RemoteValue(ap.p, addr, type);
                         }
-                    } else if (child.attribute(Dwarf::DW_AT_const_value, attr)) {
-                        os << "=" << intmax_t(attr);
+                    } else {
+                        auto constVal = child.attribute(Dwarf::DW_AT_const_value);
+                        if (constVal.valid())
+                            os << "=" << intmax_t(constVal);
                     }
                 }
                 sep = ", ";
@@ -444,9 +447,9 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             for (const auto &u : units) {
                 // find the DIE for this function
                 for (auto &it : u->entries) {
-                    const Dwarf::DIE *de = Dwarf::findEntryForFunc(objIp, it);
-                    if (de != nullptr) {
-                        symName = de->name();
+                    auto de = Dwarf::findEntryForFunc(objIp, Dwarf::DIERef(u.get(), &it));
+                    if (de) {
+                        symName = de.name();
                         if (symName == "") {
                             obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
                             if (symName != "")
@@ -457,8 +460,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         frame->function = de;
                         frame->dwarf = dwarf; // hold on to 'de'
                         os << "in " << symName << sigmsg;
-                        Dwarf::Attribute lowpc;
-                        if (de->attribute(Dwarf::DW_AT_low_pc, lowpc))
+                        auto lowpc = de.attribute(Dwarf::DW_AT_low_pc);
+                        if (lowpc.valid())
                             os << "+" << objIp - uintmax_t(lowpc);
                         os << "(";
                         if (options(::PstackOptions::doargs)) {

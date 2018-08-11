@@ -124,47 +124,63 @@ union Value {
     bool flag;
 };
 
-
 const DIE *findEntryForFunc(Elf::Addr address, const DIE *entry);
+struct DIERef;
 
-class Attribute {
+struct DIERef {
+    const Unit *unit;
+    const DIE *die;
+    DIERef(const Unit *unit, const DIE *die) : unit(unit), die(die) {}
+    DIERef() : unit(nullptr) {}
+    operator bool() const { return unit != nullptr; }
+    Attribute attribute(AttrName name) const;
+    DIERef referencedEntry(AttrName name) const;
+    inline std::string name() const;
+};
+
+struct Attribute {
+    DIERef dieref;
     const Form *formp; /* From abbrev table attached to type */
-public:
-    const DIE *entry;
     Form form() const { return *formp; }
     ~Attribute() { }
-    Attribute(const Form *formp_ = nullptr, const DIE *entry_ = nullptr)
-       : formp(formp_), entry(entry_) {}
+
+    Attribute(const DIERef &dieref_, const Form *formp_)
+       : dieref(dieref_), formp(formp_) {}
+    Attribute() {
+        formp = nullptr;
+    }
+    bool valid() { return formp != nullptr; }
+
     const Value &value() const;
     Value &value();
     explicit operator std::string() const;
     explicit operator intmax_t() const;
     explicit operator uintmax_t() const;
     explicit operator bool() const { return value().flag; }
-    const DIE *getReference() const;
+    DIERef getReference() const;
     const Block &block() const { return *value().block; }
     AttrName name() const;
     friend class DIE;
 };
 
+std::string
+DIERef::name() const
+{
+    auto attr = attribute(DW_AT_name);
+    return attr.valid() ? std::string(attr) : "";
+}
+
 class DIE {
     DIE() = delete;
     DIE(const DIE &) = delete;
-    void readValue(DWARFReader &, Form form, Value &value);
+    void readValue(DWARFReader &, Form form, Value &value, const Unit *);
 public:
     Entries children;
-    const Unit *unit;
     const Abbreviation *type;
     std::vector<Value> values;
-    bool attribute(AttrName name, Attribute &) const;
-    const DIE *referencedEntry(AttrName name) const;
     DIE(DWARFReader &, size_t, Unit *);
     ~DIE();
 
-    std::string name() const {
-        Attribute name;
-        return attribute(DW_AT_name, name) ? std::string(name) : "";
-    }
 };
 
 enum FIType {
@@ -482,8 +498,10 @@ public:
 };
 
 std::string typeName(const DIE *type);
-const DIE *findEntryForFunc(Elf::Addr address, const DIE &entry);
-inline const Value &Attribute::value() const { return entry->values.at(formp - &entry->type->forms[0]); }
+DIERef findEntryForFunc(Elf::Addr address, const DIERef &entry);
+inline const Value &Attribute::value() const {
+    return dieref.die->values.at(formp - &dieref.die->type->forms[0]);
+}
 
 #define DWARF_OP(op, value, args) op = value,
 enum ExpressionOp {

@@ -223,7 +223,7 @@ string
 Unit::name() const
 {
     assert(entries.begin() != entries.end());
-    return (*entries.begin()).name();
+    return DIERef(this, &(*entries.begin())).name();
 }
 
 Unit::~Unit() = default;
@@ -245,8 +245,8 @@ Abbreviation::Abbreviation(DWARFReader &r)
 AttrName
 Attribute::name() const
 {
-    size_t off = formp - &entry->type->forms[0];
-    for (auto ent : entry->type->attrName2Idx) {
+    size_t off = formp - &dieref.die->type->forms[0];
+    for (auto ent : dieref.die->type->attrName2Idx) {
         if (ent.second == off)
             return ent.first;
     }
@@ -464,9 +464,9 @@ FileEntry::FileEntry(DWARFReader &r, LineInfo *info)
 {
 }
 
-Attribute::operator string() const
+Attribute::operator std::string() const
 {
-    const Info *dwarf = entry->unit->dwarf;
+    const Info *dwarf = dieref.unit->dwarf;
     assert(dwarf != nullptr);
     switch (*formp) {
 
@@ -483,7 +483,7 @@ Attribute::operator string() const
             return dwarf->debugStrings->readString(value().addr);
 
         case DW_FORM_string:
-            return entry->unit->io->readString(value().addr);
+            return dieref.unit->io->readString(value().addr);
 
         default:
             abort();
@@ -491,7 +491,7 @@ Attribute::operator string() const
 }
 
 void
-DIE::readValue(DWARFReader &r, Form form, Value &value)
+DIE::readValue(DWARFReader &r, Form form, Value &value, const Unit *unit)
 {
     switch (form) {
 
@@ -643,9 +643,11 @@ Unit::getLines()
         return lines.get();
     for (const auto &entry : entries) {
         if (entry.type->tag == DW_TAG_partial_unit || entry.type->tag == DW_TAG_compile_unit) {
-            Attribute stmtsAttr;
-            if (dwarf->lineshdr && entry.attribute(DW_AT_stmt_list, stmtsAttr)) {
-                auto stmts = off_t(stmtsAttr);
+            if (dwarf->lineshdr) {
+                auto attr = DIERef(this, &entry).attribute(DW_AT_stmt_list);
+                if (!attr.valid())
+                    continue;
+                auto stmts = off_t(attr);
                 DWARFReader r2(dwarf->lineshdr, stmts);
                 lines.reset(new LineInfo());
                 lines->build(r2, this);
@@ -656,16 +658,15 @@ Unit::getLines()
     return nullptr;
 }
 
-DIE::DIE(DWARFReader &r, size_t abbrev, Unit *unit_)
-    : unit(unit_)
-    , type(&unit->abbreviations.find(abbrev)->second)
+DIE::DIE(DWARFReader &r, size_t abbrev, Unit *unit)
+    : type(&unit->abbreviations.find(abbrev)->second)
     , values(type->forms.size())
 {
     size_t i = 0;
     for (auto form : type->forms)
-        readValue(r, form, values[i++]);
+        readValue(r, form, values[i++], unit);
     if (type->hasChildren)
-        unit_->decodeEntries(r, children);
+        unit->decodeEntries(r, children);
 }
 
 void
@@ -1147,18 +1148,18 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
     r.setOffset(end);
 }
 
-const DIE *
-DIE::referencedEntry(AttrName name) const
+DIERef
+DIERef::referencedEntry(AttrName name) const
 {
-    Attribute attr;
-    return attribute(name, attr) ? attr.getReference() : nullptr;
+    auto attr = attribute(name);
+    return attr.valid() ? attr.getReference() : DIERef();
 }
 
-const DIE *
+DIERef
 Attribute::getReference() const
 {
 
-    const Info *dwarf = entry->unit->dwarf;
+    const Info *dwarf = dieref.unit->dwarf;
     off_t off;
     switch (*formp) {
         case DW_FORM_ref_addr:
@@ -1169,7 +1170,7 @@ Attribute::getReference() const
         case DW_FORM_ref2:
         case DW_FORM_ref4:
         case DW_FORM_ref8:
-            off = value().addr + entry->unit->offset;
+            off = value().addr + dieref.unit->offset;
             break;
         case DW_FORM_GNU_ref_alt: {
             dwarf = dwarf->getAltDwarf().get();
@@ -1182,33 +1183,29 @@ Attribute::getReference() const
             abort();
             break;
     }
-    const auto otherEntry = entry->unit->allEntries.find(off);
+    const auto otherEntry = dieref.unit->allEntries.find(off);
 
     // Try this unit first (if we're dealing with the same Info)
-    if (dwarf == entry->unit->dwarf && otherEntry != entry->unit->allEntries.end())
-        return otherEntry->second;
+    if (dwarf == dieref.unit->dwarf && otherEntry != dieref.unit->allEntries.end())
+        return DIERef(dieref.unit, otherEntry->second);
 
     // Nope - try other units.
     for (const auto &u : dwarf->getUnits()) {
-        if (u.get() == entry->unit)
+        if (u.get() == dieref.unit)
             continue;
         const auto &otherEntry = u->allEntries.find(off);
         if (otherEntry != u->allEntries.end())
-            return otherEntry->second;
+            return DIERef(u.get(), otherEntry->second);
     }
     throw (Exception() << "reference not found");
 }
 
-bool
-DIE::attribute(AttrName name, Attribute &attr) const
+Attribute
+DIERef::attribute(AttrName name) const
 {
-    auto loc = type->attrName2Idx.find(name);
-    if (loc != type->attrName2Idx.end()) {
-        attr.formp = &type->forms.at(loc->second);
-        attr.entry = this;
-        return true;
-    }
-
+    auto loc = die->type->attrName2Idx.find(name);
+    if (loc != die->type->attrName2Idx.end())
+        return Attribute(*this, &die->type->forms.at(loc->second));
 
     // If we have attributes of any of these types, we can look for other attributes in the referenced entry.
     static std::set<AttrName> derefs = {
@@ -1219,11 +1216,11 @@ DIE::attribute(AttrName name, Attribute &attr) const
     if (derefs.find(name) == derefs.end()) {
         for (auto alt : derefs) {
             auto ao = referencedEntry(alt);
-            if (ao != nullptr && ao != this)
-                return ao->attribute(name, attr);
+            if (ao && ao.die != die)
+                return ao.attribute(name);
         }
     }
-    return false;
+    return Attribute();
 }
 
 Info::sptr
@@ -1257,18 +1254,17 @@ ImageCache::~ImageCache() {
 }
 
 string
-typeName(const DIE *type)
+typeName(const DIERef &type)
 {
-    if (type == nullptr) {
+    if (!type)
         return "void";
-    }
-    const auto &name = type->name();
-    if (name != "") {
+
+    const auto &name = type.name();
+    if (name != "")
         return name;
-    }
-    const DIE *base = type->referencedEntry(DW_AT_type);
+    auto base = type.referencedEntry(DW_AT_type);
     string s, sep;
-    switch (type->type->tag) {
+    switch (type.die->type->tag) {
         case DW_TAG_pointer_type:
             return typeName(base) + " *";
         case DW_TAG_const_type:
@@ -1278,11 +1274,11 @@ typeName(const DIE *type)
         case DW_TAG_subroutine_type:
             s = typeName(base) + "(";
             sep = "";
-            for (auto &arg : type->children) {
+            for (auto &arg : type.die->children) {
                 if (arg.type->tag != DW_TAG_formal_parameter)
                     continue;
                 s += sep;
-                s += typeName(arg.referencedEntry(DW_AT_type));
+                s += typeName(DIERef(type.unit, &arg).referencedEntry(DW_AT_type));
                 sep = ", ";
             }
             s += ")";
@@ -1290,21 +1286,21 @@ typeName(const DIE *type)
         case DW_TAG_reference_type:
             return typeName(base) + "&";
         default: {
-            return stringify("(unhandled tag ", type->type->tag, ")");
+            return stringify("(unhandled tag ", type.die->type->tag, ")");
         }
 
     }
 }
 
-
-const DIE *
-findEntryForFunc(Elf::Addr address, const DIE &entry)
+DIERef
+findEntryForFunc(Elf::Addr address, const DIERef &entry)
 {
-    switch (entry.type->tag) {
+    switch (entry.die->type->tag) {
         case DW_TAG_subprogram: {
-            Attribute low, high;
             Elf::Addr start, end;
-            if (entry.attribute(DW_AT_low_pc, low) && entry.attribute(DW_AT_high_pc, high)) {
+            auto low = entry.attribute(DW_AT_low_pc);
+            auto high = entry.attribute(DW_AT_high_pc);
+            if (low.valid() && high.valid()) {
                 switch (low.form()) {
                     case DW_FORM_addr:
                         start = uintmax_t(low);
@@ -1329,20 +1325,20 @@ findEntryForFunc(Elf::Addr address, const DIE &entry)
 
                 }
                 if (start <= address && end >= address) // allow for the address to be one byte past the function
-                    return &entry;
+                    return entry;
             }
             break;
         }
 
         default:
-            for (auto &child : entry.children) {
-                auto descendent = findEntryForFunc(address, child);
-                if (descendent != nullptr)
+            for (auto &child : entry.die->children) {
+                auto descendent = findEntryForFunc(address, DIERef(entry.unit, &child));
+                if (descendent)
                     return descendent;
             }
             break;
     }
-   return nullptr;
+   return DIERef();
 }
 
 

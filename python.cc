@@ -329,11 +329,12 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
                 if (compile.type->tag != Dwarf::DW_TAG_compile_unit)
                     continue;
                 // Do we have a global variable called interp_head?
-                for (const auto &var : compile.children) {
-                    if (var.type->tag == Dwarf::DW_TAG_variable && var.name() == "interp_head") {
+                for (const auto &rawvar : compile.children) {
+                    Dwarf::DIERef var(u.get(), &rawvar);
+                    if (var.die->type->tag == Dwarf::DW_TAG_variable && var.name() == "interp_head") {
                         Dwarf::ExpressionStack evalStack;
-                        Dwarf::Attribute location;
-                        if (!var.attribute(Dwarf::DW_AT_location, location))
+                        auto location = var.attribute(Dwarf::DW_AT_location);
+                        if (!location.valid())
                                 throw Exception() << "no DW_AT_location for interpreter";
                         interp_head = evalStack.eval(proc, location, 0, o.loadAddr);
                         libPython = &o;

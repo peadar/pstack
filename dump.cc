@@ -262,7 +262,8 @@ std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Unit::sptr> &unit
         .field("offset",  unit.object->offset)
         .field("version",  int(unit.object->version))
         .field("addrlen",  int(unit.object->addrlen))
-        .field("entries", unit.object->entries);
+        /* .field("entries", unit.object->entries); */
+        ;
     if (unit.object->getLines())
         fmt.field("linenumbers", *unit.object->getLines());
     return fmt;
@@ -348,17 +349,17 @@ operator << (std::ostream &os, const JSON<Dwarf::Block> &b)
 }
 
 struct EntryReference {
-   const Dwarf::DIE *entry;
-   explicit EntryReference(const Dwarf::DIE *entry_) : entry(entry_) {}
+   const Dwarf::DIERef die;
+   explicit EntryReference(const Dwarf::DIERef &die) : die(die) {}
 };
 
 std::ostream &
 operator << (std::ostream &os, const JSON<EntryReference> &jer)
 {
-   const auto &e = jer.object.entry;
+   const auto &e = jer.object.die;
    return JObject(os)
-      .field("file", stringify(*e->unit->dwarf->elf->io))
-      .field("name", e->name())
+      .field("file", stringify(*e.unit->dwarf->elf->io))
+      .field("name", e.name())
       .field("key", intptr_t(e));
 }
 
@@ -369,7 +370,7 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
     auto &attr = o.object;
     JObject writer(os);
 
-    auto dwarf = attr.entry->unit->dwarf;
+    auto dwarf = attr.dieref.unit->dwarf;
     auto elf = dwarf->elf;
     writer.field("form", attr.form());
     switch (attr.form()) {
@@ -397,8 +398,8 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
     case DW_FORM_ref8:
     case DW_FORM_GNU_ref_alt:
     case DW_FORM_ref_udata: {
-        const auto entry = attr.entry->referencedEntry(attr.name());
-        if (entry != nullptr)
+        const auto entry = attr.dieref.referencedEntry(attr.name());
+        if (entry)
            writer.field("value", EntryReference(entry));
         break;
     }

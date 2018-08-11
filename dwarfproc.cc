@@ -27,30 +27,31 @@ void
 StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *stack) const
 {
    Attribute attr;
-   if (function == nullptr || !function->attribute(DW_AT_frame_base, attr)) {
-      stack->push(0);
-      return;
+   if (function) {
+       auto base = function.attribute(DW_AT_frame_base);
+       if (base.valid()) {
+           stack->push(stack->eval(p, attr, this, elfReloc) + offset);
+           return;
+       }
    }
-   stack->push(stack->eval(p, attr, this, elfReloc) + offset);
+   stack->push(0);
 }
 
 Elf::Addr
 ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFrame *frame, Elf::Addr reloc)
 {
-    const Info *dwarf = attr.entry->unit->dwarf;
+    const Info *dwarf = attr.dieref.unit->dwarf;
     switch (attr.form()) {
         case DW_FORM_sec_offset: {
             auto &sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
             auto objIp = frame->ip - reloc;
             // convert this object-relative addr to a unit-relative one
-            const DIE &unitEntry = *attr.entry->unit->entries.begin();
-            Attribute unitLow;
-            unitEntry.attribute(DW_AT_low_pc, unitLow);
+            auto unitEntry = DIERef(attr.dieref.unit, &*attr.dieref.unit->entries.begin());
+            Attribute unitLow = unitEntry.attribute(DW_AT_low_pc);
 #ifndef NDEBUG
-            Attribute unitHigh;
-
+            auto unitHigh = unitEntry.attribute(DW_AT_high_pc);
             Elf::Addr endAddr;
-            if (unitEntry.attribute(DW_AT_high_pc, unitHigh)) {
+            if (unitHigh.valid()) {
                switch (unitHigh.form()) {
                    case DW_FORM_addr:
                        endAddr = uintmax_t(unitHigh);
