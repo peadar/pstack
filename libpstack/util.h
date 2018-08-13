@@ -137,7 +137,7 @@ class CacheReader : public Reader {
     };
     Reader::csptr upstream;
     mutable std::unordered_map<off_t, CacheEnt> stringCache;
-    static const size_t PAGESIZE = 4096;
+    static const size_t PAGESIZE = 256;
     static const size_t MAXPAGES = 16;
     class Page {
         Page(const Page &) = delete;

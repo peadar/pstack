@@ -56,6 +56,14 @@ enum AttrName {
 #include <libpstack/dwarf/attr.h>
     DW_AT_none = 0x0
 };
+
+}
+namespace std {
+   template <> struct hash<Dwarf::AttrName> {
+      size_t operator() (Dwarf::AttrName name) const { return size_t(name); }
+   };
+}
+namespace Dwarf {
 #undef DWARF_ATTR
 
 #define DWARF_LINE_S(a,b) a = b,
