@@ -22,10 +22,10 @@ class ExpressionStack;
 class Info;
 class LineInfo;
 class DWARFReader;
-class DIE;
+struct DIE;
 struct CIE;
 struct CFI;
-struct Unit;
+class Unit;
 
 // The DWARF Unit's allEntries map contains the underlying data for the tree.
 typedef std::vector<size_t> Entries;

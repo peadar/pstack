@@ -116,7 +116,7 @@ constexpr std::false_type is_associative_container(...) {
 }
 
 template <typename C, typename = typename C::mapped_type>
-constexpr std::true_type is_associative_container(const C &) {
+constexpr std::true_type is_associative_container(const C *) {
     return std::true_type{};
 }
 
@@ -163,7 +163,7 @@ print_container(std::ostream &os, const Container &container, Context ctx, std::
 template <class Container, typename Context, typename = typename Container::value_type>
 std::ostream &
 operator << (std::ostream &os, const JSON<Container, Context> &container) {
-    print_container(os, container.object, container.context, is_associative_container(container.object));
+    print_container(os, container.object, container.context, is_associative_container(&container.object));
     return os;
 }
 
