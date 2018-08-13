@@ -22,7 +22,7 @@ class ExpressionStack;
 class Info;
 class LineInfo;
 class DWARFReader;
-struct DIE;
+class DIE;
 struct CIE;
 struct CFI;
 class Unit;
@@ -156,8 +156,9 @@ struct DIEList {
         : unit(unit_), dies(dies_) {}
 };
 
-struct DIEAttributes {
+class DIEAttributes {
     const DIE &die;
+public:
     using value_type = std::pair<AttrName, Attribute>;
     using mapped_type = Attribute;
     using key_type = AttrName;
@@ -183,10 +184,15 @@ struct DIEAttributes {
     DIEAttributes(const DIE &die) : die(die) {}
 };
 
-struct DIE {
+class DIE {
     const Unit *unit;
     size_t offset;
     const RawDIE *die;
+    friend class Attribute;
+    friend class DIEAttributes;
+public:
+    size_t getOffset() const { return offset; }
+    const Unit *getUnit() const { return unit; }
     DIE(const Unit *unit, size_t offset_, const RawDIE *die) : unit(unit), offset(offset_), die(die) {}
     DIE() : unit(nullptr) {}
     operator bool() const { return unit != nullptr; }
@@ -204,7 +210,7 @@ class Attribute {
 
     Value &value();
 public:
-    const Unit *unit() const { return dieref.unit; }
+    const DIE &die() const { return dieref; }
     const Value &value() const;
     Form form() const { return *formp; }
     Attribute(const DIE &dieref_, const Form *formp_)
