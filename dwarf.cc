@@ -28,7 +28,7 @@ namespace Dwarf {
 class RawDIE {
     RawDIE() = delete;
     RawDIE(const RawDIE &) = delete;
-    void readValue(DWARFReader &, Form form, Value &value, const Unit *);
+    static void readValue(DWARFReader &, Form form, Value &value, const Unit *);
     Entries children;
     const Abbreviation *type;
     std::vector<Value> values;
