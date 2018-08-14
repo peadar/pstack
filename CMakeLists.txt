@@ -67,8 +67,8 @@ add_library(dwelf ${LIBTYPE} dump.cc dwarf.cc elf.cc reader.cc util.cc
 add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc
    dwarfproc.cc procdump.cc ${stubsrc})
 
-add_executable(canal canal.cc python.cc)
-add_executable(${PSTACK_BIN} pstack.cc ${pysrc} )
+add_executable(canal canal.cc ${pysrc})
+add_executable(${PSTACK_BIN} pstack.cc ${pysrc})
 
 target_link_libraries(procman ${LTHREADDB} dwelf)
 target_link_libraries(${PSTACK_BIN} dwelf procman)

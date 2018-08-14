@@ -1,7 +1,9 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/proc.h"
 #include "libpstack/ps_callback.h"
+#ifdef WITH_PYTHON
 #include "libpstack/python.h"
+#endif
 
 #include <sys/types.h>
 

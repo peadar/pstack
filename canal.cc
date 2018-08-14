@@ -11,7 +11,9 @@
 #include "libpstack/proc.h"
 #include "libpstack/elf.h"
 #include "libpstack/dwarf.h"
+#ifdef WITH_PYTHON
 #include "libpstack/python.h"
+#endif
 
 using namespace std;
 
@@ -89,7 +91,9 @@ operator <<(ostream &os, const Usage &)
 int
 mainExcept(int argc, char *argv[])
 {
+#ifdef WITH_PYTHON
     bool doPython = false;
+#endif
     Dwarf::ImageCache imageCache;
     std::vector<std::string> patterns;
     Elf::Object::sptr exec;
@@ -111,10 +115,12 @@ mainExcept(int argc, char *argv[])
 
     while ((c = getopt(argc, argv, "o:vhr:sp:f:Pe:S:R:K:lVt")) != -1) {
         switch (c) {
+#ifdef WITH_PYTHON
             case 'P':
                doPython = true;
                patterns.push_back("Py*_Type");
                break;
+#endif
             case 'V':
                showsyms = true;
                break;
@@ -271,7 +277,9 @@ mainExcept(int argc, char *argv[])
     // Now run through the corefile, searching for virtual objects.
     off_t filesize = 0;
     off_t memsize = 0;
+#ifdef WITH_PYTHON
     PythonPrinter py(*process, std::cout, PstackOptions());
+#endif
     for (auto &hdr : core->getSegments(PT_LOAD)) {
         Elf::Off p;
         filesize += hdr.p_filesz;
@@ -316,11 +324,13 @@ mainExcept(int argc, char *argv[])
                                 << found->name << " 0x" << std::hex << loc
                                 << std::dec <<  " ... size=" << found->sym.st_size
                                 << ", diff=" << p - found->memaddr() << endl;
+#if WITH_PYTHON
                         if (doPython) {
                             std::cout << "pyo " << Elf::Addr(loc) << " ";
                             py.print(Elf::Addr(loc) - sizeof (PyObject) + sizeof (struct _typeobject *));
                             std::cout << "\n";
                         }
+#endif
                         found->count++;
                         seg_count++;
                     }
