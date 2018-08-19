@@ -4,6 +4,7 @@ tags
 /.project
 *64
 *32
+*ppc
 ID
 **/CMakeFiles
 **/CMakeCache.txt

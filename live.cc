@@ -56,7 +56,7 @@ LiveProcess::getRegs(lwpid_t pid, Elf::CoreRegisters *reg)
 #endif
 #ifdef __linux__
     stop(pid);
-    bool rc = ptrace(PTRACE_GETREGS, pid, 0, reg) != -1;
+    bool rc = ptrace(__ptrace_request(PTRACE_GETREGS), pid, 0, reg) != -1;
     resume(pid);
     return rc;
 #endif

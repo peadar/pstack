@@ -999,6 +999,15 @@ CIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
                 frame.registers[reg].u.offset = offset * dataAlign;
                 break;
 
+            case DW_CFA_offset_extended_sf: {
+                reg = r.getsleb128();
+                intmax_t soffset = r.getsleb128();
+                frame.registers[reg].type = OFFSET;
+                frame.registers[reg].u.offset = soffset * dataAlign;
+                break;
+            }
+
+
             case DW_CFA_restore_extended:
                 reg = r.getuleb128();
                 frame.registers[reg] = dframe.registers[reg];
