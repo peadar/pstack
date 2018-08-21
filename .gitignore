@@ -1,9 +1,7 @@
 tags
 .*.*sw*
 .sw*
-/.project
-*64
-*32
+.project
 ID
 **/CMakeFiles
 **/CMakeCache.txt
@@ -12,5 +10,4 @@ ID
 **/*core
 .vscode
 build
-pi
 tidy

@@ -569,7 +569,6 @@ std::ostream &operator<< (std::ostream &os, const JSON<Elf::Object> &elf)
         .field("segments", mappedSegments, &elf.object)
         .field("interpreter", elf->getInterpreter())
         .field("notes", elf->notes)
-        .field("dynamic", elf->notes)
         ;
 }
 
@@ -760,8 +759,8 @@ operator <<(std::ostream &os, const JSON<Elf::Section, const Elf::Object *> &jse
 /*
  * Debug output of an ELF32 program segment
  */
-template <typename C> std::ostream &
-operator<< (std::ostream &os, const JSON<Elf::Phdr, C> &phdr)
+std::ostream &
+operator<< (std::ostream &os, const JSON<Elf::Phdr, const Elf::Object *> &phdr)
 {
     JObject writer(os);
 
@@ -775,7 +774,7 @@ operator<< (std::ostream &os, const JSON<Elf::Phdr, C> &phdr)
     if (phdr->p_flags & PF_X)
         flags.insert("PF_X");
 
-    return writer.field("offset", phdr->p_offset)
+    writer.field("offset", phdr->p_offset)
         .field("vaddr", phdr->p_vaddr)
         .field("paddr", phdr->p_paddr)
         .field("filesz", phdr->p_filesz)
@@ -783,6 +782,16 @@ operator<< (std::ostream &os, const JSON<Elf::Phdr, C> &phdr)
         .field("type", ProgramHeaderName(phdr->p_type))
         .field("flags", flags)
         .field("alignment", phdr->p_align);
+
+    switch (phdr->p_type) {
+        case PT_DYNAMIC: {
+            OffsetReader dynReader(phdr.context->io, phdr->p_offset, phdr->p_filesz);
+            ReaderArray<Elf::Dyn> dynamic(dynReader);
+            writer.field("dynamic", dynamic);
+            break;
+        }
+    }
+    return writer;
 }
 
 struct DynTag {
