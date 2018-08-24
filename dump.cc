@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <set>
+#include <iomanip>
 #include <unordered_map>
 
 #if ELF_BITS == 64
@@ -482,11 +483,13 @@ operator << (std::ostream &os, const JSON<Dwarf::Info> &di)
 std::ostream &operator << (std::ostream &os, const JSON<Elf::NoteDesc> &note)
 {
     JObject writer(os);
-    writer.field("name", note->name()).field("type", note->type());
+    writer
+        .field("name", note->name())
+        .field("type", note->type());
 
     // need to switch on type and name for notes.
+    auto data = note->data();
     if (note->name() == "CORE") {
-        auto data = note->data();
         prstatus_t prstatus{};
         switch (note->type()) {
             case NT_PRSTATUS:
@@ -496,6 +499,26 @@ std::ostream &operator << (std::ostream &os, const JSON<Elf::NoteDesc> &note)
             case NT_AUXV:
                 writer.field("auxv", ReaderArray<Elf::auxv_t>(*data));
                 break;
+        }
+    } else if (note->name() == "GNU") {
+        switch (note->type()) {
+            case NT_GNU_ABI_TAG: { // https://refspecs.linuxfoundation.org/LSB_1.2.0/gLSB/noteabitag.html
+                uint32_t isExecutable;
+                data->readObj(0, &isExecutable);
+                writer.field("abi-executable-marker", isExecutable);
+                std::vector<uint32_t> kernelVersion(3);
+                data->readObj(4, &kernelVersion[0], 3);
+                writer.field("kernel-version", kernelVersion);
+                break;
+            }
+            case NT_GNU_BUILD_ID: {
+                std::ostringstream os;
+                ReaderArray<uint8_t> content(*data);
+                for (auto c : content)
+                    os << std::hex << std::setw(2) << std::setfill('0') << int(c);
+                writer.field("buildid", os.str());
+                break;
+            }
         }
     }
     return os;
@@ -519,7 +542,8 @@ std::ostream &operator << (std::ostream &os, const JSON<ProgramHeaderName> &ph)
         strpair(PT_PHDR),
         strpair(PT_TLS),
         strpair(PT_GNU_EH_FRAME),
-        strpair(PT_GNU_STACK)
+        strpair(PT_GNU_STACK),
+        strpair(PT_GNU_RELRO)
 #undef strpair
     };
     auto namei = names.find(ph->type);
@@ -561,15 +585,19 @@ std::ostream &operator<< (std::ostream &os, const JSON<Elf::Object> &elf)
     auto brand = ehdr.e_ident[EI_OSABI];
 
     Mapper<ProgramHeaderName, decltype(elf->programHeaders)::mapped_type, std::map<Elf::Word, Elf::Object::ProgramHeaders>> mappedSegments(elf->programHeaders);
-    return JObject(os)
+    JObject writer(os);
+    writer
         .field("type", typeNames[ehdr.e_type])
         .field("entry", ehdr.e_entry)
         .field("abi", brand < sizeof abiNames / sizeof abiNames[0]? abiNames[brand] : nullptr)
         .field("sections", elf->sectionHeaders, &elf.object)
         .field("segments", mappedSegments, &elf.object)
-        .field("interpreter", elf->getInterpreter())
         .field("notes", elf->notes)
         ;
+
+    if (elf->getInterpreter() != "")
+        writer.field("interpreter", elf->getInterpreter());
+    return writer;
 }
 
 std::ostream &
@@ -783,11 +811,17 @@ operator<< (std::ostream &os, const JSON<Elf::Phdr, const Elf::Object *> &phdr)
         .field("flags", flags)
         .field("alignment", phdr->p_align);
 
+    off_t strtab = 0;
     switch (phdr->p_type) {
         case PT_DYNAMIC: {
             OffsetReader dynReader(phdr.context->io, phdr->p_offset, phdr->p_filesz);
-            ReaderArray<Elf::Dyn> dynamic(dynReader);
-            writer.field("dynamic", dynamic);
+            for (const auto & i : ReaderArray<Elf::Dyn>(dynReader)) {
+               if (i.d_tag == DT_STRTAB) {
+                  strtab = i.d_un.d_ptr;
+                  break;
+               }
+            }
+            writer.field("dynamic", ReaderArray<Elf::Dyn>(dynReader), std::make_pair(phdr.context, strtab));
             break;
         }
     }
@@ -802,7 +836,7 @@ struct DynTag {
 std::ostream &
 operator << (std::ostream &os, const JSON<DynTag> &tag)
 {
-#define DYN_TAG(name, value) case name: return os << json(#name);
+#define DYN_TAG(name, value) case value: return os << json(#name);
     switch (tag->tag) {
 #include "libpstack/elf/dyntag.h"
     default: return os << json(int(tag.object.tag));
@@ -811,11 +845,28 @@ operator << (std::ostream &os, const JSON<DynTag> &tag)
 }
 
 std::ostream &
-operator<< (std::ostream &os, const JSON<Elf::Dyn> &d)
+operator<< (std::ostream &os, const JSON<Elf::Dyn, std::pair<const Elf::Object *, off_t>> &d)
 {
-    return JObject(os)
-        .field("tag", DynTag(d->d_tag))
-        .field("word", d->d_un.d_val);
+    JObject o(os);
+    o.field("tag", DynTag(d->d_tag))
+     .field("word", d->d_un.d_val);
+
+   auto stringSeg = d.context.first->getSegmentForAddress(d.context.second);
+   off_t strings = stringSeg->p_offset;
+   strings += d.context.second - stringSeg->p_vaddr;
+
+   auto printString = [&](const char *text) {
+         o.field(text, d.context.first->io->readString(strings + d->d_un.d_val));
+   };
+
+   switch (d->d_tag) {
+      case DT_NEEDED: printString("lib"); break;
+      case DT_RPATH: printString("rpath"); break;
+      case DT_SONAME: printString("soname"); break;
+      case DT_RUNPATH: printString("runpath"); break;
+         break;
+   }
+   return o;
 }
 
 std::ostream &
