@@ -214,6 +214,9 @@ usage()
         "\t[-n]                         don't try to find external debug images\n"
         "\t[-t]                         don't try to use the thread_db library\n"
         "\t[-b<n>]                      batch mode: repeat every 'n' seconds\n"
+#ifdef WITH_PYTHON
+        "\t[-p]                         print python backtrace if available\n"
+#endif
         "\t[<pid>|<core>|<executable>]* list cores and pids to examine. An executable\n"
         "\t                             will override use of in-core or in-process information\n"
         "\t                             to predict location of the executable\n"
