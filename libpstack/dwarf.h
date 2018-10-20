@@ -194,12 +194,13 @@ public:
 
 class DIE {
     const Unit *unit;
-    size_t offset;
+    off_t offset;
     const RawDIE *die;
     friend class Attribute;
     friend class DIEAttributes;
 public:
-    size_t getOffset() const { return offset; }
+    off_t getParentOffset() const;
+    off_t getOffset() const { return offset; }
     const Unit *getUnit() const { return unit; }
     DIE(const Unit *unit, size_t offset_, const RawDIE *die) : unit(unit), offset(offset_), die(die) {}
     DIE() : unit(nullptr) {}
@@ -306,7 +307,7 @@ public:
     Reader::csptr io;
     off_t offset;
     size_t dwarfLen;
-    void decodeEntries(DWARFReader &r, Entries &entries);
+    void decodeEntries(DWARFReader &r, Entries &entries, off_t parent);
     uint32_t length;
     uint16_t version;
     uint8_t addrlen;

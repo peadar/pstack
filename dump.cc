@@ -238,6 +238,7 @@ std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIE, C> &jo) {
     o
         .field("type", entry.tag())
         .field("offset", entry.getOffset())
+        .field("parent", entry.getParentOffset())
         .field("attributes", entry.attributes());
 
     if (entry.hasChildren())

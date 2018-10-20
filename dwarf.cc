@@ -32,8 +32,9 @@ class RawDIE {
     Entries children;
     const Abbreviation *type;
     std::vector<Value> values;
+    off_t parent;
 public:
-    RawDIE(DWARFReader &, size_t, Unit *);
+    RawDIE(DWARFReader &, size_t, Unit *, off_t self, off_t parent);
     ~RawDIE();
     friend class Attribute;
     friend class DIE;
@@ -230,7 +231,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
                 std::forward_as_tuple(abbR));
     DWARFReader entriesR(r.io, r.getOffset(), nextoff);
     assert(nextoff <= r.getLimit());
-    decodeEntries(entriesR, entries);
+    decodeEntries(entriesR, entries, 0);
     r.setOffset(nextoff);
 }
 
@@ -688,15 +689,16 @@ Unit::getLines()
     return nullptr;
 }
 
-RawDIE::RawDIE(DWARFReader &r, size_t abbrev, Unit *unit)
+RawDIE::RawDIE(DWARFReader &r, size_t abbrev, Unit *unit, off_t offset, off_t parent_)
     : type(unit->findAbbreviation(abbrev))
     , values(type->forms.size())
+    , parent(parent_)
 {
     size_t i = 0;
     for (auto form : type->forms)
         readValue(r, form, values[i++], unit);
     if (type->hasChildren)
-        unit->decodeEntries(r, children);
+        unit->decodeEntries(r, children, offset);
 }
 
 const Abbreviation *
@@ -707,7 +709,7 @@ Unit::findAbbreviation(size_t offset) const
 }
 
 void
-Unit::decodeEntries(DWARFReader &r, Entries &entries)
+Unit::decodeEntries(DWARFReader &r, Entries &entries, off_t parent)
 {
     while (!r.empty()) {
         intmax_t offset = r.getOffset();
@@ -716,7 +718,7 @@ Unit::decodeEntries(DWARFReader &r, Entries &entries)
             return;
         allEntries.emplace(std::piecewise_construct,
                         std::forward_as_tuple(offset),
-                        std::forward_as_tuple(r, abbrev, this));
+                        std::forward_as_tuple(r, abbrev, this, offset, parent));
         entries.push_back(offset);
     }
 }
@@ -1233,6 +1235,12 @@ Attribute::operator DIE() const
             return otherEntry;
     }
     throw (Exception() << "reference not found");
+}
+
+off_t
+DIE::getParentOffset() const
+{
+    return die->parent;
 }
 
 Attribute
