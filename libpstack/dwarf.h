@@ -27,7 +27,6 @@ struct CIE;
 struct CFI;
 class Unit;
 
-// The DWARF Unit's allEntries map contains the underlying data for the tree.
 typedef std::vector<size_t> Entries;
 
 #define DWARF_TAG(a,b) a = b,
@@ -292,13 +291,30 @@ public:
 }
 
 namespace Dwarf {
+
+class RawDIE {
+    RawDIE() = delete;
+    RawDIE(const RawDIE &) = delete;
+    static void readValue(DWARFReader &, Form form, Value &value, const Unit *);
+    Entries children;
+    const Abbreviation *type;
+    std::vector<Value> values;
+    off_t parent;
+public:
+    RawDIE(DWARFReader &, size_t, Unit *, off_t self, off_t parent);
+    ~RawDIE();
+    friend class Attribute;
+    friend class DIE;
+    friend class DIEAttributes;
+};
+
 class Unit {
     Unit() = delete;
     Unit(const Unit &) = delete;
     std::unique_ptr<LineInfo> lines;
     std::unordered_map<size_t, Abbreviation> abbreviations;
     Entries entries;
-    std::map<off_t, RawDIE> allEntries;
+    std::unordered_map<off_t, RawDIE> allEntries;
 public:
     const Abbreviation *findAbbreviation(size_t) const;
     DIEList topLevelDIEs() const { return DIEList(this, entries); }
