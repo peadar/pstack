@@ -77,6 +77,7 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     , debugStrings(sectionReader(*obj, ".debug_str"))
     , abbrev(sectionReader(*obj, ".debug_abbrev"))
     , lineshdr(sectionReader(*obj, ".debug_line"))
+    , haveAllUnits(false)
     , altImageLoaded(false)
     , imageCache(cache_)
     , pubnamesh(sectionReader(*obj, ".debug_pubnames"))
@@ -126,12 +127,12 @@ Info::getUnit(off_t offset)
     return unitsm[offset];
 }
 
-std::list<Unit::sptr>
+const std::list<Unit::sptr> &
 Info::getUnits() const
 {
-    std::list<Unit::sptr> list;
-    if (io == nullptr)
-        return list;
+    if (haveAllUnits || io == nullptr)
+        return allUnits;
+
     DWARFReader r(io);
 
     while (!r.empty()) {
@@ -143,9 +144,10 @@ Info::getUnits() const
        } else {
           unitsm[off] = make_shared<Unit>(this, r);
        }
-       list.push_back(unitsm[off]);
+       allUnits.push_back(unitsm[off]);
     }
-    return list;
+    haveAllUnits = true;
+    return allUnits;
 }
 
 

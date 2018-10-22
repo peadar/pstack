@@ -434,7 +434,7 @@ public:
     std::list<ARangeSet> &ranges() const;
     const std::list<PubnameUnit> &pubnames() const;
     Unit::sptr getUnit(off_t offset);
-    std::list<Unit::sptr> getUnits() const;
+    const std::list<Unit::sptr> &getUnits() const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
     bool hasRanges() { ranges(); return aranges.size() != 0; }
 
@@ -444,8 +444,10 @@ private:
     mutable std::list<ARangeSet> aranges;
     // These are mutable so we can lazy-eval them when getters are called, and
     // maintain logical constness.
+    mutable std::list<Unit::sptr> allUnits;
     mutable std::map<Elf::Off, Unit::sptr> unitsm;
     mutable Info::sptr altDwarf;
+    mutable bool haveAllUnits;
     mutable bool altImageLoaded;
     ImageCache &imageCache;
     mutable Reader::csptr pubnamesh;
