@@ -14,3 +14,4 @@ matrix:
             - ubuntu-toolchain-r-test
 
 script: cmake -DCMAKE_BUILD_TYPE=Release && make VERBOSE=1
+
