@@ -1,9 +1,10 @@
 #!/usr/bin/python
 
-import os, subprocess,json
-os.system("tests/thread")
+import subprocess,json
+import coremonitor
+cm = coremonitor.CoreMonitor(["tests/thread"])
 
-pstack_result = subprocess.check_output(["./pstack", "-j", "core"])
+pstack_result = subprocess.check_output(["./pstack", "-j", cm.core()])
 threads = json.loads(pstack_result)
 # we have 10 threads + main
 assert len(threads) == 11

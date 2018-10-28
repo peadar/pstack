@@ -1,9 +1,11 @@
 #!/usr/bin/python
 
-import os, subprocess,json
-os.system("tests/badfp")
+import subprocess,json
+import coremonitor
 
-threads = json.loads(subprocess.check_output(["./pstack", "-j", "core"]))
+cm = coremonitor.CoreMonitor(["tests/basic"])
+
+threads = json.loads(subprocess.check_output(["./pstack", "-j", cm.core()]))
 assert len(threads) == 1
 thread = threads[0]
 stack = thread["ti_stack"]

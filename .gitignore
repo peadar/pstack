@@ -6,8 +6,10 @@ ID
 **/CMakeFiles
 **/CMakeCache.txt
 **/*.o
-**/core*
+**/core.*
+**/core
 **/*core
+**/*.pyc
 .vscode
 build
 tidy
