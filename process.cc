@@ -158,19 +158,19 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
     Elf::Sym sym;
     std::string fileName;
     std::string symName = "unknown";
-    if (frame->ip == proc->sysent) {
+    if (frame->ip() == proc->sysent) {
         symName = "(syscall)";
     } else {
         Elf::Off loadAddr = 0;
-        obj = proc->findObject(frame->ip, &loadAddr);
+        obj = proc->findObject(frame->ip(), &loadAddr);
         if (obj) {
             fileName = stringify(*obj->io);
-            objIp = frame->ip - loadAddr;
+            objIp = frame->ip() - loadAddr;
             obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
         }
     }
 
-    jo.field("ip", frame->ip);
+    jo.field("ip", frame->ip());
     if (symName != "")
         jo.field("function", symName);
 
@@ -391,7 +391,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         {
             IOFlagSave _(os);
             os << "#" << std::left << std::dec << std::setw(2) << std::setfill(' ') << frameNo++ << " ";
-            os << std::right << std::hex << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->ip;
+            os << std::right << std::hex << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->ip();
             if (verbose > 0)
                 os << "/" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa;
             os << " ";
@@ -402,10 +402,10 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         std::string symName;
 
         Elf::Off loadAddr;
-        auto obj = findObject(frame->ip, &loadAddr);
+        auto obj = findObject(frame->ip(), &loadAddr);
         if (obj) {
             fileName = stringify(*obj->io);
-            Elf::Addr objIp = frame->ip - loadAddr;
+            Elf::Addr objIp = frame->ip() - loadAddr;
 
             Dwarf::Info::sptr dwarf = getDwarf(obj);
             std::list<Dwarf::Unit::sptr> units;
@@ -636,11 +636,13 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 
         // Set up the first frame using the machine context registers
         prevFrame->setCoreRegs(regs);
-        prevFrame->ip = prevFrame->getReg(IPREG); // use the IP address in current frame
 
         Dwarf::StackFrame *frame;
         for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++, prevFrame = frame) {
+            if (prevFrame == 0)
+               break;
             stack.push_back(prevFrame);
+            frame = 0;
             try {
                frame = prevFrame->unwind(p);
             }
@@ -651,10 +653,14 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                 if (prevFrame == startFrame) {
                     frame = new Dwarf::StackFrame();
                     *frame = *prevFrame;
+                    frame->cie = nullptr;
+                    frame->fde = nullptr;
                     auto sp = prevFrame->getReg(SPREG);
-                    auto in = p.io->read(sp, sizeof frame->ip, (char *)&frame->ip);
-                    if (in == sizeof frame->ip) {
-                        frame->setReg(SPREG, sp + sizeof frame->ip);
+                    Elf::Addr ip;
+                    auto in = p.io->read(sp, sizeof ip, (char *)&ip);
+                    if (in == sizeof ip) {
+                        frame->setReg(SPREG, sp + sizeof ip);
+                        frame->setReg(IPREG, ip);
                         continue;
                     }
                 }
@@ -662,53 +668,71 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 #ifdef __i386__
                 {
                     Elf::Addr reloc;
-                    auto obj = p.findObject(prevFrame->ip, &reloc);
+                    auto obj = p.findObject(prevFrame->ip(), &reloc);
                     if (obj) {
                         Elf::Sym symbol;
-                        Elf::Addr sigContextAddr;
-                        auto objip = prevFrame->ip - reloc;
+                        Elf::Addr sigContextAddr = 0;
+                        auto objip = prevFrame->ip() - reloc;
                         if (obj->findSymbolByName("__restore", symbol) && objip == symbol.st_value)
                             sigContextAddr = prevFrame->getReg(SPREG) + 4;
                         else if (obj->findSymbolByName("__restore_rt", symbol) && objip == symbol.st_value)
                             sigContextAddr = p.io->readObj<Elf::Addr>(prevFrame->getReg(SPREG) + 8) + 20;
-                        else
-                            throw;
-                        // This mapping is based on DWARF regnos, and ucontext.h
-                        gregset_t regs;
-                        static const struct {
-                            int dwarf;
-                            int greg;
-                        }  gregmap[] = {
-                            { 1, REG_EAX },
-                            { 2, REG_ECX },
-                            { 3, REG_EBX },
-                            { 4, REG_ESP },
-                            { 5, REG_EBP },
-                            { 6, REG_ESI },
-                            { 7, REG_EDI },
-                            { 8, REG_EIP },
-                            { 9, REG_EFL },
-                            { 10, REG_CS },
-                            { 11, REG_SS },
-                            { 12, REG_DS },
-                            { 13, REG_ES },
-                            { 14, REG_FS }
-                        };
-                        p.io->readObj(sigContextAddr, &regs);
+
+                        if (sigContextAddr != 0) {
+
+                           // This mapping is based on DWARF regnos, and ucontext.h
+                           gregset_t regs;
+                           static const struct {
+                               int dwarf;
+                               int greg;
+                           }  gregmap[] = {
+                               { 1, REG_EAX },
+                               { 2, REG_ECX },
+                               { 3, REG_EBX },
+                               { 4, REG_ESP },
+                               { 5, REG_EBP },
+                               { 6, REG_ESI },
+                               { 7, REG_EDI },
+                               { 8, REG_EIP },
+                               { 9, REG_EFL },
+                               { 10, REG_CS },
+                               { 11, REG_SS },
+                               { 12, REG_DS },
+                               { 13, REG_ES },
+                               { 14, REG_FS }
+                           };
+                           p.io->readObj(sigContextAddr, &regs);
+                           frame = new Dwarf::StackFrame();
+                           *frame = *prevFrame;
+                           frame->cie = nullptr;
+                           frame->fde = nullptr;
+                           for (auto &reg : gregmap)
+                               frame->setReg(reg.dwarf, regs[reg.greg]);
+                           continue;
+                        }
+                    }
+                    // Read the instruction pointer from just below the base pointer,
+                    // and the new base pointer, from the existing one.
+                    uint32_t newBp, newIp, oldBp;
+                    oldBp = prevFrame->getReg(BPREG);
+                    p.io->readObj((oldBp + 4) & 0xffffffff, &newIp);
+                    p.io->readObj(oldBp & 0xffffffff, &newBp);
+
+                    if (newBp > oldBp && newIp != 0) {
                         frame = new Dwarf::StackFrame();
                         *frame = *prevFrame;
-                        for (auto &reg : gregmap)
-                            frame->setReg(reg.dwarf, regs[reg.greg]);
-                        frame->ip = regs[REG_EIP];
+                        frame->cie = nullptr;
+                        frame->fde = nullptr;
+                        frame->setReg(SPREG, oldBp + 8);
+                        frame->setReg(BPREG, newBp);
+                        frame->setReg(IPREG, newIp);
                         continue;
                     }
                 }
 #endif
 #endif
-                  throw;
+                throw;
             }
-            if (!frame)
-                break;
         }
     }
     catch (const std::exception &ex) {

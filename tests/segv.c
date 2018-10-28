@@ -12,7 +12,7 @@ sigsegv(int segv)
     my_abort();
 }
 
-void g()
+void g(int a)
 {
     *(int *)1 = 0;
     pause();
@@ -22,7 +22,7 @@ void f(int argc, char *argv[])
 {
     (void)argc;
     (void)argv;
-    g();
+    g(1);
     pause();
 }
 

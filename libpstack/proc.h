@@ -33,7 +33,7 @@ public:
 typedef unsigned long cpureg_t;
 
 struct StackFrame {
-    Elf::Addr ip;
+    Elf::Addr ip() const;
     Elf::Addr cfa;
     std::map<unsigned, cpureg_t> regs;
     Elf::Object::sptr elf;
@@ -44,14 +44,18 @@ struct StackFrame {
     const FDE *fde;
     const CIE *cie;
     StackFrame()
-        : ip(-1)
-        , cfa(0)
+        : cfa(0)
         , dwarf(0)
         , function()
         , frameInfo(0)
         , fde(0)
         , cie(0)
     {}
+    StackFrame(const StackFrame &prev)
+       : StackFrame()
+    {
+       regs = prev.regs;
+    }
     void setReg(unsigned, cpureg_t);
     cpureg_t getReg(unsigned regno) const;
     Elf::Addr getCFA(const Process &, const CallFrame &) const;

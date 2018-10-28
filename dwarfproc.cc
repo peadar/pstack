@@ -23,6 +23,12 @@ StackFrame::getCoreRegs(Elf::CoreRegisters &core) const
 #undef REGMAP
 }
 
+Elf::Addr
+StackFrame::ip() const
+{
+    return getReg(cie ? cie->rar : IPREG);
+}
+
 void
 StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *stack) const
 {
@@ -44,7 +50,7 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFra
     switch (attr.form()) {
         case DW_FORM_sec_offset: {
             auto &sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
-            auto objIp = frame->ip - reloc;
+            auto objIp = frame->ip() - reloc;
             // convert this object-relative addr to a unit-relative one
             auto unitEntry = *attr.die().getUnit()->topLevelDIEs().begin();
             Attribute unitLow = unitEntry.attribute(DW_AT_low_pc);
@@ -319,10 +325,10 @@ StackFrame::getCFA(const Process &proc, const CallFrame &dcf) const
 StackFrame *
 StackFrame::unwind(Process &p)
 {
-    elf = p.findObject(ip, &elfReloc);
+    elf = p.findObject(ip(), &elfReloc);
     if (!elf)
-        throw (Exception() << "no image for instruction address " << std::hex << ip);
-    Elf::Off objaddr = ip - elfReloc; // relocate process address to object address
+        throw (Exception() << "no image for instruction address " << std::hex << ip());
+    Elf::Off objaddr = ip() - elfReloc; // relocate process address to object address
     // Try and find DWARF data with debug frame information, or an eh_frame section.
         dwarf = p.getDwarf(elf);
     if (dwarf) {
@@ -339,7 +345,7 @@ StackFrame::unwind(Process &p)
         }
     }
     if (fde == nullptr)
-        throw (Exception() << "no FDE for instruction address " << std::hex << ip << " in " << *elf->io);
+        throw (Exception() << "no FDE for instruction address " << std::hex << ip() << " in " << *elf->io);
 
     DWARFReader r(frameInfo->io, fde->instructions, fde->end);
 
@@ -396,14 +402,11 @@ StackFrame::unwind(Process &p)
     }
 
     // If the return address isn't defined, then we can't unwind.
-    auto rar = cie->rar;
-    auto rarInfo = dcf.registers.find(rar);
+    auto rarInfo = dcf.registers.find(cie->rar);
     if (rarInfo == dcf.registers.end() || rarInfo->second.type == UNDEF) {
         delete out;
         return nullptr;
     }
-
-    out->ip = out->getReg(rar);
     return out;
 }
 
