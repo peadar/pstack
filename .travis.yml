@@ -13,5 +13,5 @@ matrix:
             - llvm-toolchain-precise-3.8
             - ubuntu-toolchain-r-test
 
-script: cmake -DCMAKE_BUILD_TYPE=Release && make VERBOSE=1
+script: cmake -DCMAKE_BUILD_TYPE=Release && make VERBOSE=1 && make VERBOSE=1 test
 
