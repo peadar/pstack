@@ -647,9 +647,11 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                frame = prevFrame->unwind(p);
             }
             catch (const std::exception &ex) {
-#if defined(__amd64__) || defined(__i386__) // Hail Mary stack unwinding if we can't use DWARF
-               // If the first frame fails to unwind, it might be a crash calling an invalid address.
-               // pop the instruction pointer off the stack, and try again.
+                // Hail Mary stack unwinding if we can't use DWARF
+#if defined(__amd64__) || defined(__i386__)
+               // If the first frame fails to unwind, it might be a crash
+               // calling an invalid address.  pop the instruction pointer off
+               // the stack, and try again.
                 if (prevFrame == startFrame) {
                     frame = new Dwarf::StackFrame(*prevFrame);
                     auto sp = prevFrame->getReg(SPREG);
@@ -661,66 +663,66 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                         continue;
                     }
                 }
-                else
+#endif
 #ifdef __i386__
-                {
-                    Elf::Addr reloc;
-                    auto obj = p.findObject(prevFrame->ip(), &reloc);
-                    if (obj) {
-                        Elf::Sym symbol;
-                        Elf::Addr sigContextAddr = 0;
-                        auto objip = prevFrame->ip() - reloc;
-                        if (obj->findSymbolByName("__restore", symbol) && objip == symbol.st_value)
-                            sigContextAddr = prevFrame->getReg(SPREG) + 4;
-                        else if (obj->findSymbolByName("__restore_rt", symbol) && objip == symbol.st_value)
-                            sigContextAddr = p.io->readObj<Elf::Addr>(prevFrame->getReg(SPREG) + 8) + 20;
+                // Deal with signal trampolines for i386
+                Elf::Addr reloc;
+                auto obj = p.findObject(prevFrame->ip(), &reloc);
+                if (obj) {
+                    Elf::Sym symbol;
+                    Elf::Addr sigContextAddr = 0;
+                    auto objip = prevFrame->ip() - reloc;
+                    if (obj->findSymbolByName("__restore", symbol) && objip == symbol.st_value)
+                        sigContextAddr = prevFrame->getReg(SPREG) + 4;
+                    else if (obj->findSymbolByName("__restore_rt", symbol) && objip == symbol.st_value)
+                        sigContextAddr = p.io->readObj<Elf::Addr>(prevFrame->getReg(SPREG) + 8) + 20;
 
-                        if (sigContextAddr != 0) {
+                    if (sigContextAddr != 0) {
 
-                           // This mapping is based on DWARF regnos, and ucontext.h
-                           gregset_t regs;
-                           static const struct {
-                               int dwarf;
-                               int greg;
-                           }  gregmap[] = {
-                               { 1, REG_EAX },
-                               { 2, REG_ECX },
-                               { 3, REG_EBX },
-                               { 4, REG_ESP },
-                               { 5, REG_EBP },
-                               { 6, REG_ESI },
-                               { 7, REG_EDI },
-                               { 8, REG_EIP },
-                               { 9, REG_EFL },
-                               { 10, REG_CS },
-                               { 11, REG_SS },
-                               { 12, REG_DS },
-                               { 13, REG_ES },
-                               { 14, REG_FS }
-                           };
-                           p.io->readObj(sigContextAddr, &regs);
-                           frame = new Dwarf::StackFrame(*prevFrame);
-                           for (auto &reg : gregmap)
-                               frame->setReg(reg.dwarf, regs[reg.greg]);
-                           continue;
-                        }
-                    }
-                    // Read the instruction pointer from just below the base pointer,
-                    // and the new base pointer, from the existing one.
-                    uint32_t newBp, newIp, oldBp;
-                    oldBp = prevFrame->getReg(BPREG);
-                    p.io->readObj((oldBp + 4) & 0xffffffff, &newIp);
-                    p.io->readObj(oldBp & 0xffffffff, &newBp);
-
-                    if (newBp > oldBp && newIp != 0) {
-                        frame = new Dwarf::StackFrame(*prevFrame);
-                        frame->setReg(SPREG, oldBp + 8);
-                        frame->setReg(BPREG, newBp);
-                        frame->setReg(IPREG, newIp);
-                        continue;
+                       // This mapping is based on DWARF regnos, and ucontext.h
+                       gregset_t regs;
+                       static const struct {
+                           int dwarf;
+                           int greg;
+                       }  gregmap[] = {
+                           { 1, REG_EAX },
+                           { 2, REG_ECX },
+                           { 3, REG_EBX },
+                           { 4, REG_ESP },
+                           { 5, REG_EBP },
+                           { 6, REG_ESI },
+                           { 7, REG_EDI },
+                           { 8, REG_EIP },
+                           { 9, REG_EFL },
+                           { 10, REG_CS },
+                           { 11, REG_SS },
+                           { 12, REG_DS },
+                           { 13, REG_ES },
+                           { 14, REG_FS }
+                       };
+                       p.io->readObj(sigContextAddr, &regs);
+                       frame = new Dwarf::StackFrame(*prevFrame);
+                       for (auto &reg : gregmap)
+                           frame->setReg(reg.dwarf, regs[reg.greg]);
+                       continue;
                     }
                 }
-#endif
+
+                // EBP-based stack frames:
+                // Use base pointer to find return address and saved BP.
+                // Restore those, and the stack pointer itself.
+                uint32_t newBp, newIp, oldBp;
+                oldBp = prevFrame->getReg(BPREG);
+                p.io->readObj((oldBp + 4) & 0xffffffff, &newIp);
+                p.io->readObj(oldBp & 0xffffffff, &newBp);
+
+                if (newBp > oldBp && newIp != 0) {
+                    frame = new Dwarf::StackFrame(*prevFrame);
+                    frame->setReg(SPREG, oldBp + 8);
+                    frame->setReg(BPREG, newBp);
+                    frame->setReg(IPREG, newIp);
+                    continue;
+                }
 #endif
                 throw;
             }
