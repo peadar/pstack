@@ -651,10 +651,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                // If the first frame fails to unwind, it might be a crash calling an invalid address.
                // pop the instruction pointer off the stack, and try again.
                 if (prevFrame == startFrame) {
-                    frame = new Dwarf::StackFrame();
-                    *frame = *prevFrame;
-                    frame->cie = nullptr;
-                    frame->fde = nullptr;
+                    frame = new Dwarf::StackFrame(*prevFrame);
                     auto sp = prevFrame->getReg(SPREG);
                     Elf::Addr ip;
                     auto in = p.io->read(sp, sizeof ip, (char *)&ip);
@@ -702,10 +699,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                                { 14, REG_FS }
                            };
                            p.io->readObj(sigContextAddr, &regs);
-                           frame = new Dwarf::StackFrame();
-                           *frame = *prevFrame;
-                           frame->cie = nullptr;
-                           frame->fde = nullptr;
+                           frame = new Dwarf::StackFrame(*prevFrame);
                            for (auto &reg : gregmap)
                                frame->setReg(reg.dwarf, regs[reg.greg]);
                            continue;
@@ -719,10 +713,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                     p.io->readObj(oldBp & 0xffffffff, &newBp);
 
                     if (newBp > oldBp && newIp != 0) {
-                        frame = new Dwarf::StackFrame();
-                        *frame = *prevFrame;
-                        frame->cie = nullptr;
-                        frame->fde = nullptr;
+                        frame = new Dwarf::StackFrame(*prevFrame);
                         frame->setReg(SPREG, oldBp + 8);
                         frame->setReg(BPREG, newBp);
                         frame->setReg(IPREG, newIp);

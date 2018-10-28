@@ -45,6 +45,7 @@ struct StackFrame {
     const CIE *cie;
     StackFrame()
         : cfa(0)
+        , elfReloc(0)
         , dwarf(0)
         , function()
         , frameInfo(0)
@@ -56,6 +57,7 @@ struct StackFrame {
     {
        regs = prev.regs;
     }
+    StackFrame &operator = (const StackFrame &) = delete;
     void setReg(unsigned, cpureg_t);
     cpureg_t getReg(unsigned regno) const;
     Elf::Addr getCFA(const Process &, const CallFrame &) const;
