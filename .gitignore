@@ -14,3 +14,6 @@ ID
 build
 tidy
 d32
+d64
+r32
+r64
