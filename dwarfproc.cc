@@ -32,11 +32,10 @@ StackFrame::ip() const
 void
 StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *stack) const
 {
-   Attribute attr;
    if (function) {
        auto base = function.attribute(DW_AT_frame_base);
        if (base.valid()) {
-           stack->push(stack->eval(p, attr, this, elfReloc) + offset);
+           stack->push(stack->eval(p, base, this, elfReloc) + offset);
            return;
        }
    }
