@@ -403,7 +403,7 @@ struct CFI {
     FIType type;
     std::map<Elf::Addr, CIE> cies;
     std::list<FDE> fdeList;
-    CFI(Info *, const Elf::Section &, FIType);
+    CFI(Info *, Elf::Word addr, Reader::csptr io, FIType);
     CFI() = delete;
     CFI(const CFI &) = delete;
     Elf::Addr decodeCIEFDEHdr(DWARFReader &, FIType, Elf::Off *cieOff); // cieOFF set to -1 if this is CIE, set to offset of associated CIE for an FDE

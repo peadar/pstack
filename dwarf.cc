@@ -2,6 +2,7 @@
 
 #include "libpstack/elf.h"
 #include "libpstack/dwarf.h"
+#include "libpstack/inflatereader.h"
 
 #include <elf.h>
 #include <err.h>
@@ -71,25 +72,61 @@ sectionReader(Elf::Object &obj, const char *name)
     return obj.getSection(name, SHT_PROGBITS).io;
 }
 
+static Reader::csptr
+sectionReaderZ(Elf::Object &obj, const char *name, const char *compressedName, const Elf::Section **secp = nullptr)
+{
+    const auto &raw = obj.getSection(name, SHT_PROGBITS);
+    if (secp != nullptr)
+        *secp = nullptr;
+    if (raw) {
+        if (secp)
+            *secp = &raw;
+        return raw.io;
+    }
+
+    if (compressedName == nullptr) {
+        return Reader::csptr();
+    }
+
+    const auto &zraw = obj.getSection(compressedName, SHT_PROGBITS);
+    if (!zraw)
+        return zraw.io;
+
+    unsigned char sig[12];
+    zraw.io->readObj(0, sig, sizeof sig);
+    if (memcmp((const char *)sig, "ZLIB", 4) != 0)
+        return Reader::csptr();
+    uint64_t sz = 0;
+    for (size_t i = 4; i < 12; ++i) {
+        sz <<= 8;
+        sz |= sig[i];
+    }
+    if (secp)
+        *secp = &zraw;
+    return make_shared<InflateReader>(sz, OffsetReader(zraw.io, sizeof sig, sz));
+}
+
+
 Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
-    : io(sectionReader(*obj, ".debug_info"))
+    : io(sectionReaderZ(*obj, ".debug_info", ".zdebug_info"))
     , elf(obj)
-    , debugStrings(sectionReader(*obj, ".debug_str"))
-    , abbrev(sectionReader(*obj, ".debug_abbrev"))
-    , lineshdr(sectionReader(*obj, ".debug_line"))
+    , debugStrings(sectionReaderZ(*obj, ".debug_str", ".zdebug_str"))
+    , abbrev(sectionReaderZ(*obj, ".debug_abbrev", ".zdebug_abbrev"))
+    , lineshdr(sectionReaderZ(*obj, ".debug_line", ".zdebug_line"))
     , haveAllUnits(false)
     , altImageLoaded(false)
     , imageCache(cache_)
-    , pubnamesh(sectionReader(*obj, ".debug_pubnames"))
-    , arangesh(sectionReader(*obj, ".debug_aranges"))
+    , pubnamesh(sectionReaderZ(*obj, ".debug_pubnames", ".zdebug_pubnames"))
+    , arangesh(sectionReaderZ(*obj, ".debug_aranges", ".zdebug_aranges"))
 {
-    auto f = [this, &obj](const char *name, FIType ftype) {
-        auto &section = obj->getSection(name, SHT_PROGBITS);
-        if (!section)
+    auto f = [this, &obj](const char *name, const char *zname, FIType ftype) {
+        const Elf::Section *sec;
+        auto io = sectionReaderZ(*obj, name, zname, &sec);
+        if (!io)
             return std::unique_ptr<CFI>();
 
         try {
-            return make_unique<CFI>(this, section, ftype);
+            return make_unique<CFI>(this, sec->shdr.sh_addr, io, ftype);
         }
         catch (const Exception &ex) {
             std::clog << "can't decode " << name << " for " << *obj->io << ": " << ex.what() << "\n";
@@ -98,8 +135,8 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
         return std::unique_ptr<CFI>();
     };
 
-    ehFrame = f(".eh_frame", FI_EH_FRAME);
-    debugFrame = f(".debug_frame", FI_DEBUG_FRAME);
+    ehFrame = f(".eh_frame", nullptr, FI_EH_FRAME);
+    debugFrame = f(".debug_frame", ".zdebug_frame", FI_DEBUG_FRAME);
 }
 
 const std::list<PubnameUnit> &
@@ -824,10 +861,10 @@ CFI::isCIE(Elf::Addr cieid)
     return (type == FI_DEBUG_FRAME && cieid == 0xffffffff) || (type == FI_EH_FRAME && cieid == 0);
 }
 
-CFI::CFI(Info *info, const Elf::Section& section, enum FIType type_)
+CFI::CFI(Info *info, Elf::Word addr, Reader::csptr io_, enum FIType type_)
     : dwarf(info)
-    , sectionAddr(section.shdr.sh_addr)
-    , io(section.io)
+    , sectionAddr(addr)
+    , io(std::move(io_))
     , type(type_)
 {
     DWARFReader reader(io);
