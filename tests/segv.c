@@ -14,6 +14,7 @@ sigsegv(int segv)
 
 void g(int a)
 {
+   (void)a;
     *(int *)1 = 0;
     pause();
 }

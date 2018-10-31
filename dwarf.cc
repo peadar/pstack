@@ -67,13 +67,7 @@ PubnameUnit::PubnameUnit(DWARFReader &r)
 }
 
 static Reader::csptr
-sectionReader(Elf::Object &obj, const char *name)
-{
-    return obj.getSection(name, SHT_PROGBITS).io;
-}
-
-static Reader::csptr
-sectionReaderZ(Elf::Object &obj, const char *name, const char *compressedName, const Elf::Section **secp = nullptr)
+sectionReader(Elf::Object &obj, const char *name, const char *compressedName, const Elf::Section **secp = nullptr)
 {
     const auto &raw = obj.getSection(name, SHT_PROGBITS);
     if (secp != nullptr)
@@ -90,7 +84,7 @@ sectionReaderZ(Elf::Object &obj, const char *name, const char *compressedName, c
 
     const auto &zraw = obj.getSection(compressedName, SHT_PROGBITS);
     if (!zraw)
-        return zraw.io;
+        return Reader::csptr();
 
     unsigned char sig[12];
     zraw.io->readObj(0, sig, sizeof sig);
@@ -108,20 +102,20 @@ sectionReaderZ(Elf::Object &obj, const char *name, const char *compressedName, c
 
 
 Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
-    : io(sectionReaderZ(*obj, ".debug_info", ".zdebug_info"))
+    : io(sectionReader(*obj, ".debug_info", ".zdebug_info"))
     , elf(obj)
-    , debugStrings(sectionReaderZ(*obj, ".debug_str", ".zdebug_str"))
-    , abbrev(sectionReaderZ(*obj, ".debug_abbrev", ".zdebug_abbrev"))
-    , lineshdr(sectionReaderZ(*obj, ".debug_line", ".zdebug_line"))
+    , debugStrings(sectionReader(*obj, ".debug_str", ".zdebug_str"))
+    , abbrev(sectionReader(*obj, ".debug_abbrev", ".zdebug_abbrev"))
+    , lineshdr(sectionReader(*obj, ".debug_line", ".zdebug_line"))
     , haveAllUnits(false)
     , altImageLoaded(false)
     , imageCache(cache_)
-    , pubnamesh(sectionReaderZ(*obj, ".debug_pubnames", ".zdebug_pubnames"))
-    , arangesh(sectionReaderZ(*obj, ".debug_aranges", ".zdebug_aranges"))
+    , pubnamesh(sectionReader(*obj, ".debug_pubnames", ".zdebug_pubnames"))
+    , arangesh(sectionReader(*obj, ".debug_aranges", ".zdebug_aranges"))
 {
     auto f = [this, &obj](const char *name, const char *zname, FIType ftype) {
         const Elf::Section *sec;
-        auto io = sectionReaderZ(*obj, name, zname, &sec);
+        auto io = sectionReader(*obj, name, zname, &sec);
         if (!io)
             return std::unique_ptr<CFI>();
 

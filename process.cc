@@ -716,7 +716,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                 p.io->readObj((oldBp + 4) & 0xffffffff, &newIp);
                 p.io->readObj(oldBp & 0xffffffff, &newBp);
 
-                if (newBp > oldBp && newIp != 0) {
+                if (newBp > oldBp && newIp > 4096) {
                     frame = new Dwarf::StackFrame(*prevFrame);
                     frame->setReg(SPREG, oldBp + 8);
                     frame->setReg(BPREG, newBp);
