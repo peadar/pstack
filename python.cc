@@ -316,36 +316,50 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
     , libPython(nullptr)
     , options(options_)
 {
-    for (auto &o : proc.objects) {
-        std::string module = stringify(*o.object->io);
-        if (module.find("python") == std::string::npos)
-            continue;
-        auto dwarf = proc.imageCache.getDwarf(o.object);
-        if (!dwarf)
-            continue;
-        for (auto u : dwarf->getUnits()) {
-            // For each unit
-            for (const auto &compile : u->topLevelDIEs()) {
-                if (compile.tag() != Dwarf::DW_TAG_compile_unit)
-                    continue;
-                // Do we have a global variable called interp_head?
-                for (const auto &var : compile.children()) {
-                    if (var.tag() == Dwarf::DW_TAG_variable && var.name() == "interp_head") {
-                        Dwarf::ExpressionStack evalStack;
-                        auto location = var.attribute(Dwarf::DW_AT_location);
-                        if (!location.valid())
-                                throw Exception() << "no DW_AT_location for interpreter";
-                        interp_head = evalStack.eval(proc, location, 0, o.loadAddr);
-                        libPython = &o;
-                        break;
-                    }
-                }
-            }
-        }
+    // First search the ELF symbol table.
+    try {
+       auto interp_headp = proc.findSymbolByName("Py_interp_headp",
+                [this](const Process::LoadedObject &lo) {
+                    libPython = &lo;
+                    auto name = stringify(*lo.object->io);
+                    return name.find("python") != std::string::npos;
+                });
+       std::clog << "found interp_headp in ELF syms" << std::endl;
+       proc.io->readObj(interp_headp, &interp_head);
     }
-    if (libPython == nullptr)
-        throw Exception() << "No libpython found";
-    std::clog << "python library is " << *libPython->object->io << std::endl;
+    catch (...) {
+       libPython = nullptr;
+       for (auto &o : proc.objects) {
+           std::string module = stringify(*o.object->io);
+           if (module.find("python") == std::string::npos)
+               continue;
+           auto dwarf = proc.imageCache.getDwarf(o.object);
+           if (!dwarf)
+               continue;
+           for (auto u : dwarf->getUnits()) {
+               // For each unit
+               for (const auto &compile : u->topLevelDIEs()) {
+                   if (compile.tag() != Dwarf::DW_TAG_compile_unit)
+                       continue;
+                   // Do we have a global variable called interp_head?
+                   for (const auto &var : compile.children()) {
+                       if (var.tag() == Dwarf::DW_TAG_variable && (var.name() == "interp_head" || var.name() == "Py_interp_head")) {
+                           Dwarf::ExpressionStack evalStack;
+                           auto location = var.attribute(Dwarf::DW_AT_location);
+                           if (!location.valid())
+                                   throw Exception() << "no DW_AT_location for interpreter";
+                           interp_head = evalStack.eval(proc, location, 0, o.loadAddr);
+                           libPython = &o;
+                           break;
+                       }
+                   }
+               }
+           }
+       }
+       if (libPython == nullptr)
+           throw Exception() << "No libpython found";
+       std::clog << "python library is " << *libPython->object->io << std::endl;
+    }
 
     addPrinter("PyString_Type", stringPrint, false);
     addPrinter("PyDict_Type", dictPrint, true);
