@@ -42,7 +42,10 @@ ps_pglobal_lookup(struct ps_prochandle *ph, const char *ld_object_name, const ch
 {
     auto p = static_cast<const Process *>(ph);
     try {
-        *ld_symbol_addr = psaddr_t(intptr_t(p->findSymbolByName(ld_object_name, ld_symbol_name)));
+        *ld_symbol_addr = psaddr_t(intptr_t(p->findSymbolByName(ld_symbol_name,
+            [ld_object_name](const Process::LoadedObject &lo) {
+                return basename(stringify(*lo.object->io)) == std::string(ld_object_name);
+            })));
         return PS_OK;
     }
     catch (...) {

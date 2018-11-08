@@ -569,7 +569,10 @@ Process::findRDebugAddr()
     if (interpBase && execImage->getInterpreter() != "") {
         try {
             addElfObject(imageCache.getImageForName(execImage->getInterpreter()), interpBase);
-            return findSymbolByName(execImage->getInterpreter().c_str(), "_r_debug");
+            return findSymbolByName("_r_debug", [this](const LoadedObject &lo) ->bool {
+                auto name = basename(stringify(*lo.object->io));
+                return execImage->getInterpreter() == name;
+            });
         }
         catch (...) {
         }
@@ -593,31 +596,17 @@ Process::findObject(Elf::Addr addr, Elf::Off *loadAddr) const
 }
 
 Elf::Addr
-Process::findSymbolByName(const char *objName, const char *symbolName) const
+Process::findSymbolByName(const char *symbolName, std::function<bool(const LoadedObject &)> match) const
 {
-    if (isStatic) // static exe: ignore object name.
-        objName = 0;
     for (auto &loaded : objects) {
-        if (objName != 0) {
-            auto objname = stringify(*loaded.object->io);
-            if (objname != std::string(objName)) {
-               auto p = objname.rfind('/');
-               if (p != std::string::npos)
-                   objname = objname.substr(p + 1, std::string::npos);
-               if (objname != std::string(objName))
-                   continue;
-            }
-        }
+        if (!match(loaded))
+            continue;
         Elf::Sym sym;
         if (loaded.object->findSymbolByName(symbolName, sym))
             return sym.st_value + loaded.loadAddr;
-        if (objName)
-            break;
     }
     Exception e;
     e << "symbol " << symbolName << " not found";
-    if (objName)
-        e << " in " << objName;
     throw e;
 }
 
