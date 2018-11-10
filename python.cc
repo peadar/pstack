@@ -324,7 +324,8 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
                     auto name = stringify(*lo.object->io);
                     return name.find("python") != std::string::npos;
                 });
-       std::clog << "found interp_headp in ELF syms" << std::endl;
+       if (verbose)
+          *debug << "found interp_headp in ELF syms" << std::endl;
        proc.io->readObj(interp_headp, &interp_head);
     }
     catch (...) {

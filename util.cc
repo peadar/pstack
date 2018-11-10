@@ -16,6 +16,5 @@ basename(const std::string &in)
 {
     auto it = in.rfind('/');
     auto out =  it == std::string::npos ?  in : in.substr(it + 1);
-    std::cerr << "basename: " << in << " -> " << out << std::endl;
     return out;
 }
