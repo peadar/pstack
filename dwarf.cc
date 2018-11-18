@@ -78,26 +78,30 @@ sectionReader(Elf::Object &obj, const char *name, const char *compressedName, co
         return raw.io;
     }
 
-    if (compressedName == nullptr) {
-        return Reader::csptr();
+#ifdef WITH_ZLIB
+    if (compressedName != nullptr) {
+        const auto &zraw = obj.getSection(compressedName, SHT_PROGBITS);
+        if (zraw) {
+#ifdef WITH_ZLIB
+            unsigned char sig[12];
+            zraw.io->readObj(0, sig, sizeof sig);
+            if (memcmp((const char *)sig, "ZLIB", 4) != 0)
+                return Reader::csptr();
+            uint64_t sz = 0;
+            for (size_t i = 4; i < 12; ++i) {
+                sz <<= 8;
+                sz |= sig[i];
+            }
+            if (secp)
+                *secp = &zraw;
+            return make_shared<InflateReader>(sz, OffsetReader(zraw.io, sizeof sig, sz));
+#else
+            std::clog << "warning: no zlib support to process compressed debug info in "
+                << *obj->io() << std::endl;
+#endif
+        }
     }
-
-    const auto &zraw = obj.getSection(compressedName, SHT_PROGBITS);
-    if (!zraw)
-        return Reader::csptr();
-
-    unsigned char sig[12];
-    zraw.io->readObj(0, sig, sizeof sig);
-    if (memcmp((const char *)sig, "ZLIB", 4) != 0)
-        return Reader::csptr();
-    uint64_t sz = 0;
-    for (size_t i = 4; i < 12; ++i) {
-        sz <<= 8;
-        sz |= sig[i];
-    }
-    if (secp)
-        *secp = &zraw;
-    return make_shared<InflateReader>(sz, OffsetReader(zraw.io, sizeof sig, sz));
+    return Reader::csptr();
 }
 
 
