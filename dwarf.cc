@@ -78,7 +78,6 @@ sectionReader(Elf::Object &obj, const char *name, const char *compressedName, co
         return raw.io;
     }
 
-#ifdef WITH_ZLIB
     if (compressedName != nullptr) {
         const auto &zraw = obj.getSection(compressedName, SHT_PROGBITS);
         if (zraw) {
@@ -97,7 +96,7 @@ sectionReader(Elf::Object &obj, const char *name, const char *compressedName, co
             return make_shared<InflateReader>(sz, OffsetReader(zraw.io, sizeof sig, sz));
 #else
             std::clog << "warning: no zlib support to process compressed debug info in "
-                << *obj->io() << std::endl;
+                << *obj.io << std::endl;
 #endif
         }
     }
