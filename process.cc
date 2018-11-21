@@ -558,7 +558,7 @@ Process::findRDebugAddr()
         OffsetReader dynReader(io, segment.p_vaddr + loadAddr, segment.p_filesz);
         ReaderArray<Elf::Dyn> dynamic(dynReader);
         for (auto dyn : dynamic)
-            if (dyn.d_tag == DT_DEBUG)
+            if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0)
                 return dyn.d_un.d_ptr;
     }
     /*
@@ -570,7 +570,7 @@ Process::findRDebugAddr()
         try {
             addElfObject(imageCache.getImageForName(execImage->getInterpreter()), interpBase);
             return findSymbolByName("_r_debug", [this](const LoadedObject &lo) ->bool {
-                auto name = basename(stringify(*lo.object->io));
+                auto name = stringify(*lo.object->io);
                 return execImage->getInterpreter() == name;
             });
         }
