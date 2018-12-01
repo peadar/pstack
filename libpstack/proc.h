@@ -113,6 +113,7 @@ class Process : public ps_prochandle {
 protected:
     td_thragent_t *agent;
     Elf::Object::sptr execImage;
+    Elf::Object::sptr vdsoImage;
     std::string abiPrefix;
     const PathReplacementList &pathReplacements;
 

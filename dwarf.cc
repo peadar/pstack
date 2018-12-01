@@ -1316,6 +1316,13 @@ ImageCache::~ImageCache() {
         *debug << "DWARF image cache: lookups: " << dwarfLookups << ", hits=" << dwarfHits << std::endl;
 }
 
+void
+ImageCache::flush(Elf::Object::sptr o)
+{
+    Elf::ImageCache::flush(o);
+    dwarfCache.erase(o);
+}
+
 string
 typeName(const DIE &type)
 {

@@ -2,15 +2,17 @@
 #define DWARF_H
 
 #include <libpstack/elf.h>
-#include <limits>
-#include <map>
-#include <unordered_map>
-#include <list>
-#include <vector>
-#include <string>
 
+#include <limits>
+#include <list>
+#include <map>
+#include <memory>
 #include <stack>
-#include <assert.h>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include <cassert>
 
 namespace Dwarf {
 
@@ -287,10 +289,8 @@ public:
     std::vector<FileEntry> files;
     std::vector<LineState> matrix;
     void build(DWARFReader &, const Unit *);
+    MEMTRACK ~LineInfo() {}
 };
-}
-
-namespace Dwarf {
 
 class RawDIE {
     RawDIE() = delete;
@@ -465,6 +465,7 @@ class ImageCache : public Elf::ImageCache {
 public:
     Info::sptr getDwarf(const std::string &);
     Info::sptr getDwarf(Elf::Object::sptr);
+    void flush(Elf::Object::sptr);
     ImageCache();
     ~ImageCache();
 };

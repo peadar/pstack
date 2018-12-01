@@ -104,6 +104,7 @@ Process::processAUXV(const Reader &auxio)
                     auto elf = std::make_shared<Elf::Object>(imageCache, std::make_shared<OffsetReader>(io, hdr, 65536));
                     vdsoBase = hdr;
                     addElfObject(elf, hdr);
+                    vdsoImage = elf;
                     if (verbose >= 2)
                         *debug << "VDSO " << *elf->io << " loaded at " << std::hex << hdr << "\n";
 
@@ -612,6 +613,9 @@ Process::findSymbolByName(const char *symbolName, std::function<bool(const Loade
 
 Process::~Process()
 {
+    // don't leave the VDSO in the cache - a new copy will be entered for a new
+    // process.
+    imageCache.flush(vdsoImage);
     td_ta_delete(agent);
 }
 

@@ -470,4 +470,15 @@ ImageCache::getDebugImage(const string &name) {
     }
     return Object::sptr();
 }
+
+void
+ImageCache::flush(Object::sptr o)
+{
+   for (auto it = cache.begin(); it != cache.end(); ++it) {
+      if (it->second == o) {
+         cache.erase(it);
+         return;
+      }
+   }
+}
 }
