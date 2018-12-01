@@ -380,6 +380,24 @@ operator << (std::ostream &os, const ArgPrint &ap)
     return os;
 }
 
+static bool
+dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
+   // use the specification DIE instead of this if we have one.
+   auto spec = die.attribute(Dwarf::DW_AT_specification);
+   if (spec.valid()) {
+      return dieName(os, Dwarf::DIE(spec), first);
+   }
+   auto parent = die.getParentOffset();
+   bool printedParent = parent != 0 && dieName(os, die.getUnit()->offsetToDIE(parent), false);
+   if (die.tag() != Dwarf::DW_TAG_compile_unit) { // don't print out compile unit
+      if (printedParent)
+         os << "::";
+      os << die.name();
+      return true;
+   }
+   return printedParent;
+}
+
 std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options)
 {
@@ -431,17 +449,16 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                 for (const auto &it : u->topLevelDIEs()) {
                     auto de = Dwarf::findEntryForFunc(objIp, it);
                     if (de) {
-                        symName = de.name();
-                        if (symName == "") {
+                        os << "in ";
+                        if (!dieName(os, de)) {
                             obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
                             if (symName != "")
-                                symName += "%"; // mark the lack of a dwarf symbol.
-                            else if (sigmsg == "")
+                                symName += "%"; // mark the lack of a name in a dwarf DIE.
+                            else
                                 symName = "<unknown>";
+                            os << symName;
                         }
-                        frame->function = de;
-                        frame->dwarf = dwarf; // hold on to 'de'
-                        os << "in " << symName << sigmsg;
+                        os << sigmsg;
                         auto lowpc = de.attribute(Dwarf::DW_AT_low_pc);
                         if (lowpc.valid())
                             os << "+" << objIp - uintmax_t(lowpc);
@@ -451,6 +468,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         }
                         os << ")";
                         dwarfUnit = u;
+                        frame->function = de;
+                        frame->dwarf = dwarf; // hold on to 'de'
                         break;
                     }
                 }
