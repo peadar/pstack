@@ -289,7 +289,6 @@ public:
     std::vector<FileEntry> files;
     std::vector<LineState> matrix;
     void build(DWARFReader &, const Unit *);
-    MEMTRACK ~LineInfo() {}
 };
 
 class RawDIE {
