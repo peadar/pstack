@@ -449,6 +449,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                 for (const auto &it : u->topLevelDIEs()) {
                     auto de = Dwarf::findEntryForFunc(objIp, it);
                     if (de) {
+                        frame->function = de;
+                        frame->dwarf = dwarf; // hold on to 'de'
                         os << "in ";
                         if (!dieName(os, de)) {
                             obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
@@ -468,8 +470,6 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         }
                         os << ")";
                         dwarfUnit = u;
-                        frame->function = de;
-                        frame->dwarf = dwarf; // hold on to 'de'
                         break;
                     }
                 }
