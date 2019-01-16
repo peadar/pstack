@@ -79,7 +79,7 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFra
                 if (start == 0 && end == 0)
                     return 0;
                 auto len = r.getuint(2);
-                if (unitIp >= start && unitIp < end) {
+                if (unitIp >= start && unitIp <= end) {
                     DWARFReader exr(r.io, r.getOffset(), r.getOffset() + Elf::Word(len));
                     return eval(proc, exr, frame, frame->elfReloc);
                 }
