@@ -213,6 +213,34 @@ struct RemoteValue {
     {}
 };
 
+struct ProcPtr {
+    const Process &proc;
+    const Dwarf::DIE &type;
+    Elf::Addr addr;
+    ProcPtr(const Process &proc_, const Dwarf::DIE &type_, Elf::Addr addr_)
+        : proc(proc_)
+        , type(type_)
+        , addr(addr_)
+    {}
+};
+
+std::ostream &
+operator << (std::ostream &os, const ProcPtr &pp) {
+    using namespace Dwarf;
+    DIE base;
+    for (base = DIE(pp.type.attribute(DW_AT_type)); base && base.tag() == DW_TAG_const_type;) {
+        base = DIE(base.attribute(DW_AT_type));
+    }
+
+    if (base && base.name() == "char") {
+       std::string s = pp.proc.io->readString(pp.addr);
+       os << "\"" << s << "\"";
+    } else {
+       os << (void *)pp.addr;
+    }
+    return os;
+}
+
 std::ostream &
 operator << (std::ostream &os, const RemoteValue &rv)
 {
@@ -324,14 +352,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
                buf.resize(sizeof (void *));
                rv.p.io->read(rv.addr, sizeof (void **), &buf[0]);
             }
-            auto remote = Elf::Addr(*(void **)&buf[0]);
-            auto base = DIE(type.attribute(DW_AT_type));
-            if (base && base.name() == "char") {
-               std::string s = rv.p.io->readString(remote);
-               os << "\"" << s << "\"";
-            } else {
-               os << (void *)remote;
-            }
+            os << ProcPtr(rv.p, type, *(Elf::Addr *)&buf[0]);
             break;
         }
         default:
@@ -360,7 +381,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
                         addr = fbstack.eval(ap.p, attr, ap.frame, ap.frame->elfReloc);
                         os << "=";
                         if (fbstack.isReg) {
-                           os << std::hex << addr << std::dec << "{r" << fbstack.inReg << "}";
+                           os << ProcPtr(ap.p, type, addr) << "{r" << fbstack.inReg << "}";
                         } else {
                            os << RemoteValue(ap.p, addr, type);
                         }
