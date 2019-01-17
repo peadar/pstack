@@ -176,7 +176,7 @@ emain(int argc, char **argv)
                    doStack(proc);
                }
            } catch (const std::exception &e) {
-               std::cout << "failed to process " << argv[i] << ": " << e.what() << "\n";
+               std::cerr << "failed to process " << argv[i] << ": " << e.what() << "\n";
            }
        }
        if (sleepTime != 0)
