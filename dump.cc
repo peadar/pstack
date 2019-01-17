@@ -4,8 +4,8 @@
 #include <sys/procfs.h>
 
 #include <cassert>
-#include <set>
 #include <iomanip>
+#include <set>
 #include <unordered_map>
 
 #if ELF_BITS == 64
@@ -52,12 +52,12 @@ dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
     CFAInstruction insn;
     uint8_t op = r->getu8();
 
-    switch (op & 0xc0) {
+    switch (op & 0xc0U) {
         case 0:
             insn = CFAInstruction(op);
             break;
         default:
-            insn = CFAInstruction(op & 0xc0);
+            insn = CFAInstruction(op & 0xc0U);
             break;
     }
 
@@ -65,15 +65,15 @@ dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
 
     switch (insn) {
         case DW_CFA_advance_loc:
-            jo.field("delta", op & 0x3f);
+            jo.field("delta", op & 0x3fU);
             break;
         case DW_CFA_offset:
             jo
-                .field("register", op & 0x3f)
+                .field("register", op & 0x3fU)
                 .field("offset", r->getuleb128());
             break;
         case DW_CFA_restore:
-            jo.field("register", op & 0x3f);
+            jo.field("register", op & 0x3fU);
             break;
 
         case DW_CFA_set_loc:
@@ -263,7 +263,7 @@ std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Unit::sptr> &unit
         .field("version", int(unit.object->version))
         .field("addrlen", int(unit.object->addrlen))
         .field("entries", unit.object->topLevelDIEs());
-    if (unit.object->getLines())
+    if (unit.object->getLines() != nullptr)
         fmt.field("linenumbers", *unit.object->getLines());
     return fmt;
 }
