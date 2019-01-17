@@ -109,6 +109,8 @@ install(DIRECTORY libpstack DESTINATION include)
 install(CODE "execute_process (COMMAND setcap cap_sys_ptrace+ep ${CMAKE_INSTALL_PREFIX}/bin/${PSTACK_BIN})")
 
 
+add_test(NAME basic COMMAND ${CMAKE_SOURCE_DIR}/tests/basic-test.py)
 add_test(NAME segv COMMAND ${CMAKE_SOURCE_DIR}/tests/segv-test.py)
 add_test(NAME thread COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/thread-test.py)
 add_test(NAME badfp COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/badfp-test.py)
+add_test(NAME asserttext COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/asserttext-test.py)

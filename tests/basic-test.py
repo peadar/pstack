@@ -5,10 +5,12 @@ import coremonitor
 
 cm = coremonitor.CoreMonitor(["tests/basic"])
 
-threads = json.loads(subprocess.check_output(["./pstack", "-j", cm.core()]))
+text = subprocess.check_output(["./pstack", "-j", cm.core()])
+threads = json.loads(text)
 assert len(threads) == 1
 thread = threads[0]
 stack = thread["ti_stack"]
 
-assert stack[0]["ip"] == 0 # instruction pointer 0 at top-of-stack
-assert stack[1]["function"] == "main" # called from main
+assert stack[0]["function"] == "raise" or stack[0]["function"] == "__GI_raise"
+assert stack[1]["function"] == "abort" or stack[1]["function"] == "__GI_abort"
+assert stack[2]["function"] == "f"
