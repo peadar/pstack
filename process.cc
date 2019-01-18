@@ -159,19 +159,19 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
     Elf::Sym sym;
     std::string fileName;
     std::string symName = "unknown";
-    if (frame->ip() == proc->sysent) {
+    if (frame->rawIP() == proc->sysent) {
         symName = "(syscall)";
     } else {
         Elf::Off loadAddr = 0;
-        obj = proc->findObject(frame->ip(), &loadAddr);
+        obj = proc->findObject(frame->scopeIP(), &loadAddr);
         if (obj) {
             fileName = stringify(*obj->io);
-            objIp = frame->ip() - loadAddr;
+            objIp = frame->scopeIP() - loadAddr;
             obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
         }
     }
 
-    jo.field("ip", frame->ip());
+    jo.field("ip", frame->rawIP());
     if (symName != "")
         jo.field("function", symName);
 
@@ -180,7 +180,7 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
             .field("file", fileName);
         const auto &di = proc->getDwarf(obj);
         if (di) {
-            auto src = di->sourceFromAddr(objIp - 1);
+            auto src = di->sourceFromAddr(objIp);
             jo.field("source", src);
         }
     }
@@ -431,7 +431,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         {
             IOFlagSave _(os);
             os << "#" << std::left << std::dec << std::setw(2) << std::setfill(' ') << frameNo++ << " ";
-            os << std::right << std::hex << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->ip();
+            os << std::right << std::hex << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->rawIP();
             if (verbose > 0)
                 os << "/" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa;
             os << " ";
@@ -442,10 +442,10 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         std::string symName;
 
         Elf::Off loadAddr;
-        auto obj = findObject(frame->ip(), &loadAddr);
+        auto obj = findObject(frame->scopeIP(), &loadAddr);
         if (obj) {
             fileName = stringify(*obj->io);
-            Elf::Addr objIp = frame->ip() - loadAddr;
+            Elf::Addr objIp = frame->scopeIP() - loadAddr;
 
             Dwarf::Info::sptr dwarf = getDwarf(obj);
             std::list<Dwarf::Unit::sptr> units;
@@ -508,7 +508,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 
             os << " at " << fileName;
             if (!options[PstackOption::nosrc] && dwarf) {
-                auto source = dwarf->sourceFromAddr(objIp - 1);
+                auto source = dwarf->sourceFromAddr(objIp);
                 for (auto ent : source)
                     os << " at " << ent.first << ":" << std::dec << ent.second;
             }
@@ -668,7 +668,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
         auto startFrame = prevFrame;
 
         // Set up the first frame using the machine context registers
-        prevFrame->setCoreRegs(regs);
+        startFrame->setCoreRegs(regs);
+        startFrame->top = true;
 
         Dwarf::StackFrame *frame;
         for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++, prevFrame = frame) {

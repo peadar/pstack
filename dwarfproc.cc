@@ -24,10 +24,21 @@ StackFrame::getCoreRegs(Elf::CoreRegisters &core) const
 }
 
 Elf::Addr
-StackFrame::ip() const
+StackFrame::rawIP() const
 {
     return getReg(cie ? cie->rar : IPREG);
 }
+
+Elf::Addr
+StackFrame::scopeIP() const
+{
+    // in general, the top of stack IP is accurate, but the IP for
+    // calling frames represents the return address - we really want to
+    // treat the call instruction as what's being executed, so subtract
+    // one from the address for all but the TOS.
+    return rawIP() - ( top ? 0 : 1 );
+}
+
 
 void
 StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *stack) const
@@ -49,7 +60,7 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFra
     switch (attr.form()) {
         case DW_FORM_sec_offset: {
             auto &sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
-            auto objIp = frame->ip() - reloc;
+            auto objIp = frame->scopeIP() - reloc;
             // convert this object-relative addr to a unit-relative one
             auto unitEntry = *attr.die().getUnit()->topLevelDIEs().begin();
             Attribute unitLow = unitEntry.attribute(DW_AT_low_pc);
@@ -79,7 +90,7 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFra
                 if (start == 0 && end == 0)
                     return 0;
                 auto len = r.getuint(2);
-                if (unitIp >= start && unitIp <= end) {
+                if (unitIp >= start && unitIp < end) {
                     DWARFReader exr(r.io, r.getOffset(), r.getOffset() + Elf::Word(len));
                     return eval(proc, exr, frame, frame->elfReloc);
                 }
@@ -324,10 +335,10 @@ StackFrame::getCFA(const Process &proc, const CallFrame &dcf) const
 StackFrame *
 StackFrame::unwind(Process &p)
 {
-    elf = p.findObject(ip(), &elfReloc);
+    elf = p.findObject(scopeIP(), &elfReloc);
     if (!elf)
-        throw (Exception() << "no image for instruction address " << std::hex << ip());
-    Elf::Off objaddr = ip() - elfReloc; // relocate process address to object address
+        throw (Exception() << "no image for instruction address " << std::hex << scopeIP());
+    Elf::Off objaddr = scopeIP() - elfReloc; // relocate process address to object address
     // Try and find DWARF data with debug frame information, or an eh_frame section.
         dwarf = p.getDwarf(elf);
     if (dwarf) {
@@ -344,7 +355,7 @@ StackFrame::unwind(Process &p)
         }
     }
     if (fde == nullptr)
-        throw (Exception() << "no FDE for instruction address " << std::hex << ip() << " in " << *elf->io);
+        throw (Exception() << "no FDE for instruction address " << std::hex << scopeIP() << " in " << *elf->io);
 
     DWARFReader r(frameInfo->io, fde->instructions, fde->end);
 

@@ -33,7 +33,10 @@ public:
 typedef unsigned long cpureg_t;
 
 struct StackFrame {
-    Elf::Addr ip() const;
+    bool top; // this stack frame is the live tos: the instruction pointer here is the machine IP, not a saved IP
+
+    Elf::Addr rawIP() const;
+    Elf::Addr scopeIP() const;
     Elf::Addr cfa;
     std::map<unsigned, cpureg_t> regs;
     Elf::Object::sptr elf;
@@ -44,7 +47,8 @@ struct StackFrame {
     const FDE *fde;
     const CIE *cie;
     StackFrame()
-        : cfa(0)
+        : top(false)
+        , cfa(0)
         , elfReloc(0)
         , dwarf(0)
         , function()

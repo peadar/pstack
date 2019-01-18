@@ -898,8 +898,7 @@ const FDE *
 CFI::findFDE(Elf::Addr addr) const
 {
     for (const auto &fde : fdeList) {
-        // XXX: addr can be just past last instruction in function
-        if (fde.iloc <= addr && fde.iloc + fde.irange >= addr)
+        if (fde.iloc <= addr && fde.iloc + fde.irange > addr)
             return &fde;
     }
     return nullptr;
@@ -1392,7 +1391,7 @@ findEntryForFunc(Elf::Addr address, const DIE &entry)
                     default:
                         abort();
                 }
-                if (start <= address && end >= address) // allow for the address to be one byte past the function
+                if (start <= address && end > address)
                     return entry;
             }
             break;

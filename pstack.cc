@@ -189,7 +189,7 @@ int
 main(int argc, char **argv)
 {
     try {
-        return emain(argc, argv);
+        emain(argc, argv);
     }
     catch (std::exception &ex) {
         std::clog << "error: " << ex.what() << std::endl;

@@ -197,7 +197,7 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
                 continue;
             if (candidate.st_value > addr)
                 continue;
-            if (candidate.st_size + candidate.st_value < addr) // allow up to and just past the symbol
+            if (candidate.st_size + candidate.st_value <= addr)
                 continue;
             auto &sec = sectionHeaders[candidate.st_shndx];
             if ((sec.shdr.sh_flags & SHF_ALLOC) == 0)

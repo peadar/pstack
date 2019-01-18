@@ -13,4 +13,5 @@ stack = thread["ti_stack"]
 
 assert stack[0]["function"] == "raise" or stack[0]["function"] == "__GI_raise"
 assert stack[1]["function"] == "abort" or stack[1]["function"] == "__GI_abort"
-assert stack[2]["function"] == "f"
+assert stack[2]["function"] == "g"
+assert stack[3]["function"] == "f"
