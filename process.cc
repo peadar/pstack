@@ -499,9 +499,12 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             }
 
             if (!dwarfUnit) {
-                obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+                bool haveSym = obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
                 if (symName != "" || sigmsg != "")
-                    os << "in " << symName << sigmsg << "!+" << objIp - sym.st_value << "()";
+                    os << "in " << (haveSym ? symName : "unknown function")
+                        << sigmsg << "!+"
+                        << objIp - (haveSym ? sym.st_value : 0)
+                        << "()";
                 else
                     os << "in <unknown>" << sigmsg << "()";
             }
