@@ -449,8 +449,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 
             Dwarf::Info::sptr dwarf = getDwarf(obj);
             std::list<Dwarf::Unit::sptr> units;
-            if (dwarf->hasRanges()) {
-                for (const auto &rangeset : dwarf->ranges()) {
+            if (dwarf->hasARanges()) {
+                for (const auto &rangeset : dwarf->getARanges()) {
                     for (const auto range : rangeset.ranges) {
                         if (objIp >= range.start && objIp <= range.start + range.length) {
                             units.push_back(dwarf->getUnit(rangeset.debugInfoOffset));
@@ -704,11 +704,11 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 #ifdef __i386__
                 // Deal with signal trampolines for i386
                 Elf::Addr reloc;
-                auto obj = p.findObject(prevFrame->ip(), &reloc);
+                auto obj = p.findObject(prevFrame->rawIP(), &reloc);
                 if (obj) {
                     Elf::Sym symbol;
                     Elf::Addr sigContextAddr = 0;
-                    auto objip = prevFrame->ip() - reloc;
+                    auto objip = prevFrame->rawIP() - reloc;
                     if (obj->findSymbolByName("__restore", symbol) && objip == symbol.st_value)
                         sigContextAddr = prevFrame->getReg(SPREG) + 4;
                     else if (obj->findSymbolByName("__restore_rt", symbol) && objip == symbol.st_value)

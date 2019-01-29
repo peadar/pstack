@@ -473,7 +473,7 @@ operator << (std::ostream &os, const JSON<Dwarf::Info> &di)
     JObject writer(os);
     writer.field("units", di->getUnits())
         .field("pubnameUnits", di->pubnames())
-        .field("aranges", di->ranges());
+        .field("aranges", di->getARanges());
     if (di->debugFrame)
         writer.field("debugframe", *di->debugFrame);
     if (di->ehFrame)

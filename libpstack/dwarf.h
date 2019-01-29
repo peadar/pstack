@@ -430,12 +430,12 @@ public:
     Reader::csptr abbrev;
     Reader::csptr lineshdr;
     Info::sptr getAltDwarf() const;
-    std::list<ARangeSet> &ranges() const;
+    std::list<ARangeSet> &getARanges() const;
     const std::list<PubnameUnit> &pubnames() const;
     Unit::sptr getUnit(off_t offset);
     const std::list<Unit::sptr> &getUnits() const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
-    bool hasRanges() { ranges(); return aranges.size() != 0; }
+    bool hasARanges() { getARanges(); return aranges.size() != 0; }
 
 private:
     std::string getAltImageName() const;

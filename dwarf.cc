@@ -186,7 +186,7 @@ Info::getUnits() const
 
 
 std::list<ARangeSet> &
-Info::ranges() const
+Info::getARanges() const
 {
     if (arangesh) {
         DWARFReader r(arangesh);
@@ -910,8 +910,8 @@ Info::sourceFromAddr(uintmax_t addr)
     std::vector<std::pair<string, int>> info;
     std::list<Unit::sptr> units;
 
-    if (hasRanges()) {
-        auto &rangelist = ranges();
+    if (hasARanges()) {
+        auto &rangelist = getARanges();
         for (auto &rs : rangelist) {
             for (auto &r : rs.ranges) {
                 if (r.start <= addr && r.start + r.length > addr) {

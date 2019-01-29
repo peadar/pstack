@@ -64,23 +64,6 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFra
             // convert this object-relative addr to a unit-relative one
             auto unitEntry = *attr.die().getUnit()->topLevelDIEs().begin();
             Attribute unitLow = unitEntry.attribute(DW_AT_low_pc);
-#ifndef NDEBUG
-            auto unitHigh = unitEntry.attribute(DW_AT_high_pc);
-            Elf::Addr endAddr;
-            if (unitHigh.valid()) {
-               switch (unitHigh.form()) {
-                   case DW_FORM_addr:
-                       endAddr = uintmax_t(unitHigh);
-                       break;
-                   case DW_FORM_data1: case DW_FORM_data2: case DW_FORM_data4: case DW_FORM_data8: case DW_FORM_udata:
-                       endAddr = intmax_t(unitHigh) + uintmax_t(unitLow);
-                       break;
-                   default:
-                       abort();
-               }
-               assert(objIp >= uintmax_t(unitLow) && objIp < endAddr);
-            }
-#endif
             Elf::Addr unitIp = objIp - uintmax_t(unitLow);
 
             DWARFReader r(sec.io, uintmax_t(attr));
