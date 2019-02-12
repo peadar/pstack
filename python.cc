@@ -392,7 +392,6 @@ PythonPrinter::print(Elf::Addr remoteAddr)
             proc.io->readObj<PyVarObject> (remoteAddr, &baseObj);
             if (baseObj.ob_refcnt == 0) {
                 os << "(dead object)";
-                break;
             }
 
             const PyPrinterEntry *printer = nullptr;
