@@ -13,6 +13,8 @@
 #include <string.h>
 #include <unordered_map>
 
+
+extern std::string g_openPrefix;
 std::string dirname(const std::string &);
 std::string basename(const std::string &);
 

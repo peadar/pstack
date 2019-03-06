@@ -2,6 +2,7 @@
 #include <iostream>
 #include <sys/stat.h>
 
+std::string g_openPrefix;
 std::string
 dirname(const std::string &in)
 {

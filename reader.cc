@@ -44,17 +44,29 @@ FileReader::size() const
     return fileSize;
 }
 
-
-bool
-FileReader::openfile(int &file, const std::string &name_)
+static bool
+openFileDirect(int &file, const std::string &name_)
 {
     auto fd = open(name_.c_str(), O_RDONLY);
     if (fd != -1) {
         file = fd;
-        name = name_;
+        if (verbose > 1)
+           *debug << "opened " << name_ << ", fd=" << file << std::endl;
         return true;
     }
+     if (verbose > 1)
+        *debug << "failed to open " << name_ << ": " << strerror(errno) << std::endl;
     return false;
+}
+
+bool
+FileReader::openfile(int &file, const std::string &name_)
+{
+    name = name_;
+    if (g_openPrefix != "" && openFileDirect(file, g_openPrefix + name_)) {
+          return true;
+    }
+    return openFileDirect(file, name_);
 }
 
 FileReader::FileReader(string name_)

@@ -89,8 +89,10 @@ emain(int argc, char **argv)
 
     bool python = false;
 
-    while ((c = getopt(argc, argv, "b:d:D:hjsVvag:pt")) != -1) {
+    while ((c = getopt(argc, argv, "F:b:d:D:hjsVvag:pt")) != -1) {
         switch (c) {
+        case 'F': g_openPrefix = optarg;
+                  break;
         case 'g':
             Elf::globalDebugDirectories.add(optarg);
             break;
