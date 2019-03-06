@@ -1,0 +1,11 @@
+--- CMakeLists.txt
++++ CMakeLists.txt
+@@ -59,7 +59,7 @@
+ if (PythonLibs_FOUND OR PYTHONLIBS_FOUND)
+    set(pysrc python.cc)
+    add_definitions("-DWITH_PYTHON")
+-   include_directories(${PYTHON_INCLUDE_DIRS})
++   #include_directories(${PYTHON_INCLUDE_DIRS})
+ endif()
+ 
+ add_library(dwelf ${LIBTYPE} dump.cc dwarf.cc elf.cc reader.cc util.cc
