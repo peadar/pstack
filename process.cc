@@ -465,7 +465,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                 for (const auto &rangeset : dwarf->getARanges()) {
                     for (const auto range : rangeset.ranges) {
                         if (objIp >= range.start && objIp <= range.start + range.length) {
-                            units.push_back(dwarf->getUnit(rangeset.debugInfoOffset));
+                            units.emplace_back(dwarf->getUnit(rangeset.debugInfoOffset));
                             break;
                         }
                     }

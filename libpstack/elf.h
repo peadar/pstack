@@ -28,7 +28,6 @@
 /*
  * Utility interface for accessing ELF images.
  */
-
 #ifndef elfinfo_h_guard
 #define elfinfo_h_guard
 
@@ -68,7 +67,6 @@ typedef struct {
    Elf64_Word ch_addralign;
 } Elf64_Chdr;
 #endif
-
 
 namespace Elf {
     class Object;
@@ -111,13 +109,11 @@ Type(Addr);
 #define IS_ELF(a) true
 #endif
 
-
 static inline size_t
 roundup2(size_t val, size_t align)
 {
     return val + (align - (val % align)) % align;
 }
-
 #endif
 
 /*
@@ -187,7 +183,6 @@ public:
     SymbolSection getSymbols(const std::string &tableName);
     bool findSymbolByAddress(Addr addr, int type, Sym &, std::string &);
     bool findSymbolByName(const std::string &name, Sym &sym);
-    bool findHashedSymbol(const std::string &name, Sym &sym) { return hash ? hash->findSymbol(sym, name) : false; }
 
     Reader::csptr io;
 
@@ -196,7 +191,6 @@ public:
     const Ehdr &getHeader() const { return elfHeader; }
     const Phdr *getSegmentForAddress(Off) const;
     Notes notes;
-
 private:
     // Elf header, section headers, program headers.
     Ehdr elfHeader;

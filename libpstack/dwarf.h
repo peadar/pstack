@@ -311,6 +311,7 @@ class Unit {
     Unit() = delete;
     Unit(const Unit &) = delete;
     std::unique_ptr<LineInfo> lines;
+    std::unordered_map<size_t, Abbreviation> abbreviations;
     Entries entries;
     std::unordered_map<off_t, RawDIE> allEntries;
 public:
@@ -435,7 +436,6 @@ public:
     const std::list<Unit::sptr> &getUnits() const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
     bool hasARanges() { getARanges(); return aranges.size() != 0; }
-    std::unordered_map<size_t, Abbreviation> abbreviations;
 
 private:
     std::string getAltImageName() const;
