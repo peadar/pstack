@@ -378,9 +378,26 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
     case DW_FORM_data4:
     case DW_FORM_data8:
     case DW_FORM_sec_offset:
-    case DW_FORM_udata:
+    case DW_FORM_udata: {
         writer.field("value", uintmax_t(attr));
+        std::vector<std::pair<uintmax_t, uintmax_t>> ranges;
+        if (attr.name() == DW_AT_ranges) {
+            writer.field("rangelist", true);
+            auto dwarf = attr.die().getUnit()->dwarf;
+            auto elf = dwarf->elf;
+            auto &sec = elf->getSection(".debug_ranges", SHT_NULL);
+            DWARFReader reader(sec.io, uintmax_t(attr));
+            for (;;) {
+                auto start = reader.getuint(sizeof (Elf::Addr));
+                auto end = reader.getuint(sizeof (Elf::Addr));
+                if (start == 0 && end == 0)
+                    break;
+                ranges.emplace_back(std::make_pair(start, end));
+            }
+            writer.field("ranges", ranges);
+        }
         break;
+    }
     case DW_FORM_sdata:
         writer.field("value", intmax_t(attr));
         break;
