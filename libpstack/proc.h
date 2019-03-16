@@ -1,5 +1,6 @@
 #include <elf.h>
 extern "C" {
+// Some thread_db headers are not safe to include unwrapped in extern "C"
 #include <thread_db.h>
 }
 
@@ -235,4 +236,4 @@ struct StopLWP {
 public:
     StopLWP(Process *proc_, lwpid_t lwp_) : proc(proc_), lwp(lwp_) { proc->stop(lwp); }
     ~StopLWP() { proc->resume(lwp); }
-};;
+};

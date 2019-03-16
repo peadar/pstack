@@ -2,9 +2,7 @@
 #define LIBPSTACK_LZMAREADER_H
 
 #include <map>
-
 #include <lzma.h>
-
 #include "libpstack/util.h"
 
 /*

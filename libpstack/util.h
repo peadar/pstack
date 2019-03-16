@@ -49,7 +49,6 @@ template <typename T> void stringifyImpl(std::ostringstream &os, const T&obj)
     os << obj;
 }
 
-
 template <typename T> std::string stringify(const T&obj)
 {
     std::ostringstream os;
@@ -74,17 +73,53 @@ template <typename T, typename... More> std::string stringify(const T&obj, More.
 extern std::ostream *debug;
 
 extern int verbose;
+
+// Reader provides the basic random-access IO to a range of bytes.  The most
+// basic reader is a FileReader, which allows you to access the content of a
+// file from offset 0 through to the length of the file.
+//
+// You can compose readers on top of this - a FileReader can be wrapped in a
+// CacheReader, so access to it is buffered.  OffsetReaders are "windows" on
+// existing readers, where the offset is relative to an offset in the
+// underlying reader (useful for accessing elf sections by section-relative
+// offsets, for example.)
+// There are also compressed readers for zlib and lzma-encoded content embedded
+// in files.
+//
+// Example: ELF binaries can contain a ".gnu_debugdata" section, that is an
+// LZMA encoded ELF image itself, that contains a symbol table section
+// When accessing that symbol table, we'll read it from a stack of readers like
+// this:
+//
+// FileReader (for ELF image)
+// CacheReader (for performance)
+// OffsetReader (for .gnu_debugdata section)
+// LzmaReader (to decompress the .gnu_debugdata, and give the plain ELF image)
+// OffsetReader (for .symtab in the nested ELF image)
+
 class Reader {
     Reader(const Reader &);
 public:
     Reader() {}
     virtual ~Reader() {}
+
+    // Read a consecutive sequence of objects type Obj starting at Offset.
     template <typename Obj> void readObj(off_t offset, Obj *object, size_t count = 1) const;
+
+    // Helper to read a single object.
     template <typename Obj> Obj readObj(off_t offset) const;
+    // read a sequence of count bytes at offset off. May give a short return.
     virtual size_t read(off_t off, size_t count, char *ptr) const = 0;
+
+    // describe this reader.
     virtual void describe(std::ostream &os) const = 0;
+
+    // give the name of the file we are eventually reading
     virtual std::string filename() const = 0;
+
+    // read a text string at an offset
     virtual std::string readString(off_t offset) const;
+
     virtual off_t size() const = 0;
     typedef std::shared_ptr<Reader> sptr;
     typedef std::shared_ptr<const Reader> csptr;
@@ -116,6 +151,7 @@ Reader::readObj(off_t offset) const
    return t;
 }
 
+// Reader implementations
 class FileReader : public Reader {
     std::string name;
     int file;
@@ -223,6 +259,7 @@ template <typename T> T maybe(T val, T dflt) {
     return val ?  val : dflt;
 }
 
+// Save iostream formatting so we can restore them later.
 class IOFlagSave {
     std::ios &target;
     std::ios saved;
@@ -239,8 +276,11 @@ public:
 };
 Reader::csptr loadFile(const std::string &path);
 
-// This allows a reader to be treated like an iterator for a type of object.
-
+// This allows a reader to provide an iterator over a sequence of objects of a
+// given type. Given a reader r, we can use 
+// for (const Foo &foo : ReaderArray<Foo>(r)) {
+//   ...
+// }
 template <typename T>
 struct ReaderArray {
    class iterator {

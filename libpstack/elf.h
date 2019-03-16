@@ -28,7 +28,6 @@
 /*
  * Utility interface for accessing ELF images.
  */
-extern bool noDebugLibs;
 
 #ifndef elfinfo_h_guard
 #define elfinfo_h_guard
