@@ -371,7 +371,7 @@ public:
     virtual ~ImageCache();
     virtual void flush(Object::sptr);
     Object::sptr getImageForName(const std::string &name);
-    Object::sptr getImageIfLoaded(const std::string &name, bool &found);
+    Object::sptr getImageIfLoaded(const std::string &name);
     Object::sptr getDebugImage(const std::string &name);
 };
 

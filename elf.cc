@@ -411,16 +411,12 @@ Section::Section(const Reader::csptr &image, off_t off)
 
 Object::sptr
 ImageCache::getImageForName(const string &name) {
-    bool found;
-    auto res = getImageIfLoaded(name, found);
-    if (found) {
-        if (res != nullptr)
-            return res;
-        // Don't return null to keep it consistent with a previous failure to load.
-        throw (Exception() << "previously failed to load " << name);
+    auto res = getImageIfLoaded(name);
+    if (res != nullptr) {
+        return res;
     }
-    auto &item = cache[name];
-    item = make_shared<Object>(*this, loadFile(name));
+    auto item = make_shared<Object>(*this, loadFile(name));
+    cache[name] = item;
     return item;
 }
 
@@ -429,25 +425,21 @@ ImageCache::~ImageCache() {
     if (verbose >= 2) {
         *debug << "ELF image cache: lookups: " << elfLookups << ", hits=" << elfHits << std::endl;
         for (auto &items : cache) {
-            if (items.second)
-                *debug << "\t" << *items.second->io << std::endl;
-            else
-                *debug << "\t" << "NEGATIVE: " << items.first << std::endl;
+            assert(items.second);
+            *debug << "\t" << *items.second->io << std::endl;
         }
     }
 }
 
 Object::sptr
-ImageCache::getImageIfLoaded(const string &name, bool &found)
+ImageCache::getImageIfLoaded(const string &name)
 {
     elfLookups++;
     auto it = cache.find(name);
     if (it != cache.end()) {
         elfHits++;
-        found = true;
         return it->second;
     }
-    found = false;
     return Object::sptr();
 }
 
@@ -455,9 +447,8 @@ Object::sptr
 ImageCache::getDebugImage(const string &name) {
     // XXX: verify checksum.
     for (const auto &dir : globalDebugDirectories.dirs) {
-        bool found;
-        auto img = getImageIfLoaded(stringify(dir, "/", name), found);
-        if (found)
+        auto img = getImageIfLoaded(stringify(dir, "/", name));
+        if (img)
             return img;
     }
     for (const auto &dir : globalDebugDirectories.dirs) {
