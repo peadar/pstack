@@ -189,7 +189,7 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
         if (symSection.shdr.sh_type == SHT_NOBITS)
             continue;
         SymbolSection syms(symSection.io, getLinkedSection(symSection).io);
-        for (auto syminfo : syms) {
+        for (const auto syminfo : syms) {
             auto &candidate = syminfo.first;
             if (candidate.st_shndx >= sectionHeaders.size())
                 continue;
@@ -209,7 +209,7 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
     }
     if (debugData)
         return debugData->findSymbolByAddress(addr, type, sym, name);
-    return false;;
+    return false;
 }
 
 const Section &
@@ -298,7 +298,7 @@ Object::getDebug() const
         auto dir = dirname(stringify(*io));
         debugObject = imageCache.getDebugImage(dir + "/" + link);
         if (!debugObject) {
-            for (auto note : notes) {
+            for (const auto &note : notes) {
                 if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
                     std::ostringstream dir;
                     dir << ".build-id/";
@@ -424,7 +424,7 @@ ImageCache::ImageCache() : elfHits(0), elfLookups(0) {}
 ImageCache::~ImageCache() {
     if (verbose >= 2) {
         *debug << "ELF image cache: lookups: " << elfLookups << ", hits=" << elfHits << std::endl;
-        for (auto &items : cache) {
+        for (const auto &items : cache) {
             assert(items.second);
             *debug << "\t" << *items.second->io << std::endl;
         }
