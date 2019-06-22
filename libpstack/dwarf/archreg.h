@@ -88,7 +88,30 @@ REGMAP(59, gs_base)
 #endif
 
 #ifdef __ARM_ARCH
+#if ELF_BITS == 32
 #define IPREG 15
+#define CFA_RESTORE_REGNO 13
+
+REGMAP(0, regs[0])
+REGMAP(1, regs[1])
+REGMAP(2, regs[2])
+REGMAP(3, regs[3])
+REGMAP(4, regs[4])
+REGMAP(5, regs[5])
+REGMAP(6, regs[6])
+REGMAP(7, regs[7])
+REGMAP(8, regs[8])
+REGMAP(9, regs[9])
+REGMAP(10, regs[10])
+REGMAP(11, regs[11])
+REGMAP(12, regs[12])
+REGMAP(13, regs[13])
+REGMAP(14, regs[14])
+REGMAP(15, regs[15])
+REGMAP(16, regs[16])
+REGMAP(17, regs[17])
+#else
+#define IPREG 32
 #define CFA_RESTORE_REGNO 13
 REGMAP(0, regs[0])
 REGMAP(1, regs[1])
@@ -108,4 +131,20 @@ REGMAP(14, regs[14])
 REGMAP(15, regs[15])
 REGMAP(16, regs[16])
 REGMAP(17, regs[17])
+REGMAP(18, regs[18])
+REGMAP(19, regs[19])
+REGMAP(20, regs[20])
+REGMAP(21, regs[21])
+REGMAP(22, regs[22])
+REGMAP(23, regs[23])
+REGMAP(24, regs[24])
+REGMAP(25, regs[25])
+REGMAP(26, regs[26])
+REGMAP(27, regs[27])
+REGMAP(28, regs[28])
+REGMAP(29, regs[29])
+REGMAP(30, regs[30])
+REGMAP(31, sp)
+REGMAP(32, pc)
+#endif
 #endif
