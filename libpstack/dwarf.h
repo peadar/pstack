@@ -364,7 +364,7 @@ struct Units {
     using const_iterator = UnitIterator;
 
     const Info *info;
-    UnitIterator begin() const { return iterator(info, 0); }
+    UnitIterator begin() const;
     UnitIterator end() const { return iterator(); }
     Units(const Info *info_) : info(info_) {}
 };
@@ -628,6 +628,11 @@ UnitIterator UnitIterator::operator ++() {
         ? nullptr
         : info->getUnit( currentUnit->end );
     return *this;
+}
+
+inline
+UnitIterator Units::begin() const {
+    return info->io ? iterator(info, 0) : iterator();
 }
 
 inline
