@@ -146,14 +146,19 @@ Info::pubnames() const
 Unit::sptr
 UnitsCache::get(const Info *info, off_t offset)
 {
+#if 0
     auto idx = byOffset.find(offset);
     if (idx != byOffset.end()) {
         return idx->second;
     }
-    DWARFReader r(info->io, offset);
     auto &newUnit = byOffset[offset];
+    DWARFReader r(info->io, offset);
     newUnit = make_shared<Unit>(info, r);
     return newUnit;
+#else
+    DWARFReader r(info->io, offset);
+    return make_shared<Unit>(info, r);
+#endif
 }
 
 Unit::sptr
