@@ -362,7 +362,6 @@ struct Units {
     using value_type = Unit::sptr;
     using iterator = UnitIterator;
     using const_iterator = UnitIterator;
-
     const Info *info;
     UnitIterator begin() const;
     UnitIterator end() const { return iterator(); }

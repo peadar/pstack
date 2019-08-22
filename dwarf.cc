@@ -19,6 +19,7 @@
 #include <set>
 #include <sstream>
 #include <stack>
+#include <algorithm>
 
 using std::make_unique;
 using std::make_shared;
@@ -143,22 +144,31 @@ Info::pubnames() const
     return pubnameUnits;
 }
 
+static size_t UNITCACHE_SIZE=8;
+
 Unit::sptr
 UnitsCache::get(const Info *info, off_t offset)
 {
-#if 0
+    Unit::sptr rv;
     auto idx = byOffset.find(offset);
     if (idx != byOffset.end()) {
-        return idx->second;
+        rv = idx->second;
+        auto idx2 = std::find(LRU.begin(), LRU.end(), rv);
+        assert(idx2 != LRU.end());
+        LRU.erase(idx2);
+    } else {
+        auto &newUnit = byOffset[offset];
+        DWARFReader r(info->io, offset);
+        newUnit = make_shared<Unit>(info, r);
+        rv = newUnit;
     }
-    auto &newUnit = byOffset[offset];
-    DWARFReader r(info->io, offset);
-    newUnit = make_shared<Unit>(info, r);
-    return newUnit;
-#else
-    DWARFReader r(info->io, offset);
-    return make_shared<Unit>(info, r);
-#endif
+    LRU.push_front(rv);
+    if (LRU.size() > UNITCACHE_SIZE) {
+        auto old = LRU.back();
+        LRU.pop_back();
+        byOffset.erase(old->offset);
+    }
+    return rv;
 }
 
 Unit::sptr
