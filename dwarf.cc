@@ -242,7 +242,7 @@ DIE
 Unit::offsetToDIE(size_t offset) const
 {
     auto it = allEntries.find(offset);
-    return it != allEntries.end() ? DIE(this, offset, &it->second) : DIE();
+    return it != allEntries.end() ? DIE(shared_from_this(), offset, &it->second) : DIE();
 }
 
 string
@@ -1236,7 +1236,7 @@ Attribute::operator DIE() const
 
     // Nope - try other units.
     for (const auto &u : dwarf->getUnits()) {
-        if (u.get() == dieref.unit)
+        if (u == dieref.unit)
             continue;
         const auto &otherEntry = u->offsetToDIE(off);
         if (otherEntry)

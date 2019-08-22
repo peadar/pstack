@@ -136,14 +136,14 @@ union Value {
 
 
 struct DIEIter {
-    const Unit *u;
+    const std::shared_ptr<const Unit> u;
     Entries::const_iterator rawIter;
     DIE operator *() const;
     DIEIter &operator++() {
         ++rawIter;
         return *this;
     }
-    DIEIter(const Unit *unit_, Entries::const_iterator rawIter_) :
+    DIEIter(const std::shared_ptr<const Unit> &unit_, Entries::const_iterator rawIter_) :
         u(unit_), rawIter(rawIter_) {}
     bool operator == (const DIEIter &rhs) const {
         return rawIter == rhs.rawIter;
@@ -156,12 +156,11 @@ struct DIEIter {
 struct DIEList {
     using const_iterator = DIEIter;
     using value_type = DIE;
-    const Unit *unit;
+    std::shared_ptr<const Unit> unit;
     const Entries &dies;
     DIEIter begin() const;
     DIEIter end() const;
-    DIEList(const Unit *unit_, const Entries &dies_)
-        : unit(unit_), dies(dies_) {}
+    DIEList(const std::shared_ptr<const Unit> &unit_, const Entries &dies_) : unit(unit_), dies(dies_) {}
 };
 
 class DIEAttributes {
@@ -193,7 +192,7 @@ public:
 };
 
 class DIE {
-    const Unit *unit;
+    std::shared_ptr<const Unit> unit;
     off_t offset;
     const RawDIE *raw;
     friend class Attribute;
@@ -201,8 +200,8 @@ class DIE {
 public:
     off_t getParentOffset() const;
     off_t getOffset() const { return offset; }
-    const Unit *getUnit() const { return unit; }
-    DIE(const Unit *unit, size_t offset_, const RawDIE *raw) : unit(unit), offset(offset_), raw(raw) {}
+    const std::shared_ptr<const Unit> & getUnit() const { return unit; }
+    DIE(const std::shared_ptr<const Unit> &unit, size_t offset_, const RawDIE *raw) : unit(unit), offset(offset_), raw(raw) {}
     DIE() : unit(nullptr) {}
     operator bool() const { return unit != nullptr; }
     bool hasChildren() const;
@@ -306,7 +305,7 @@ public:
     friend class DIEAttributes;
 };
 
-class Unit {
+class Unit : public std::enable_shared_from_this<Unit> {
     Unit() = delete;
     Unit(const Unit &) = delete;
     std::unique_ptr<LineInfo> lines;
@@ -314,8 +313,10 @@ class Unit {
     off_t topDIEOffset;
     std::unordered_map<off_t, RawDIE> allEntries;
 public:
+    typedef std::shared_ptr<Unit> sptr;
+    typedef std::shared_ptr<const Unit> csptr;
     const Abbreviation *findAbbreviation(size_t) const;
-    DIE root() const { return DIE(this, topDIEOffset, &allEntries.at(topDIEOffset)); }
+    DIE root() const { return DIE(shared_from_this(), topDIEOffset, &allEntries.at(topDIEOffset)); }
     DIE offsetToDIE(size_t offset) const;
     const Info *dwarf;
     Reader::csptr io;
@@ -331,8 +332,6 @@ public:
     std::string name() const;
     const LineInfo *getLines();
     ~Unit();
-    typedef std::shared_ptr<Unit> sptr;
-    typedef std::shared_ptr<const Unit> csptr;
 };
 
 class UnitIterator {
