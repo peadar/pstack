@@ -624,13 +624,15 @@ DIE findEntryForFunc(Elf::Addr address, const DIE &entry);
 
 inline
 UnitIterator UnitIterator::operator ++() {
-    currentUnit = info->getUnit( currentUnit->end );
+    currentUnit = currentUnit->end == info->io->size()
+        ? nullptr
+        : info->getUnit( currentUnit->end );
     return *this;
 }
 
 inline
 bool UnitIterator::atend() const {
-    return currentUnit == nullptr || currentUnit->end == info->io->size();
+    return currentUnit == nullptr;
 }
 
 inline
