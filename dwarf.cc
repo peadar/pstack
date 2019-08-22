@@ -290,8 +290,8 @@ Abbreviation::Abbreviation(DWARFReader &r)
 AttrName
 Attribute::name() const
 {
-    size_t off = formp - &dieref.die->type->forms[0];
-    for (auto ent : dieref.die->type->attrName2Idx) {
+    size_t off = formp - &dieref.raw->type->forms[0];
+    for (auto ent : dieref.raw->type->attrName2Idx) {
         if (ent.second == off)
             return ent.first;
     }
@@ -1259,15 +1259,15 @@ Attribute::operator DIE() const
 off_t
 DIE::getParentOffset() const
 {
-    return die->parent;
+    return raw->parent;
 }
 
 Attribute
 DIE::attribute(AttrName name) const
 {
-    auto loc = die->type->attrName2Idx.find(name);
-    if (loc != die->type->attrName2Idx.end())
-        return Attribute(*this, &die->type->forms.at(loc->second));
+    auto loc = raw->type->attrName2Idx.find(name);
+    if (loc != raw->type->attrName2Idx.end())
+        return Attribute(*this, &raw->type->forms.at(loc->second));
 
     // If we have attributes of any of these types, we can look for other attributes in the referenced entry.
     static std::set<AttrName> derefs = {
@@ -1278,7 +1278,7 @@ DIE::attribute(AttrName name) const
     if (derefs.find(name) == derefs.end()) {
         for (auto alt : derefs) {
             auto ao = DIE(attribute(alt));
-            if (ao && ao.die != die)
+            if (ao && ao.raw != raw)
                 return ao.attribute(name);
         }
     }
@@ -1426,20 +1426,20 @@ std::pair<AttrName, Attribute>
 DIEAttributes::const_iterator::operator *() const {
     return std::make_pair(
             rawIter->first,
-            Attribute(die, &die.die->type->forms[rawIter->second]));
+            Attribute(die, &die.raw->type->forms[rawIter->second]));
 }
 
 DIEAttributes::const_iterator
 DIEAttributes::begin() const {
-    return const_iterator(die, die.die->type->attrName2Idx.begin());
+    return const_iterator(die, die.raw->type->attrName2Idx.begin());
 }
 
 DIEAttributes::const_iterator
 DIEAttributes::end() const {
-    return const_iterator(die, die.die->type->attrName2Idx.end());
+    return const_iterator(die, die.raw->type->attrName2Idx.end());
 }
-const Value &Attribute::value() const { return dieref.die->values.at(formp - &dieref.die->type->forms[0]); }
-Tag DIE::tag() const { return die->type->tag; }
-bool DIE::hasChildren() const { return die->type->hasChildren; }
-DIEList DIE::children() const { return DIEList(unit, die->children); }
+const Value &Attribute::value() const { return dieref.raw->values.at(formp - &dieref.raw->type->forms[0]); }
+Tag DIE::tag() const { return raw->type->tag; }
+bool DIE::hasChildren() const { return raw->type->hasChildren; }
+DIEList DIE::children() const { return DIEList(unit, raw->children); }
 }

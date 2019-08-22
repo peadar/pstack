@@ -196,14 +196,14 @@ public:
 class DIE {
     const Unit *unit;
     off_t offset;
-    const RawDIE *die;
+    const RawDIE *raw;
     friend class Attribute;
     friend class DIEAttributes;
 public:
     off_t getParentOffset() const;
     off_t getOffset() const { return offset; }
     const Unit *getUnit() const { return unit; }
-    DIE(const Unit *unit, size_t offset_, const RawDIE *die) : unit(unit), offset(offset_), die(die) {}
+    DIE(const Unit *unit, size_t offset_, const RawDIE *raw) : unit(unit), offset(offset_), raw(raw) {}
     DIE() : unit(nullptr) {}
     operator bool() const { return unit != nullptr; }
     bool hasChildren() const;
