@@ -103,14 +103,12 @@ sectionReader(Elf::Object &obj, const char *name, const char *compressedName, co
     return Reader::csptr();
 }
 
-
 Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     : io(sectionReader(*obj, ".debug_info", ".zdebug_info"))
     , elf(obj)
     , debugStrings(sectionReader(*obj, ".debug_str", ".zdebug_str"))
     , abbrev(sectionReader(*obj, ".debug_abbrev", ".zdebug_abbrev"))
     , lineshdr(sectionReader(*obj, ".debug_line", ".zdebug_line"))
-    , haveAllUnits(false)
     , altImageLoaded(false)
     , imageCache(cache_)
     , pubnamesh(sectionReader(*obj, ".debug_pubnames", ".zdebug_pubnames"))
@@ -121,17 +119,14 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
         auto io = sectionReader(*obj, name, zname, &sec);
         if (!io)
             return std::unique_ptr<CFI>();
-
         try {
             return make_unique<CFI>(this, sec->shdr.sh_addr, io, ftype);
         }
         catch (const Exception &ex) {
             std::clog << "can't decode " << name << " for " << *obj->io << ": " << ex.what() << "\n";
         }
-
         return std::unique_ptr<CFI>();
     };
-
     ehFrame = f(".eh_frame", nullptr, FI_EH_FRAME);
     debugFrame = f(".debug_frame", ".zdebug_frame", FI_DEBUG_FRAME);
 }
@@ -149,39 +144,28 @@ Info::pubnames() const
 }
 
 Unit::sptr
-Info::getUnit(off_t offset)
+UnitsCache::get(const Info *info, off_t offset)
 {
-    auto unit = unitsm.find(offset);
-    if (unit != unitsm.end())
-        return unit->second;
-    if (io == nullptr)
-        return Unit::sptr();
-    DWARFReader r(io, offset);
-    unitsm[offset] = make_shared<Unit>(this, r);
-    return unitsm[offset];
+    auto idx = byOffset.find(offset);
+    if (idx != byOffset.end()) {
+        return idx->second;
+    }
+    DWARFReader r(info->io, offset);
+    auto &newUnit = byOffset[offset];
+    newUnit = make_shared<Unit>(info, r);
+    return newUnit;
 }
 
-const std::list<Unit::sptr> &
+Unit::sptr
+Info::getUnit(off_t offset) const
+{
+    return units.get(this, offset);
+}
+
+Units
 Info::getUnits() const
 {
-    if (haveAllUnits || io == nullptr)
-        return allUnits;
-
-    DWARFReader r(io);
-
-    while (!r.empty()) {
-       auto off = r.getOffset();
-       if (unitsm.find(off) != unitsm.end()) {
-          size_t dwarfLen;
-          auto length = r.getlength(&dwarfLen);
-          r.setOffset(r.getOffset() + length);
-       } else {
-          unitsm[off] = make_shared<Unit>(this, r);
-       }
-       allUnits.push_back(unitsm[off]);
-    }
-    haveAllUnits = true;
-    return allUnits;
+    return Units(this);
 }
 
 
@@ -235,7 +219,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
     , offset(r.getOffset())
 {
     length = r.getlength(&dwarfLen);
-    Elf::Off nextoff = r.getOffset() + length;
+    end = r.getOffset() + length;
     version = r.getu16();
     if (version <= 2) // DWARF Version 2 uses the architecture's address size.
        dwarfLen = ELF_BITS / 8;
@@ -248,10 +232,10 @@ Unit::Unit(const Info *di, DWARFReader &r)
                 std::forward_as_tuple(code),
                 std::forward_as_tuple(abbR));
     topDIEOffset = r.getOffset();
-    DWARFReader entriesR(r.io, topDIEOffset, nextoff);
-    assert(nextoff <= r.getLimit());
+    DWARFReader entriesR(r.io, topDIEOffset, end);
+    assert(end <= (off_t)r.getLimit());
     decodeEntry(entriesR, 0);
-    r.setOffset(nextoff);
+    r.setOffset(end);
 }
 
 DIE
@@ -925,8 +909,10 @@ Info::sourceFromAddr(uintmax_t addr)
             }
         }
     }
-    if (units.empty())
-        units = getUnits();
+    if (units.empty()) {
+        auto allUnits = getUnits();
+        std::copy(allUnits.begin(), allUnits.end(), units.begin());
+    }
     for (const auto &unit : units) {
         auto lines = unit->getLines();
         if (lines) {

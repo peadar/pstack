@@ -2,7 +2,6 @@
 #define DWARF_H
 
 #include <libpstack/elf.h>
-
 #include <limits>
 #include <list>
 #include <map>
@@ -11,7 +10,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
+#include <iterator>
 #include <cassert>
 
 namespace Dwarf {
@@ -321,6 +320,7 @@ public:
     const Info *dwarf;
     Reader::csptr io;
     off_t offset;
+    off_t end; // start of next unit.
     size_t dwarfLen;
     void decodeEntries(DWARFReader &r, Entries &entries, off_t parent);
     off_t decodeEntry(DWARFReader &r, off_t parent);
@@ -333,6 +333,53 @@ public:
     ~Unit();
     typedef std::shared_ptr<Unit> sptr;
     typedef std::shared_ptr<const Unit> csptr;
+};
+
+
+class UnitIterator {
+    const Info *info;
+    Unit::sptr currentUnit;
+    bool atend() const;
+public:
+
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = Unit::sptr;
+    using difference_type = int;
+    using pointer = Unit::sptr *;
+    using reference = Unit::sptr &;
+
+
+    Unit::sptr operator *() { return currentUnit; }
+    UnitIterator operator ++();
+    bool operator == (const UnitIterator &rhs) const {
+        if (atend() != rhs.atend())
+            return false;
+        return info == rhs.info && currentUnit->offset == rhs.currentUnit->offset;
+    }
+    bool operator != (const UnitIterator &rhs) const {
+        return !(*this == rhs);
+    }
+    UnitIterator(const Info *info_, off_t offset);
+    UnitIterator() : info(nullptr), currentUnit(nullptr) {}
+
+};
+
+struct Units {
+    using value_type = Unit::sptr;
+    using iterator = UnitIterator;
+    using const_iterator = UnitIterator;
+
+    const Info *info;
+    UnitIterator begin() const { return iterator(info, 0); }
+    UnitIterator end() const { return iterator(); }
+    Units(const Info *info_) : info(info_) {}
+};
+
+class UnitsCache {
+    std::map<off_t, Unit::sptr> byOffset;
+    std::list<Unit::sptr> LRU;
+public:
+    Unit::sptr get(const Info *, off_t);
 };
 
 struct FDE {
@@ -433,8 +480,8 @@ public:
     Info::sptr getAltDwarf() const;
     std::list<ARangeSet> &getARanges() const;
     const std::list<PubnameUnit> &pubnames() const;
-    Unit::sptr getUnit(off_t offset);
-    const std::list<Unit::sptr> &getUnits() const;
+    Unit::sptr getUnit(off_t offset) const;
+    Units getUnits() const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
     bool hasARanges() { getARanges(); return aranges.size() != 0; }
 
@@ -444,10 +491,8 @@ private:
     mutable std::list<ARangeSet> aranges;
     // These are mutable so we can lazy-eval them when getters are called, and
     // maintain logical constness.
-    mutable std::list<Unit::sptr> allUnits;
-    mutable std::map<Elf::Off, Unit::sptr> unitsm;
+    mutable UnitsCache units;
     mutable Info::sptr altDwarf;
-    mutable bool haveAllUnits;
     mutable bool altImageLoaded;
     ImageCache &imageCache;
     mutable Reader::csptr pubnamesh;
@@ -582,6 +627,21 @@ public:
 
 std::string typeName(const DIE &);
 DIE findEntryForFunc(Elf::Addr address, const DIE &entry);
+
+inline
+UnitIterator UnitIterator::operator ++() {
+    currentUnit = info->getUnit( currentUnit->end );
+    return *this;
+}
+
+inline
+bool UnitIterator::atend() const {
+    return currentUnit == nullptr || currentUnit->offset == info->io->size();
+}
+inline
+UnitIterator::UnitIterator(const Info *info_, off_t offset)
+    : info(info_), currentUnit(info->getUnit(offset)) {}
+
 
 
 #define DWARF_OP(op, value, args) op = value,

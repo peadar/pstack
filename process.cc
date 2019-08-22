@@ -458,7 +458,6 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         if (obj) {
             fileName = stringify(*obj->io);
             Elf::Addr objIp = frame->scopeIP() - loadAddr;
-
             Dwarf::Info::sptr dwarf = getDwarf(obj);
             std::list<Dwarf::Unit::sptr> units;
             if (dwarf->hasARanges()) {
@@ -472,7 +471,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                 }
             } else {
                 // no ranges - try each dwarf unit in turn. (This seems to happen for single-unit exe's only, so it's no big loss)
-                units = dwarf->getUnits();
+                auto allUnits = dwarf->getUnits();
+                std::copy(allUnits.begin(), allUnits.end(), units.begin());
             }
 
             std::string sigmsg = frame->cie != nullptr && frame->cie->isSignalHandler ?  "[signal handler called]" : "";
