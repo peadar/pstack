@@ -335,25 +335,21 @@ public:
     typedef std::shared_ptr<const Unit> csptr;
 };
 
-
 class UnitIterator {
     const Info *info;
     Unit::sptr currentUnit;
     bool atend() const;
 public:
-
     using iterator_category = std::forward_iterator_tag;
     using value_type = Unit::sptr;
     using difference_type = int;
     using pointer = Unit::sptr *;
     using reference = Unit::sptr &;
-
-
     Unit::sptr operator *() { return currentUnit; }
     UnitIterator operator ++();
     bool operator == (const UnitIterator &rhs) const {
-        if (atend() != rhs.atend())
-            return false;
+        if (atend() || rhs.atend())
+            return atend() == rhs.atend();
         return info == rhs.info && currentUnit->offset == rhs.currentUnit->offset;
     }
     bool operator != (const UnitIterator &rhs) const {
@@ -361,7 +357,6 @@ public:
     }
     UnitIterator(const Info *info_, off_t offset);
     UnitIterator() : info(nullptr), currentUnit(nullptr) {}
-
 };
 
 struct Units {
@@ -636,13 +631,12 @@ UnitIterator UnitIterator::operator ++() {
 
 inline
 bool UnitIterator::atend() const {
-    return currentUnit == nullptr || currentUnit->offset == info->io->size();
+    return currentUnit == nullptr || currentUnit->end == info->io->size();
 }
+
 inline
 UnitIterator::UnitIterator(const Info *info_, off_t offset)
     : info(info_), currentUnit(info->getUnit(offset)) {}
-
-
 
 #define DWARF_OP(op, value, args) op = value,
 enum ExpressionOp {

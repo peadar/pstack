@@ -911,7 +911,7 @@ Info::sourceFromAddr(uintmax_t addr)
     }
     if (units.empty()) {
         auto allUnits = getUnits();
-        std::copy(allUnits.begin(), allUnits.end(), units.begin());
+        std::copy(allUnits.begin(), allUnits.end(), std::back_inserter(units));
     }
     for (const auto &unit : units) {
         auto lines = unit->getLines();

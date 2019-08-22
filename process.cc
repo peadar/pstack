@@ -472,7 +472,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             } else {
                 // no ranges - try each dwarf unit in turn. (This seems to happen for single-unit exe's only, so it's no big loss)
                 auto allUnits = dwarf->getUnits();
-                std::copy(allUnits.begin(), allUnits.end(), units.begin());
+                std::copy(allUnits.begin(), allUnits.end(), std::back_inserter(units));
             }
 
             std::string sigmsg = frame->cie != nullptr && frame->cie->isSignalHandler ?  "[signal handler called]" : "";

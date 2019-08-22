@@ -37,7 +37,7 @@ else()
 endif()
 add_definitions("-DVERSION=${GIT_TAG}")
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 14)
 
 add_definitions("-Wall -Wextra -DELF_BITS=${ELF_BITS} -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
