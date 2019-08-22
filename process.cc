@@ -479,35 +479,32 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             Dwarf::Unit::sptr dwarfUnit;
             for (const auto &u : units) {
                 // find the DIE for this function
-                for (const auto &it : u->topLevelDIEs()) {
-                    auto de = Dwarf::findEntryForFunc(objIp, it);
-                    if (de) {
-                        frame->function = de;
-                        frame->dwarf = dwarf; // hold on to 'de'
-                        os << "in ";
-                        if (!dieName(os, de)) {
-                            obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
-                            if (symName != "")
-                                symName += "%"; // mark the lack of a name in a dwarf DIE.
-                            else
-                                symName = "<unknown>";
-                            os << symName;
-                        }
-                        os << sigmsg;
-                        auto lowpc = de.attribute(Dwarf::DW_AT_low_pc);
-                        if (lowpc.valid())
-                            os << "+" << objIp - uintmax_t(lowpc);
-                        os << "(";
-                        if (options[PstackOption::doargs]) {
-                            os << ArgPrint(*this, frame);
-                        }
-                        os << ")";
-                        dwarfUnit = u;
-                        break;
+                const auto &unitRoot = u->root();
+                auto de = Dwarf::findEntryForFunc(objIp, unitRoot);
+                if (de) {
+                    frame->function = de;
+                    frame->dwarf = dwarf; // hold on to 'de'
+                    os << "in ";
+                    if (!dieName(os, de)) {
+                        obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+                        if (symName != "")
+                            symName += "%"; // mark the lack of a name in a dwarf DIE.
+                        else
+                            symName = "<unknown>";
+                        os << symName;
                     }
-                }
-                if (dwarfUnit)
+                    os << sigmsg;
+                    auto lowpc = de.attribute(Dwarf::DW_AT_low_pc);
+                    if (lowpc.valid())
+                        os << "+" << objIp - uintmax_t(lowpc);
+                    os << "(";
+                    if (options[PstackOption::doargs]) {
+                        os << ArgPrint(*this, frame);
+                    }
+                    os << ")";
+                    dwarfUnit = u;
                     break;
+                }
             }
 
             if (!dwarfUnit) {

@@ -62,7 +62,7 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFra
             auto &sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
             auto objIp = frame->scopeIP() - reloc;
             // convert this object-relative addr to a unit-relative one
-            auto unitEntry = *attr.die().getUnit()->topLevelDIEs().begin();
+            const auto &unitEntry = attr.die().getUnit()->root();
             Attribute unitLow = unitEntry.attribute(DW_AT_low_pc);
             Elf::Addr unitIp = objIp - uintmax_t(unitLow);
 

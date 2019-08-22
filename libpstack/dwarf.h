@@ -312,17 +312,18 @@ class Unit {
     Unit(const Unit &) = delete;
     std::unique_ptr<LineInfo> lines;
     std::unordered_map<size_t, Abbreviation> abbreviations;
-    Entries entries;
+    off_t topDIEOffset;
     std::unordered_map<off_t, RawDIE> allEntries;
 public:
     const Abbreviation *findAbbreviation(size_t) const;
-    DIEList topLevelDIEs() const { return DIEList(this, entries); }
+    DIE root() const { return DIE(this, topDIEOffset, &allEntries.at(topDIEOffset)); }
     DIE offsetToDIE(size_t offset) const;
     const Info *dwarf;
     Reader::csptr io;
     off_t offset;
     size_t dwarfLen;
     void decodeEntries(DWARFReader &r, Entries &entries, off_t parent);
+    off_t decodeEntry(DWARFReader &r, off_t parent);
     uint32_t length;
     uint16_t version;
     uint8_t addrlen;

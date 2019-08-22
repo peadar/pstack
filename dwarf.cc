@@ -237,10 +237,8 @@ Unit::Unit(const Info *di, DWARFReader &r)
     length = r.getlength(&dwarfLen);
     Elf::Off nextoff = r.getOffset() + length;
     version = r.getu16();
-
     if (version <= 2) // DWARF Version 2 uses the architecture's address size.
        dwarfLen = ELF_BITS / 8;
-
     off_t off = r.getuint(version <= 2 ? 4 : dwarfLen);
     DWARFReader abbR(di->abbrev, off);
     r.addrLen = addrlen = r.getu8();
@@ -249,9 +247,10 @@ Unit::Unit(const Info *di, DWARFReader &r)
         abbreviations.emplace( std::piecewise_construct,
                 std::forward_as_tuple(code),
                 std::forward_as_tuple(abbR));
-    DWARFReader entriesR(r.io, r.getOffset(), nextoff);
+    topDIEOffset = r.getOffset();
+    DWARFReader entriesR(r.io, topDIEOffset, nextoff);
     assert(nextoff <= r.getLimit());
-    decodeEntries(entriesR, entries, 0);
+    decodeEntry(entriesR, 0);
     r.setOffset(nextoff);
 }
 
@@ -265,10 +264,7 @@ Unit::offsetToDIE(size_t offset) const
 string
 Unit::name() const
 {
-    assert(entries.begin() != entries.end());
-    for (const auto &top : topLevelDIEs())
-        return top.name();
-    return "";
+    return root().name();
 }
 
 Unit::~Unit() = default;
@@ -692,21 +688,23 @@ Unit::getLines()
 {
     if (lines != nullptr)
         return lines.get();
-    for (const auto &entry : topLevelDIEs()) {
-        if (entry.tag() == DW_TAG_partial_unit || entry.tag() == DW_TAG_compile_unit) {
-            if (dwarf->lineshdr) {
-                auto attr = entry.attribute(DW_AT_stmt_list);
-                if (!attr.valid())
-                    continue;
-                auto stmts = off_t(attr);
-                DWARFReader r2(dwarf->lineshdr, stmts);
-                lines.reset(new LineInfo());
-                lines->build(r2, this);
-                return lines.get();
-            }
-        }
-    }
-    return nullptr;
+
+    if (dwarf->lineshdr == nullptr)
+        return nullptr;
+
+    const auto &r = root();
+    if (r.tag() != DW_TAG_partial_unit && r.tag() != DW_TAG_compile_unit)
+        return nullptr; // XXX: assert?
+
+    auto attr = r.attribute(DW_AT_stmt_list);
+    if (!attr.valid())
+        return nullptr;
+
+    auto stmts = off_t(attr);
+    DWARFReader r2(dwarf->lineshdr, stmts);
+    lines.reset(new LineInfo());
+    lines->build(r2, this);
+    return lines.get();
 }
 
 RawDIE::RawDIE(DWARFReader &r, size_t abbrev, Unit *unit, off_t offset, off_t parent_)
@@ -728,20 +726,30 @@ Unit::findAbbreviation(size_t offset) const
     return it != abbreviations.end() ? &it->second : nullptr;
 }
 
+off_t
+Unit::decodeEntry(DWARFReader &r, off_t parent)
+{
+    intmax_t offset = r.getOffset();
+    size_t abbrev = r.getuleb128();
+    if (abbrev == 0)
+        return 0;
+    allEntries.emplace(std::piecewise_construct,
+                    std::forward_as_tuple(offset),
+                    std::forward_as_tuple(r, abbrev, this, offset, parent));
+    return offset;
+}
+
 void
 Unit::decodeEntries(DWARFReader &r, Entries &entries, off_t parent)
 {
     while (!r.empty()) {
-        intmax_t offset = r.getOffset();
-        size_t abbrev = r.getuleb128();
-        if (abbrev == 0)
+        auto off = decodeEntry(r, parent);
+        if (off == 0)
             return;
-        allEntries.emplace(std::piecewise_construct,
-                        std::forward_as_tuple(offset),
-                        std::forward_as_tuple(r, abbrev, this, offset, parent));
-        entries.push_back(offset);
+        entries.push_back(off);
     }
 }
+
 
 string
 Info::getAltImageName() const
@@ -865,7 +873,6 @@ CFI::CFI(Info *info, Elf::Word addr, Reader::csptr io_, enum FIType type_)
     , type(type_)
 {
     DWARFReader reader(io);
-
     // decode in 2 passes: first for CIE, then for FDE
     off_t nextoff;
     for (; !reader.empty();  reader.setOffset(nextoff)) {
@@ -874,7 +881,6 @@ CFI::CFI(Info *info, Elf::Word addr, Reader::csptr io_, enum FIType type_)
         nextoff = decodeCIEFDEHdr(reader, type, &associatedCIE);
         if (nextoff == 0)
             break;
-
         auto ensureCIE = [this, &reader, nextoff] (Elf::Off offset) {
             // This is in fact a CIE - add it in if we have not seen it yet.
             if (cies.find(offset) != cies.end())
@@ -883,7 +889,6 @@ CFI::CFI(Info *info, Elf::Word addr, Reader::csptr io_, enum FIType type_)
                         std::forward_as_tuple(offset),
                         std::forward_as_tuple(this, reader, nextoff));
         };
-
         if (associatedCIE == Elf::Off(-1)) {
             ensureCIE(startOffset);
         } else {
@@ -909,7 +914,6 @@ Info::sourceFromAddr(uintmax_t addr)
 {
     std::vector<std::pair<string, int>> info;
     std::list<Unit::sptr> units;
-
     if (hasARanges()) {
         auto &rangelist = getARanges();
         for (auto &rs : rangelist) {
@@ -934,7 +938,6 @@ Info::sourceFromAddr(uintmax_t addr)
                     info.emplace_back(i->file->name, i->line);
             }
         }
-
     }
     return info;
 }
