@@ -703,6 +703,14 @@ RawDIE::readValue(DWARFReader &r, Form form, Value &value, const Unit *unit)
     }
 }
 
+static int totalDIEs = 0;
+static int maxDIEs = 0;
+__attribute__((destructor))
+void printDIEtotal()
+{
+    fprintf(stderr, "total dies: %d, max dies: %d\n", totalDIEs, maxDIEs);
+}
+
 RawDIE::~RawDIE()
 {
     int i = 0;
@@ -720,6 +728,7 @@ RawDIE::~RawDIE()
         }
         ++i;
     }
+    --totalDIEs;
 }
 
 const LineInfo *
