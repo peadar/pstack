@@ -362,10 +362,10 @@ struct Units {
     using value_type = Unit::sptr;
     using iterator = UnitIterator;
     using const_iterator = UnitIterator;
-    const Info *info;
+    std::shared_ptr<const Info> info;
     UnitIterator begin() const;
     UnitIterator end() const { return iterator(); }
-    Units(const Info *info_) : info(info_) {}
+    Units(const std::shared_ptr<const Info> &info_) : info(info_) {}
 };
 
 class UnitsCache {
@@ -456,7 +456,7 @@ class ImageCache;
 /*
  * Info represents all the interesting bits of the DWARF data.
  */
-class Info {
+class Info : public std::enable_shared_from_this<Info> {
 public:
     Info(Elf::Object::sptr, ImageCache &);
     ~Info();
@@ -631,7 +631,7 @@ UnitIterator UnitIterator::operator ++() {
 
 inline
 UnitIterator Units::begin() const {
-    return info->io ? iterator(info, 0) : iterator();
+    return info->io ? iterator(info.get(), 0) : iterator();
 }
 
 inline

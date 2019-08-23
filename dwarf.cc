@@ -180,7 +180,7 @@ Info::getUnit(off_t offset) const
 Units
 Info::getUnits() const
 {
-    return Units(this);
+    return Units(shared_from_this());
 }
 
 
