@@ -144,21 +144,17 @@ Info::pubnames() const
     return pubnameUnits;
 }
 
-static size_t UNITCACHE_SIZE=64;
+static size_t UNITCACHE_SIZE=128;
 
 Unit::sptr
 UnitsCache::get(const Info *info, off_t offset)
 {
-    bool isNew = byOffset.find(offset) == byOffset.end();
     auto &ent = byOffset[offset];
     if (ent != nullptr) {
         auto idx = std::find(LRU.begin(), LRU.end(), ent);
         assert(idx != LRU.end());
         LRU.erase(idx);
     } else {
-        if (!isNew && verbose) {
-            std::clog << "warning: evicted unit " << offset << " in object " << *info->io << " had to be reloaded\n";
-        }
         DWARFReader r(info->io, offset);
         ent = make_shared<Unit>(info, r);
         if (verbose > 2)
@@ -171,7 +167,6 @@ UnitsCache::get(const Info *info, off_t offset)
         // don't erase from the map - we hold on to the offsets so we can quickly
         // determine which unit contains a particular DIE.
         byOffset[old->offset] = 0;
-        std::clog << "evicted unit " << old->offset << " in object " << *info->io << "\n";
     }
     return ent;
 }
@@ -198,7 +193,7 @@ Info::offsetToDIE(off_t offset) const
     UnitIterator end;
     for (int i = 1; start != end; ++start, ++i) {
         const auto &u = *start;
-        DIE entry = u->offsetToDIE(0, offset);
+        DIE entry = u->offsetToDIE(offset);
         if (entry) {
             if (verbose > 2)
                 std::clog << "search for DIE at " << offset << " started at " << uOffset <<" and took " << i << " iterations\n";
