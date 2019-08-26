@@ -99,8 +99,8 @@ emain(int argc, char **argv)
             break;
         case 'D': {
             auto dumpobj = std::make_shared<Elf::Object>(imageCache, loadFile(optarg));
-            Dwarf::Info di(dumpobj, imageCache);
-            std::cout << json(di);
+            auto di = std::make_shared<Dwarf::Info>(dumpobj, imageCache);
+            std::cout << json(*di);
             goto done;
         }
         case 'd': {

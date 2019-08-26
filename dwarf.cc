@@ -144,31 +144,63 @@ Info::pubnames() const
     return pubnameUnits;
 }
 
-static size_t UNITCACHE_SIZE=8;
+static size_t UNITCACHE_SIZE=128;
 
 Unit::sptr
 UnitsCache::get(const Info *info, off_t offset)
 {
-    Unit::sptr rv;
-    auto idx = byOffset.find(offset);
-    if (idx != byOffset.end()) {
-        rv = idx->second;
-        auto idx2 = std::find(LRU.begin(), LRU.end(), rv);
-        assert(idx2 != LRU.end());
-        LRU.erase(idx2);
+    auto &ent = byOffset[offset];
+    if (ent != nullptr) {
+        auto idx = std::find(LRU.begin(), LRU.end(), ent);
+        assert(idx != LRU.end());
+        LRU.erase(idx);
     } else {
-        auto &newUnit = byOffset[offset];
         DWARFReader r(info->io, offset);
-        newUnit = make_shared<Unit>(info, r);
-        rv = newUnit;
+        ent = make_shared<Unit>(info, r);
+        if (verbose > 2)
+            std::clog << "create unit " << ent->name() << "@" << offset << std::endl;
     }
-    LRU.push_front(rv);
+    LRU.push_front(ent);
     if (LRU.size() > UNITCACHE_SIZE) {
         auto old = LRU.back();
         LRU.pop_back();
-        byOffset.erase(old->offset);
+        // don't erase from the map - we hold on to the offsets so we can quickly
+        // determine which unit contains a particular DIE.
+        byOffset[old->offset] = 0;
     }
-    return rv;
+    return ent;
+}
+
+DIE
+Info::offsetToDIE(off_t offset) const
+{
+    // find the appropriate unit for a die with that offset.
+    auto it = std::lower_bound(
+            units.byOffset.begin(),
+            units.byOffset.end(),
+            offset,
+            [] (const std::pair<off_t, std::shared_ptr<Unit>> &u, off_t offset)
+
+                { return u.first < offset; });
+    off_t uOffset;
+    if (it == units.byOffset.begin() || it == units.byOffset.end()) {
+        uOffset = 0;
+    } else {
+        --it;
+        uOffset = it->first;
+    }
+    UnitIterator start(this, uOffset);
+    UnitIterator end;
+    for (int i = 1; start != end; ++start, ++i) {
+        const auto &u = *start;
+        DIE entry = u->offsetToDIE(offset);
+        if (entry) {
+            if (verbose > 2)
+                std::clog << "search for DIE at " << offset << " started at " << uOffset <<" and took " << i << " iterations\n";
+            return entry;
+        }
+    }
+    throw Exception() << "DIE not found";
 }
 
 Unit::sptr
@@ -182,7 +214,6 @@ Info::getUnits() const
 {
     return Units(shared_from_this());
 }
-
 
 std::list<ARangeSet> &
 Info::getARanges() const
@@ -1262,14 +1293,7 @@ Attribute::operator DIE() const
     }
 
     // Nope - try other units.
-    for (const auto &u : dwarf->getUnits()) {
-        if (u == dieref.unit)
-            continue;
-        const auto &otherEntry = u->offsetToDIE(off);
-        if (otherEntry)
-            return otherEntry;
-    }
-    throw (Exception() << "reference not found");
+    return dwarf->offsetToDIE(off);
 }
 
 off_t
@@ -1410,6 +1434,7 @@ findEntryForFunc(Elf::Addr address, const DIE &entry)
                 if (start <= address && end > address)
                     return entry;
             }
+            // XXX: check ranges?
             break;
         }
         default:

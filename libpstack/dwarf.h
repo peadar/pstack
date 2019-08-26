@@ -368,11 +368,11 @@ struct Units {
     Units(const std::shared_ptr<const Info> &info_) : info(info_) {}
 };
 
-class UnitsCache {
+struct UnitsCache {
     std::map<off_t, Unit::sptr> byOffset;
     std::list<Unit::sptr> LRU;
-public:
     Unit::sptr get(const Info *, off_t);
+    Unit::sptr unitForDIE(const Info *, off_t offset);
 };
 
 struct FDE {
@@ -477,6 +477,7 @@ public:
     Units getUnits() const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
     bool hasARanges() { getARanges(); return aranges.size() != 0; }
+    DIE offsetToDIE(off_t) const;
 
 private:
     std::string getAltImageName() const;
