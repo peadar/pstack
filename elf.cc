@@ -419,8 +419,10 @@ ImageCache::getImageForName(const string &name) {
         // Don't return null to keep it consistent with a previous failure to load.
         throw (Exception() << "previously failed to load " << name);
     }
-    auto &item = cache[name];
-    item = make_shared<Object>(*this, loadFile(name));
+    auto item = make_shared<Object>(*this, loadFile(name));
+    // don't cache negative entries: assign into the cache after we've constructed:
+    // a failure to load the image will throw.
+    cache[name] = item;
     return item;
 }
 
