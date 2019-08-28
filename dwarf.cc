@@ -1303,7 +1303,8 @@ DIE::attribute(AttrName name) const
         DW_AT_specification
     };
 
-    if (derefs.find(name) == derefs.end()) {
+    // don't dereference declarations, or any types that provide dereference aliases.
+    if (name != DW_AT_declaration && derefs.find(name) == derefs.end()) {
         for (auto alt : derefs) {
             auto ao = DIE(attribute(alt));
             if (ao && ao.raw != raw)

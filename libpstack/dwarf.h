@@ -313,6 +313,7 @@ class Unit : public std::enable_shared_from_this<Unit> {
     off_t topDIEOffset;
     std::unordered_map<off_t, RawDIE> allEntries;
 public:
+    size_t entryCount() const { return allEntries.size(); }
     typedef std::shared_ptr<Unit> sptr;
     typedef std::shared_ptr<const Unit> csptr;
     const Abbreviation *findAbbreviation(size_t) const;
