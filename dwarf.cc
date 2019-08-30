@@ -290,8 +290,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
 }
 
 DIE
-Unit::offsetToDIE(size_t offset) const
-{
+Unit::offsetToDIE(size_t offset) const {
     auto it = allEntries.find(offset);
     return it != allEntries.end() ? DIE(shared_from_this(), offset, &it->second) : DIE();
 }
@@ -750,8 +749,11 @@ RawDIE::RawDIE(DWARFReader &r, size_t abbrev, Unit *unit, off_t offset, off_t pa
     size_t i = 0;
     for (auto form : type->forms)
         readValue(r, form, values[i++], unit);
-    if (type->hasChildren)
-        unit->decodeEntries(r, children, offset);
+    if (type->hasChildren) {
+        firstChild = r.getOffset();
+        unit->decodeEntries(r, offset);
+    }
+    nextSib = r.getOffset();
 }
 
 const Abbreviation *
@@ -775,13 +777,11 @@ Unit::decodeEntry(DWARFReader &r, off_t parent)
 }
 
 void
-Unit::decodeEntries(DWARFReader &r, Entries &entries, off_t parent)
+Unit::decodeEntries(DWARFReader &r, off_t parent)
 {
     while (!r.empty()) {
-        auto off = decodeEntry(r, parent);
-        if (off == 0)
+        if (decodeEntry(r, parent) == 0)
             return;
-        entries.push_back(off);
     }
 }
 
@@ -1300,6 +1300,16 @@ DIE::getParentOffset() const
     return raw->parent;
 }
 
+DIE
+DIE::firstChild() const {
+    return unit->offsetToDIE(raw->firstChild);
+}
+
+DIE
+DIE::nextSibling() const {
+    return unit->offsetToDIE(raw->nextSib);
+}
+
 Attribute
 DIE::attribute(AttrName name) const
 {
@@ -1382,7 +1392,7 @@ typeName(const DIE &type)
         case DW_TAG_subroutine_type:
             s = typeName(base) + "(";
             sep = "";
-            for (auto arg : type.children()) {
+            for (auto arg = type.firstChild(); arg; arg = arg.nextSibling()) {
                 if (arg.tag() != DW_TAG_formal_parameter)
                     continue;
                 s += sep;
@@ -1437,7 +1447,7 @@ findEntryForFunc(Elf::Addr address, const DIE &entry)
             break;
         }
         default:
-            for (auto child : entry.children()) {
+            for (auto child = entry.firstChild(); child; child = child.nextSibling()) {
                 auto descendent = findEntryForFunc(address, child);
                 if (descendent)
                     return descendent;
@@ -1447,19 +1457,14 @@ findEntryForFunc(Elf::Addr address, const DIE &entry)
    return DIE();
 }
 
-DIE
-DIEIter::operator *() const {
-    return u->offsetToDIE(*rawIter);
+DIEIter
+DIEChildren::begin() const {
+    return const_iterator(parent.firstChild());
 }
 
 DIEIter
-DIEList::begin() const {
-    return const_iterator(unit, dies.begin());
-}
-
-DIEIter
-DIEList::end() const {
-    return const_iterator(unit, dies.end());
+DIEChildren::end() const {
+    return const_iterator(DIE());
 }
 
 std::pair<AttrName, Attribute>
@@ -1481,5 +1486,4 @@ DIEAttributes::end() const {
 const Value &Attribute::value() const { return dieref.raw->values.at(formp - &dieref.raw->type->forms[0]); }
 Tag DIE::tag() const { return raw->type->tag; }
 bool DIE::hasChildren() const { return raw->type->hasChildren; }
-DIEList DIE::children() const { return DIEList(unit, raw->children); }
 }

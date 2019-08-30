@@ -135,32 +135,15 @@ union Value {
 };
 
 
-struct DIEIter {
-    const std::shared_ptr<const Unit> u;
-    Entries::const_iterator rawIter;
-    DIE operator *() const;
-    DIEIter &operator++() {
-        ++rawIter;
-        return *this;
-    }
-    DIEIter(const std::shared_ptr<const Unit> &unit_, Entries::const_iterator rawIter_) :
-        u(unit_), rawIter(rawIter_) {}
-    bool operator == (const DIEIter &rhs) const {
-        return rawIter == rhs.rawIter;
-    }
-    bool operator != (const DIEIter &rhs) const {
-        return rawIter != rhs.rawIter;
-    }
-};
-
-struct DIEList {
+struct DIEIter;
+struct DIEChildren {
     using const_iterator = DIEIter;
     using value_type = DIE;
     std::shared_ptr<const Unit> unit;
-    const Entries &dies;
+    const DIE &parent;
     DIEIter begin() const;
     DIEIter end() const;
-    DIEList(const std::shared_ptr<const Unit> &unit_, const Entries &dies_) : unit(unit_), dies(dies_) {}
+    DIEChildren(const DIE &parent_) : parent(parent_) {}
 };
 
 class DIEAttributes {
@@ -195,6 +178,7 @@ class DIE {
     std::shared_ptr<const Unit> unit;
     off_t offset;
     const RawDIE *raw;
+    friend struct DIEIter;
     friend class Attribute;
     friend class DIEAttributes;
 public:
@@ -204,12 +188,15 @@ public:
     DIE(const std::shared_ptr<const Unit> &unit, size_t offset_, const RawDIE *raw) : unit(unit), offset(offset_), raw(raw) {}
     DIE() : unit(nullptr) {}
     operator bool() const { return unit != nullptr; }
-    bool hasChildren() const;
     Attribute attribute(AttrName name) const;
     inline std::string name() const;
-    DIEList children() const;
     DIEAttributes attributes() const { return DIEAttributes(*this); }
     Tag tag() const;
+    bool hasChildren() const;
+    DIE hasNextSibling() const;
+    DIE firstChild() const;
+    DIE nextSibling() const;
+    inline DIEChildren children() const;
 };
 
 class Attribute {
@@ -293,10 +280,11 @@ class RawDIE {
     RawDIE() = delete;
     RawDIE(const RawDIE &) = delete;
     static void readValue(DWARFReader &, Form form, Value &value, const Unit *);
-    Entries children;
     const Abbreviation *type;
     std::vector<Value> values;
     off_t parent;
+    off_t firstChild;
+    off_t nextSib;
 public:
     RawDIE(DWARFReader &, size_t, Unit *, off_t self, off_t parent);
     ~RawDIE();
@@ -324,7 +312,7 @@ public:
     off_t offset;
     off_t end; // start of next unit.
     size_t dwarfLen;
-    void decodeEntries(DWARFReader &r, Entries &entries, off_t parent);
+    void decodeEntries(DWARFReader &r, off_t parent);
     off_t decodeEntry(DWARFReader &r, off_t parent);
     uint32_t length;
     uint16_t version;
@@ -510,6 +498,28 @@ public:
     ~ImageCache();
 };
 
+struct DIEIter {
+    const std::shared_ptr<const Unit> u;
+    DIE currentDIE;
+    const DIE &operator *() const { return currentDIE; }
+    DIEIter &operator++() {
+        currentDIE = currentDIE.nextSibling();
+        return *this;
+    }
+    DIEIter(const DIE &first) : currentDIE(first) { }
+    bool operator == (const DIEIter &rhs) const {
+        if (!currentDIE)
+            return !rhs.currentDIE;
+        if (!rhs.currentDIE)
+            return false;
+        return currentDIE.raw == rhs.currentDIE.raw;
+    }
+    bool operator != (const DIEIter &rhs) const {
+        return !(*this == rhs);
+    }
+};
+
+
 enum CFAInstruction {
 #define DWARF_CFA_INSN(name, value) name = value,
 #include "libpstack/dwarf/cfainsns.h"
@@ -640,6 +650,8 @@ inline
 bool UnitIterator::atend() const {
     return currentUnit == nullptr;
 }
+
+inline DIEChildren DIE::children() const { return DIEChildren(*this); }
 
 inline
 UnitIterator::UnitIterator(const Info *info_, off_t offset)

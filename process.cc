@@ -378,7 +378,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
 {
     using namespace Dwarf;
     const char *sep = "";
-    for (const auto &child : ap.frame->function.children()) {
+    for (auto child = ap.frame->function.firstChild(); child; child = child.nextSibling()) {
         switch (child.tag()) {
             case DW_TAG_formal_parameter: {
                 auto name = child.name();

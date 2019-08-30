@@ -5,6 +5,7 @@ import coremonitor
 
 cm = coremonitor.CoreMonitor(["tests/basic"])
 
+print("core is %s" % cm.core())
 text = subprocess.check_output(["./pstack", "-j", cm.core()])
 threads = json.loads(text)
 assert len(threads) == 1
