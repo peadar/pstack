@@ -85,6 +85,7 @@ struct Abbreviation {
     bool hasChildren;
     std::vector<Form> forms;
     using AttrNameMap = std::unordered_map<AttrName, size_t>;
+    int nextSibIdx;
     AttrNameMap attrName2Idx;
     Abbreviation(DWARFReader &);
     Abbreviation() {}
@@ -175,18 +176,18 @@ public:
 };
 
 class DIE {
-    std::shared_ptr<const Unit> unit;
+    std::shared_ptr<Unit> unit;
     off_t offset;
-    const RawDIE *raw;
+    RawDIE *raw;
     friend struct DIEIter;
     friend class Attribute;
     friend class DIEAttributes;
 public:
     off_t getParentOffset() const;
     off_t getOffset() const { return offset; }
-    const std::shared_ptr<const Unit> & getUnit() const { return unit; }
-    DIE(const std::shared_ptr<const Unit> &unit, size_t offset_, const RawDIE *raw) : unit(unit), offset(offset_), raw(raw) {}
-    DIE() : unit(nullptr) {}
+    const std::shared_ptr<Unit> & getUnit() const { return unit; }
+    DIE(const std::shared_ptr<Unit> &unit, size_t offset_, RawDIE *raw) : unit(unit), offset(offset_), raw(raw) {}
+    DIE() : unit(nullptr), offset(0), raw(nullptr) {}
     operator bool() const { return unit != nullptr; }
     Attribute attribute(AttrName name) const;
     inline std::string name() const;
@@ -196,7 +197,7 @@ public:
     DIE hasNextSibling() const;
     DIE firstChild() const;
     DIE nextSibling() const;
-    inline DIEChildren children() const;
+    DIEChildren children() const { return DIEChildren(*this); }
 };
 
 class Attribute {
@@ -284,9 +285,10 @@ class RawDIE {
     std::vector<Value> values;
     off_t parent;
     off_t firstChild;
-    off_t nextSib;
+    off_t nextSibling;
+    friend class Unit; // XXX
 public:
-    RawDIE(DWARFReader &, size_t, Unit *, off_t self, off_t parent);
+    RawDIE(Unit *, DWARFReader &, size_t, Unit *, off_t self, off_t parent);
     ~RawDIE();
     friend class Attribute;
     friend class DIE;
@@ -299,26 +301,28 @@ class Unit : public std::enable_shared_from_this<Unit> {
     std::unique_ptr<LineInfo> lines;
     std::unordered_map<size_t, Abbreviation> abbreviations;
     off_t topDIEOffset;
-    std::unordered_map<off_t, RawDIE> allEntries;
+    using AllEntries = std::unordered_map<off_t, RawDIE>;
+    AllEntries allEntries;
 public:
+    void loadChildDIE(const DIE &parent, off_t dieOff);
     size_t entryCount() const { return allEntries.size(); }
     typedef std::shared_ptr<Unit> sptr;
     typedef std::shared_ptr<const Unit> csptr;
     const Abbreviation *findAbbreviation(size_t) const;
-    DIE root() const { return DIE(shared_from_this(), topDIEOffset, &allEntries.at(topDIEOffset)); }
-    DIE offsetToDIE(size_t offset) const;
+    DIE root() { return DIE(shared_from_this(), topDIEOffset, &allEntries.at(topDIEOffset)); }
+    DIE offsetToDIE(size_t offset);
     const Info *dwarf;
     Reader::csptr io;
     off_t offset;
     off_t end; // start of next unit.
     size_t dwarfLen;
     void decodeEntries(DWARFReader &r, off_t parent);
-    off_t decodeEntry(DWARFReader &r, off_t parent);
+    AllEntries::iterator decodeEntry(DWARFReader &r, off_t parent);
     uint32_t length;
     uint16_t version;
     uint8_t addrlen;
     Unit(const Info *, DWARFReader &);
-    std::string name() const;
+    std::string name();
     const LineInfo *getLines();
     ~Unit();
 };
@@ -650,8 +654,6 @@ inline
 bool UnitIterator::atend() const {
     return currentUnit == nullptr;
 }
-
-inline DIEChildren DIE::children() const { return DIEChildren(*this); }
 
 inline
 UnitIterator::UnitIterator(const Info *info_, off_t offset)

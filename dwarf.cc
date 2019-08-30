@@ -290,13 +290,17 @@ Unit::Unit(const Info *di, DWARFReader &r)
 }
 
 DIE
-Unit::offsetToDIE(size_t offset) const {
+Unit::offsetToDIE(size_t offset) {
+    if (offset == 0)
+        return DIE();
     auto it = allEntries.find(offset);
+    if (it == allEntries.end())
+        loadChildDIE(DIE(), offset);
     return it != allEntries.end() ? DIE(shared_from_this(), offset, &it->second) : DIE();
 }
 
 string
-Unit::name() const
+Unit::name()
 {
     return root().name();
 }
@@ -304,14 +308,17 @@ Unit::name() const
 Unit::~Unit() = default;
 
 Abbreviation::Abbreviation(DWARFReader &r)
+    : tag(Tag(r.getuleb128()))
+    , hasChildren(HasChildren(r.getu8()) == DW_CHILDREN_yes)
+    , nextSibIdx(-1)
 {
-    tag = Tag(r.getuleb128());
-    hasChildren = HasChildren(r.getu8()) == DW_CHILDREN_yes;
     for (size_t i = 0;; ++i) {
         auto name = AttrName(r.getuleb128());
         auto form = Form(r.getuleb128());
         if (name == 0 && form == 0)
             break;
+        if (name == DW_AT_sibling)
+            nextSibIdx = int(i);
         forms.emplace_back(form);
         attrName2Idx[name] = i;
     }
@@ -741,19 +748,31 @@ Unit::getLines()
     return lines.get();
 }
 
-RawDIE::RawDIE(DWARFReader &r, size_t abbrev, Unit *unit, off_t offset, off_t parent_)
+RawDIE::RawDIE(Unit *u, DWARFReader &r, size_t abbrev, Unit *unit, off_t offset, off_t parent_)
     : type(unit->findAbbreviation(abbrev))
     , values(type->forms.size())
     , parent(parent_)
+    , nextSibling(0)
 {
     size_t i = 0;
-    for (auto form : type->forms)
-        readValue(r, form, values[i++], unit);
+    for (auto form : type->forms) {
+        readValue(r, form, values[i], unit);
+        if (int(i) == type->nextSibIdx) {
+            nextSibling = values[i].sdata;
+        }
+        ++i;
+    }
     if (type->hasChildren) {
         firstChild = r.getOffset();
-        unit->decodeEntries(r, offset);
+        if (parent != 0 && nextSibling == 0) {
+            // We can't work out where our next sibling is without
+            // dragging in our children
+            u->decodeEntries(r, offset);
+        }
+    } else {
+        nextSibling = r.getOffset(); // we have no children, so next DIE is next sib
+        firstChild = 0; // no children.
     }
-    nextSib = r.getOffset();
 }
 
 const Abbreviation *
@@ -763,24 +782,24 @@ Unit::findAbbreviation(size_t offset) const
     return it != abbreviations.end() ? &it->second : nullptr;
 }
 
-off_t
+Unit::AllEntries::iterator
 Unit::decodeEntry(DWARFReader &r, off_t parent)
 {
     intmax_t offset = r.getOffset();
     size_t abbrev = r.getuleb128();
     if (abbrev == 0)
-        return 0;
-    allEntries.emplace(std::piecewise_construct,
+        return allEntries.end();
+    auto p = allEntries.emplace(std::piecewise_construct,
                     std::forward_as_tuple(offset),
-                    std::forward_as_tuple(r, abbrev, this, offset, parent));
-    return offset;
+                    std::forward_as_tuple(this, r, abbrev, this, offset, parent));
+    return p.first;
 }
 
 void
 Unit::decodeEntries(DWARFReader &r, off_t parent)
 {
     while (!r.empty()) {
-        if (decodeEntry(r, parent) == 0)
+        if (decodeEntry(r, parent) == allEntries.end())
             return;
     }
 }
@@ -1300,6 +1319,15 @@ DIE::getParentOffset() const
     return raw->parent;
 }
 
+void
+Unit::loadChildDIE(const DIE &parent, off_t dieOff)
+{
+    if (allEntries.find(dieOff) == allEntries.end()) {
+        DWARFReader r(io, dieOff);
+        decodeEntry(r, parent.getOffset());
+    }
+}
+
 DIE
 DIE::firstChild() const {
     return unit->offsetToDIE(raw->firstChild);
@@ -1307,7 +1335,7 @@ DIE::firstChild() const {
 
 DIE
 DIE::nextSibling() const {
-    return unit->offsetToDIE(raw->nextSib);
+    return unit->offsetToDIE(raw->nextSibling);
 }
 
 Attribute
