@@ -144,17 +144,21 @@ Info::pubnames() const
     return pubnameUnits;
 }
 
-static size_t UNITCACHE_SIZE=128;
+static size_t UNITCACHE_SIZE=64;
 
 Unit::sptr
 UnitsCache::get(const Info *info, off_t offset)
 {
+    bool isNew = byOffset.find(offset) == byOffset.end();
     auto &ent = byOffset[offset];
     if (ent != nullptr) {
         auto idx = std::find(LRU.begin(), LRU.end(), ent);
         assert(idx != LRU.end());
         LRU.erase(idx);
     } else {
+        if (!isNew && verbose) {
+            std::clog << "warning: evicted unit " << offset << " in object " << *info->io << " had to be reloaded\n";
+        }
         DWARFReader r(info->io, offset);
         ent = make_shared<Unit>(info, r);
         if (verbose > 2)
@@ -167,6 +171,7 @@ UnitsCache::get(const Info *info, off_t offset)
         // don't erase from the map - we hold on to the offsets so we can quickly
         // determine which unit contains a particular DIE.
         byOffset[old->offset] = 0;
+        std::clog << "evicted unit " << old->offset << " in object " << *info->io << "\n";
     }
     return ent;
 }
@@ -939,6 +944,24 @@ CFI::findFDE(Elf::Addr addr) const
     return nullptr;
 }
 
+template<typename T> std::vector<std::pair<string, int>>
+sourceFromAddrInUnits(const T &units, uintmax_t addr) {
+    std::vector<std::pair<string, int>> info;
+    for (const auto &unit : units) {
+        auto lines = unit->getLines();
+        if (lines) {
+            for (auto i = lines->matrix.begin(); i != lines->matrix.end(); ++i) {
+                if (i->end_sequence)
+                    continue;
+                auto next = i+1;
+                if (i->addr <= addr && next->addr > addr)
+                    info.emplace_back(i->file->name, i->line);
+            }
+        }
+    }
+    return info;
+}
+
 std::vector<std::pair<string, int>>
 Info::sourceFromAddr(uintmax_t addr)
 {
@@ -955,23 +978,10 @@ Info::sourceFromAddr(uintmax_t addr)
             }
         }
     }
-    if (units.empty()) {
-        auto allUnits = getUnits();
-        std::copy(allUnits.begin(), allUnits.end(), std::back_inserter(units));
-    }
-    for (const auto &unit : units) {
-        auto lines = unit->getLines();
-        if (lines) {
-            for (auto i = lines->matrix.begin(); i != lines->matrix.end(); ++i) {
-                if (i->end_sequence)
-                    continue;
-                auto next = i+1;
-                if (i->addr <= addr && next->addr > addr)
-                    info.emplace_back(i->file->name, i->line);
-            }
-        }
-    }
-    return info;
+    if (units.empty())
+        return sourceFromAddrInUnits(getUnits(), addr);
+    else
+        return sourceFromAddrInUnits(units, addr);
 }
 
 CallFrame::CallFrame()

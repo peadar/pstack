@@ -459,8 +459,45 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             fileName = stringify(*obj->io);
             Elf::Addr objIp = frame->scopeIP() - loadAddr;
             Dwarf::Info::sptr dwarf = getDwarf(obj);
-            std::list<Dwarf::Unit::sptr> units;
+
+            std::string sigmsg = frame->cie != nullptr && frame->cie->isSignalHandler ?  "[signal handler called]" : "";
+
+            // We may need to process a Units iterable, or a std::list<Unit::sptr>
+            auto processUnits = [ this, &os, &frame, &symName, &objIp, &dwarf, &sym, &options, &obj, &sigmsg ] (auto units) {
+                for (const auto &u : units) {
+                    // find the DIE for this function
+                    const auto &unitRoot = u->root();
+                    auto de = Dwarf::findEntryForFunc(objIp, unitRoot);
+                    if (de) {
+                        frame->function = de;
+                        frame->dwarf = dwarf; // hold on to 'de'
+                        os << "in ";
+                        if (!dieName(os, de)) {
+                            obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+                            if (symName != "")
+                                symName += "%"; // mark the lack of a name in a dwarf DIE.
+                            else
+                                symName = "<unknown>";
+                            os << symName;
+                        }
+                        os << sigmsg;
+                        auto lowpc = de.attribute(Dwarf::DW_AT_low_pc);
+                        if (lowpc.valid())
+                            os << "+" << objIp - uintmax_t(lowpc);
+                        os << "(";
+                        if (options[PstackOption::doargs]) {
+                            os << ArgPrint(*this, frame);
+                        }
+                        os << ")";
+                        return u;
+                    }
+                }
+                return Dwarf::Unit::sptr();
+            };
+
+            Dwarf::Unit::sptr dwarfUnit;
             if (dwarf->hasARanges()) {
+                std::list<Dwarf::Unit::sptr> units;
                 for (const auto &rangeset : dwarf->getARanges()) {
                     for (const auto range : rangeset.ranges) {
                         if (objIp >= range.start && objIp <= range.start + range.length) {
@@ -469,42 +506,10 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         }
                     }
                 }
+                dwarfUnit = processUnits(units);
             } else {
                 // no ranges - try each dwarf unit in turn. (This seems to happen for single-unit exe's only, so it's no big loss)
-                auto allUnits = dwarf->getUnits();
-                std::copy(allUnits.begin(), allUnits.end(), std::back_inserter(units));
-            }
-
-            std::string sigmsg = frame->cie != nullptr && frame->cie->isSignalHandler ?  "[signal handler called]" : "";
-            Dwarf::Unit::sptr dwarfUnit;
-            for (const auto &u : units) {
-                // find the DIE for this function
-                const auto &unitRoot = u->root();
-                auto de = Dwarf::findEntryForFunc(objIp, unitRoot);
-                if (de) {
-                    frame->function = de;
-                    frame->dwarf = dwarf; // hold on to 'de'
-                    os << "in ";
-                    if (!dieName(os, de)) {
-                        obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
-                        if (symName != "")
-                            symName += "%"; // mark the lack of a name in a dwarf DIE.
-                        else
-                            symName = "<unknown>";
-                        os << symName;
-                    }
-                    os << sigmsg;
-                    auto lowpc = de.attribute(Dwarf::DW_AT_low_pc);
-                    if (lowpc.valid())
-                        os << "+" << objIp - uintmax_t(lowpc);
-                    os << "(";
-                    if (options[PstackOption::doargs]) {
-                        os << ArgPrint(*this, frame);
-                    }
-                    os << ")";
-                    dwarfUnit = u;
-                    break;
-                }
+                dwarfUnit = processUnits(dwarf->getUnits());
             }
 
             if (!dwarfUnit) {
