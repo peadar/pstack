@@ -421,7 +421,7 @@ dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
       return dieName(os, Dwarf::DIE(spec), first);
    }
    auto parent = die.getParentOffset();
-   bool printedParent = parent != 0 && dieName(os, die.getUnit()->offsetToDIE(parent), false);
+   bool printedParent = parent != 0 && dieName(os, die.getUnit()->offsetToDIE(0, parent), false);
    if (die.tag() != Dwarf::DW_TAG_compile_unit) { // don't print out compile unit
       if (printedParent)
          os << "::";

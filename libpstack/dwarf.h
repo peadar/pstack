@@ -283,12 +283,13 @@ class RawDIE {
     static void readValue(DWARFReader &, Form form, Value &value, const Unit *);
     const Abbreviation *type;
     std::vector<Value> values;
-    off_t parent;
+    off_t parent; // 0 implies we do not yet know the parent's offset.
     off_t firstChild;
     off_t nextSibling;
     friend class Unit; // XXX
+    friend struct DIEIter; // XXX
 public:
-    RawDIE(Unit *, DWARFReader &, size_t, Unit *, off_t self, off_t parent);
+    RawDIE(Unit *, DWARFReader &, size_t, off_t self, off_t parent);
     ~RawDIE();
     friend class Attribute;
     friend class DIE;
@@ -304,22 +305,25 @@ class Unit : public std::enable_shared_from_this<Unit> {
     using AllEntries = std::unordered_map<off_t, RawDIE>;
     AllEntries allEntries;
 public:
-    void loadChildDIE(const DIE &parent, off_t dieOff);
+    AllEntries::iterator loadChildDIE(off_t parentOff, off_t dieOff);
     size_t entryCount() const { return allEntries.size(); }
     typedef std::shared_ptr<Unit> sptr;
     typedef std::shared_ptr<const Unit> csptr;
     const Abbreviation *findAbbreviation(size_t) const;
-    DIE root() { return DIE(shared_from_this(), topDIEOffset, &allEntries.at(topDIEOffset)); }
-    DIE offsetToDIE(size_t offset);
+    DIE root() { return offsetToDIE(0, topDIEOffset); }
+    DIE offsetToDIE(size_t parentOffset, size_t offset);
     const Info *dwarf;
     Reader::csptr io;
+
+    // header fields
     off_t offset;
-    off_t end; // start of next unit.
+    uint32_t length;
+    off_t end; // a.k.a. start of next unit.
+    uint16_t version;
+
     size_t dwarfLen;
     void decodeEntries(DWARFReader &r, off_t parent);
     AllEntries::iterator decodeEntry(DWARFReader &r, off_t parent);
-    uint32_t length;
-    uint16_t version;
     uint8_t addrlen;
     Unit(const Info *, DWARFReader &);
     std::string name();
@@ -504,13 +508,21 @@ public:
 
 struct DIEIter {
     const std::shared_ptr<const Unit> u;
+    off_t parent;
     DIE currentDIE;
     const DIE &operator *() const { return currentDIE; }
     DIEIter &operator++() {
         currentDIE = currentDIE.nextSibling();
+        // if we loaded the child by a direct jump, maybe update its parent.
+        if (currentDIE && parent != 0 && currentDIE.raw->parent == 0)
+            currentDIE.raw->parent = parent;
+
         return *this;
     }
-    DIEIter(const DIE &first) : currentDIE(first) { }
+    DIEIter(const DIE &first, off_t parent_) : parent(parent_), currentDIE(first) {
+        if (parent != 0 && currentDIE.raw->parent == 0)
+            currentDIE.raw->parent = parent;
+    }
     bool operator == (const DIEIter &rhs) const {
         if (!currentDIE)
             return !rhs.currentDIE;
