@@ -746,6 +746,24 @@ Unit::getLines()
     return lines.get();
 }
 
+void
+RawDIE::fixlinks(Unit *unit, DWARFReader &r, off_t offset)
+{
+    if (type->hasChildren) {
+        firstChild = r.getOffset();
+        if (nextSibling == 0) {
+            // We can't work out where our next sibling is without
+            // dragging in our children. Do that, and the new offset is our next sib.
+            for (auto &it : DIE(unit->shared_from_this(), offset, this).children())
+                (void)it;
+        }
+    } else {
+        nextSibling = r.getOffset(); // we have no children, so next DIE is next sib
+        firstChild = 0; // no children.
+    }
+}
+
+
 RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t offset, off_t parent_)
     : type(unit->findAbbreviation(abbrev))
     , values(type->forms.size())
@@ -760,20 +778,6 @@ RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t offset, off_t pa
         }
         ++i;
     }
-
-    if (type->hasChildren) {
-        firstChild = r.getOffset();
-        if (nextSibling == 0) {
-            // We can't work out where our next sibling is without
-            // dragging in our children. Do that, and the new offset is our next sib.
-            for (auto &it : DIE(unit->shared_from_this(), offset, this).children())
-                (void)it;
-        }
-    } else {
-        nextSibling = r.getOffset(); // we have no children, so next DIE is next sib
-        firstChild = 0; // no children.
-    }
-
 }
 
 const Abbreviation *
@@ -796,6 +800,7 @@ Unit::decodeEntry(DWARFReader &r, off_t parent)
     auto p = allEntries.emplace(std::piecewise_construct,
                     std::forward_as_tuple(offset),
                     std::forward_as_tuple(this, r, abbrev, offset, parent));
+    p.first->second.fixlinks(this, r, offset);
     return p.first;
 }
 

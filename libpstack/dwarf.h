@@ -289,6 +289,7 @@ class RawDIE {
     friend class Unit; // XXX
     friend struct DIEIter; // XXX
 public:
+    void fixlinks(Unit *, DWARFReader &, off_t);
     RawDIE(Unit *, DWARFReader &, size_t, off_t self, off_t parent);
     ~RawDIE();
     friend class Attribute;
