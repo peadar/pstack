@@ -92,11 +92,14 @@ dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
             jo.field("arg", int(r->getu32()));
             break;
 
-        case DW_CFA_offset_extended:
+        case DW_CFA_offset_extended: {
+            auto reg = r->getuleb128();
+            auto arg = r->getuleb128();
             jo
-                .field("reg", r->getuleb128())
-                .field("arg", r->getuleb128());
+                .field("reg", reg)
+                .field("arg", arg);
             break;
+        }
 
         case DW_CFA_restore_extended:
             jo.field("reg", r->getuleb128());
@@ -108,17 +111,24 @@ dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
             jo.field("reg",  r->getuleb128());
             break;
 
-        case DW_CFA_register:
+        case DW_CFA_register: {
+            auto reg1 = r->getuleb128();
+            auto reg2 = r->getuleb128();
             jo
-                .field("reg1", r->getuleb128())
-                .field("reg2", r->getuleb128());
+                .field("reg1", reg1)
+                .field("reg2", reg2);
             break;
+        }
 
-        case DW_CFA_def_cfa:
+        case DW_CFA_def_cfa: {
+            auto reg = r->getuleb128();
+            auto offset = r->getuleb128();
+
             jo
-                .field("reg", r->getuleb128())
-                .field("offset", r->getuleb128());
+                .field("reg", reg)
+                .field("offset", offset);
             break;
+        }
 
         case DW_CFA_def_cfa_register:
             jo.field("reg", r->getuleb128());
@@ -134,18 +144,24 @@ dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
             r->skip(len);
             break;
 
-        case DW_CFA_expression:
+        case DW_CFA_expression: {
+            auto reg = r->getuleb128();
+            auto len = r->getuleb128();
             jo
-                .field("reg",  r->getuleb128())
-                .field("length",  len = r->getuleb128());
+                .field("reg", reg)
+                .field("length", len);
             r->skip(len);
             break;
+        }
 
-        case DW_CFA_def_cfa_sf:
+        case DW_CFA_def_cfa_sf: {
+            auto reg = r->getuleb128();
+            auto off = r->getuleb128();
             jo
-                .field("register", r->getuleb128())
-                .field("offset", r->getuleb128());
+                .field("register", reg)
+                .field("offset", off);
             break;
+        }
 
         case DW_CFA_def_cfa_offset_sf:
             jo.field("offset", r->getuleb128());
@@ -169,10 +185,13 @@ dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
             break;
 
         case DW_CFA_GNU_negative_offset_extended:
-        case DW_CFA_offset_extended_sf:
-            jo.field("register", r->getuleb128())
-                .field("scale", r->getsleb128());
+        case DW_CFA_offset_extended_sf: {
+            auto reg = r->getuleb128();
+            auto scale = r->getsleb128();
+            jo.field("register", reg)
+                .field("scale", scale);
             break;
+        }
 
         // these instructions have no arguments, so nothing more to show
         case DW_CFA_nop:

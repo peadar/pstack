@@ -196,7 +196,7 @@ public:
     const Ehdr &getHeader() const { return elfHeader; }
     const Phdr *getSegmentForAddress(Off) const;
     Notes notes;
-
+    mutable Object::sptr debugData; // symbol table data as extracted from .gnu.debugdata
 private:
     // Elf header, section headers, program headers.
     Ehdr elfHeader;
@@ -206,7 +206,6 @@ private:
     std::map<Word, ProgramHeaders> programHeaders;
 
     mutable bool debugLoaded; // We've at least attempted to load debugObject: don't try again
-    mutable Object::sptr debugData; // symbol table data as extracted from .gnu.debugdata
     mutable Object::sptr debugObject; // debug object as per .gnu_debuglink/other.
 
     std::unique_ptr<SymHash> hash; // Symbol hash table.
