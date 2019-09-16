@@ -90,7 +90,7 @@ emain(int argc, char **argv)
     bool python = false;
     bool coreOnExit = false;
 
-    while ((c = getopt(argc, argv, "F:b:d:CD:hjsVvag:pt")) != -1) {
+    while ((c = getopt(argc, argv, "F:b:d:CD:hjsVvag:ptz:")) != -1) {
         switch (c) {
         case 'F': g_openPrefix = optarg;
                   break;
@@ -103,9 +103,12 @@ emain(int argc, char **argv)
             std::cout << json(*di);
             goto done;
         }
+        case 'z':
         case 'd': {
             /* Undocumented option to dump image contents */
             std::cout << json(Elf::Object(imageCache, loadFile(optarg)));
+            Elf::Object obj(imageCache, loadFile(optarg));
+            std::cout << json( c == 'd' ? obj : *obj.debugData);
             goto done;
         }
         case 'h':
