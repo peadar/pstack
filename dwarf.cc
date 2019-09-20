@@ -754,10 +754,12 @@ void
 RawDIE::fixlinks(Unit *unit, DWARFReader &r, off_t offset)
 {
     if (type->hasChildren) {
+        // If the type has children, last offset read is the first child.
         firstChild = r.getOffset();
         if (nextSibling == 0) {
-            // We can't work out where our next sibling is without
-            // dragging in our children. Do that, and the new offset is our next sib.
+            // Need to work out what the next sibling is, and we don't have DW_AT_sibling
+            // Run through all our children. decodeEntries will update the
+            // parent's (our) nextSibling.
             for (auto &it : DIE(unit->shared_from_this(), offset, this).children())
                 (void)it;
         }
