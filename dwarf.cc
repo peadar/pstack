@@ -764,7 +764,7 @@ RawDIE::fixlinks(Unit *unit, DWARFReader &r, off_t offset)
 }
 
 
-RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t offset, off_t parent_)
+RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
     : type(unit->findAbbreviation(abbrev))
     , values(type->forms.size())
     , parent(parent_)
@@ -799,7 +799,7 @@ Unit::decodeEntry(DWARFReader &r, off_t parent)
     }
     auto p = allEntries.emplace(std::piecewise_construct,
                     std::forward_as_tuple(offset),
-                    std::forward_as_tuple(this, r, abbrev, offset, parent));
+                    std::forward_as_tuple(this, r, abbrev, parent));
     p.first->second.fixlinks(this, r, offset);
     return p.first;
 }
