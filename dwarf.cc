@@ -778,7 +778,8 @@ RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
     for (auto form : type->forms) {
         readValue(r, form, values[i], unit);
         if (int(i) == type->nextSibIdx) {
-            nextSibling = values[i].sdata;
+            // our offsets are relative to the section. The attribute is relative to the unit.
+            nextSibling = values[i].sdata + unit->offset;
         }
         ++i;
     }
