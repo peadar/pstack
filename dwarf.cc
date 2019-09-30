@@ -195,7 +195,7 @@ Info::offsetToDIE(off_t offset) const
     UnitIterator end;
     for (int i = 1; start != end; ++start, ++i) {
         const auto &u = *start;
-        DIE entry = u->offsetToDIE(offset);
+        DIE entry = u->offsetToDIE(0, offset);
         if (entry) {
             if (verbose > 2)
                 std::clog << "search for DIE at " << offset << " started at " << uOffset <<" and took " << i << " iterations\n";
@@ -781,10 +781,8 @@ RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
     size_t i = 0;
     for (auto form : type->forms) {
         readValue(r, form, values[i], unit);
-        if (int(i) == type->nextSibIdx) {
+        if (int(i) == type->nextSibIdx)
             nextSibling = values[i].sdata + unit->offset;
-            assert(nextSibling > offset);
-        }
         ++i;
     }
 }
