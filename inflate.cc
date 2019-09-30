@@ -4,7 +4,7 @@
 #include <zlib.h>
 
 InflateReader::InflateReader(size_t inflatedSize, const Reader &upstream)
-    : MemReader(inflatedSize, new char[inflatedSize])
+    : MemReader(std::string("lzma-decoded content from ") + stringify(upstream), inflatedSize, new char[inflatedSize])
 {
     char xferbuf[32768];
 

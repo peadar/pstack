@@ -144,21 +144,17 @@ Info::pubnames() const
     return pubnameUnits;
 }
 
-static size_t UNITCACHE_SIZE=64;
+static size_t UNITCACHE_SIZE=128;
 
 Unit::sptr
 UnitsCache::get(const Info *info, off_t offset)
 {
-    bool isNew = byOffset.find(offset) == byOffset.end();
     auto &ent = byOffset[offset];
     if (ent != nullptr) {
         auto idx = std::find(LRU.begin(), LRU.end(), ent);
         assert(idx != LRU.end());
         LRU.erase(idx);
     } else {
-        if (!isNew && verbose) {
-            std::clog << "warning: evicted unit " << offset << " in object " << *info->io << " had to be reloaded\n";
-        }
         DWARFReader r(info->io, offset);
         ent = make_shared<Unit>(info, r);
         if (verbose > 2)
@@ -171,7 +167,8 @@ UnitsCache::get(const Info *info, off_t offset)
         // don't erase from the map - we hold on to the offsets so we can quickly
         // determine which unit contains a particular DIE.
         byOffset[old->offset] = 0;
-        std::clog << "evicted unit " << old->offset << " in object " << *info->io << "\n";
+        if (verbose)
+            std::clog << "evicted unit " << old->offset << " in object " << *info->io << "\n";
     }
     return ent;
 }
@@ -703,6 +700,14 @@ RawDIE::readValue(DWARFReader &r, Form form, Value &value, const Unit *unit)
     }
 }
 
+static int totalDIEs = 0;
+static int maxDIEs = 0;
+__attribute__((destructor))
+void printDIEtotal()
+{
+    fprintf(stderr, "total dies: %d, max dies: %d\n", totalDIEs, maxDIEs);
+}
+
 RawDIE::~RawDIE()
 {
     int i = 0;
@@ -720,6 +725,7 @@ RawDIE::~RawDIE()
         }
         ++i;
     }
+    --totalDIEs;
 }
 
 const LineInfo *
@@ -750,10 +756,12 @@ void
 RawDIE::fixlinks(Unit *unit, DWARFReader &r, off_t offset)
 {
     if (type->hasChildren) {
+        // If the type has children, last offset read is the first child.
         firstChild = r.getOffset();
         if (nextSibling == 0) {
-            // We can't work out where our next sibling is without
-            // dragging in our children. Do that, and the new offset is our next sib.
+            // Need to work out what the next sibling is, and we don't have DW_AT_sibling
+            // Run through all our children. decodeEntries will update the
+            // parent's (our) nextSibling.
             for (auto &it : DIE(unit->shared_from_this(), offset, this).children())
                 (void)it;
         }
@@ -773,9 +781,8 @@ RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
     size_t i = 0;
     for (auto form : type->forms) {
         readValue(r, form, values[i], unit);
-        if (int(i) == type->nextSibIdx) {
-            nextSibling = values[i].sdata;
-        }
+        if (int(i) == type->nextSibIdx)
+            nextSibling = values[i].sdata + unit->offset;
         ++i;
     }
 }
