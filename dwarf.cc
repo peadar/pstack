@@ -167,6 +167,8 @@ UnitsCache::get(const Info *info, off_t offset)
         // don't erase from the map - we hold on to the offsets so we can quickly
         // determine which unit contains a particular DIE.
         byOffset[old->offset] = 0;
+        if (verbose)
+            std::clog << "evicted unit " << old->offset << " in object " << *info->io << "\n";
     }
     return ent;
 }
@@ -780,8 +782,8 @@ RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
     for (auto form : type->forms) {
         readValue(r, form, values[i], unit);
         if (int(i) == type->nextSibIdx) {
-            // our offsets are relative to the section. The attribute is relative to the unit.
             nextSibling = values[i].sdata + unit->offset;
+            assert(nextSibling > offset);
         }
         ++i;
     }
