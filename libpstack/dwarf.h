@@ -436,12 +436,12 @@ struct CIE {
  */
 struct CFI {
     const Info *dwarf;
-    Elf::Word sectionAddr; // virtual address of this section  (may need to be offset by load address)
+    Elf::Addr sectionAddr; // virtual address of this section  (may need to be offset by load address)
     Reader::csptr io;
     FIType type;
     std::map<Elf::Addr, CIE> cies;
     std::list<FDE> fdeList;
-    CFI(Info *, Elf::Word addr, Reader::csptr io, FIType);
+    CFI(Info *, Elf::Addr addr, Reader::csptr io, FIType);
     CFI() = delete;
     CFI(const CFI &) = delete;
     Elf::Addr decodeCIEFDEHdr(DWARFReader &, FIType, Elf::Off *cieOff); // cieOFF set to -1 if this is CIE, set to offset of associated CIE for an FDE

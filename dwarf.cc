@@ -158,7 +158,7 @@ UnitsCache::get(const Info *info, off_t offset)
         DWARFReader r(info->io, offset);
         ent = make_shared<Unit>(info, r);
         if (verbose > 2)
-            std::clog << "create unit " << ent->name() << "@" << offset << std::endl;
+            std::clog << "create unit " << ent->name() << "@" << offset << " in " << *info->io << "\n";
     }
     LRU.push_front(ent);
     if (LRU.size() > UNITCACHE_SIZE) {
@@ -167,8 +167,8 @@ UnitsCache::get(const Info *info, off_t offset)
         // don't erase from the map - we hold on to the offsets so we can quickly
         // determine which unit contains a particular DIE.
         byOffset[old->offset] = 0;
-        if (verbose)
-            std::clog << "evicted unit " << old->offset << " in object " << *info->io << "\n";
+        if (verbose > 2)
+            std::clog << "evicted unit " << old->name() << "@" << old->offset << " in " << *info->io << "\n";
     }
     return ent;
 }
@@ -936,7 +936,7 @@ CFI::isCIE(Elf::Addr cieid)
     return (type == FI_DEBUG_FRAME && cieid == 0xffffffff) || (type == FI_EH_FRAME && cieid == 0);
 }
 
-CFI::CFI(Info *info, Elf::Word addr, Reader::csptr io_, enum FIType type_)
+CFI::CFI(Info *info, Elf::Addr addr, Reader::csptr io_, enum FIType type_)
     : dwarf(info)
     , sectionAddr(addr)
     , io(std::move(io_))
