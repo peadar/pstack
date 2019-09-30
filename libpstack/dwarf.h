@@ -313,7 +313,7 @@ public:
     typedef std::shared_ptr<const Unit> csptr;
     const Abbreviation *findAbbreviation(size_t) const;
     DIE root() { return offsetToDIE(0, topDIEOffset); }
-    DIE offsetToDIE(size_t parentOffset, size_t offset);
+    DIE offsetToDIE(off_t parentOffset, off_t offset);
     const Info *dwarf;
     Reader::csptr io;
 
