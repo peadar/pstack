@@ -762,8 +762,11 @@ RawDIE::fixlinks(Unit *unit, DWARFReader &r, off_t offset)
             // Need to work out what the next sibling is, and we don't have DW_AT_sibling
             // Run through all our children. decodeEntries will update the
             // parent's (our) nextSibling.
+            RawDIE *last = 0;
             for (auto &it : DIE(unit->shared_from_this(), offset, this).children())
-                (void)it;
+                last = it.raw;
+            if (last)
+                last->nextSibling = 0;
         }
     } else {
         nextSibling = r.getOffset(); // we have no children, so next DIE is next sib
@@ -771,11 +774,11 @@ RawDIE::fixlinks(Unit *unit, DWARFReader &r, off_t offset)
     }
 }
 
-
 RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
     : type(unit->findAbbreviation(abbrev))
     , values(type->forms.size())
     , parent(parent_)
+    , firstChild(0)
     , nextSibling(0)
 {
     size_t i = 0;

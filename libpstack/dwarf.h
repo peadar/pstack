@@ -182,6 +182,7 @@ class DIE {
     friend struct DIEIter;
     friend class Attribute;
     friend class DIEAttributes;
+    friend class RawDIE;
 public:
     off_t getParentOffset() const;
     off_t getOffset() const { return offset; }
