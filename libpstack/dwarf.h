@@ -185,7 +185,6 @@ class DIE {
     friend class DIEAttributes;
     friend class RawDIE;
 public:
-    bool mightHaveAddr(Elf::Addr addr) const;
     ContainsAddr containsAddress(Elf::Addr addr) const;
     off_t getParentOffset() const;
     off_t getOffset() const { return offset; }
@@ -295,7 +294,6 @@ class RawDIE {
     friend class Unit; // XXX
     friend struct DIEIter; // XXX
 public:
-    void fixlinks(Unit *, DWARFReader &, off_t);
     RawDIE(Unit *, DWARFReader &, size_t, off_t parent);
     ~RawDIE();
     friend class Attribute;

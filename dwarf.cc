@@ -769,19 +769,6 @@ Unit::getLines()
     return lines.get();
 }
 
-void
-RawDIE::fixlinks(Unit *unit, DWARFReader &r, off_t offset)
-{
-    if (type->hasChildren) {
-        // If the type has children, last offset read is the first child.
-        firstChild = r.getOffset();
-
-    } else {
-        nextSibling = r.getOffset(); // we have no children, so next DIE is next sib
-        firstChild = 0; // no children.
-    }
-}
-
 RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
     : type(unit->findAbbreviation(abbrev))
     , values(type->forms.size())
@@ -795,6 +782,13 @@ RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
         if (int(i) == type->nextSibIdx)
             nextSibling = values[i].sdata + unit->offset;
         ++i;
+    }
+    if (type->hasChildren) {
+        // If the type has children, last offset read is the first child.
+        firstChild = r.getOffset();
+    } else {
+        nextSibling = r.getOffset(); // we have no children, so next DIE is next sib
+        firstChild = 0; // no children.
     }
 }
 
@@ -818,7 +812,6 @@ Unit::decodeEntry(DWARFReader &r, off_t parent)
     auto p = allEntries.emplace(std::piecewise_construct,
                     std::forward_as_tuple(offset),
                     std::forward_as_tuple(this, r, abbrev, parent));
-    p.first->second.fixlinks(this, r, offset);
     return p.first;
 }
 
@@ -1343,7 +1336,6 @@ Attribute::operator DIE() const
     // Nope - try other units.
     return dwarf->offsetToDIE(off);
 }
-
 off_t
 DIE::getParentOffset() const
 {
@@ -1551,6 +1543,7 @@ findEntryForFunc(Elf::Addr address, const DIE &entry)
             }
             return DIE();
     }
+    return DIE();
 }
 
 DIEIter
