@@ -518,11 +518,10 @@ struct DIEIter {
         // if we loaded the child by a direct jump, maybe update its parent.
         if (currentDIE && parent != 0 && currentDIE.raw->parent == 0)
             currentDIE.raw->parent = parent;
-
         return *this;
     }
     DIEIter(const DIE &first, off_t parent_) : parent(parent_), currentDIE(first) {
-        if (parent != 0 && currentDIE.raw->parent == 0)
+        if (currentDIE && parent != 0 && currentDIE.raw->parent == 0)
             currentDIE.raw->parent = parent;
     }
     bool operator == (const DIEIter &rhs) const {

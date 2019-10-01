@@ -157,7 +157,7 @@ UnitsCache::get(const Info *info, off_t offset)
     } else {
         DWARFReader r(info->io, offset);
         ent = make_shared<Unit>(info, r);
-        if (verbose > 2)
+        if (verbose >= 2)
             std::clog << "create unit " << ent->name() << "@" << offset << " in " << *info->io << "\n";
     }
     LRU.push_front(ent);
@@ -280,7 +280,6 @@ Unit::Unit(const Info *di, DWARFReader &r)
                 std::forward_as_tuple(code),
                 std::forward_as_tuple(abbR));
     topDIEOffset = r.getOffset();
-
     r.setOffset(end);
 }
 

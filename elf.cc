@@ -111,21 +111,6 @@ Object::Object(ImageCache &cache, Reader::csptr io_)
         for (auto &h : sectionHeaders) {
             auto name = sshdr.io->readString(h.shdr.sh_name);
             namedSection[name] = &h;
-            // .gnu_debugdata is a separate LZMA-compressed ELF image with just
-            // a symbol table.
-            if (name == ".gnu_debugdata") {
-#ifdef WITH_LZMA
-                debugData = make_shared<Object>(imageCache,
-                      make_shared<const LzmaReader>(h.io));
-#else
-                static bool warned = false;
-                if (!warned) {
-                    std::clog << "warning: no compiled support for LZMA - "
-                          "can't decode debug data in " << *io << "\n";
-                    warned = true;
-                }
-#endif
-            }
         }
         auto &tab = getSection(".hash", SHT_HASH);
         auto &syms = getLinkedSection(tab);
@@ -205,6 +190,26 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
             return true;
         }
     }
+
+    // .gnu_debugdata is a separate LZMA-compressed ELF image with just
+    // a symbol table.
+    //
+    if (debugData == nullptr) {
+#ifdef WITH_LZMA
+        const auto &sect = getSection(".gnu_debugdata", SHT_NULL);
+        if (sect)
+            debugData = make_shared<Object>(imageCache,
+                                            make_shared<const LzmaReader>(sect.io));
+#else
+        static bool warned = false;
+        if (!warned) {
+            std::clog << "warning: no compiled support for LZMA - "
+                  "can't decode debug data in " << *io << "\n";
+            warned = true;
+        }
+#endif
+    }
+
     if (debugData)
         return debugData->findSymbolByAddress(addr, type, sym, name);
     return false;
@@ -213,12 +218,13 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
 const Section &
 Object::getSection(const string &name, Word type) const
 {
+    static Section emptySection;
     auto s = namedSection.find(name);
     if (s == namedSection.end() || (s->second->shdr.sh_type != type && type != SHT_NULL)) {
         Object *debug = getDebug();
         if (debug)
             return debug->getSection(name, type);
-        return sectionHeaders[0];
+        return emptySection;
     }
     return *s->second;
 }
@@ -238,6 +244,8 @@ Object::getSection(Word idx) const
 const Section &
 Object::getLinkedSection(const Section &from) const
 {
+    if (!from)
+        return from;
     if (&from >= &sectionHeaders[0] && &from <= &sectionHeaders[sectionHeaders.size() - 1])
         return sectionHeaders[from.shdr.sh_link];
     return getDebug()->sectionHeaders[from.shdr.sh_link];
@@ -320,7 +328,7 @@ Object::getDebug() const
             auto &d = debugObject->getSection(".dynamic", SHT_NULL);
             if (d.shdr.sh_addr != s.shdr.sh_addr) {
                 Elf::Addr diff = s.shdr.sh_addr - d.shdr.sh_addr;
-                std::clog << "warning: dynamic section at different offset: diff is " << std::hex << diff << std::endl;
+                std::clog << "warning: dynamic section for debug symbols " << *debugObject->io << " loaded for object " << *this->io << " at different offset: diff is " << std::hex << diff << std::endl;
                 // looks like the exe has been prelinked - adjust the debug info too.
                 for (auto &sect : debugObject->sectionHeaders) {
                     sect.shdr.sh_addr += diff;
