@@ -182,6 +182,7 @@ class DIE {
     friend struct DIEIter;
     friend class Attribute;
     friend class DIEAttributes;
+    friend class RawDIE;
 public:
     off_t getParentOffset() const;
     off_t getOffset() const { return offset; }
@@ -312,7 +313,7 @@ public:
     typedef std::shared_ptr<const Unit> csptr;
     const Abbreviation *findAbbreviation(size_t) const;
     DIE root() { return offsetToDIE(0, topDIEOffset); }
-    DIE offsetToDIE(size_t parentOffset, size_t offset);
+    DIE offsetToDIE(off_t parentOffset, off_t offset);
     const Info *dwarf;
     Reader::csptr io;
 

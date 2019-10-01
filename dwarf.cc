@@ -285,8 +285,8 @@ Unit::Unit(const Info *di, DWARFReader &r)
 }
 
 DIE
-Unit::offsetToDIE(size_t parentOffset, size_t offset) {
-    if (offset == 0)
+Unit::offsetToDIE(off_t parentOffset, off_t offset) {
+    if (offset == 0 || offset < this->offset || offset >= this->end)
         return DIE();
     auto it = allEntries.find(offset);
     if (it == allEntries.end())
@@ -762,8 +762,11 @@ RawDIE::fixlinks(Unit *unit, DWARFReader &r, off_t offset)
             // Need to work out what the next sibling is, and we don't have DW_AT_sibling
             // Run through all our children. decodeEntries will update the
             // parent's (our) nextSibling.
+            RawDIE *last = 0;
             for (auto &it : DIE(unit->shared_from_this(), offset, this).children())
-                (void)it;
+                last = it.raw;
+            if (last)
+                last->nextSibling = 0;
         }
     } else {
         nextSibling = r.getOffset(); // we have no children, so next DIE is next sib
@@ -771,11 +774,11 @@ RawDIE::fixlinks(Unit *unit, DWARFReader &r, off_t offset)
     }
 }
 
-
 RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
     : type(unit->findAbbreviation(abbrev))
     , values(type->forms.size())
     , parent(parent_)
+    , firstChild(0)
     , nextSibling(0)
 {
     size_t i = 0;
@@ -983,6 +986,7 @@ template<typename T> std::vector<std::pair<string, int>>
 sourceFromAddrInUnits(const T &units, uintmax_t addr) {
     std::vector<std::pair<string, int>> info;
     for (const auto &unit : units) {
+        DIE d = unit->root();
         auto lines = unit->getLines();
         if (lines) {
             for (auto i = lines->matrix.begin(); i != lines->matrix.end(); ++i) {
@@ -1319,7 +1323,7 @@ Attribute::operator DIE() const
     }
 
     // Try this unit first (if we're dealing with the same Info)
-    if (dwarf == dieref.unit->dwarf) {
+    if (dwarf == dieref.unit->dwarf && dieref.unit->offset <= off && dieref.unit->end > off) {
         const auto otherEntry = dieref.unit->offsetToDIE(0, off);
         if (otherEntry)
             return otherEntry;
@@ -1338,11 +1342,12 @@ DIE::getParentOffset() const
 Unit::AllEntries::iterator
 Unit::loadChildDIE(off_t parent, off_t dieOff)
 {
-    if (allEntries.find(dieOff) == allEntries.end()) {
+    auto it = allEntries.find(dieOff);
+    if (it == allEntries.end()) {
         DWARFReader r(io, dieOff);
         return decodeEntry(r, parent);
     }
-    return allEntries.end();
+    return it;
 }
 
 DIE
