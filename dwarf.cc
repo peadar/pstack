@@ -329,6 +329,24 @@ Attribute::name() const
     return DW_AT_none;
 }
 
+Ranges
+Attribute::ranges() const
+{
+    Ranges ranges;
+    auto dwarf = die().getUnit()->dwarf;
+    auto elf = dwarf->elf;
+    auto &sec = elf->getSection(".debug_ranges", SHT_NULL);
+    DWARFReader reader(sec.io, uintmax_t(*this));
+    for (;;) {
+        auto start = reader.getuint(sizeof (Elf::Addr));
+        auto end = reader.getuint(sizeof (Elf::Addr));
+        if (start == 0 && end == 0)
+            break;
+        ranges.emplace_back(std::make_pair(start, end));
+    }
+    return ranges;
+}
+
 Attribute::operator intmax_t() const
 {
     if (!valid())
@@ -757,16 +775,7 @@ RawDIE::fixlinks(Unit *unit, DWARFReader &r, off_t offset)
     if (type->hasChildren) {
         // If the type has children, last offset read is the first child.
         firstChild = r.getOffset();
-        if (nextSibling == 0) {
-            // Need to work out what the next sibling is, and we don't have DW_AT_sibling
-            // Run through all our children. decodeEntries will update the
-            // parent's (our) nextSibling.
-            RawDIE *last = 0;
-            for (auto &it : DIE(unit->shared_from_this(), offset, this).children())
-                last = it.raw;
-            if (last)
-                last->nextSibling = 0;
-        }
+
     } else {
         nextSibling = r.getOffset(); // we have no children, so next DIE is next sib
         firstChild = 0; // no children.
@@ -986,6 +995,9 @@ sourceFromAddrInUnits(const T &units, uintmax_t addr) {
     std::vector<std::pair<string, int>> info;
     for (const auto &unit : units) {
         DIE d = unit->root();
+        if (d.containsAddress(addr) == ContainsAddr::NO)
+            continue;
+
         auto lines = unit->getLines();
         if (lines) {
             for (auto i = lines->matrix.begin(); i != lines->matrix.end(); ++i) {
@@ -1356,7 +1368,70 @@ DIE::firstChild() const {
 
 DIE
 DIE::nextSibling() const {
+
+    if (raw->nextSibling == 0) {
+        // Need to work out what the next sibling is, and we don't have DW_AT_sibling
+        // Run through all our children. decodeEntries will update the
+        // parent's (our) nextSibling.
+        RawDIE *last = 0;
+        for (auto &it : children())
+            last = it.raw;
+        if (last)
+            last->nextSibling = 0;
+    }
     return unit->offsetToDIE(raw->parent, raw->nextSibling);
+}
+
+ContainsAddr
+DIE::containsAddress(Elf::Addr addr) const
+{
+    Elf::Addr start, end;
+    auto low = attribute(DW_AT_low_pc);
+    auto high = attribute(DW_AT_high_pc);
+
+    ContainsAddr rc = ContainsAddr::UNKNOWN;
+    if (low.valid() && high.valid()) {
+        switch (low.form()) {
+            case DW_FORM_addr:
+                start = uintmax_t(low);
+                break;
+            default:
+                abort();
+                break;
+        }
+
+        switch (high.form()) {
+            case DW_FORM_addr:
+                end = uintmax_t(high);
+                break;
+            case DW_FORM_data1:
+            case DW_FORM_data2:
+            case DW_FORM_data4:
+            case DW_FORM_data8:
+            case DW_FORM_udata:
+                end = start + uintmax_t(high);
+                break;
+            default:
+                abort();
+        }
+        rc = start <= addr && end > addr ? ContainsAddr::YES : ContainsAddr::NO;
+    } else {
+        Elf::Addr base = low.valid() ? uintmax_t(low) : 0;
+        auto ranges = attribute(DW_AT_ranges);
+        if (ranges.valid()) {
+            rc = ContainsAddr::NO;
+            for (auto &range : ranges.ranges()) {
+                if (range.first + base <= addr && addr <= range.second + base ) {
+                    rc = ContainsAddr::YES;
+                    break;
+                }
+            }
+        }
+    }
+    /*std::clog << "found container for " << addr << "? " << 
+        (rc == ContainsAddr::YES ? "yes" : rc == ContainsAddr::NO ? "no" : "unknown") <<
+        std::endl;*/
+    return rc;
 }
 
 Attribute
@@ -1461,49 +1536,21 @@ typeName(const DIE &type)
 DIE
 findEntryForFunc(Elf::Addr address, const DIE &entry)
 {
-    switch (entry.tag()) {
-        case DW_TAG_subprogram: {
-            Elf::Addr start, end;
-            auto low = entry.attribute(DW_AT_low_pc);
-            auto high = entry.attribute(DW_AT_high_pc);
-            if (low.valid() && high.valid()) {
-                switch (low.form()) {
-                    case DW_FORM_addr:
-                        start = uintmax_t(low);
-                        break;
-                    default:
-                        abort();
-                        break;
-                }
-                switch (high.form()) {
-                    case DW_FORM_addr:
-                        end = uintmax_t(high);
-                        break;
-                    case DW_FORM_data1:
-                    case DW_FORM_data2:
-                    case DW_FORM_data4:
-                    case DW_FORM_data8:
-                    case DW_FORM_udata:
-                        end = start + uintmax_t(high);
-                        break;
-                    default:
-                        abort();
-                }
-                if (start <= address && end > address)
-                    return entry;
-            }
-            // XXX: check ranges?
-            break;
-        }
-        default:
+    switch ( entry.containsAddress(address) ) {
+        case ContainsAddr::NO:
+            return DIE();
+        case ContainsAddr::YES:
+            if (entry.tag() == DW_TAG_subprogram)
+                return entry;
+            /* FALLTHRU */
+        case ContainsAddr::UNKNOWN:
             for (auto child = entry.firstChild(); child; child = child.nextSibling()) {
                 auto descendent = findEntryForFunc(address, child);
                 if (descendent)
                     return descendent;
             }
-            break;
+            return DIE();
     }
-   return DIE();
 }
 
 DIEIter

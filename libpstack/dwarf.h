@@ -175,6 +175,7 @@ public:
     DIEAttributes(const DIE &die) : die(die) {}
 };
 
+enum class ContainsAddr { YES, NO, UNKNOWN };
 class DIE {
     std::shared_ptr<Unit> unit;
     off_t offset;
@@ -184,6 +185,8 @@ class DIE {
     friend class DIEAttributes;
     friend class RawDIE;
 public:
+    bool mightHaveAddr(Elf::Addr addr) const;
+    ContainsAddr containsAddress(Elf::Addr addr) const;
     off_t getParentOffset() const;
     off_t getOffset() const { return offset; }
     const std::shared_ptr<Unit> & getUnit() const { return unit; }
@@ -201,6 +204,7 @@ public:
     DIEChildren children() const { return DIEChildren(*this); }
 };
 
+using Ranges = std::vector<std::pair<uintmax_t, uintmax_t>>;
 class Attribute {
     DIE dieref;
     const Form *formp; /* From abbrev table attached to type */
@@ -216,6 +220,7 @@ public:
     ~Attribute() { }
 
     bool valid() const { return formp != nullptr; }
+    Ranges ranges() const;
     explicit operator std::string() const;
     explicit operator intmax_t() const;
     explicit operator uintmax_t() const;
