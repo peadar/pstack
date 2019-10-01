@@ -95,17 +95,15 @@ Object::Object(ImageCache &cache, Reader::csptr io_)
     for (auto hdr : ReaderArray<Phdr>(headers))
         programHeaders[hdr.p_type].push_back(hdr);
 
-    for (auto &phdrs : programHeaders) {
-        std::sort(phdrs.second.begin(), phdrs.second.end(), [] (const Phdr &lhs, const Phdr &rhs) { return lhs.p_vaddr < rhs.p_vaddr; });
-    }
+    // Sort program headers by VA.
+    for (auto &phdrs : programHeaders)
+        std::sort(phdrs.second.begin(), phdrs.second.end(),
+                [] (const Phdr &lhs, const Phdr &rhs) {
+                    return lhs.p_vaddr < rhs.p_vaddr; });
 
-    if (elfHeader.e_shnum == 0) {
-        sectionHeaders.emplace_back();
-    } else {
-        for (off = elfHeader.e_shoff, i = 0; i < elfHeader.e_shnum; i++) {
-            sectionHeaders.emplace_back(io, off);
-            off += elfHeader.e_shentsize;
-        }
+    for (off = elfHeader.e_shoff, i = 0; i < elfHeader.e_shnum; i++) {
+        sectionHeaders.emplace_back(io, off);
+        off += elfHeader.e_shentsize;
     }
 
     if (elfHeader.e_shstrndx != SHN_UNDEF) {
@@ -315,9 +313,23 @@ Object::getDebug() const
                     break;
                 }
             }
+        } else {
+            if (verbose >= 2)
+                *debug << "found debug object " << *debugObject->io << " for " << *io << "\n";
+            auto &s = getSection(".dynamic", SHT_NULL);
+            auto &d = debugObject->getSection(".dynamic", SHT_NULL);
+            if (d.shdr.sh_addr != s.shdr.sh_addr) {
+                Elf::Addr diff = s.shdr.sh_addr - d.shdr.sh_addr;
+                std::clog << "warning: dynamic section at different offset: diff is " << std::hex << diff << std::endl;
+                // looks like the exe has been prelinked - adjust the debug info too.
+                for (auto &sect : debugObject->sectionHeaders) {
+                    sect.shdr.sh_addr += diff;
+                }
+                for (auto &sectType : debugObject->programHeaders)
+                    for (auto &sect : sectType.second)
+                        sect.p_vaddr += diff;
+            }
         }
-        if (debugObject && verbose >= 2)
-            *debug << "found debug object " << *debugObject->io << " for " << *io << "\n";
     }
     return debugObject.get();
 }
