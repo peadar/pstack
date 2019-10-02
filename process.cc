@@ -109,8 +109,10 @@ Process::processAUXV(const Reader &auxio)
                     vdsoBase = hdr;
                     addElfObject(elf, hdr);
                     vdsoImage = elf;
-                    if (verbose >= 2)
+                    if (verbose >= 2) {
+                        IOFlagSave _(os);
                         *debug << "auxv: VDSO " << *elf->io << " loaded at " << std::hex << hdr << "\n";
+                    }
 
                 }
                 catch (const std::exception &ex) {

@@ -328,6 +328,7 @@ Object::getDebug() const
             auto &d = debugObject->getSection(".dynamic", SHT_NULL);
             if (d.shdr.sh_addr != s.shdr.sh_addr) {
                 Elf::Addr diff = s.shdr.sh_addr - d.shdr.sh_addr;
+                IOFlagSave _(std::clog);
                 std::clog << "warning: dynamic section for debug symbols " << *debugObject->io << " loaded for object " << *this->io << " at different offset: diff is " << std::hex << diff << std::endl;
                 // looks like the exe has been prelinked - adjust the debug info too.
                 for (auto &sect : debugObject->sectionHeaders) {
