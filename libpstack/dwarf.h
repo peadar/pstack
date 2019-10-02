@@ -310,6 +310,7 @@ class Unit : public std::enable_shared_from_this<Unit> {
     using AllEntries = std::unordered_map<off_t, RawDIE>;
     AllEntries allEntries;
 public:
+    bool isRoot(const DIE &die) { return die.getOffset() == topDIEOffset; }
     AllEntries::iterator loadChildDIE(off_t parentOff, off_t dieOff);
     size_t entryCount() const { return allEntries.size(); }
     typedef std::shared_ptr<Unit> sptr;

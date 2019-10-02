@@ -283,6 +283,12 @@ Unit::Unit(const Info *di, DWARFReader &r)
     r.setOffset(end);
 }
 
+/*
+ * Convert an offset to a DIE.
+ * If the offset of the parent is not known, then pass as zero.
+ * If we later need to find the parent, it may require scanning the entire
+ * DIE tree to do so if we don't know parent's offset when requested.
+ */
 DIE
 Unit::offsetToDIE(off_t parentOffset, off_t offset) {
     if (offset == 0 || offset < this->offset || offset >= this->end)
@@ -717,14 +723,6 @@ RawDIE::readValue(DWARFReader &r, Form form, Value &value, const Unit *unit)
     }
 }
 
-static int totalDIEs = 0;
-static int maxDIEs = 0;
-__attribute__((destructor))
-void printDIEtotal()
-{
-    fprintf(stderr, "total dies: %d, max dies: %d\n", totalDIEs, maxDIEs);
-}
-
 RawDIE::~RawDIE()
 {
     int i = 0;
@@ -742,7 +740,6 @@ RawDIE::~RawDIE()
         }
         ++i;
     }
-    --totalDIEs;
 }
 
 const LineInfo *
@@ -1336,9 +1333,28 @@ Attribute::operator DIE() const
     // Nope - try other units.
     return dwarf->offsetToDIE(off);
 }
+
+static void walk(const DIE & die) { for (auto c : die.children()) { walk(c); } };
 off_t
 DIE::getParentOffset() const
 {
+    if (raw->parent == 0 && !unit->isRoot(*this)) {
+        // This DIE has a parent, but we did not know where it was when we
+        // decoded it. We have to search for the parent in the tree. We could
+        // limit our search a bit, but the easiest thing to do is just walk the
+        // tree from the root down. (This also fixes the problem for any other
+        // dies in the same unit.
+        if (verbose)
+            std::clog << "warning: no parent offset "
+                << "for die " << name()
+                << " at offset " << offset
+                << " in unit " << unit->name()
+                << " of " << *unit->dwarf->elf->io
+                << ", need to do full walk of DIE tree"
+                << std::endl;
+        walk(unit->root());
+        assert(raw->parent != 0);
+    }
     return raw->parent;
 }
 
