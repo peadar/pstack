@@ -19,6 +19,7 @@
 #include <set>
 #include <sstream>
 #include <stack>
+#include <algorithm>
 
 using std::make_unique;
 using std::make_shared;
@@ -103,14 +104,12 @@ sectionReader(Elf::Object &obj, const char *name, const char *compressedName, co
     return Reader::csptr();
 }
 
-
 Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     : io(sectionReader(*obj, ".debug_info", ".zdebug_info"))
     , elf(obj)
     , debugStrings(sectionReader(*obj, ".debug_str", ".zdebug_str"))
     , abbrev(sectionReader(*obj, ".debug_abbrev", ".zdebug_abbrev"))
     , lineshdr(sectionReader(*obj, ".debug_line", ".zdebug_line"))
-    , haveAllUnits(false)
     , altImageLoaded(false)
     , imageCache(cache_)
     , pubnamesh(sectionReader(*obj, ".debug_pubnames", ".zdebug_pubnames"))
@@ -121,17 +120,14 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
         auto io = sectionReader(*obj, name, zname, &sec);
         if (!io)
             return std::unique_ptr<CFI>();
-
         try {
             return make_unique<CFI>(this, sec->shdr.sh_addr, io, ftype);
         }
         catch (const Exception &ex) {
             std::clog << "can't decode " << name << " for " << *obj->io << ": " << ex.what() << "\n";
         }
-
         return std::unique_ptr<CFI>();
     };
-
     ehFrame = f(".eh_frame", nullptr, FI_EH_FRAME);
     debugFrame = f(".debug_frame", ".zdebug_frame", FI_DEBUG_FRAME);
 }
@@ -148,42 +144,78 @@ Info::pubnames() const
     return pubnameUnits;
 }
 
+static size_t UNITCACHE_SIZE=128;
+
 Unit::sptr
-Info::getUnit(off_t offset)
+UnitsCache::get(const Info *info, off_t offset)
 {
-    auto unit = unitsm.find(offset);
-    if (unit != unitsm.end())
-        return unit->second;
-    if (io == nullptr)
-        return Unit::sptr();
-    DWARFReader r(io, offset);
-    unitsm[offset] = make_shared<Unit>(this, r);
-    return unitsm[offset];
+    auto &ent = byOffset[offset];
+    if (ent != nullptr) {
+        auto idx = std::find(LRU.begin(), LRU.end(), ent);
+        assert(idx != LRU.end());
+        LRU.erase(idx);
+    } else {
+        DWARFReader r(info->io, offset);
+        ent = make_shared<Unit>(info, r);
+        if (verbose >= 2)
+            std::clog << "create unit " << ent->name() << "@" << offset << " in " << *info->io << "\n";
+    }
+    LRU.push_front(ent);
+    if (LRU.size() > UNITCACHE_SIZE) {
+        auto old = LRU.back();
+        LRU.pop_back();
+        // don't erase from the map - we hold on to the offsets so we can quickly
+        // determine which unit contains a particular DIE.
+        byOffset[old->offset] = 0;
+        if (verbose > 2)
+            std::clog << "evicted unit " << old->name() << "@" << old->offset << " in " << *info->io << "\n";
+    }
+    return ent;
 }
 
-const std::list<Unit::sptr> &
+DIE
+Info::offsetToDIE(off_t offset) const
+{
+    // find the appropriate unit for a die with that offset.
+    auto it = std::lower_bound(
+            units.byOffset.begin(),
+            units.byOffset.end(),
+            offset,
+            [] (const std::pair<off_t, std::shared_ptr<Unit>> &u, off_t offset)
+
+                { return u.first < offset; });
+    off_t uOffset;
+    if (it == units.byOffset.begin() || it == units.byOffset.end()) {
+        uOffset = 0;
+    } else {
+        --it;
+        uOffset = it->first;
+    }
+    UnitIterator start(this, uOffset);
+    UnitIterator end;
+    for (int i = 1; start != end; ++start, ++i) {
+        const auto &u = *start;
+        DIE entry = u->offsetToDIE(0, offset);
+        if (entry) {
+            if (verbose > 2)
+                std::clog << "search for DIE at " << offset << " started at " << uOffset <<" and took " << i << " iterations\n";
+            return entry;
+        }
+    }
+    throw Exception() << "DIE not found";
+}
+
+Unit::sptr
+Info::getUnit(off_t offset) const
+{
+    return units.get(this, offset);
+}
+
+Units
 Info::getUnits() const
 {
-    if (haveAllUnits || io == nullptr)
-        return allUnits;
-
-    DWARFReader r(io);
-
-    while (!r.empty()) {
-       auto off = r.getOffset();
-       if (unitsm.find(off) != unitsm.end()) {
-          size_t dwarfLen;
-          auto length = r.getlength(&dwarfLen);
-          r.setOffset(r.getOffset() + length);
-       } else {
-          unitsm[off] = make_shared<Unit>(this, r);
-       }
-       allUnits.push_back(unitsm[off]);
-    }
-    haveAllUnits = true;
-    return allUnits;
+    return Units(shared_from_this());
 }
-
 
 std::list<ARangeSet> &
 Info::getARanges() const
@@ -233,14 +265,12 @@ Unit::Unit(const Info *di, DWARFReader &r)
     : dwarf(di)
     , io(r.io)
     , offset(r.getOffset())
+    , length(r.getlength(&dwarfLen))
+    , end(r.getOffset() + length)
+    , version(r.getu16())
 {
-    length = r.getlength(&dwarfLen);
-    Elf::Off nextoff = r.getOffset() + length;
-    version = r.getu16();
-
     if (version <= 2) // DWARF Version 2 uses the architecture's address size.
        dwarfLen = ELF_BITS / 8;
-
     off_t off = r.getuint(version <= 2 ? 4 : dwarfLen);
     DWARFReader abbR(di->abbrev, off);
     r.addrLen = addrlen = r.getu8();
@@ -249,39 +279,46 @@ Unit::Unit(const Info *di, DWARFReader &r)
         abbreviations.emplace( std::piecewise_construct,
                 std::forward_as_tuple(code),
                 std::forward_as_tuple(abbR));
-    DWARFReader entriesR(r.io, r.getOffset(), nextoff);
-    assert(nextoff <= r.getLimit());
-    decodeEntries(entriesR, entries, 0);
-    r.setOffset(nextoff);
+    topDIEOffset = r.getOffset();
+    r.setOffset(end);
 }
 
+/*
+ * Convert an offset to a DIE.
+ * If the offset of the parent is not known, then pass as zero.
+ * If we later need to find the parent, it may require scanning the entire
+ * DIE tree to do so if we don't know parent's offset when requested.
+ */
 DIE
-Unit::offsetToDIE(size_t offset) const
-{
+Unit::offsetToDIE(off_t parentOffset, off_t offset) {
+    if (offset == 0 || offset < this->offset || offset >= this->end)
+        return DIE();
     auto it = allEntries.find(offset);
-    return it != allEntries.end() ? DIE(this, offset, &it->second) : DIE();
+    if (it == allEntries.end())
+        it = loadChildDIE(parentOffset, offset);
+    return it != allEntries.end() ? DIE(shared_from_this(), offset, &it->second) : DIE();
 }
 
 string
-Unit::name() const
+Unit::name()
 {
-    assert(entries.begin() != entries.end());
-    for (const auto &top : topLevelDIEs())
-        return top.name();
-    return "";
+    return root().name();
 }
 
 Unit::~Unit() = default;
 
 Abbreviation::Abbreviation(DWARFReader &r)
+    : tag(Tag(r.getuleb128()))
+    , hasChildren(HasChildren(r.getu8()) == DW_CHILDREN_yes)
+    , nextSibIdx(-1)
 {
-    tag = Tag(r.getuleb128());
-    hasChildren = HasChildren(r.getu8()) == DW_CHILDREN_yes;
     for (size_t i = 0;; ++i) {
         auto name = AttrName(r.getuleb128());
         auto form = Form(r.getuleb128());
         if (name == 0 && form == 0)
             break;
+        if (name == DW_AT_sibling)
+            nextSibIdx = int(i);
         forms.emplace_back(form);
         attrName2Idx[name] = i;
     }
@@ -290,12 +327,30 @@ Abbreviation::Abbreviation(DWARFReader &r)
 AttrName
 Attribute::name() const
 {
-    size_t off = formp - &dieref.die->type->forms[0];
-    for (auto ent : dieref.die->type->attrName2Idx) {
+    size_t off = formp - &dieref.raw->type->forms[0];
+    for (auto ent : dieref.raw->type->attrName2Idx) {
         if (ent.second == off)
             return ent.first;
     }
     return DW_AT_none;
+}
+
+Ranges
+Attribute::ranges() const
+{
+    Ranges ranges;
+    auto dwarf = die().getUnit()->dwarf;
+    auto elf = dwarf->elf;
+    auto &sec = elf->getSection(".debug_ranges", SHT_NULL);
+    DWARFReader reader(sec.io, uintmax_t(*this));
+    for (;;) {
+        auto start = reader.getuint(sizeof (Elf::Addr));
+        auto end = reader.getuint(sizeof (Elf::Addr));
+        if (start == 0 && end == 0)
+            break;
+        ranges.emplace_back(std::make_pair(start, end));
+    }
+    return ranges;
 }
 
 Attribute::operator intmax_t() const
@@ -692,33 +747,46 @@ Unit::getLines()
 {
     if (lines != nullptr)
         return lines.get();
-    for (const auto &entry : topLevelDIEs()) {
-        if (entry.tag() == DW_TAG_partial_unit || entry.tag() == DW_TAG_compile_unit) {
-            if (dwarf->lineshdr) {
-                auto attr = entry.attribute(DW_AT_stmt_list);
-                if (!attr.valid())
-                    continue;
-                auto stmts = off_t(attr);
-                DWARFReader r2(dwarf->lineshdr, stmts);
-                lines.reset(new LineInfo());
-                lines->build(r2, this);
-                return lines.get();
-            }
-        }
-    }
-    return nullptr;
+
+    if (dwarf->lineshdr == nullptr)
+        return nullptr;
+
+    const auto &r = root();
+    if (r.tag() != DW_TAG_partial_unit && r.tag() != DW_TAG_compile_unit)
+        return nullptr; // XXX: assert?
+
+    auto attr = r.attribute(DW_AT_stmt_list);
+    if (!attr.valid())
+        return nullptr;
+
+    auto stmts = off_t(attr);
+    DWARFReader r2(dwarf->lineshdr, stmts);
+    lines.reset(new LineInfo());
+    lines->build(r2, this);
+    return lines.get();
 }
 
-RawDIE::RawDIE(DWARFReader &r, size_t abbrev, Unit *unit, off_t offset, off_t parent_)
+RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
     : type(unit->findAbbreviation(abbrev))
     , values(type->forms.size())
     , parent(parent_)
+    , firstChild(0)
+    , nextSibling(0)
 {
     size_t i = 0;
-    for (auto form : type->forms)
-        readValue(r, form, values[i++], unit);
-    if (type->hasChildren)
-        unit->decodeEntries(r, children, offset);
+    for (auto form : type->forms) {
+        readValue(r, form, values[i], unit);
+        if (int(i) == type->nextSibIdx)
+            nextSibling = values[i].sdata + unit->offset;
+        ++i;
+    }
+    if (type->hasChildren) {
+        // If the type has children, last offset read is the first child.
+        firstChild = r.getOffset();
+    } else {
+        nextSibling = r.getOffset(); // we have no children, so next DIE is next sib
+        firstChild = 0; // no children.
+    }
 }
 
 const Abbreviation *
@@ -728,20 +796,31 @@ Unit::findAbbreviation(size_t offset) const
     return it != abbreviations.end() ? &it->second : nullptr;
 }
 
+Unit::AllEntries::iterator
+Unit::decodeEntry(DWARFReader &r, off_t parent)
+{
+    intmax_t offset = r.getOffset();
+    size_t abbrev = r.getuleb128();
+    if (abbrev == 0) {
+        if (parent)
+            allEntries.at(parent).nextSibling = r.getOffset();
+        return allEntries.end();
+    }
+    auto p = allEntries.emplace(std::piecewise_construct,
+                    std::forward_as_tuple(offset),
+                    std::forward_as_tuple(this, r, abbrev, parent));
+    return p.first;
+}
+
 void
-Unit::decodeEntries(DWARFReader &r, Entries &entries, off_t parent)
+Unit::decodeEntries(DWARFReader &r, off_t parent)
 {
     while (!r.empty()) {
-        intmax_t offset = r.getOffset();
-        size_t abbrev = r.getuleb128();
-        if (abbrev == 0)
+        if (decodeEntry(r, parent) == allEntries.end())
             return;
-        allEntries.emplace(std::piecewise_construct,
-                        std::forward_as_tuple(offset),
-                        std::forward_as_tuple(r, abbrev, this, offset, parent));
-        entries.push_back(offset);
     }
 }
+
 
 string
 Info::getAltImageName() const
@@ -858,14 +937,13 @@ CFI::isCIE(Elf::Addr cieid)
     return (type == FI_DEBUG_FRAME && cieid == 0xffffffff) || (type == FI_EH_FRAME && cieid == 0);
 }
 
-CFI::CFI(Info *info, Elf::Word addr, Reader::csptr io_, enum FIType type_)
+CFI::CFI(Info *info, Elf::Addr addr, Reader::csptr io_, enum FIType type_)
     : dwarf(info)
     , sectionAddr(addr)
     , io(std::move(io_))
     , type(type_)
 {
     DWARFReader reader(io);
-
     // decode in 2 passes: first for CIE, then for FDE
     off_t nextoff;
     for (; !reader.empty();  reader.setOffset(nextoff)) {
@@ -874,7 +952,6 @@ CFI::CFI(Info *info, Elf::Word addr, Reader::csptr io_, enum FIType type_)
         nextoff = decodeCIEFDEHdr(reader, type, &associatedCIE);
         if (nextoff == 0)
             break;
-
         auto ensureCIE = [this, &reader, nextoff] (Elf::Off offset) {
             // This is in fact a CIE - add it in if we have not seen it yet.
             if (cies.find(offset) != cies.end())
@@ -883,7 +960,6 @@ CFI::CFI(Info *info, Elf::Word addr, Reader::csptr io_, enum FIType type_)
                         std::forward_as_tuple(offset),
                         std::forward_as_tuple(this, reader, nextoff));
         };
-
         if (associatedCIE == Elf::Off(-1)) {
             ensureCIE(startOffset);
         } else {
@@ -904,12 +980,33 @@ CFI::findFDE(Elf::Addr addr) const
     return nullptr;
 }
 
+template<typename T> std::vector<std::pair<string, int>>
+sourceFromAddrInUnits(const T &units, uintmax_t addr) {
+    std::vector<std::pair<string, int>> info;
+    for (const auto &unit : units) {
+        DIE d = unit->root();
+        if (d.containsAddress(addr) == ContainsAddr::NO)
+            continue;
+
+        auto lines = unit->getLines();
+        if (lines) {
+            for (auto i = lines->matrix.begin(); i != lines->matrix.end(); ++i) {
+                if (i->end_sequence)
+                    continue;
+                auto next = i+1;
+                if (i->addr <= addr && next->addr > addr)
+                    info.emplace_back(i->file->name, i->line);
+            }
+        }
+    }
+    return info;
+}
+
 std::vector<std::pair<string, int>>
 Info::sourceFromAddr(uintmax_t addr)
 {
     std::vector<std::pair<string, int>> info;
     std::list<Unit::sptr> units;
-
     if (hasARanges()) {
         auto &rangelist = getARanges();
         for (auto &rs : rangelist) {
@@ -922,21 +1019,9 @@ Info::sourceFromAddr(uintmax_t addr)
         }
     }
     if (units.empty())
-        units = getUnits();
-    for (const auto &unit : units) {
-        auto lines = unit->getLines();
-        if (lines) {
-            for (auto i = lines->matrix.begin(); i != lines->matrix.end(); ++i) {
-                if (i->end_sequence)
-                    continue;
-                auto next = i+1;
-                if (i->addr <= addr && next->addr > addr)
-                    info.emplace_back(i->file->name, i->line);
-            }
-        }
-
-    }
-    return info;
+        return sourceFromAddrInUnits(getUnits(), addr);
+    else
+        return sourceFromAddrInUnits(units, addr);
 }
 
 CallFrame::CallFrame()
@@ -1239,35 +1324,130 @@ Attribute::operator DIE() const
     }
 
     // Try this unit first (if we're dealing with the same Info)
-    if (dwarf == dieref.unit->dwarf) {
-        const auto otherEntry = dieref.unit->offsetToDIE(off);
+    if (dwarf == dieref.unit->dwarf && dieref.unit->offset <= off && dieref.unit->end > off) {
+        const auto otherEntry = dieref.unit->offsetToDIE(0, off);
         if (otherEntry)
             return otherEntry;
     }
 
     // Nope - try other units.
-    for (const auto &u : dwarf->getUnits()) {
-        if (u.get() == dieref.unit)
-            continue;
-        const auto &otherEntry = u->offsetToDIE(off);
-        if (otherEntry)
-            return otherEntry;
-    }
-    throw (Exception() << "reference not found");
+    return dwarf->offsetToDIE(off);
 }
 
+static void walk(const DIE & die) { for (auto c : die.children()) { walk(c); } };
 off_t
 DIE::getParentOffset() const
 {
-    return die->parent;
+    if (raw->parent == 0 && !unit->isRoot(*this)) {
+        // This DIE has a parent, but we did not know where it was when we
+        // decoded it. We have to search for the parent in the tree. We could
+        // limit our search a bit, but the easiest thing to do is just walk the
+        // tree from the root down. (This also fixes the problem for any other
+        // dies in the same unit.
+        if (verbose)
+            std::clog << "warning: no parent offset "
+                << "for die " << name()
+                << " at offset " << offset
+                << " in unit " << unit->name()
+                << " of " << *unit->dwarf->elf->io
+                << ", need to do full walk of DIE tree"
+                << std::endl;
+        walk(unit->root());
+        assert(raw->parent != 0);
+    }
+    return raw->parent;
+}
+
+Unit::AllEntries::iterator
+Unit::loadChildDIE(off_t parent, off_t dieOff)
+{
+    auto it = allEntries.find(dieOff);
+    if (it == allEntries.end()) {
+        DWARFReader r(io, dieOff);
+        return decodeEntry(r, parent);
+    }
+    return it;
+}
+
+DIE
+DIE::firstChild() const {
+    return unit->offsetToDIE(offset, raw->firstChild);
+}
+
+DIE
+DIE::nextSibling() const {
+
+    if (raw->nextSibling == 0) {
+        // Need to work out what the next sibling is, and we don't have DW_AT_sibling
+        // Run through all our children. decodeEntries will update the
+        // parent's (our) nextSibling.
+        RawDIE *last = 0;
+        for (auto &it : children())
+            last = it.raw;
+        if (last)
+            last->nextSibling = 0;
+    }
+    return unit->offsetToDIE(raw->parent, raw->nextSibling);
+}
+
+ContainsAddr
+DIE::containsAddress(Elf::Addr addr) const
+{
+    Elf::Addr start, end;
+    auto low = attribute(DW_AT_low_pc);
+    auto high = attribute(DW_AT_high_pc);
+
+    ContainsAddr rc = ContainsAddr::UNKNOWN;
+    if (low.valid() && high.valid()) {
+        switch (low.form()) {
+            case DW_FORM_addr:
+                start = uintmax_t(low);
+                break;
+            default:
+                abort();
+                break;
+        }
+
+        switch (high.form()) {
+            case DW_FORM_addr:
+                end = uintmax_t(high);
+                break;
+            case DW_FORM_data1:
+            case DW_FORM_data2:
+            case DW_FORM_data4:
+            case DW_FORM_data8:
+            case DW_FORM_udata:
+                end = start + uintmax_t(high);
+                break;
+            default:
+                abort();
+        }
+        rc = start <= addr && end > addr ? ContainsAddr::YES : ContainsAddr::NO;
+    } else {
+        Elf::Addr base = low.valid() ? uintmax_t(low) : 0;
+        auto ranges = attribute(DW_AT_ranges);
+        if (ranges.valid()) {
+            rc = ContainsAddr::NO;
+            for (auto &range : ranges.ranges()) {
+                if (range.first + base <= addr && addr <= range.second + base ) {
+                    rc = ContainsAddr::YES;
+                    break;
+                }
+            }
+        }
+    }
+    /*std::clog << "found container for " << addr << "? " << 
+        (rc == ContainsAddr::YES ? "yes" : rc == ContainsAddr::NO ? "no" : "unknown") <<
+        std::endl;*/
+    return rc;
 }
 
 Attribute
 DIE::attribute(AttrName name) const
 {
-    auto loc = die->type->attrName2Idx.find(name);
-    if (loc != die->type->attrName2Idx.end())
-        return Attribute(*this, &die->type->forms.at(loc->second));
+    auto loc = raw->type->attrName2Idx.find(name);
+    if (loc != raw->type->attrName2Idx.end())
+        return Attribute(*this, &raw->type->forms.at(loc->second));
 
     // If we have attributes of any of these types, we can look for other attributes in the referenced entry.
     static std::set<AttrName> derefs = {
@@ -1275,10 +1455,11 @@ DIE::attribute(AttrName name) const
         DW_AT_specification
     };
 
-    if (derefs.find(name) == derefs.end()) {
+    // don't dereference declarations, or any types that provide dereference aliases.
+    if (name != DW_AT_declaration && derefs.find(name) == derefs.end()) {
         for (auto alt : derefs) {
             auto ao = DIE(attribute(alt));
-            if (ao && ao.die != die)
+            if (ao && ao.raw != raw)
                 return ao.attribute(name);
         }
     }
@@ -1343,7 +1524,7 @@ typeName(const DIE &type)
         case DW_TAG_subroutine_type:
             s = typeName(base) + "(";
             sep = "";
-            for (auto arg : type.children()) {
+            for (auto arg = type.firstChild(); arg; arg = arg.nextSibling()) {
                 if (arg.tag() != DW_TAG_formal_parameter)
                     continue;
                 s += sep;
@@ -1363,83 +1544,51 @@ typeName(const DIE &type)
 DIE
 findEntryForFunc(Elf::Addr address, const DIE &entry)
 {
-    switch (entry.tag()) {
-        case DW_TAG_subprogram: {
-            Elf::Addr start, end;
-            auto low = entry.attribute(DW_AT_low_pc);
-            auto high = entry.attribute(DW_AT_high_pc);
-            if (low.valid() && high.valid()) {
-                switch (low.form()) {
-                    case DW_FORM_addr:
-                        start = uintmax_t(low);
-                        break;
-                    default:
-                        abort();
-                        break;
-                }
-                switch (high.form()) {
-                    case DW_FORM_addr:
-                        end = uintmax_t(high);
-                        break;
-                    case DW_FORM_data1:
-                    case DW_FORM_data2:
-                    case DW_FORM_data4:
-                    case DW_FORM_data8:
-                    case DW_FORM_udata:
-                        end = start + uintmax_t(high);
-                        break;
-                    default:
-                        abort();
-                }
-                if (start <= address && end > address)
-                    return entry;
-            }
-            break;
-        }
-        default:
-            for (auto child : entry.children()) {
+    switch ( entry.containsAddress(address) ) {
+        case ContainsAddr::NO:
+            return DIE();
+        case ContainsAddr::YES:
+            if (entry.tag() == DW_TAG_subprogram)
+                return entry;
+            /* FALLTHRU */
+        case ContainsAddr::UNKNOWN:
+            for (auto child = entry.firstChild(); child; child = child.nextSibling()) {
                 auto descendent = findEntryForFunc(address, child);
                 if (descendent)
                     return descendent;
             }
-            break;
+            return DIE();
     }
-   return DIE();
-}
-
-DIE
-DIEIter::operator *() const {
-    return u->offsetToDIE(*rawIter);
+    return DIE();
 }
 
 DIEIter
-DIEList::begin() const {
-    return const_iterator(unit, dies.begin());
+DIEChildren::begin() const {
+    return const_iterator(parent.firstChild(), parent.getOffset());
 }
 
 DIEIter
-DIEList::end() const {
-    return const_iterator(unit, dies.end());
+DIEChildren::end() const {
+    return const_iterator(DIE(), 0);
 }
 
 std::pair<AttrName, Attribute>
 DIEAttributes::const_iterator::operator *() const {
     return std::make_pair(
             rawIter->first,
-            Attribute(die, &die.die->type->forms[rawIter->second]));
+            Attribute(die, &die.raw->type->forms[rawIter->second]));
 }
 
 DIEAttributes::const_iterator
 DIEAttributes::begin() const {
-    return const_iterator(die, die.die->type->attrName2Idx.begin());
+    return const_iterator(die, die.raw->type->attrName2Idx.begin());
 }
 
 DIEAttributes::const_iterator
 DIEAttributes::end() const {
-    return const_iterator(die, die.die->type->attrName2Idx.end());
+    return const_iterator(die, die.raw->type->attrName2Idx.end());
 }
-const Value &Attribute::value() const { return dieref.die->values.at(formp - &dieref.die->type->forms[0]); }
-Tag DIE::tag() const { return die->type->tag; }
-bool DIE::hasChildren() const { return die->type->hasChildren; }
-DIEList DIE::children() const { return DIEList(unit, die->children); }
+const Value &Attribute::value() const { return dieref.raw->values.at(formp - &dieref.raw->type->forms[0]); }
+Tag DIE::tag() const { return raw->type->tag; }
+bool DIE::hasChildren() const { return raw->type->hasChildren; }
 }
