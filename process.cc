@@ -378,7 +378,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
 {
     using namespace Dwarf;
     const char *sep = "";
-    for (const auto &child : ap.frame->function.children()) {
+    for (auto child = ap.frame->function.firstChild(); child; child = child.nextSibling()) {
         switch (child.tag()) {
             case DW_TAG_formal_parameter: {
                 auto name = child.name();
@@ -421,7 +421,7 @@ dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
       return dieName(os, Dwarf::DIE(spec), first);
    }
    auto parent = die.getParentOffset();
-   bool printedParent = parent != 0 && dieName(os, die.getUnit()->offsetToDIE(parent), false);
+   bool printedParent = parent != 0 && dieName(os, die.getUnit()->offsetToDIE(0, parent), false);
    if (die.tag() != Dwarf::DW_TAG_compile_unit) { // don't print out compile unit
       if (printedParent)
          os << "::";
@@ -458,29 +458,16 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         if (obj) {
             fileName = stringify(*obj->io);
             Elf::Addr objIp = frame->scopeIP() - loadAddr;
-
             Dwarf::Info::sptr dwarf = getDwarf(obj);
-            std::list<Dwarf::Unit::sptr> units;
-            if (dwarf->hasARanges()) {
-                for (const auto &rangeset : dwarf->getARanges()) {
-                    for (const auto range : rangeset.ranges) {
-                        if (objIp >= range.start && objIp <= range.start + range.length) {
-                            units.push_back(dwarf->getUnit(rangeset.debugInfoOffset));
-                            break;
-                        }
-                    }
-                }
-            } else {
-                // no ranges - try each dwarf unit in turn. (This seems to happen for single-unit exe's only, so it's no big loss)
-                units = dwarf->getUnits();
-            }
 
             std::string sigmsg = frame->cie != nullptr && frame->cie->isSignalHandler ?  "[signal handler called]" : "";
-            Dwarf::Unit::sptr dwarfUnit;
-            for (const auto &u : units) {
-                // find the DIE for this function
-                for (const auto &it : u->topLevelDIEs()) {
-                    auto de = Dwarf::findEntryForFunc(objIp, it);
+
+            // We may need to process a Units iterable, or a std::list<Unit::sptr>
+            auto processUnits = [ this, &os, &frame, &symName, &objIp, &dwarf, &sym, &options, &obj, &sigmsg ] (auto units) {
+                for (const auto &u : units) {
+                    // find the DIE for this function
+                    const auto &unitRoot = u->root();
+                    auto de = Dwarf::findEntryForFunc(objIp, unitRoot);
                     if (de) {
                         frame->function = de;
                         frame->dwarf = dwarf; // hold on to 'de'
@@ -502,12 +489,27 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                             os << ArgPrint(*this, frame);
                         }
                         os << ")";
-                        dwarfUnit = u;
-                        break;
+                        return u;
                     }
                 }
-                if (dwarfUnit)
-                    break;
+                return Dwarf::Unit::sptr();
+            };
+
+            Dwarf::Unit::sptr dwarfUnit;
+            if (dwarf->hasARanges()) {
+                std::list<Dwarf::Unit::sptr> units;
+                for (const auto &rangeset : dwarf->getARanges()) {
+                    for (const auto range : rangeset.ranges) {
+                        if (objIp >= range.start && objIp <= range.start + range.length) {
+                            units.emplace_back(dwarf->getUnit(rangeset.debugInfoOffset));
+                            break;
+                        }
+                    }
+                }
+                dwarfUnit = processUnits(units);
+            } else {
+                // no ranges - try each dwarf unit in turn. (This seems to happen for single-unit exe's only, so it's no big loss)
+                dwarfUnit = processUnits(dwarf->getUnits());
             }
 
             if (!dwarfUnit) {

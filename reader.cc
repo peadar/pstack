@@ -83,8 +83,9 @@ FileReader::~FileReader()
     ::close(file);
 }
 
-MemReader::MemReader(size_t len_, const char *data_)
-    : len(len_)
+MemReader::MemReader(const std::string &descr, size_t len_, const char *data_)
+    : descr(descr)
+    , len(len_)
     , data(data_)
 {
 }
@@ -102,7 +103,7 @@ MemReader::read(off_t off, size_t count, char *ptr) const
 void
 MemReader::describe(std::ostream &os) const
 {
-    os << "in-memory image";
+    os << descr;
 }
 
 std::string

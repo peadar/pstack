@@ -2,7 +2,6 @@
 #define DWARF_H
 
 #include <libpstack/elf.h>
-
 #include <limits>
 #include <list>
 #include <map>
@@ -11,7 +10,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
+#include <iterator>
 #include <cassert>
 
 namespace Dwarf {
@@ -86,6 +85,7 @@ struct Abbreviation {
     bool hasChildren;
     std::vector<Form> forms;
     using AttrNameMap = std::unordered_map<AttrName, size_t>;
+    int nextSibIdx;
     AttrNameMap attrName2Idx;
     Abbreviation(DWARFReader &);
     Abbreviation() {}
@@ -136,33 +136,15 @@ union Value {
 };
 
 
-struct DIEIter {
-    const Unit *u;
-    Entries::const_iterator rawIter;
-    DIE operator *() const;
-    DIEIter &operator++() {
-        ++rawIter;
-        return *this;
-    }
-    DIEIter(const Unit *unit_, Entries::const_iterator rawIter_) :
-        u(unit_), rawIter(rawIter_) {}
-    bool operator == (const DIEIter &rhs) const {
-        return rawIter == rhs.rawIter;
-    }
-    bool operator != (const DIEIter &rhs) const {
-        return rawIter != rhs.rawIter;
-    }
-};
-
-struct DIEList {
+struct DIEIter;
+struct DIEChildren {
     using const_iterator = DIEIter;
     using value_type = DIE;
-    const Unit *unit;
-    const Entries &dies;
+    std::shared_ptr<const Unit> unit;
+    const DIE &parent;
     DIEIter begin() const;
     DIEIter end() const;
-    DIEList(const Unit *unit_, const Entries &dies_)
-        : unit(unit_), dies(dies_) {}
+    DIEChildren(const DIE &parent_) : parent(parent_) {}
 };
 
 class DIEAttributes {
@@ -193,27 +175,35 @@ public:
     DIEAttributes(const DIE &die) : die(die) {}
 };
 
+enum class ContainsAddr { YES, NO, UNKNOWN };
 class DIE {
-    const Unit *unit;
+    std::shared_ptr<Unit> unit;
     off_t offset;
-    const RawDIE *die;
+    RawDIE *raw;
+    friend struct DIEIter;
     friend class Attribute;
     friend class DIEAttributes;
+    friend class RawDIE;
 public:
+    ContainsAddr containsAddress(Elf::Addr addr) const;
     off_t getParentOffset() const;
     off_t getOffset() const { return offset; }
-    const Unit *getUnit() const { return unit; }
-    DIE(const Unit *unit, size_t offset_, const RawDIE *die) : unit(unit), offset(offset_), die(die) {}
-    DIE() : unit(nullptr) {}
+    const std::shared_ptr<Unit> & getUnit() const { return unit; }
+    DIE(const std::shared_ptr<Unit> &unit, size_t offset_, RawDIE *raw) : unit(unit), offset(offset_), raw(raw) {}
+    DIE() : unit(nullptr), offset(0), raw(nullptr) {}
     operator bool() const { return unit != nullptr; }
-    bool hasChildren() const;
     Attribute attribute(AttrName name) const;
     inline std::string name() const;
-    DIEList children() const;
     DIEAttributes attributes() const { return DIEAttributes(*this); }
     Tag tag() const;
+    bool hasChildren() const;
+    DIE hasNextSibling() const;
+    DIE firstChild() const;
+    DIE nextSibling() const;
+    DIEChildren children() const { return DIEChildren(*this); }
 };
 
+using Ranges = std::vector<std::pair<uintmax_t, uintmax_t>>;
 class Attribute {
     DIE dieref;
     const Form *formp; /* From abbrev table attached to type */
@@ -229,6 +219,7 @@ public:
     ~Attribute() { }
 
     bool valid() const { return formp != nullptr; }
+    Ranges ranges() const;
     explicit operator std::string() const;
     explicit operator intmax_t() const;
     explicit operator uintmax_t() const;
@@ -295,43 +286,96 @@ class RawDIE {
     RawDIE() = delete;
     RawDIE(const RawDIE &) = delete;
     static void readValue(DWARFReader &, Form form, Value &value, const Unit *);
-    Entries children;
     const Abbreviation *type;
     std::vector<Value> values;
-    off_t parent;
+    off_t parent; // 0 implies we do not yet know the parent's offset.
+    off_t firstChild;
+    off_t nextSibling;
+    friend class Unit; // XXX
+    friend struct DIEIter; // XXX
 public:
-    RawDIE(DWARFReader &, size_t, Unit *, off_t self, off_t parent);
+    RawDIE(Unit *, DWARFReader &, size_t, off_t parent);
     ~RawDIE();
     friend class Attribute;
     friend class DIE;
     friend class DIEAttributes;
 };
 
-class Unit {
+class Unit : public std::enable_shared_from_this<Unit> {
     Unit() = delete;
     Unit(const Unit &) = delete;
     std::unique_ptr<LineInfo> lines;
     std::unordered_map<size_t, Abbreviation> abbreviations;
-    Entries entries;
-    std::unordered_map<off_t, RawDIE> allEntries;
+    off_t topDIEOffset;
+    using AllEntries = std::unordered_map<off_t, RawDIE>;
+    AllEntries allEntries;
 public:
-    const Abbreviation *findAbbreviation(size_t) const;
-    DIEList topLevelDIEs() const { return DIEList(this, entries); }
-    DIE offsetToDIE(size_t offset) const;
-    const Info *dwarf;
-    Reader::csptr io;
-    off_t offset;
-    size_t dwarfLen;
-    void decodeEntries(DWARFReader &r, Entries &entries, off_t parent);
-    uint32_t length;
-    uint16_t version;
-    uint8_t addrlen;
-    Unit(const Info *, DWARFReader &);
-    std::string name() const;
-    const LineInfo *getLines();
-    ~Unit();
+    bool isRoot(const DIE &die) { return die.getOffset() == topDIEOffset; }
+    AllEntries::iterator loadChildDIE(off_t parentOff, off_t dieOff);
+    size_t entryCount() const { return allEntries.size(); }
     typedef std::shared_ptr<Unit> sptr;
     typedef std::shared_ptr<const Unit> csptr;
+    const Abbreviation *findAbbreviation(size_t) const;
+    DIE root() { return offsetToDIE(0, topDIEOffset); }
+    DIE offsetToDIE(off_t parentOffset, off_t offset);
+    const Info *dwarf;
+    Reader::csptr io;
+
+    // header fields
+    off_t offset;
+    uint32_t length;
+    off_t end; // a.k.a. start of next unit.
+    uint16_t version;
+
+    size_t dwarfLen;
+    void decodeEntries(DWARFReader &r, off_t parent);
+    AllEntries::iterator decodeEntry(DWARFReader &r, off_t parent);
+    uint8_t addrlen;
+    Unit(const Info *, DWARFReader &);
+    std::string name();
+    const LineInfo *getLines();
+    ~Unit();
+};
+
+class UnitIterator {
+    const Info *info;
+    Unit::sptr currentUnit;
+    bool atend() const;
+public:
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = Unit::sptr;
+    using difference_type = int;
+    using pointer = Unit::sptr *;
+    using reference = Unit::sptr &;
+    Unit::sptr operator *() { return currentUnit; }
+    UnitIterator operator ++();
+    bool operator == (const UnitIterator &rhs) const {
+        if (atend() || rhs.atend())
+            return atend() == rhs.atend();
+        return info == rhs.info && currentUnit->offset == rhs.currentUnit->offset;
+    }
+    bool operator != (const UnitIterator &rhs) const {
+        return !(*this == rhs);
+    }
+    UnitIterator(const Info *info_, off_t offset);
+    UnitIterator() : info(nullptr), currentUnit(nullptr) {}
+};
+
+struct Units {
+    using value_type = Unit::sptr;
+    using iterator = UnitIterator;
+    using const_iterator = UnitIterator;
+    std::shared_ptr<const Info> info;
+    UnitIterator begin() const;
+    UnitIterator end() const { return iterator(); }
+    Units(const std::shared_ptr<const Info> &info_) : info(info_) {}
+};
+
+struct UnitsCache {
+    std::map<off_t, Unit::sptr> byOffset;
+    std::list<Unit::sptr> LRU;
+    Unit::sptr get(const Info *, off_t);
+    Unit::sptr unitForDIE(const Info *, off_t offset);
 };
 
 struct FDE {
@@ -397,12 +441,12 @@ struct CIE {
  */
 struct CFI {
     const Info *dwarf;
-    Elf::Word sectionAddr; // virtual address of this section  (may need to be offset by load address)
+    Elf::Addr sectionAddr; // virtual address of this section  (may need to be offset by load address)
     Reader::csptr io;
     FIType type;
     std::map<Elf::Addr, CIE> cies;
     std::list<FDE> fdeList;
-    CFI(Info *, Elf::Word addr, Reader::csptr io, FIType);
+    CFI(Info *, Elf::Addr addr, Reader::csptr io, FIType);
     CFI() = delete;
     CFI(const CFI &) = delete;
     Elf::Addr decodeCIEFDEHdr(DWARFReader &, FIType, Elf::Off *cieOff); // cieOFF set to -1 if this is CIE, set to offset of associated CIE for an FDE
@@ -415,7 +459,7 @@ class ImageCache;
 /*
  * Info represents all the interesting bits of the DWARF data.
  */
-class Info {
+class Info : public std::enable_shared_from_this<Info> {
 public:
     Info(Elf::Object::sptr, ImageCache &);
     ~Info();
@@ -432,10 +476,11 @@ public:
     Info::sptr getAltDwarf() const;
     std::list<ARangeSet> &getARanges() const;
     const std::list<PubnameUnit> &pubnames() const;
-    Unit::sptr getUnit(off_t offset);
-    const std::list<Unit::sptr> &getUnits() const;
+    Unit::sptr getUnit(off_t offset) const;
+    Units getUnits() const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
     bool hasARanges() { getARanges(); return aranges.size() != 0; }
+    DIE offsetToDIE(off_t) const;
 
 private:
     std::string getAltImageName() const;
@@ -443,10 +488,8 @@ private:
     mutable std::list<ARangeSet> aranges;
     // These are mutable so we can lazy-eval them when getters are called, and
     // maintain logical constness.
-    mutable std::list<Unit::sptr> allUnits;
-    mutable std::map<Elf::Off, Unit::sptr> unitsm;
+    mutable UnitsCache units;
     mutable Info::sptr altDwarf;
-    mutable bool haveAllUnits;
     mutable bool altImageLoaded;
     ImageCache &imageCache;
     mutable Reader::csptr pubnamesh;
@@ -468,6 +511,35 @@ public:
     ImageCache();
     ~ImageCache();
 };
+
+struct DIEIter {
+    const std::shared_ptr<const Unit> u;
+    off_t parent;
+    DIE currentDIE;
+    const DIE &operator *() const { return currentDIE; }
+    DIEIter &operator++() {
+        currentDIE = currentDIE.nextSibling();
+        // if we loaded the child by a direct jump, maybe update its parent.
+        if (currentDIE && parent != 0 && currentDIE.raw->parent == 0)
+            currentDIE.raw->parent = parent;
+        return *this;
+    }
+    DIEIter(const DIE &first, off_t parent_) : parent(parent_), currentDIE(first) {
+        if (currentDIE && parent != 0 && currentDIE.raw->parent == 0)
+            currentDIE.raw->parent = parent;
+    }
+    bool operator == (const DIEIter &rhs) const {
+        if (!currentDIE)
+            return !rhs.currentDIE;
+        if (!rhs.currentDIE)
+            return false;
+        return currentDIE.raw == rhs.currentDIE.raw;
+    }
+    bool operator != (const DIEIter &rhs) const {
+        return !(*this == rhs);
+    }
+};
+
 
 enum CFAInstruction {
 #define DWARF_CFA_INSN(name, value) name = value,
@@ -582,6 +654,27 @@ public:
 std::string typeName(const DIE &);
 DIE findEntryForFunc(Elf::Addr address, const DIE &entry);
 
+inline
+UnitIterator UnitIterator::operator ++() {
+    currentUnit = currentUnit->end == info->io->size()
+        ? nullptr
+        : info->getUnit( currentUnit->end );
+    return *this;
+}
+
+inline
+UnitIterator Units::begin() const {
+    return info->io ? iterator(info.get(), 0) : iterator();
+}
+
+inline
+bool UnitIterator::atend() const {
+    return currentUnit == nullptr;
+}
+
+inline
+UnitIterator::UnitIterator(const Info *info_, off_t offset)
+    : info(info_), currentUnit(info->getUnit(offset)) {}
 
 #define DWARF_OP(op, value, args) op = value,
 enum ExpressionOp {

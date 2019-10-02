@@ -339,20 +339,19 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
                continue;
            for (auto u : dwarf->getUnits()) {
                // For each unit
-               for (const auto &compile : u->topLevelDIEs()) {
-                   if (compile.tag() != Dwarf::DW_TAG_compile_unit)
-                       continue;
-                   // Do we have a global variable called interp_head?
-                   for (const auto &var : compile.children()) {
-                       if (var.tag() == Dwarf::DW_TAG_variable && (var.name() == "interp_head" || var.name() == "Py_interp_head")) {
-                           Dwarf::ExpressionStack evalStack;
-                           auto location = var.attribute(Dwarf::DW_AT_location);
-                           if (!location.valid())
-                                   throw Exception() << "no DW_AT_location for interpreter";
-                           interp_head = evalStack.eval(proc, location, 0, o.loadAddr);
-                           libPython = &o;
-                           break;
-                       }
+               const auto &compile = u->root();
+               if (compile.tag() != Dwarf::DW_TAG_compile_unit)
+                   continue;
+               // Do we have a global variable called interp_head?
+               for (auto var = compile.firstChild(); var; var = var.nextSibling()) {
+                   if (var.tag() == Dwarf::DW_TAG_variable && (var.name() == "interp_head" || var.name() == "Py_interp_head")) {
+                       Dwarf::ExpressionStack evalStack;
+                       auto location = var.attribute(Dwarf::DW_AT_location);
+                       if (!location.valid())
+                               throw Exception() << "no DW_AT_location for interpreter";
+                       interp_head = evalStack.eval(proc, location, 0, o.loadAddr);
+                       libPython = &o;
+                       break;
                    }
                }
            }

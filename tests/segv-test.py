@@ -12,5 +12,5 @@ for cmd in [ "tests/segv", 'tests/segvrt' ]:
    assert ' in f' in pstack_result
    assert ' in g' in pstack_result
    assert ' in main' in pstack_result
-   assert ' in raise' in pstack_result or ' in __GI_raise' in pstack_result
+   assert ' in raise' in pstack_result or ' in __GI_raise' in pstack_result or ' in gsignal' in pstack_result
    assert ' in my_abort' in pstack_result

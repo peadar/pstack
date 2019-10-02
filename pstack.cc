@@ -88,8 +88,9 @@ emain(int argc, char **argv)
     PstackOptions options;
 
     bool python = false;
+    bool coreOnExit = false;
 
-    while ((c = getopt(argc, argv, "F:b:d:D:hjsVvag:ptz:")) != -1) {
+    while ((c = getopt(argc, argv, "F:b:d:CD:hjsVvag:ptz:")) != -1) {
         switch (c) {
         case 'F': g_openPrefix = optarg;
                   break;
@@ -98,20 +99,21 @@ emain(int argc, char **argv)
             break;
         case 'D': {
             auto dumpobj = std::make_shared<Elf::Object>(imageCache, loadFile(optarg));
-            Dwarf::Info di(dumpobj, imageCache);
-            std::cout << json(di);
-            return 0;
+            auto di = std::make_shared<Dwarf::Info>(dumpobj, imageCache);
+            std::cout << json(*di);
+            goto done;
         }
         case 'z':
         case 'd': {
             /* Undocumented option to dump image contents */
+            std::cout << json(Elf::Object(imageCache, loadFile(optarg)));
             Elf::Object obj(imageCache, loadFile(optarg));
             std::cout << json( c == 'd' ? obj : *obj.debugData);
-            return 0;
+            goto done;
         }
         case 'h':
             usage();
-            return (0);
+            goto done;
         case 'a':
             options.set(PstackOption::doargs);
             break;
@@ -141,6 +143,9 @@ emain(int argc, char **argv)
         case 'V':
             std::clog << STR(VERSION) << "\n";
             return 0;
+        case 'C':
+            coreOnExit = true;
+            break;
         default:
             return usage();
         }
@@ -186,6 +191,9 @@ emain(int argc, char **argv)
        if (sleepTime != 0)
           sleep(sleepTime);
     } while (sleepTime != 0);
+done:
+    if (coreOnExit)
+        abort();
     return 0;
 }
 

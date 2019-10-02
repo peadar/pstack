@@ -205,11 +205,12 @@ public:
 
 class MemReader : public Reader {
 protected:
+    std::string descr;
     size_t len;
     const char *data;
 public:
     virtual size_t read(off_t off, size_t count, char *ptr) const override;
-    MemReader(size_t, const char *);
+    MemReader(const std::string &, size_t, const char *);
     void describe(std::ostream &) const override;
     off_t size() const override { return len; }
     std::string filename() const override { return "in-memory"; }
