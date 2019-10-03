@@ -22,7 +22,7 @@ static bool doJson = false;
 
 extern std::ostream & operator << (std::ostream &os, const JSON<ThreadStack, Process *> &jt);
 
-static int usage();
+static int usage(const char *);
 std::ostream &
 pstack(Process &proc, std::ostream &os, const PstackOptions &options)
 {
@@ -112,7 +112,7 @@ emain(int argc, char **argv)
             goto done;
         }
         case 'h':
-            usage();
+            usage(argv[0]);
             goto done;
         case 'a':
             options.set(PstackOption::doargs);
@@ -147,12 +147,12 @@ emain(int argc, char **argv)
             coreOnExit = true;
             break;
         default:
-            return usage();
+            return usage(argv[0]);
         }
     }
 
     if (optind == argc)
-        return usage();
+        return usage(argv[0]);
 
     do {
        for (i = optind; i < argc; i++) {
@@ -210,10 +210,10 @@ main(int argc, char **argv)
 }
 
 static int
-usage()
+usage(const char *name)
 {
     std::clog <<
-        "usage: pstack\n"
+        "usage: " << name << "\n"
         "\t[-<D|d> <elf object>]        dump details of ELF object (D => show DWARF info\n"
         "or\n"
         "\t[-h]                         show this message\n"
