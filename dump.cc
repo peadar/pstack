@@ -397,14 +397,9 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
     case DW_FORM_data4:
     case DW_FORM_data8:
     case DW_FORM_sec_offset:
-    case DW_FORM_udata: {
+    case DW_FORM_udata:
         writer.field("value", uintmax_t(attr));
-        if (attr.name() == DW_AT_ranges) {
-            writer.field("rangelist", true);
-            writer.field("ranges", attr.ranges());
-        }
         break;
-    }
     case DW_FORM_sdata:
         writer.field("value", intmax_t(attr));
         break;
@@ -420,9 +415,7 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
     case DW_FORM_ref8:
     case DW_FORM_GNU_ref_alt:
     case DW_FORM_ref_udata: {
-        const auto entry = DIE(attr);
-        if (entry)
-           writer.field("value", EntryReference(entry));
+        writer.field("value", attr.value().addr);
         break;
     }
     case DW_FORM_exprloc:

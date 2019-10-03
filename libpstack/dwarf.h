@@ -219,7 +219,6 @@ public:
     ~Attribute() { }
 
     bool valid() const { return formp != nullptr; }
-    Ranges ranges() const;
     explicit operator std::string() const;
     explicit operator intmax_t() const;
     explicit operator uintmax_t() const;
@@ -481,6 +480,8 @@ public:
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
     bool hasARanges() { getARanges(); return aranges.size() != 0; }
     DIE offsetToDIE(off_t) const;
+    bool hasRanges() const { return bool(rangesh); }
+    Ranges rangesAt(off_t) const;
 
 private:
     std::string getAltImageName() const;
@@ -494,6 +495,7 @@ private:
     ImageCache &imageCache;
     mutable Reader::csptr pubnamesh;
     mutable Reader::csptr arangesh;
+    mutable Reader::csptr rangesh;
 };
 
 /*

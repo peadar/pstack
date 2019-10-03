@@ -114,6 +114,7 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     , imageCache(cache_)
     , pubnamesh(sectionReader(*obj, ".debug_pubnames", ".zdebug_pubnames"))
     , arangesh(sectionReader(*obj, ".debug_aranges", ".zdebug_aranges"))
+    , rangesh(sectionReader(*obj, ".debug_ranges", ".zdebug_ranges"))
 {
     auto f = [this, &obj](const char *name, const char *zname, FIType ftype) {
         const Elf::Section *sec;
@@ -333,24 +334,6 @@ Attribute::name() const
             return ent.first;
     }
     return DW_AT_none;
-}
-
-Ranges
-Attribute::ranges() const
-{
-    Ranges ranges;
-    auto dwarf = die().getUnit()->dwarf;
-    auto elf = dwarf->elf;
-    auto &sec = elf->getSection(".debug_ranges", SHT_NULL);
-    DWARFReader reader(sec.io, uintmax_t(*this));
-    for (;;) {
-        auto start = reader.getuint(sizeof (Elf::Addr));
-        auto end = reader.getuint(sizeof (Elf::Addr));
-        if (start == 0 && end == 0)
-            break;
-        ranges.emplace_back(std::make_pair(start, end));
-    }
-    return ranges;
 }
 
 Attribute::operator intmax_t() const
@@ -1024,6 +1007,20 @@ Info::sourceFromAddr(uintmax_t addr)
         return sourceFromAddrInUnits(units, addr);
 }
 
+Ranges
+Info::rangesAt(off_t offset) const {
+    Ranges ranges;
+    DWARFReader reader(rangesh, offset);
+    for (;;) {
+        auto start = reader.getuint(sizeof (Elf::Addr));
+        auto end = reader.getuint(sizeof (Elf::Addr));
+        if (start == 0 && end == 0)
+            break;
+        ranges.emplace_back(std::make_pair(start, end));
+    }
+    return ranges;
+}
+
 CallFrame::CallFrame()
     : cfaReg(0)
     , cfaValue{ .type = UNDEF, .u = { .arch = 0  } }
@@ -1423,12 +1420,12 @@ DIE::containsAddress(Elf::Addr addr) const
                 abort();
         }
         rc = start <= addr && end > addr ? ContainsAddr::YES : ContainsAddr::NO;
-    } else {
+    } else if (unit->dwarf->hasRanges()) {
         Elf::Addr base = low.valid() ? uintmax_t(low) : 0;
         auto ranges = attribute(DW_AT_ranges);
         if (ranges.valid()) {
             rc = ContainsAddr::NO;
-            for (auto &range : ranges.ranges()) {
+            for (auto &range : unit->dwarf->rangesAt(uintmax_t(ranges))) {
                 if (range.first + base <= addr && addr <= range.second + base ) {
                     rc = ContainsAddr::YES;
                     break;
