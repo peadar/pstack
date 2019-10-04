@@ -51,6 +51,44 @@ Stats stats;
 }
 
 namespace Dwarf {
+class RawDIE {
+    RawDIE() = delete;
+    RawDIE(const RawDIE &) = delete;
+    static void readValue(DWARFReader &, Form form, Value &value, const Unit *);
+    const Abbreviation *type;
+    std::vector<Value> values;
+    off_t parent; // 0 implies we do not yet know the parent's offset.
+    off_t firstChild;
+    off_t nextSibling;
+public:
+    RawDIE(Unit *, DWARFReader &, size_t, off_t parent);
+    ~RawDIE();
+    friend class Attribute;
+    friend class DIE;
+    friend class DIEAttributes;
+    friend class Unit;
+    friend struct DIEIter;
+};
+
+DIEIter &DIEIter::operator++() {
+    currentDIE = currentDIE.nextSibling(parent);
+    // if we loaded the child by a direct refrence into the middle of the
+    // unit, (and hence didn't know the parent at the time), take the
+    // opportunity to update its parent pointer
+    if (currentDIE && parent && currentDIE.raw->parent == 0)
+        currentDIE.raw->parent = parent.offset;
+    return *this;
+}
+
+DIEIter::DIEIter(const DIE &first, const DIE & parent_)
+    : parent(parent_)
+    , currentDIE(first)
+{
+    // As above, take the opportunity to update the current DIE's parent field
+    // if it has not already been decided.
+    if (currentDIE && parent && currentDIE.raw->parent == 0)
+        currentDIE.raw->parent = parent.offset;
+}
 
 uintmax_t
 DWARFReader::getuleb128shift(int *shift, bool &isSigned)
@@ -833,6 +871,8 @@ Unit::decodeEntry(const DIE &parent, off_t offset)
     DWARFReader r(io, offset);
     size_t abbrev = r.getuleb128();
     if (abbrev == 0) {
+        // If we get to the terminator, then we now know the parent's nextSibling:
+        // update it now.
         if (parent)
             parent.raw->nextSibling = r.getOffset();
         return nullptr;

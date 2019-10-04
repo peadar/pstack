@@ -282,24 +282,6 @@ public:
     void build(DWARFReader &, const Unit *);
 };
 
-class RawDIE {
-    RawDIE() = delete;
-    RawDIE(const RawDIE &) = delete;
-    static void readValue(DWARFReader &, Form form, Value &value, const Unit *);
-    const Abbreviation *type;
-    std::vector<Value> values;
-    off_t parent; // 0 implies we do not yet know the parent's offset.
-    off_t firstChild;
-    off_t nextSibling;
-    friend class Unit; // XXX
-    friend struct DIEIter; // XXX
-public:
-    RawDIE(Unit *, DWARFReader &, size_t, off_t parent);
-    ~RawDIE();
-    friend class Attribute;
-    friend class DIE;
-    friend class DIEAttributes;
-};
 
 class Unit : public std::enable_shared_from_this<Unit> {
     Unit() = delete;
@@ -520,29 +502,21 @@ struct DIEIter {
     DIE parent;
     DIE currentDIE;
     const DIE &operator *() const { return currentDIE; }
-    DIEIter &operator++() {
-        currentDIE = currentDIE.nextSibling(parent);
-        // if we loaded the child by a direct jump, maybe update its parent.
-        if (currentDIE && parent && currentDIE.raw->parent == 0)
-            currentDIE.raw->parent = parent.offset;
-        return *this;
-    }
-    DIEIter(const DIE &first, const DIE & parent_) : parent(parent_), currentDIE(first) {
-        if (currentDIE && parent && currentDIE.raw->parent == 0)
-            currentDIE.raw->parent = parent.offset;
-    }
+    DIEIter &operator++();
+    DIEIter(const DIE &first, const DIE & parent_);
+
     bool operator == (const DIEIter &rhs) const {
         if (!currentDIE)
             return !rhs.currentDIE;
         if (!rhs.currentDIE)
             return false;
-        return currentDIE.raw == rhs.currentDIE.raw;
+        return currentDIE.unit == rhs.currentDIE.unit &&
+            currentDIE.offset == rhs.currentDIE.offset;
     }
     bool operator != (const DIEIter &rhs) const {
         return !(*this == rhs);
     }
 };
-
 
 enum CFAInstruction {
 #define DWARF_CFA_INSN(name, value) name = value,
