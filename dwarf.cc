@@ -25,9 +25,34 @@ using std::make_unique;
 using std::make_shared;
 using std::string;
 
+namespace {
+
+struct Stats {
+    int totalDIEs;
+    int maxDIEs;
+    int currentDIEs;
+    Stats() : totalDIEs{}, maxDIEs{}, currentDIEs{} {}
+    ~Stats() {
+        if (verbose)
+            std::clog << "DIEs: current=" << currentDIEs << ", total=" << totalDIEs << ", max=" << maxDIEs << std::endl;
+    }
+    void addone() {
+        totalDIEs++;
+        currentDIEs++;
+        if (currentDIEs > maxDIEs)
+            maxDIEs = currentDIEs;
+    }
+    void delone() {
+        currentDIEs--;
+    }
+};
+
+Stats stats;
+}
+
 namespace Dwarf {
 
-int totalDIEs;
+
 
 
 uintmax_t
@@ -713,7 +738,7 @@ RawDIE::readValue(DWARFReader &r, Form form, Value &value, const Unit *unit)
 
 RawDIE::~RawDIE()
 {
-    totalDIEs--;
+    stats.delone();
     int i = 0;
     for (auto form : type->forms) {
         switch (form) {
@@ -776,7 +801,7 @@ RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
         nextSibling = r.getOffset(); // we have no children, so next DIE is next sib
         firstChild = 0; // no children.
     }
-    totalDIEs++;
+    stats.addone();
 }
 
 const Abbreviation *
@@ -802,16 +827,16 @@ Unit::decodeEntry(off_t parent, off_t offset)
 void
 Unit::purge()
 {
-    auto start = totalDIEs;
+    auto start = stats.currentDIEs;
     {
         AllEntries destroy;
         std::swap(allEntries, destroy);
     }
-    auto end = totalDIEs;
+    auto end = stats.currentDIEs;
     if (verbose)
         std::clog << "purging " << name() << " in " << *dwarf->elf->io
                   << " freed " << start - end << " DIEs (total now "
-                  << totalDIEs << ")" << std::endl;
+                  << stats.currentDIEs << ")" << std::endl;
 }
 
 string

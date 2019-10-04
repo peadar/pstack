@@ -325,8 +325,9 @@ public:
     // header fields
     off_t offset;
     uint32_t length;
-    off_t end; // a.k.a. start of next unit.
+    off_t end;
     uint16_t version;
+
     size_t dwarfLen;
     uint8_t addrlen;
     Unit(const Info *, DWARFReader &);
@@ -367,13 +368,6 @@ struct Units {
     UnitIterator begin() const;
     UnitIterator end() const { return iterator(); }
     Units(const std::shared_ptr<const Info> &info_) : info(info_) {}
-};
-
-struct UnitsCache {
-    std::map<off_t, Unit::sptr> byOffset;
-    std::list<Unit::sptr> LRU;
-    Unit::sptr get(const Info *, off_t);
-    Unit::sptr unitForDIE(const Info *, off_t offset);
 };
 
 struct FDE {
@@ -488,7 +482,7 @@ private:
     mutable std::list<ARangeSet> aranges;
     // These are mutable so we can lazy-eval them when getters are called, and
     // maintain logical constness.
-    mutable UnitsCache units;
+    mutable std::map<off_t, std::shared_ptr<Unit>> units; // this is ordered
     mutable Info::sptr altDwarf;
     mutable bool altImageLoaded;
     ImageCache &imageCache;
@@ -657,9 +651,9 @@ DIE findEntryForFunc(Elf::Addr address, const DIE &entry);
 
 inline
 UnitIterator UnitIterator::operator ++() {
-    currentUnit = currentUnit->end == info->io->size()
+    currentUnit = currentUnit->end() == info->io->size()
         ? nullptr
-        : info->getUnit( currentUnit->end );
+        : info->getUnit( currentUnit->end() );
     return *this;
 }
 
