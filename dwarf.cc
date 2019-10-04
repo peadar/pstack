@@ -52,9 +52,6 @@ Stats stats;
 
 namespace Dwarf {
 
-
-
-
 uintmax_t
 DWARFReader::getuleb128shift(int *shift, bool &isSigned)
 {
@@ -173,7 +170,7 @@ Info::pubnames() const
     return pubnameUnits;
 }
 
-static size_t UNITCACHE_SIZE=128;
+static size_t UNITCACHE_SIZE=256;
 
 Unit::sptr
 UnitsCache::get(const Info *info, off_t offset)
@@ -186,18 +183,23 @@ UnitsCache::get(const Info *info, off_t offset)
     } else {
         DWARFReader r(info->io, offset);
         ent = make_shared<Unit>(info, r);
-        if (verbose >= 2)
-            std::clog << "create unit " << ent->name() << "@" << offset << " in " << *info->io << "\n";
+        if (verbose >= 3)
+            std::clog << "create unit " << ent->name() << "@" << offset
+                      << " in " << *info->io << "\n";
     }
     LRU.push_front(ent);
     if (LRU.size() > UNITCACHE_SIZE) {
         auto old = LRU.back();
+        // There might still be active DIEs in this unit, but we can purge its
+        // RawDIEs to potentially free them
+        old->purge();
         LRU.pop_back();
         // don't erase from the map - we hold on to the offsets so we can quickly
         // determine which unit contains a particular DIE.
         byOffset[old->offset] = 0;
-        if (verbose > 2)
-            std::clog << "evicted unit " << old->name() << "@" << old->offset << " in " << *info->io << "\n";
+        if (verbose > 3)
+            std::clog << "evicted unit " << old->name() << "@" << old->offset
+                      << " in " << *info->io << "\n";
     }
     return ent;
 }
@@ -224,10 +226,12 @@ Info::offsetToDIE(off_t offset) const
     UnitIterator end;
     for (int i = 1; start != end; ++start, ++i) {
         const auto &u = *start;
-        DIE entry = u->offsetToDIE(0, offset);
+        DIE entry = u->offsetToDIE(offset);
         if (entry) {
             if (verbose > 2)
-                std::clog << "search for DIE at " << offset << " started at " << uOffset <<" and took " << i << " iterations\n";
+                std::clog << "search for DIE at " << offset
+                          << " started at " << uOffset
+                          << " and took " << i << " iterations\n";
             return entry;
         }
     }
@@ -314,21 +318,33 @@ Unit::Unit(const Info *di, DWARFReader &r)
 
 /*
  * Convert an offset to a DIE.
- * If the offset of the parent is not known, then pass as zero.
+ * If the parent is not known, it can be null
  * If we later need to find the parent, it may require scanning the entire
  * DIE tree to do so if we don't know parent's offset when requested.
  */
-DIE
-Unit::offsetToDIE(off_t parentOffset, off_t offset) {
-    if (offset == 0 || offset < this->offset || offset >= this->end)
-        return DIE();
 
+std::shared_ptr<RawDIE>
+Unit::offsetToRawDIE(const DIE &parent, off_t offset) {
+    if (offset == 0 || offset < this->offset || offset >= this->end)
+        return nullptr;
     auto &rawptr = allEntries[offset];
-    if (rawptr == nullptr) {
-        rawptr = decodeEntry(parentOffset, offset);
-    }
-    return DIE(shared_from_this(), offset, rawptr );
+    if (rawptr == nullptr)
+        rawptr = decodeEntry(parent, offset);
+    return rawptr;
 }
+
+
+DIE
+Unit::offsetToDIE(const DIE &parent, off_t offset) {
+    return DIE(shared_from_this(), offset, offsetToRawDIE(parent, offset));
+}
+
+
+DIE
+Unit::offsetToDIE(off_t offset) {
+    return DIE(shared_from_this(), offset, offsetToRawDIE(DIE(), offset));
+}
+
 
 string
 Unit::name()
@@ -812,16 +828,16 @@ Unit::findAbbreviation(size_t offset) const
 }
 
 std::shared_ptr<RawDIE>
-Unit::decodeEntry(off_t parent, off_t offset)
+Unit::decodeEntry(const DIE &parent, off_t offset)
 {
     DWARFReader r(io, offset);
     size_t abbrev = r.getuleb128();
     if (abbrev == 0) {
-        if (parent != 0)
-            allEntries.at(parent)->nextSibling = r.getOffset();
+        if (parent)
+            parent.raw->nextSibling = r.getOffset();
         return nullptr;
     }
-    return std::make_shared<RawDIE>(this, r, abbrev, parent);
+    return std::make_shared<RawDIE>(this, r, abbrev, parent.getOffset());
 }
 
 void
@@ -833,7 +849,7 @@ Unit::purge()
         std::swap(allEntries, destroy);
     }
     auto end = stats.currentDIEs;
-    if (verbose)
+    if (verbose >= 3)
         std::clog << "purging " << name() << " in " << *dwarf->elf->io
                   << " freed " << start - end << " DIEs (total now "
                   << stats.currentDIEs << ")" << std::endl;
@@ -1356,7 +1372,7 @@ Attribute::operator DIE() const
 
     // Try this unit first (if we're dealing with the same Info)
     if (dwarf == dieref.unit->dwarf && dieref.unit->offset <= off && dieref.unit->end > off) {
-        const auto otherEntry = dieref.unit->offsetToDIE(0, off);
+        const auto otherEntry = dieref.unit->offsetToDIE(off);
         if (otherEntry)
             return otherEntry;
     }
@@ -1391,11 +1407,11 @@ DIE::getParentOffset() const
 
 DIE
 DIE::firstChild() const {
-    return unit->offsetToDIE(offset, raw->firstChild);
+    return unit->offsetToDIE(*this, raw->firstChild);
 }
 
 DIE
-DIE::nextSibling() const {
+DIE::nextSibling(const DIE &parent) const {
 
     if (raw->nextSibling == 0) {
         // Need to work out what the next sibling is, and we don't have DW_AT_sibling
@@ -1407,7 +1423,7 @@ DIE::nextSibling() const {
         if (last)
             last->nextSibling = 0;
     }
-    return unit->offsetToDIE(raw->parent, raw->nextSibling);
+    return unit->offsetToDIE(parent, raw->nextSibling);
 }
 
 ContainsAddr
@@ -1544,7 +1560,7 @@ typeName(const DIE &type)
         case DW_TAG_subroutine_type:
             s = typeName(base) + "(";
             sep = "";
-            for (auto arg = type.firstChild(); arg; arg = arg.nextSibling()) {
+            for (auto arg : type.children()) {
                 if (arg.tag() != DW_TAG_formal_parameter)
                     continue;
                 s += sep;
@@ -1572,7 +1588,7 @@ findEntryForFunc(Elf::Addr address, const DIE &entry)
                 return entry;
             /* FALLTHRU */
         case ContainsAddr::UNKNOWN:
-            for (auto child = entry.firstChild(); child; child = child.nextSibling()) {
+            for (auto child : entry.children()) {
                 auto descendent = findEntryForFunc(address, child);
                 if (descendent)
                     return descendent;
@@ -1584,12 +1600,12 @@ findEntryForFunc(Elf::Addr address, const DIE &entry)
 
 DIEIter
 DIEChildren::begin() const {
-    return const_iterator(parent.firstChild(), parent.getOffset());
+    return const_iterator(parent.firstChild(), parent);
 }
 
 DIEIter
 DIEChildren::end() const {
-    return const_iterator(DIE(), 0);
+    return const_iterator(DIE(), parent);
 }
 
 std::pair<AttrName, Attribute>

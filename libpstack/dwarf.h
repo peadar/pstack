@@ -180,12 +180,12 @@ enum class ContainsAddr { YES, NO, UNKNOWN };
 class DIE {
     std::shared_ptr<Unit> unit;
     off_t offset;
+public:
     std::shared_ptr<RawDIE> raw;
     friend struct DIEIter;
     friend class Attribute;
     friend class DIEAttributes;
     friend class RawDIE;
-public:
     ContainsAddr containsAddress(Elf::Addr addr) const;
     off_t getParentOffset() const;
     off_t getOffset() const { return offset; }
@@ -200,7 +200,7 @@ public:
     bool hasChildren() const;
     DIE hasNextSibling() const;
     DIE firstChild() const;
-    DIE nextSibling() const;
+    DIE nextSibling(const DIE &parent) const;
     DIEChildren children() const { return DIEChildren(*this); }
 };
 
@@ -309,7 +309,7 @@ class Unit : public std::enable_shared_from_this<Unit> {
     off_t topDIEOffset;
     using AllEntries = std::unordered_map<off_t, std::shared_ptr<RawDIE>>;
     AllEntries allEntries;
-    std::shared_ptr<RawDIE> decodeEntry(off_t parent, off_t offset);
+    std::shared_ptr<RawDIE> decodeEntry(const DIE &parent, off_t offset);
 public:
     void purge(); // Remove all RawDIEs from allEntries, potentially freeing memory.
     bool isRoot(const DIE &die) { return die.getOffset() == topDIEOffset; }
@@ -317,8 +317,10 @@ public:
     typedef std::shared_ptr<Unit> sptr;
     typedef std::shared_ptr<const Unit> csptr;
     const Abbreviation *findAbbreviation(size_t) const;
-    DIE root() { return offsetToDIE(0, topDIEOffset); }
-    DIE offsetToDIE(off_t parentOffset, off_t offset);
+    DIE root() { return offsetToDIE(topDIEOffset); }
+    DIE offsetToDIE(off_t offset);
+    DIE offsetToDIE(const DIE &parent, off_t offset);
+    std::shared_ptr<RawDIE> offsetToRawDIE(const DIE &parent, off_t offset);
     const Info *dwarf;
     Reader::csptr io;
 
@@ -515,19 +517,19 @@ public:
 
 struct DIEIter {
     const std::shared_ptr<const Unit> u;
-    off_t parent;
+    DIE parent;
     DIE currentDIE;
     const DIE &operator *() const { return currentDIE; }
     DIEIter &operator++() {
-        currentDIE = currentDIE.nextSibling();
+        currentDIE = currentDIE.nextSibling(parent);
         // if we loaded the child by a direct jump, maybe update its parent.
-        if (currentDIE && parent != 0 && currentDIE.raw->parent == 0)
-            currentDIE.raw->parent = parent;
+        if (currentDIE && parent && currentDIE.raw->parent == 0)
+            currentDIE.raw->parent = parent.offset;
         return *this;
     }
-    DIEIter(const DIE &first, off_t parent_) : parent(parent_), currentDIE(first) {
-        if (currentDIE && parent != 0 && currentDIE.raw->parent == 0)
-            currentDIE.raw->parent = parent;
+    DIEIter(const DIE &first, const DIE & parent_) : parent(parent_), currentDIE(first) {
+        if (currentDIE && parent && currentDIE.raw->parent == 0)
+            currentDIE.raw->parent = parent.offset;
     }
     bool operator == (const DIEIter &rhs) const {
         if (!currentDIE)

@@ -379,7 +379,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
 {
     using namespace Dwarf;
     const char *sep = "";
-    for (auto child = ap.frame->function.firstChild(); child; child = child.nextSibling()) {
+    for (auto child : ap.frame->function.children()) {
         switch (child.tag()) {
             case DW_TAG_formal_parameter: {
                 auto name = child.name();
@@ -422,7 +422,7 @@ dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
       return dieName(os, Dwarf::DIE(spec), first);
    }
    auto parent = die.getParentOffset();
-   bool printedParent = parent != 0 && dieName(os, die.getUnit()->offsetToDIE(0, parent), false);
+   bool printedParent = parent != 0 && dieName(os, die.getUnit()->offsetToDIE(parent), false);
    if (die.tag() != Dwarf::DW_TAG_compile_unit) { // don't print out compile unit
       if (printedParent)
          os << "::";
