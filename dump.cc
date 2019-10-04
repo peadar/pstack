@@ -284,6 +284,7 @@ std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Unit::sptr> &unit
         .field("dietree", unit.object->root());
     if (unit.object->getLines() != nullptr)
         fmt.field("linenumbers", *unit.object->getLines());
+    unit.object->purge();
     return fmt;
 }
 

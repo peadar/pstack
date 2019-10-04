@@ -176,10 +176,11 @@ public:
 };
 
 enum class ContainsAddr { YES, NO, UNKNOWN };
+
 class DIE {
     std::shared_ptr<Unit> unit;
     off_t offset;
-    RawDIE *raw;
+    std::shared_ptr<RawDIE> raw;
     friend struct DIEIter;
     friend class Attribute;
     friend class DIEAttributes;
@@ -189,9 +190,9 @@ public:
     off_t getParentOffset() const;
     off_t getOffset() const { return offset; }
     const std::shared_ptr<Unit> & getUnit() const { return unit; }
-    DIE(const std::shared_ptr<Unit> &unit, size_t offset_, RawDIE *raw) : unit(unit), offset(offset_), raw(raw) {}
+    DIE(const std::shared_ptr<Unit> &unit, size_t offset_, const std::shared_ptr<RawDIE> &raw) : unit(unit), offset(offset_), raw(raw) {}
     DIE() : unit(nullptr), offset(0), raw(nullptr) {}
-    operator bool() const { return unit != nullptr; }
+    operator bool() const { return raw != nullptr; }
     Attribute attribute(AttrName name) const;
     inline std::string name() const;
     DIEAttributes attributes() const { return DIEAttributes(*this); }
@@ -306,11 +307,12 @@ class Unit : public std::enable_shared_from_this<Unit> {
     std::unique_ptr<LineInfo> lines;
     std::unordered_map<size_t, Abbreviation> abbreviations;
     off_t topDIEOffset;
-    using AllEntries = std::unordered_map<off_t, RawDIE>;
+    using AllEntries = std::unordered_map<off_t, std::shared_ptr<RawDIE>>;
     AllEntries allEntries;
+    std::shared_ptr<RawDIE> decodeEntry(off_t parent, off_t offset);
 public:
+    void purge(); // Remove all RawDIEs from allEntries, potentially freeing memory.
     bool isRoot(const DIE &die) { return die.getOffset() == topDIEOffset; }
-    AllEntries::iterator loadChildDIE(off_t parentOff, off_t dieOff);
     size_t entryCount() const { return allEntries.size(); }
     typedef std::shared_ptr<Unit> sptr;
     typedef std::shared_ptr<const Unit> csptr;
@@ -327,8 +329,6 @@ public:
     uint16_t version;
 
     size_t dwarfLen;
-    void decodeEntries(DWARFReader &r, off_t parent);
-    AllEntries::iterator decodeEntry(DWARFReader &r, off_t parent);
     uint8_t addrlen;
     Unit(const Info *, DWARFReader &);
     std::string name();

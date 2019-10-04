@@ -27,6 +27,9 @@ using std::string;
 
 namespace Dwarf {
 
+int totalDIEs;
+
+
 uintmax_t
 DWARFReader::getuleb128shift(int *shift, bool &isSigned)
 {
@@ -294,10 +297,12 @@ DIE
 Unit::offsetToDIE(off_t parentOffset, off_t offset) {
     if (offset == 0 || offset < this->offset || offset >= this->end)
         return DIE();
-    auto it = allEntries.find(offset);
-    if (it == allEntries.end())
-        it = loadChildDIE(parentOffset, offset);
-    return it != allEntries.end() ? DIE(shared_from_this(), offset, &it->second) : DIE();
+
+    auto &rawptr = allEntries[offset];
+    if (rawptr == nullptr) {
+        rawptr = decodeEntry(parentOffset, offset);
+    }
+    return DIE(shared_from_this(), offset, rawptr );
 }
 
 string
@@ -708,6 +713,7 @@ RawDIE::readValue(DWARFReader &r, Form form, Value &value, const Unit *unit)
 
 RawDIE::~RawDIE()
 {
+    totalDIEs--;
     int i = 0;
     for (auto form : type->forms) {
         switch (form) {
@@ -770,6 +776,7 @@ RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
         nextSibling = r.getOffset(); // we have no children, so next DIE is next sib
         firstChild = 0; // no children.
     }
+    totalDIEs++;
 }
 
 const Abbreviation *
@@ -779,31 +786,33 @@ Unit::findAbbreviation(size_t offset) const
     return it != abbreviations.end() ? &it->second : nullptr;
 }
 
-Unit::AllEntries::iterator
-Unit::decodeEntry(DWARFReader &r, off_t parent)
+std::shared_ptr<RawDIE>
+Unit::decodeEntry(off_t parent, off_t offset)
 {
-    intmax_t offset = r.getOffset();
+    DWARFReader r(io, offset);
     size_t abbrev = r.getuleb128();
     if (abbrev == 0) {
-        if (parent)
-            allEntries.at(parent).nextSibling = r.getOffset();
-        return allEntries.end();
+        if (parent != 0)
+            allEntries.at(parent)->nextSibling = r.getOffset();
+        return nullptr;
     }
-    auto p = allEntries.emplace(std::piecewise_construct,
-                    std::forward_as_tuple(offset),
-                    std::forward_as_tuple(this, r, abbrev, parent));
-    return p.first;
+    return std::make_shared<RawDIE>(this, r, abbrev, parent);
 }
 
 void
-Unit::decodeEntries(DWARFReader &r, off_t parent)
+Unit::purge()
 {
-    while (!r.empty()) {
-        if (decodeEntry(r, parent) == allEntries.end())
-            return;
+    auto start = totalDIEs;
+    {
+        AllEntries destroy;
+        std::swap(allEntries, destroy);
     }
+    auto end = totalDIEs;
+    if (verbose)
+        std::clog << "purging " << name() << " in " << *dwarf->elf->io
+                  << " freed " << start - end << " DIEs (total now "
+                  << totalDIEs << ")" << std::endl;
 }
-
 
 string
 Info::getAltImageName() const
@@ -1355,17 +1364,6 @@ DIE::getParentOffset() const
     return raw->parent;
 }
 
-Unit::AllEntries::iterator
-Unit::loadChildDIE(off_t parent, off_t dieOff)
-{
-    auto it = allEntries.find(dieOff);
-    if (it == allEntries.end()) {
-        DWARFReader r(io, dieOff);
-        return decodeEntry(r, parent);
-    }
-    return it;
-}
-
 DIE
 DIE::firstChild() const {
     return unit->offsetToDIE(offset, raw->firstChild);
@@ -1378,7 +1376,7 @@ DIE::nextSibling() const {
         // Need to work out what the next sibling is, and we don't have DW_AT_sibling
         // Run through all our children. decodeEntries will update the
         // parent's (our) nextSibling.
-        RawDIE *last = 0;
+        std::shared_ptr<RawDIE> last = nullptr;
         for (auto &it : children())
             last = it.raw;
         if (last)
