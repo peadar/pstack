@@ -35,7 +35,11 @@ else()
    set(GIT_TAG "unknown")
    message(STATUS "No git/no version")
 endif()
-add_definitions("-DVERSION=${GIT_TAG}")
+
+set(VERSION_TAG ${GIT_TAG} CACHE STRING "Version tag (defaults to git commit)")
+message(STATUS "Version: ${VERSION_TAG}")
+
+add_definitions("-DVERSION=${VERSION_TAG}")
 
 set(CMAKE_CXX_STANDARD 14)
 

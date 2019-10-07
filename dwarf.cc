@@ -178,6 +178,7 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     , pubnamesh(sectionReader(*obj, ".debug_pubnames", ".zdebug_pubnames"))
     , arangesh(sectionReader(*obj, ".debug_aranges", ".zdebug_aranges"))
     , rangesh(sectionReader(*obj, ".debug_ranges", ".zdebug_ranges"))
+    , haveLines(bool(lineshdr))
 {
     auto f = [this, &obj](const char *name, const char *zname, FIType ftype) {
         const Elf::Section *sec;
@@ -288,49 +289,52 @@ Info::getUnits() const
     return Units(shared_from_this());
 }
 
-std::list<ARangeSet> &
-Info::getARanges() const
-{
-    if (arangesh) {
-        DWARFReader r(arangesh);
-        while (!r.empty())
-            aranges.emplace_back(r);
-        arangesh = nullptr;
-    }
-    return aranges;
-}
-
-Info::~Info() = default;
-
-ARangeSet::ARangeSet(DWARFReader &r)
-{
-    unsigned align, tupleLen;
+void
+Info::decodeARangeSet(DWARFReader &r) const {
     Elf::Off start = r.getOffset();
     size_t dwarfLen;
 
-    length = r.getlength(&dwarfLen);
+    uint32_t length = r.getlength(&dwarfLen);
     Elf::Off next = r.getOffset() + length;
-    version = r.getu16();
-    debugInfoOffset = r.getu32();
-    addrlen = r.getu8();
+    uint16_t version = r.getu16();
+    (void)version;
+    off_t debugInfoOffset = r.getu32();
+    uint8_t addrlen = r.getu8();
     if (addrlen == 0)
        addrlen = 1;
     r.addrLen = addrlen;
-    segdesclen = r.getu8();
-    tupleLen = addrlen * 2;
+    uint8_t segdesclen = r.getu8();
+    (void)segdesclen;
+    assert(segdesclen == 0);
+    unsigned tupleLen = addrlen * 2;
 
     // Align on tupleLen-boundary.
     Elf::Off used = r.getOffset() - start;
 
-    align = tupleLen - used % tupleLen;;
+    unsigned align = tupleLen - used % tupleLen;;
     r.skip(align);
-
     while (r.getOffset() < next) {
-        uintmax_t start = r.getuint(addrlen);
-        uintmax_t length = r.getuint(addrlen);
-        ranges.emplace_back(start, length);
+        Elf::Addr start = r.getuint(addrlen);
+        Elf::Addr length = r.getuint(addrlen);
+        aranges.ranges[start + length] = std::make_pair(length, debugInfoOffset);
     }
 }
+
+Unit::sptr
+Info::lookupUnit(Elf::Addr addr) const {
+    if (arangesh) {
+        DWARFReader r(arangesh);
+        while (!r.empty())
+            decodeARangeSet(r);
+        arangesh = nullptr;
+    }
+    auto it = aranges.ranges.upper_bound(addr);
+    if (it == aranges.ranges.end() || it->first - it->second.first > addr)
+        return nullptr;
+    return getUnit(it->second.second);
+}
+
+Info::~Info() = default;
 
 Unit::Unit(const Info *di, DWARFReader &r)
     : dwarf(di)
@@ -1053,48 +1057,53 @@ CFI::findFDE(Elf::Addr addr) const
     return nullptr;
 }
 
-template<typename T> std::vector<std::pair<string, int>>
-sourceFromAddrInUnits(const T &units, uintmax_t addr) {
-    std::vector<std::pair<string, int>> info;
-    for (const auto &unit : units) {
-        DIE d = unit->root();
-        if (d.containsAddress(addr) == ContainsAddr::NO)
-            continue;
 
-        auto lines = unit->getLines();
-        if (lines) {
-            for (auto i = lines->matrix.begin(); i != lines->matrix.end(); ++i) {
-                if (i->end_sequence)
-                    continue;
-                auto next = i+1;
-                if (i->addr <= addr && next->addr > addr)
-                    info.emplace_back(i->file->name, i->line);
+
+bool
+sourceFromAddrInUnit(const Unit::sptr &unit, Elf::Addr addr, std::vector<std::pair<string, int>> &info) {
+    DIE d = unit->root();
+    if (d.containsAddress(addr) == ContainsAddr::NO)
+        return false;
+    auto lines = unit->getLines();
+    if (lines) {
+        for (auto i = lines->matrix.begin(); i != lines->matrix.end(); ++i) {
+            if (i->end_sequence)
+                continue;
+            auto next = i+1;
+            if (i->addr <= addr && next->addr > addr) {
+                info.emplace_back(i->file->name, i->line);
+                return true;
             }
         }
     }
+    return false;
+}
+
+template<typename T>
+std::vector<std::pair<string, int>>
+sourceFromAddrInUnits(const T &units, uintmax_t addr) {
+    std::vector<std::pair<string, int>> info;
+    for (const auto &unit : units)
+        if (sourceFromAddrInUnit(unit, addr, info))
+            break;
     return info;
 }
 
-std::vector<std::pair<string, int>>
-Info::sourceFromAddr(uintmax_t addr)
+
+std::vector<std::pair<std::string, int>>
+Info::sourceFromAddr(uintmax_t addr) const
 {
     std::vector<std::pair<string, int>> info;
     std::list<Unit::sptr> units;
-    if (hasARanges()) {
-        auto &rangelist = getARanges();
-        for (auto &rs : rangelist) {
-            for (auto &r : rs.ranges) {
-                if (r.start <= addr && r.start + r.length > addr) {
-                    units.push_back(getUnit(rs.debugInfoOffset));
-                    break;
-                }
-            }
-        }
-    }
-    if (units.empty())
-        return sourceFromAddrInUnits(getUnits(), addr);
+    if (!haveLines)
+        return info;
+
+    const auto &unit = lookupUnit(addr);
+    if (unit == nullptr)
+        sourceFromAddrInUnits(getUnits(), addr);
     else
-        return sourceFromAddrInUnits(units, addr);
+        sourceFromAddrInUnit(unit, Elf::Addr(addr), info);
+    return info;
 }
 
 Ranges

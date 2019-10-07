@@ -288,22 +288,6 @@ std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Unit::sptr> &unit
     return fmt;
 }
 
-std::ostream & operator << (std::ostream &os, const JSON<Dwarf::ARange> &range) {
-    return JObject(os)
-        .field("start", range.object.start)
-        .field("length", range.object.length);
-}
-
-std::ostream & operator << (std::ostream &os, const JSON<Dwarf::ARangeSet> &ranges) {
-    return JObject(os)
-        .field("length", ranges.object.length)
-        .field("version", int(ranges.object.version))
-        .field("debug_info_offset", ranges.object.debugInfoOffset)
-        .field("addrlen", int(ranges.object.addrlen))
-        .field("descrlen",  int(ranges.object.segdesclen))
-        .field("ranges", ranges.object.ranges);
-}
-
 std::ostream & operator << (std::ostream &os, const JSON<Dwarf::Tag> &tag) {
 #define DWARF_TAG(x,y) case Dwarf::x: return os << json(#x);
     switch (tag.object) {
@@ -491,7 +475,7 @@ operator << (std::ostream &os, const JSON<Dwarf::Info> &di)
     JObject writer(os);
     writer.field("units", di->getUnits())
         .field("pubnameUnits", di->pubnames())
-        .field("aranges", di->getARanges());
+        ; // XXX .field("aranges", di->getARanges());
     if (di->debugFrame)
         writer.field("debugframe", *di->debugFrame);
     if (di->ehFrame)

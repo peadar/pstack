@@ -97,22 +97,6 @@ struct Pubname {
     Pubname(DWARFReader &r, uint32_t offset);
 };
 
-struct ARange {
-    uintmax_t start;
-    uintmax_t length;
-    ARange(uintmax_t start_, uintmax_t length_) : start(start_), length(length_) {}
-};
-
-struct ARangeSet {
-    uint32_t length;
-    uint16_t version;
-    uint32_t debugInfoOffset;
-    uint8_t addrlen;
-    uint8_t segdesclen;
-    std::vector<ARange> ranges;
-    ARangeSet(DWARFReader &r);
-};
-
 struct PubnameUnit {
     uint16_t length;
     uint16_t version;
@@ -437,6 +421,10 @@ struct CFI {
     intmax_t decodeAddress(DWARFReader &, int encoding) const;
 };
 
+struct ARanges {
+    std::map<Elf::Addr, std::pair<Elf::Addr, off_t>> ranges;
+};
+
 class ImageCache;
 /*
  * Info represents all the interesting bits of the DWARF data.
@@ -456,20 +444,20 @@ public:
     Reader::csptr abbrev;
     Reader::csptr lineshdr;
     Info::sptr getAltDwarf() const;
-    std::list<ARangeSet> &getARanges() const;
+    const ARanges &getARanges() const;
     const std::list<PubnameUnit> &pubnames() const;
     Unit::sptr getUnit(off_t offset) const;
     Units getUnits() const;
-    std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr);
-    bool hasARanges() { getARanges(); return aranges.size() != 0; }
     DIE offsetToDIE(off_t) const;
     bool hasRanges() const { return bool(rangesh); }
     Ranges rangesAt(off_t) const;
+    Unit::sptr lookupUnit(Elf::Addr addr) const;
+    std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
 
 private:
+    void decodeARangeSet(DWARFReader &) const;
     std::string getAltImageName() const;
     mutable std::list<PubnameUnit> pubnameUnits;
-    mutable std::list<ARangeSet> aranges;
     // These are mutable so we can lazy-eval them when getters are called, and
     // maintain logical constness.
     mutable UnitsCache units;
@@ -479,6 +467,8 @@ private:
     mutable Reader::csptr pubnamesh;
     mutable Reader::csptr arangesh;
     mutable Reader::csptr rangesh;
+    mutable ARanges aranges; // maps starting address to length + unit offset.
+    bool haveLines;
 };
 
 /*
