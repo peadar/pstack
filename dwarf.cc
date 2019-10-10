@@ -784,7 +784,7 @@ RawDIE::readValue(DWARFReader &r, Form form, Value &value, const Unit *unit)
         break;
 
     case DW_FORM_ref_sig8:
-        value.addr = r.getu8();
+        value.addr = r.getuint(8);
         break;
 
     default:
