@@ -132,7 +132,7 @@ public:
 
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) = 0;
     void addElfObject(Elf::Object::sptr obj, Elf::Addr load);
-    std::pair<Elf::Addr, Elf::Object::sptr>  findObject(Elf::Addr addr) const;
+    std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>  findObject(Elf::Addr addr) const;
     Dwarf::Info::sptr getDwarf(Elf::Object::sptr);
     Process(Elf::Object::sptr exec, Reader::csptr memory, const PathReplacementList &prl, Dwarf::ImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;

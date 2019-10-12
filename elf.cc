@@ -94,7 +94,6 @@ Object::Object(ImageCache &cache, Reader::csptr io_)
     OffsetReader headers(io, elfHeader.e_phoff, elfHeader.e_phnum * sizeof (Phdr));
     for (auto hdr : ReaderArray<Phdr>(headers))
         programHeaders[hdr.p_type].push_back(hdr);
-
     // Sort program headers by VA.
     for (auto &phdrs : programHeaders)
         std::sort(phdrs.second.begin(), phdrs.second.end(),

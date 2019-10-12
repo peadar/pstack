@@ -176,7 +176,8 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
         symName = "(syscall)";
     } else {
         Elf::Off loadAddr;
-        std::tie(loadAddr, obj) = proc->findObject(frame->scopeIP());
+        const Elf::Phdr *phdr;
+        std::tie(loadAddr, obj, phdr) = proc->findObject(frame->scopeIP());
         if (obj) {
             fileName = stringify(*obj->io);
             objIp = frame->scopeIP() - loadAddr;
@@ -456,7 +457,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 
         Elf::Off loadAddr;
         Elf::Object::sptr obj;
-        std::tie(loadAddr, obj) = findObject(frame->scopeIP());
+        const Elf::Phdr *_;
+        std::tie(loadAddr, obj, _) = findObject(frame->scopeIP());
         if (obj) {
             fileName = stringify(*obj->io);
             Elf::Addr objIp = frame->scopeIP() - loadAddr;
@@ -624,7 +626,7 @@ Process::findRDebugAddr()
     if (interpBase && execImage->getInterpreter() != "") {
         try {
             addElfObject(imageCache.getImageForName(execImage->getInterpreter()), interpBase);
-            return findSymbolByName("_r_debug", [this](const Elf::Addr, const Elf::Object::sptr &o) ->bool {
+            return findSymbolByName("_r_debug", [this](const Elf::Addr, const Elf::Object::sptr &o) {
                 auto name = stringify(*o->io);
                 return execImage->getInterpreter() == name;
             });
@@ -635,22 +637,22 @@ Process::findRDebugAddr()
     return 0;
 }
 
-std::pair<Elf::Addr, Elf::Object::sptr>
+std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>
 Process::findObject(Elf::Addr addr) const
 {
-    for (auto &candidate : objects) {
-        for (auto &phdr : candidate.second->getSegments(PT_LOAD)) {
-            Elf::Addr objAddr = addr - candidate.first;
-            if (objAddr >= phdr.p_vaddr && objAddr < phdr.p_vaddr + phdr.p_memsz) {
-                return candidate;
-            }
-        }
+    auto it = objects.lower_bound(addr);
+    if (it != objects.begin()) {
+        --it;
+        auto segment = it->second->getSegmentForAddress(addr - it->first);
+        if (segment)
+            return std::make_tuple(it->first, it->second, segment);
     }
-    return std::pair<Elf::Addr, Elf::Object::sptr>();
+    return std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>();
 }
 
 Elf::Addr
-Process::findSymbolByName(const char *symbolName, std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
+Process::findSymbolByName(const char *symbolName,
+        std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
 {
     Elf::Sym sym;
     for (auto &loaded : objects)

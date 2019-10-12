@@ -77,18 +77,14 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
         }
 
         // Either no data in core, or it was incomplete to this point: search loaded objects.
-        hdr = nullptr;
         Elf::Off loadAddr;
-        std::tie(loadAddr, obj) = p->findObject(remoteAddr);
-        if (obj != nullptr) {
-            hdr = obj->getSegmentForAddress(remoteAddr);
-            if (hdr != nullptr) {
-                // header in an object - try reading from here.
-                size_t rc = readFromHdr(*obj, hdr, remoteAddr - loadAddr, ptr, size, &zeroes);
-                remoteAddr += rc;
-                ptr += rc;
-                size -= rc;
-            }
+        std::tie(loadAddr, obj, hdr) = p->findObject(remoteAddr);
+        if (hdr != nullptr) {
+            // header in an object - try reading from here.
+            size_t rc = readFromHdr(*obj, hdr, remoteAddr - loadAddr, ptr, size, &zeroes);
+            remoteAddr += rc;
+            ptr += rc;
+            size -= rc;
         }
 
         // At this point, we have copied any real data, and "zeroes" reflects
