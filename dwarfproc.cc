@@ -318,7 +318,7 @@ StackFrame::getCFA(const Process &proc, const CallFrame &dcf) const
 StackFrame *
 StackFrame::unwind(Process &p)
 {
-    elf = p.findObject(scopeIP(), &elfReloc);
+    std::tie(elfReloc, elf) = p.findObject(scopeIP());
     if (!elf)
         throw (Exception() << "no image for instruction address " << std::hex << scopeIP());
     Elf::Off objaddr = scopeIP() - elfReloc; // relocate process address to object address

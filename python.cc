@@ -295,9 +295,9 @@ void
 PythonPrinter::addPrinter(const char *symbol, python_printfunc func, bool dupDetect)
 {
     Elf::Sym sym;
-    if (!libPython->object->findSymbolByName(symbol, sym))
+    if (!libpython->findSymbolByName(symbol, sym))
         throw 999;
-    auto typeptr = sym.st_value + libPython->loadAddr;
+    auto typeptr = sym.st_value + libpythonAddr;
     printers.emplace(std::piecewise_construct, std::forward_as_tuple(typeptr), std::forward_as_tuple(func, dupDetect));
 }
 
@@ -313,15 +313,16 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
     : proc(proc_)
     , os(os_)
     , depth(0)
-    , libPython(nullptr)
+    , libpython(nullptr)
     , options(options_)
 {
     // First search the ELF symbol table.
     try {
        auto interp_headp = proc.findSymbolByName("Py_interp_headp",
-                [this](const Process::LoadedObject &lo) {
-                    libPython = &lo;
-                    auto name = stringify(*lo.object->io);
+                [this](Elf::Addr loadAddr, const Elf::Object::sptr &o) {
+                    libpython = o;
+                    libpythonAddr = loadAddr;
+                    auto name = stringify(*o->io);
                     return name.find("python") != std::string::npos;
                 });
        if (verbose)
@@ -329,12 +330,12 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
        proc.io->readObj(interp_headp, &interp_head);
     }
     catch (...) {
-       libPython = nullptr;
+       libpython = nullptr;
        for (auto &o : proc.objects) {
-           std::string module = stringify(*o.object->io);
+           std::string module = stringify(o.second->io);
            if (module.find("python") == std::string::npos)
                continue;
-           auto dwarf = proc.imageCache.getDwarf(o.object);
+           auto dwarf = proc.imageCache.getDwarf(o.second);
            if (!dwarf)
                continue;
            for (auto u : dwarf->getUnits()) {
@@ -349,16 +350,17 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
                        auto location = var.attribute(Dwarf::DW_AT_location);
                        if (!location.valid())
                                throw Exception() << "no DW_AT_location for interpreter";
-                       interp_head = evalStack.eval(proc, location, 0, o.loadAddr);
-                       libPython = &o;
+                       interp_head = evalStack.eval(proc, location, 0, o.first);
+                       libpython = o.second;
+                       libpythonAddr = o.first;
                        break;
                    }
                }
            }
        }
-       if (libPython == nullptr)
+       if (libpython == nullptr)
            throw Exception() << "No libpython found";
-       std::clog << "python library is " << *libPython->object->io << std::endl;
+       std::clog << "python library is " << *libpython->io << std::endl;
     }
 
     addPrinter("PyString_Type", stringPrint, false);

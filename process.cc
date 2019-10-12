@@ -175,8 +175,8 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
     if (frame->rawIP() == proc->sysent) {
         symName = "(syscall)";
     } else {
-        Elf::Off loadAddr = 0;
-        obj = proc->findObject(frame->scopeIP(), &loadAddr);
+        Elf::Off loadAddr;
+        std::tie(loadAddr, obj) = proc->findObject(frame->scopeIP());
         if (obj) {
             fileName = stringify(*obj->io);
             objIp = frame->scopeIP() - loadAddr;
@@ -455,7 +455,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         std::string symName;
 
         Elf::Off loadAddr;
-        auto obj = findObject(frame->scopeIP(), &loadAddr);
+        Elf::Object::sptr obj;
+        std::tie(loadAddr, obj) = findObject(frame->scopeIP());
         if (obj) {
             fileName = stringify(*obj->io);
             Elf::Addr objIp = frame->scopeIP() - loadAddr;
@@ -536,7 +537,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
 void
 Process::addElfObject(Elf::Object::sptr obj, Elf::Addr load)
 {
-    objects.push_back(LoadedObject(load, obj));
+    objects[load] = obj;
     if (verbose >= 2) {
         IOFlagSave _(*debug);
         *debug << "object " << *obj->io << " loaded at address " << std::hex << load << std::endl;
@@ -623,8 +624,8 @@ Process::findRDebugAddr()
     if (interpBase && execImage->getInterpreter() != "") {
         try {
             addElfObject(imageCache.getImageForName(execImage->getInterpreter()), interpBase);
-            return findSymbolByName("_r_debug", [this](const LoadedObject &lo) ->bool {
-                auto name = stringify(*lo.object->io);
+            return findSymbolByName("_r_debug", [this](const Elf::Addr, const Elf::Object::sptr &o) ->bool {
+                auto name = stringify(*o->io);
                 return execImage->getInterpreter() == name;
             });
         }
@@ -634,31 +635,27 @@ Process::findRDebugAddr()
     return 0;
 }
 
-Elf::Object::sptr
-Process::findObject(Elf::Addr addr, Elf::Off *loadAddr) const
+std::pair<Elf::Addr, Elf::Object::sptr>
+Process::findObject(Elf::Addr addr) const
 {
     for (auto &candidate : objects) {
-        for (auto &phdr : candidate.object->getSegments(PT_LOAD)) {
-            Elf::Off objAddr = addr - candidate.loadAddr;
+        for (auto &phdr : candidate.second->getSegments(PT_LOAD)) {
+            Elf::Addr objAddr = addr - candidate.first;
             if (objAddr >= phdr.p_vaddr && objAddr < phdr.p_vaddr + phdr.p_memsz) {
-                *loadAddr = candidate.loadAddr;
-                return candidate.object;
+                return candidate;
             }
         }
     }
-    return 0;
+    return std::pair<Elf::Addr, Elf::Object::sptr>();
 }
 
 Elf::Addr
-Process::findSymbolByName(const char *symbolName, std::function<bool(const LoadedObject &)> match) const
+Process::findSymbolByName(const char *symbolName, std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
 {
-    for (auto &loaded : objects) {
-        if (!match(loaded))
-            continue;
-        Elf::Sym sym;
-        if (loaded.object->findSymbolByName(symbolName, sym))
-            return sym.st_value + loaded.loadAddr;
-    }
+    Elf::Sym sym;
+    for (auto &loaded : objects)
+        if (match(loaded.first, loaded.second) && loaded.second->findSymbolByName(symbolName, sym))
+            return sym.st_value + loaded.first;
     Exception e;
     e << "symbol " << symbolName << " not found";
     throw e;

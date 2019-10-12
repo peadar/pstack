@@ -236,8 +236,8 @@ mainExcept(int argc, char *argv[])
     clog << "opened process " << process << endl;
 
     if (showloaded) {
-        for (auto loaded = process->objects.begin(); loaded != process->objects.end(); ++loaded)
-            std::cout << *loaded->object->io << "\n";
+        for (auto &loaded : process->objects)
+            std::cout << *loaded.second->io << "\n";
         exit(0);
     }
 
@@ -245,30 +245,29 @@ mainExcept(int argc, char *argv[])
         patterns.push_back(virtpattern);
 
     vector<ListedSymbol> listed;
-    for (auto loaded = process->objects.begin(); loaded != process->objects.end(); ++loaded) {
+    for (auto &loaded : process->objects) {
         size_t count = 0;
 
         struct Elf::SymbolSection symtabs[2] = {
-           loaded->object->getSymbols(".dynsym"),
-           loaded->object->getSymbols(".symtab")
+           loaded.second->getSymbols(".dynsym"),
+           loaded.second->getSymbols(".symtab")
         };
 
         for (auto &syms : symtabs) {
-           for (auto sym = syms.begin(); sym != syms.end(); ++sym) {
+           for (const auto &sym : syms) {
                for (auto &pattern : patterns) {
-                   auto &name = (*sym).second;
+                   auto &name = sym.second;
                    if (globmatch(pattern, name)) {
-                       listed.push_back(ListedSymbol((*sym).first,
-                                loaded->loadAddr, name, stringify(*loaded->object->io)));
+                       listed.push_back(ListedSymbol(sym.first, loaded.first, name, stringify(*loaded.second->io)));
                        if (verbose > 1 || showsyms)
-                          std::cout << (*sym).second << "\n";
+                          std::cout << sym.second << "\n";
                        count++;
                    }
                }
            }
         }
         if (verbose)
-            *debug << "found " << count << " symbols in " << *loaded->object->io << endl;
+            *debug << "found " << count << " symbols in " << *loaded.second->io << endl;
     }
     if (showsyms)
        exit(0);

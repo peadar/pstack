@@ -26,7 +26,8 @@ struct PythonPrinter {
     std::set<Elf::Addr> visited;
     mutable int depth;
     Elf::Addr interp_head;
-    const Process::LoadedObject *libPython;
+    Elf::Object::sptr libpython;
+    Elf::Addr libpythonAddr;
     std::map<Elf::Addr, PyPrinterEntry> printers;
     PyPrinterEntry *heapPrinter;
     const PstackOptions &options;

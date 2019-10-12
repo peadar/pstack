@@ -126,19 +126,13 @@ public:
     Elf::Addr sysent; // for AT_SYSINFO
     std::map<pid_t, Lwp> lwps;
     Dwarf::ImageCache &imageCache;
-
-    struct LoadedObject {
-        Elf::Off loadAddr;
-        Elf::Object::sptr object;
-        LoadedObject(Elf::Off loadAddr_, Elf::Object::sptr object_) : loadAddr(loadAddr_), object(object_) {}
-    };
-    std::vector<LoadedObject> objects;
+    std::map<Elf::Addr, Elf::Object::sptr> objects;
     void processAUXV(const Reader &);
     Reader::csptr io;
 
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) = 0;
     void addElfObject(Elf::Object::sptr obj, Elf::Addr load);
-    Elf::Object::sptr findObject(Elf::Addr addr, Elf::Off *reloc) const;
+    std::pair<Elf::Addr, Elf::Object::sptr>  findObject(Elf::Addr addr) const;
     Dwarf::Info::sptr getDwarf(Elf::Object::sptr);
     Process(Elf::Object::sptr exec, Reader::csptr memory, const PathReplacementList &prl, Dwarf::ImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
@@ -151,7 +145,7 @@ public:
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &);
     template <typename T> void listThreads(const T &);
     Elf::Addr findSymbolByName(const char *symbolName,
-          std::function<bool(const LoadedObject &)> matcher = [](const LoadedObject &) { return true; }) const;
+          std::function<bool(Elf::Addr, const Elf::Object::sptr &)> matcher = [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
     virtual ~Process();
     virtual void load(const PstackOptions &);
     virtual pid_t getPID() const = 0;
