@@ -297,6 +297,16 @@ std::ostream & operator << (std::ostream &os, const JSON<Dwarf::Tag> &tag) {
 #undef DWARF_TAG
 }
 
+std::ostream & operator << (std::ostream &os, const JSON<Dwarf::UnitType> &ut) {
+#define DWARF_UNIT_TYPE(x,y) case Dwarf::x: return os << json(#x);
+    switch (ut.object) {
+#include "libpstack/dwarf/unittype.h"
+    default: return os << json(int(ut.object));
+    }
+#undef DWARF_UNIT_TYPE
+}
+
+
 std::ostream &operator << (std::ostream &os, JSON<Dwarf::LineEOpcode> code) {
 #define DWARF_LINE_E(x,y) case Dwarf::x: return os << json(#x);
     switch (code.object) {
@@ -385,12 +395,20 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
     case DW_FORM_udata:
         writer.field("value", uintmax_t(attr));
         break;
+
     case DW_FORM_sdata:
+    case DW_FORM_implicit_const:
         writer.field("value", intmax_t(attr));
         break;
+
     case DW_FORM_GNU_strp_alt:
     case DW_FORM_string:
     case DW_FORM_strp:
+    case DW_FORM_strx:
+    case DW_FORM_strx1:
+    case DW_FORM_strx2:
+    case DW_FORM_strx3:
+    case DW_FORM_strx4:
         writer.field("value", std::string(attr));
         break;
 

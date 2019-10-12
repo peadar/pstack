@@ -35,14 +35,21 @@ enum Tag {
 #include <libpstack/dwarf/tags.h>
     DW_TAG_none = 0x0
 };
-#undef DWARF_ATE
+#undef DWARF_TAG
 
 #define DWARF_ATE(a,b) a = b,
 enum Encoding {
 #include <libpstack/dwarf/encodings.h>
     DW_ATE_none = 0x0
 };
-#undef DWARF_TAG
+#undef DWARF_ATE
+
+#define DWARF_UNIT_TYPE(a,b) a = b,
+enum UnitType {
+#include <libpstack/dwarf/unittype.h>
+    DW_UT_none
+};
+#undef DWARF_UNIT_TYPE
 
 #define DWARF_FORM(a,b) a = b,
 enum Form {
@@ -80,10 +87,16 @@ enum LineEOpcode {
 };
 #undef DWARF_LINE_E
 
+struct FormEntry {
+    Form form;
+    intmax_t value;
+    FormEntry(Form f, intmax_t v) : form(f), value(v) {}
+};
+
 struct Abbreviation {
     Tag tag;
     bool hasChildren;
-    std::vector<Form> forms;
+    std::vector<FormEntry> forms;
     using AttrNameMap = std::unordered_map<AttrName, size_t>;
     int nextSibIdx;
     AttrNameMap attrName2Idx;
@@ -113,6 +126,7 @@ struct Block {
 
 union Value {
     uintmax_t addr;
+    uintmax_t signature;
     uintmax_t udata;
     intmax_t sdata;
     Block *block;
@@ -191,14 +205,14 @@ public:
 using Ranges = std::vector<std::pair<uintmax_t, uintmax_t>>;
 class Attribute {
     DIE dieref;
-    const Form *formp; /* From abbrev table attached to type */
+    const FormEntry *formp; /* From abbrev table attached to type */
 
     Value &value();
 public:
     const DIE &die() const { return dieref; }
     const Value &value() const;
-    Form form() const { return *formp; }
-    Attribute(const DIE &dieref_, const Form *formp_)
+    Form form() const { return formp->form; }
+    Attribute(const DIE &dieref_, const FormEntry *formp_)
        : dieref(dieref_), formp(formp_) {}
     Attribute() : formp(nullptr) {}
     ~Attribute() { }
@@ -276,6 +290,7 @@ class Unit : public std::enable_shared_from_this<Unit> {
     using AllEntries = std::unordered_map<off_t, std::shared_ptr<RawDIE>>;
     AllEntries allEntries;
     std::shared_ptr<RawDIE> decodeEntry(const DIE &parent, off_t offset);
+    UnitType unitType;
 public:
     void purge(); // Remove all RawDIEs from allEntries, potentially freeing memory.
     bool isRoot(const DIE &die) { return die.getOffset() == topDIEOffset; }
@@ -453,6 +468,7 @@ public:
     Ranges rangesAt(off_t) const;
     Unit::sptr lookupUnit(Elf::Addr addr) const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
+    mutable Reader::csptr strOffsets;
 
 private:
     void decodeARangeSet(DWARFReader &) const;
@@ -666,5 +682,6 @@ enum ExpressionOp {
 #define DW_EH_PE_aligned        0x50
 }
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Info> &);
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::UnitType> &);
 
 #endif

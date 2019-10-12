@@ -54,7 +54,7 @@ namespace Dwarf {
 class RawDIE {
     RawDIE() = delete;
     RawDIE(const RawDIE &) = delete;
-    static void readValue(DWARFReader &, Form form, Value &value, const Unit *);
+    static void readValue(DWARFReader &, const FormEntry &form, Value &value, Unit *);
     const Abbreviation *type;
     std::vector<Value> values;
     off_t parent; // 0 implies we do not yet know the parent's offset.
@@ -173,6 +173,7 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     , debugStrings(sectionReader(*obj, ".debug_str", ".zdebug_str"))
     , abbrev(sectionReader(*obj, ".debug_abbrev", ".zdebug_abbrev"))
     , lineshdr(sectionReader(*obj, ".debug_line", ".zdebug_line"))
+    , strOffsets(sectionReader(*obj, ".debug_str_offsets", ".zdebug_str_offsets"))
     , altImageLoaded(false)
     , imageCache(cache_)
     , pubnamesh(sectionReader(*obj, ".debug_pubnames", ".zdebug_pubnames"))
@@ -346,12 +347,21 @@ Unit::Unit(const Info *di, DWARFReader &r)
 {
     if (version <= 2) // DWARF Version 2 uses the architecture's address size.
        dwarfLen = ELF_BITS / 8;
-    off_t off = r.getuint(version <= 2 ? 4 : dwarfLen);
-    DWARFReader abbR(di->abbrev, off);
-    r.addrLen = addrlen = r.getu8();
+
+    off_t abbrevOffset;
+    if (version >= 5) {
+        unitType = UnitType(r.getu8());
+        r.addrLen = addrlen = r.getu8();
+        abbrevOffset = r.getuint(dwarfLen);
+    } else {
+        abbrevOffset = r.getuint(version <= 2 ? 4 : dwarfLen);
+        r.addrLen = addrlen = r.getu8();
+    }
+
+    DWARFReader abbR(di->abbrev, abbrevOffset);
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
-        abbreviations.emplace( std::piecewise_construct,
+        abbreviations.emplace(std::piecewise_construct,
                 std::forward_as_tuple(code),
                 std::forward_as_tuple(abbR));
     topDIEOffset = r.getOffset();
@@ -408,7 +418,8 @@ Abbreviation::Abbreviation(DWARFReader &r)
             break;
         if (name == DW_AT_sibling)
             nextSibIdx = int(i);
-        forms.emplace_back(form);
+        intmax_t value = (form == DW_FORM_implicit_const) ? r.getsleb128() : 0;
+        forms.emplace_back(form, value);
         attrName2Idx[name] = i;
     }
 }
@@ -428,13 +439,14 @@ Attribute::operator intmax_t() const
 {
     if (!valid())
         return 0;
-    switch (*formp) {
+    switch (formp->form) {
     case DW_FORM_data1:
     case DW_FORM_data2:
     case DW_FORM_data4:
     case DW_FORM_data8:
     case DW_FORM_sdata:
     case DW_FORM_udata:
+    case DW_FORM_implicit_const:
         return value().sdata;
     case DW_FORM_sec_offset:
         return value().addr;
@@ -447,7 +459,7 @@ Attribute::operator uintmax_t() const
 {
     if (!valid())
         return 0;
-    switch (*formp) {
+    switch (formp->form) {
     case DW_FORM_data1:
     case DW_FORM_data2:
     case DW_FORM_data4:
@@ -645,7 +657,7 @@ Attribute::operator std::string() const
         return "";
     const Info *dwarf = dieref.unit->dwarf;
     assert(dwarf != nullptr);
-    switch (*formp) {
+    switch (formp->form) {
 
         case DW_FORM_GNU_strp_alt: {
             const auto &alt = dwarf->getAltDwarf();
@@ -662,15 +674,31 @@ Attribute::operator std::string() const
         case DW_FORM_string:
             return dieref.unit->io->readString(value().addr);
 
+        case DW_FORM_strx1:
+        case DW_FORM_strx2:
+        case DW_FORM_strx3:
+        case DW_FORM_strx4:
+        case DW_FORM_strx: {
+            if (!dwarf->strOffsets)
+                throw Exception() << "no string offsets table, but have strx form";
+            // Get the root die, and the string offset base.
+            auto root = die().unit->root();
+            auto base = off_t(root.attribute(DW_AT_str_offsets_base));
+            auto idx = value().addr;
+            auto len = die().unit->dwarfLen;
+            DWARFReader r(dwarf->strOffsets, base + len * idx);
+            return dwarf->debugStrings->readString(r.getuint(len));
+        }
+
         default:
             abort();
     }
 }
 
 void
-RawDIE::readValue(DWARFReader &r, Form form, Value &value, const Unit *unit)
+RawDIE::readValue(DWARFReader &r, const FormEntry &forment, Value &value, Unit *unit)
 {
-    switch (form) {
+    switch (forment.form) {
 
     case DW_FORM_GNU_strp_alt: {
         value.addr = r.getint(unit->dwarfLen);
@@ -713,18 +741,31 @@ RawDIE::readValue(DWARFReader &r, Form form, Value &value, const Unit *unit)
         value.udata = r.getuleb128();
         break;
 
+    case DW_FORM_strx:
+    case DW_FORM_rnglistx:
+    case DW_FORM_addrx:
     case DW_FORM_ref_udata:
         value.addr = r.getuleb128();
         break;
 
+    case DW_FORM_strx1:
+    case DW_FORM_addrx1:
     case DW_FORM_ref1:
         value.addr = r.getu8();
         break;
 
+    case DW_FORM_strx2:
     case DW_FORM_ref2:
         value.addr = r.getu16();
         break;
 
+    case DW_FORM_addrx3:
+    case DW_FORM_strx3:
+        value.addr = r.getuint(3);
+        break;
+
+    case DW_FORM_strx4:
+    case DW_FORM_addrx4:
     case DW_FORM_ref4:
         value.addr = r.getu32();
         break;
@@ -784,7 +825,11 @@ RawDIE::readValue(DWARFReader &r, Form form, Value &value, const Unit *unit)
         break;
 
     case DW_FORM_ref_sig8:
-        value.addr = r.getuint(8);
+        value.signature = r.getuint(8);
+        break;
+
+    case DW_FORM_implicit_const:
+        value.sdata = forment.value;
         break;
 
     default:
@@ -798,8 +843,8 @@ RawDIE::~RawDIE()
 {
     stats.delone();
     int i = 0;
-    for (auto form : type->forms) {
-        switch (form) {
+    for (auto &forment : type->forms) {
+        switch (forment.form) {
             case DW_FORM_exprloc:
             case DW_FORM_block:
             case DW_FORM_block1:
@@ -846,7 +891,7 @@ RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
     , nextSibling(0)
 {
     size_t i = 0;
-    for (auto form : type->forms) {
+    for (auto &form : type->forms) {
         readValue(r, form, values[i], unit);
         if (int(i) == type->nextSibIdx)
             nextSibling = values[i].sdata + unit->offset;
@@ -863,9 +908,9 @@ RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
 }
 
 const Abbreviation *
-Unit::findAbbreviation(size_t offset) const
+Unit::findAbbreviation(size_t code) const
 {
-    auto it = abbreviations.find(offset);
+    auto it = abbreviations.find(code);
     return it != abbreviations.end() ? &it->second : nullptr;
 }
 
@@ -1396,7 +1441,7 @@ Attribute::operator DIE() const
 
     const Info *dwarf = dieref.unit->dwarf;
     off_t off;
-    switch (*formp) {
+    switch (formp->form) {
         case DW_FORM_ref_addr:
             off = value().addr;
             break;
@@ -1521,9 +1566,6 @@ DIE::containsAddress(Elf::Addr addr) const
             }
         }
     }
-    /*std::clog << "found container for " << addr << "? " << 
-        (rc == ContainsAddr::YES ? "yes" : rc == ContainsAddr::NO ? "no" : "unknown") <<
-        std::endl;*/
     return rc;
 }
 
