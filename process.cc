@@ -713,7 +713,9 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 #ifdef __i386__
                 // Deal with signal trampolines for i386
                 Elf::Addr reloc;
-                auto obj = p.findObject(prevFrame->rawIP(), &reloc);
+                const Elf::Phdr *segment;
+                Elf::Object::sptr obj;
+                std::tie(reloc, obj, segment) = p.findObject(prevFrame->rawIP());
                 if (obj) {
                     Elf::Sym symbol;
                     Elf::Addr sigContextAddr = 0;
