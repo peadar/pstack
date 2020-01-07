@@ -33,8 +33,8 @@ Process::Process(Elf::Object::sptr exec, Reader::csptr memory,
     , imageCache(cache)
     , io(std::move(memory))
 {
-    if (exec)
-        entry = exec->getHeader().e_entry;
+    if (execImage)
+        entry = execImage->getHeader().e_entry;
 }
 
 void
