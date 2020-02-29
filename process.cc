@@ -105,7 +105,14 @@ Process::processAUXV(const Reader &auxio)
             }
             case AT_SYSINFO_EHDR: {
                 try {
-                    auto elf = std::make_shared<Elf::Object>(imageCache, std::make_shared<OffsetReader>(io, hdr, 65536));
+                    struct VDSOReader : public OffsetReader {
+                        void describe(std::ostream &os) const override {
+                            os << "(vdso image)";
+                        }
+                        VDSOReader( Reader::csptr up, off_t start, off_t length) :
+                            OffsetReader(std::move(up), start, length) {}
+                    };
+                    auto elf = std::make_shared<Elf::Object>(imageCache, std::make_shared<VDSOReader>(io, hdr, 65536));
                     vdsoBase = hdr;
                     addElfObject(elf, hdr);
                     vdsoImage = elf;
@@ -522,7 +529,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                     os << "in <unknown>" << sigmsg << "()";
             }
 
-            os << " at " << fileName;
+            os << " in " << fileName;
             if (!options[PstackOption::nosrc] && dwarf) {
                 auto source = dwarf->sourceFromAddr(objIp);
                 for (auto ent : source)
