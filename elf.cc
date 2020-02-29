@@ -76,6 +76,15 @@ SymbolIterator::operator *()
     return std::make_pair(sym, name);
 }
 
+Elf::Addr
+Object::endVA() const
+{
+    const auto &loadable = programHeaders.at(PT_LOAD);
+    const auto &last = loadable[loadable.size() - 1];
+    return last.p_vaddr + last.p_memsz;
+}
+
+
 Object::Object(ImageCache &cache, Reader::csptr io_)
     : io(std::move(io_))
     , notes(this)
@@ -166,6 +175,7 @@ bool
 Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
 {
     /* Try to find symbols in these sections */
+    bool haveExactZeroSizeMatch = false;
     for (auto secname : { ".symtab", ".dynsym" }) {
         const auto &symSection = getSection(secname, SHT_NULL);
         if (symSection.shdr.sh_type == SHT_NOBITS)
@@ -179,8 +189,14 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
                 continue;
             if (candidate.st_value > addr)
                 continue;
-            if (candidate.st_size + candidate.st_value <= addr)
+            if (candidate.st_size + candidate.st_value <= addr) {
+                if (candidate.st_size == 0 && candidate.st_value == addr) {
+                    sym = candidate;
+                    name = syminfo.second;
+                    haveExactZeroSizeMatch = true;
+                }
                 continue;
+            }
             auto &sec = sectionHeaders[candidate.st_shndx];
             if ((sec.shdr.sh_flags & SHF_ALLOC) == 0)
                 continue;
@@ -209,9 +225,9 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
 #endif
     }
 
-    if (debugData)
-        return debugData->findSymbolByAddress(addr, type, sym, name);
-    return false;
+    if (debugData && debugData->findSymbolByAddress(addr, type, sym, name))
+       return true;
+    return haveExactZeroSizeMatch;
 }
 
 const Section &

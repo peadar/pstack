@@ -561,15 +561,15 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
     for (auto mapAddr = Elf::Addr(rDebug.r_map); mapAddr != 0; mapAddr = Elf::Addr(map.l_next)) {
         io->readObj(mapAddr, &map);
 
-        // If we've loaded the VDSO, and we see it in the link map, just skip it.
-        if (map.l_addr == vdsoBase)
-           continue;
         // If we see the executable, just add it in and avoid going through the path replacement work
         if (mapAddr == Elf::Addr(rDebug.r_map)) {
             assert(map.l_addr == entry - execImage->getHeader().e_entry);
             addElfObject(execImage, map.l_addr);
             continue;
         }
+        // If we've loaded the VDSO, and we see it in the link map, just skip it.
+        if (vdsoBase != 0 && map.l_addr == vdsoBase)
+           continue;
 
         // Read the path to the file
         if (map.l_name == 0)
@@ -637,12 +637,18 @@ Process::findRDebugAddr()
     return 0;
 }
 
+namespace std {
+bool
+operator < (const std::pair<Elf::Addr, Elf::Object::sptr> &entry, Elf::Addr addr) {
+   return entry.second->endVA() + entry.first < addr;
+}
+}
+
 std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>
 Process::findObject(Elf::Addr addr) const
 {
-    auto it = objects.lower_bound(addr);
-    if (it != objects.begin()) {
-        --it;
+    auto it = std::lower_bound(objects.begin(), objects.end(), addr);
+    if (it != objects.end()) {
         auto segment = it->second->getSegmentForAddress(addr - it->first);
         if (segment)
             return std::make_tuple(it->first, it->second, segment);

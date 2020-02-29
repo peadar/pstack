@@ -32,11 +32,18 @@ StackFrame::rawIP() const
 Elf::Addr
 StackFrame::scopeIP() const
 {
-    // in general, the top of stack IP is accurate, but the IP for
-    // calling frames represents the return address - we really want to
-    // treat the call instruction as what's being executed, so subtract
-    // one from the address for all but the TOS.
-    return rawIP() - ( top ? 0 : 1 );
+    // For a return address on the stack, it normally represents the next
+    // instruction after a call. For functions that don't return, this might
+    // land outside the caller function - so we subtract one.
+    //
+    // There are two exceptions: first, the instruction pointer we grab from the
+    // process's register state - this is the currently executing instruction.
+    //
+    // The other is for signal trampolines - this is the first instruction that 
+    // executes on return from the signal handler, and the stack frame is
+    // synthetically configured so this instruction is in fact the first one in
+    // the trampoline function (eg, __restore_rt)
+    return rawIP() - (top || (cie != nullptr && cie->isSignalHandler) ? 0 : 1);
 }
 
 
