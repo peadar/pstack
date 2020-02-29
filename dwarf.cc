@@ -1374,6 +1374,8 @@ FDE::FDE(CFI *fi, DWARFReader &reader, Elf::Off cieOff_, Elf::Off endOff_)
 CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
     : frameInfo(fi)
     , addressEncoding(0)
+    , addressSize(ELF_BITS/8)
+    , segmentSize(0)
     , lsdaEncoding(0)
     , isSignalHandler(false)
     , end(end_)
@@ -1381,6 +1383,10 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
 {
     version = r.getu8();
     augmentation = r.getstring();
+    if (version >= 4) {
+        addressSize = r.getu8();
+        segmentSize = r.getu8();
+    }
     codeAlign = r.getuleb128();
     dataAlign = r.getsleb128();
     rar = r.getu8();

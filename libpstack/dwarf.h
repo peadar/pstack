@@ -403,6 +403,8 @@ struct CIE {
     const CFI *frameInfo;
     uint8_t version;
     uint8_t addressEncoding;
+    uint8_t addressSize;
+    uint8_t segmentSize;
     unsigned char lsdaEncoding;
     bool isSignalHandler;
     unsigned codeAlign;
