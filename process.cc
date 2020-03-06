@@ -440,6 +440,17 @@ dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
    return printedParent;
 }
 
+
+std::ostream &operator << (std::ostream &os, Dwarf::UnwindMechanism mech) {
+   switch (mech) {
+      case Dwarf::UnwindMechanism::MACHINEREGS: return os << "machine registers";
+      case Dwarf::UnwindMechanism::DWARF: return os << "DWARF";
+      case Dwarf::UnwindMechanism::FRAMEPOINTER: return os << "frame pointer";
+      case Dwarf::UnwindMechanism::BAD_IP_RECOVERY: return os << "popped faulting IP";
+      case Dwarf::UnwindMechanism::TRAMPOLINE: return os << "signal trampoline";
+   }
+   abort();
+}
 std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options)
 {
@@ -471,7 +482,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             Elf::Addr objIp = frame->scopeIP() - loadAddr;
             Dwarf::Info::sptr dwarf = getDwarf(obj);
 
-            std::string sigmsg = frame->cie != nullptr && frame->cie->isSignalHandler ?  "[signal handler called]" : "";
+            std::string sigmsg = frame->cie != nullptr && frame->cie->isSignalHandler ?  "*" : ""; // * indicates signal frame
 
             // We may need to process a Units iterable, or a std::list<Unit::sptr>
             auto processUnit = [ this, &os, &frame, &symName, &objIp, &dwarf, &sym, &options, &obj, &sigmsg ] (const Dwarf::Unit::sptr &u) {
@@ -538,6 +549,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         } else {
             os << "no information for frame";
         }
+        if (verbose)
+           os << " via " << frame->mechanism;
         os << "\n";
     }
     return os;
@@ -689,57 +702,81 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 {
     stack.clear();
     try {
-        auto prevFrame = new Dwarf::StackFrame();
-        auto startFrame = prevFrame;
+        auto curFrame = new Dwarf::StackFrame(Dwarf::UnwindMechanism::MACHINEREGS);
+        auto startFrame = curFrame;
+        const Dwarf::StackFrame *prevFrame = 0;
 
         // Set up the first frame using the machine context registers
         startFrame->setCoreRegs(regs);
-        startFrame->top = true;
 
-        Dwarf::StackFrame *frame;
-        for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++, prevFrame = frame) {
-            if (prevFrame == 0)
+        Dwarf::StackFrame *nextFrame;
+        for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++,
+              prevFrame = curFrame, curFrame = nextFrame) {
+            if (curFrame == 0)
                break;
-            stack.push_back(prevFrame);
-            frame = 0;
+            stack.push_back(curFrame);
+            nextFrame = 0;
             try {
-               frame = prevFrame->unwind(p);
+               nextFrame = curFrame->unwind(p);
             }
             catch (const std::exception &ex) {
-                // Hail Mary stack unwinding if we can't use DWARF
+
+                if (verbose > 2)
+                    *debug << "failed to unwind frame with DWARF: "
+                           << ex.what() << std::endl;
+
+                // Some machine specific methods of unwinding if DWARF fails.
+
 #if defined(__amd64__) || defined(__i386__)
-               // If the first frame fails to unwind, it might be a crash
-               // calling an invalid address.  pop the instruction pointer off
-               // the stack, and try again.
-                if (prevFrame == startFrame) {
-                    frame = new Dwarf::StackFrame(*prevFrame);
-                    auto sp = prevFrame->getReg(SPREG);
+                // if we're the top-of-stack, or there's a signal handler just
+                // above, and the instruction pointer in the current frame
+                // doesn't look like it comes from a code segment, then there's
+                // a strong likelihood that we jumped to an invalid location
+                // from an indirect call. The only action carried out for the
+                // frame is that the call instruction pushed the return address
+                // onto the stack. The calling frame is an exact copy of the
+                // called one, but with the instruction pointer read from the
+                // TOS, and the stack pointer adjusted.
+                //
+                // If we're wrong here, it's possible we do worse than we would
+                // have done had we fallen down to frame pointer unwinding, but
+                // we'd need to be executing an instruction in a piece of
+                // runtime-generated code, or something else that wasn't in a
+                // normal ELF phdr, so it seems more likely this is the best
+                // thing to do.
+                if ((curFrame == startFrame ||
+                         (prevFrame->cie && prevFrame->cie->isSignalHandler)) &&
+                   (curFrame->phdr == 0 || (curFrame->phdr->p_flags & PF_X) == 0)) {
+                    nextFrame = new Dwarf::StackFrame(*curFrame,
+                          Dwarf::UnwindMechanism::BAD_IP_RECOVERY);
+                    // get stack pointer in the current frame, and read content of
+                    // TOS
+                    auto sp = curFrame->getReg(SPREG);
                     Elf::Addr ip;
                     auto in = p.io->read(sp, sizeof ip, (char *)&ip);
                     if (in == sizeof ip) {
-                        frame->setReg(SPREG, sp + sizeof ip);
-                        frame->setReg(IPREG, ip);
+                        nextFrame->setReg(SPREG, sp + sizeof ip); // pop...
+                        nextFrame->setReg(IPREG, ip);             // .. insn pointer.
                         continue;
                     }
                 }
 #endif
+
 #ifdef __i386__
                 // Deal with signal trampolines for i386
                 Elf::Addr reloc;
                 const Elf::Phdr *segment;
                 Elf::Object::sptr obj;
-                std::tie(reloc, obj, segment) = p.findObject(prevFrame->rawIP());
+                std::tie(reloc, obj, segment) = p.findObject(curFrame->rawIP());
                 if (obj) {
                     Elf::Sym symbol;
                     Elf::Addr sigContextAddr = 0;
-                    auto objip = prevFrame->rawIP() - reloc;
+                    auto objip = curFrame->rawIP() - reloc;
                     if (obj->findSymbolByName("__restore", symbol) && objip == symbol.st_value)
-                        sigContextAddr = prevFrame->getReg(SPREG) + 4;
+                        sigContextAddr = curFrame->getReg(SPREG) + 4;
                     else if (obj->findSymbolByName("__restore_rt", symbol) && objip == symbol.st_value)
-                        sigContextAddr = p.io->readObj<Elf::Addr>(prevFrame->getReg(SPREG) + 8) + 20;
-
+                        sigContextAddr = p.io->readObj<Elf::Addr>(curFrame->getReg(SPREG) + 8) + 20;
                     if (sigContextAddr != 0) {
-
                        // This mapping is based on DWARF regnos, and ucontext.h
                        gregset_t regs;
                        static const struct {
@@ -762,26 +799,30 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                            { 14, REG_FS }
                        };
                        p.io->readObj(sigContextAddr, &regs);
-                       frame = new Dwarf::StackFrame(*prevFrame);
+                       nextFrame = new Dwarf::StackFrame(*curFrame, Dwarf::UnwindMechanism::TRAMPOLINE);
                        for (auto &reg : gregmap)
-                           frame->setReg(reg.dwarf, regs[reg.greg]);
+                           nextFrame->setReg(reg.dwarf, regs[reg.greg]);
                        continue;
                     }
                 }
+#endif
 
-                // EBP-based stack frames:
-                // Use base pointer to find return address and saved BP.
+#if defined(__i386__) || defined(__amd64__)
+                // frame-pointer unwinding.
+                // Use ebp/rbp to find return address and saved BP.
                 // Restore those, and the stack pointer itself.
-                uint32_t newBp, newIp, oldBp;
-                oldBp = prevFrame->getReg(BPREG);
-                p.io->readObj((oldBp + 4) & 0xffffffff, &newIp);
-                p.io->readObj(oldBp & 0xffffffff, &newBp);
-
+                Elf::Addr newBp, newIp, oldBp;
+                oldBp = curFrame->getReg(BPREG);
+                if (oldBp == 0)
+                   return; // null base pointer means we're done.
+                p.io->readObj(oldBp + ELF_WORDSIZE, &newIp);
+                p.io->readObj(oldBp, &newBp);
                 if (newBp > oldBp && newIp > 4096) {
-                    frame = new Dwarf::StackFrame(*prevFrame);
-                    frame->setReg(SPREG, oldBp + 8);
-                    frame->setReg(BPREG, newBp);
-                    frame->setReg(IPREG, newIp);
+                    nextFrame = new Dwarf::StackFrame(*curFrame,
+                          Dwarf::UnwindMechanism::FRAMEPOINTER);
+                    nextFrame->setReg(SPREG, oldBp + ELF_WORDSIZE * 2);
+                    nextFrame->setReg(BPREG, newBp);
+                    nextFrame->setReg(IPREG, newIp);
                     continue;
                 }
 #endif

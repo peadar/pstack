@@ -34,16 +34,25 @@ StackFrame::scopeIP() const
 {
     // For a return address on the stack, it normally represents the next
     // instruction after a call. For functions that don't return, this might
-    // land outside the caller function - so we subtract one.
+    // land outside the caller function - so we subtract one, putting us in the
+    // middle of the call instruction. This will also improve source line
+    // details, as the actual return address is likely on the line of code
+    // *after* the call rather than at it.
     //
-    // There are two exceptions: first, the instruction pointer we grab from the
-    // process's register state - this is the currently executing instruction.
+    // There are two exceptions: first, the instruction pointer we grab from
+    // the process's register state - this is the currently executing
+    // instruction, so accurately reflects the position in the top stack frame.
     //
-    // The other is for signal trampolines - this is the first instruction that 
+    // The other is for signal trampolines - this is the first instruction that
     // executes on return from the signal handler, and the stack frame is
     // synthetically configured so this instruction is in fact the first one in
     // the trampoline function (eg, __restore_rt)
-    return rawIP() - (top || (cie != nullptr && cie->isSignalHandler) ? 0 : 1);
+    auto raw = rawIP();
+    if (raw == 0)
+       return 0;
+    if (mechanism == UnwindMechanism::MACHINEREGS || (cie != nullptr && cie->isSignalHandler))
+       return raw;
+    return raw - 1;
 }
 
 
@@ -61,7 +70,8 @@ StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *sta
 }
 
 Elf::Addr
-ExpressionStack::eval(const Process &proc, const Attribute &attr, const StackFrame *frame, Elf::Addr reloc)
+ExpressionStack::eval(const Process &proc, const Attribute &attr,
+                      const StackFrame *frame, Elf::Addr reloc)
 {
     const Info *dwarf = attr.die().getUnit()->dwarf;
     switch (attr.form()) {
@@ -300,11 +310,11 @@ StackFrame::getCFA(const Process &proc, const CallFrame &dcf) const
 {
     switch (dcf.cfaValue.type) {
         case SAME:
+        case UNDEF:
             return getReg(dcf.cfaReg);
         case VAL_OFFSET:
         case VAL_EXPRESSION:
         case REG:
-        case UNDEF:
         case ARCH:
             abort();
             break;
@@ -325,15 +335,18 @@ StackFrame::getCFA(const Process &proc, const CallFrame &dcf) const
 StackFrame *
 StackFrame::unwind(Process &p)
 {
-    const Elf::Phdr *hdr;
-    std::tie(elfReloc, elf, hdr) = p.findObject(scopeIP());
-    if (!elf)
-        throw (Exception() << "no image for instruction address " << std::hex << scopeIP());
-    Elf::Off objaddr = scopeIP() - elfReloc; // relocate process address to object address
+    std::tie(elfReloc, elf, phdr) = p.findObject(scopeIP());
+    if (elf == nullptr)
+        throw (Exception() << "no image for instruction address "
+              << std::hex << scopeIP() << std::dec);
+
+    // relocate from process address to object address
+    Elf::Off objaddr = scopeIP() - elfReloc;
+
     // Try and find DWARF data with debug frame information, or an eh_frame section.
-        dwarf = p.getDwarf(elf);
+    dwarf = p.getDwarf(elf);
     if (dwarf) {
-        auto frames = { dwarf->debugFrame.get(), dwarf->ehFrame.get() };
+        auto frames = { dwarf->ehFrame.get(), dwarf->debugFrame.get() };
         for (auto f : frames) {
             if (f != nullptr) {
                 fde = f->findFDE(objaddr);
@@ -346,7 +359,8 @@ StackFrame::unwind(Process &p)
         }
     }
     if (fde == nullptr)
-        throw (Exception() << "no FDE for instruction address " << std::hex << scopeIP() << " in " << *elf->io);
+        throw (Exception() << "no FDE for instruction address "
+              << std::hex << scopeIP() << std::dec << " in " << *elf->io);
 
     DWARFReader r(frameInfo->io, fde->instructions, fde->end);
 
@@ -356,15 +370,16 @@ StackFrame::unwind(Process &p)
 
     const CallFrame &dcf = dwarf->callFrameForAddr[objaddr];
 
-    // Given the registers available, and the state of the call unwind data, calculate the CFA at this point.
+    // Given the registers available, and the state of the call unwind data,
+    // calculate the CFA at this point.
     cfa = getCFA(p, dcf);
+    auto rarInfo = dcf.registers.find(cie->rar);
 
-    auto out = new StackFrame();
+    auto out = new StackFrame(UnwindMechanism::DWARF);
 #ifdef CFA_RESTORE_REGNO
     // "The CFA is defined to be the stack pointer in the calling frame."
     out->setReg(CFA_RESTORE_REGNO, cfa);
 #endif
-
     for (auto &entry : dcf.registers) {
         const auto &unwind = entry.second;
         const int regno = entry.first;
@@ -387,7 +402,8 @@ StackFrame::unwind(Process &p)
             case EXPRESSION: {
                 ExpressionStack stack;
                 stack.push(cfa);
-                DWARFReader reader(frameInfo->io, unwind.u.expression.offset, unwind.u.expression.offset + unwind.u.expression.length);
+                DWARFReader reader(frameInfo->io, unwind.u.expression.offset,
+                      unwind.u.expression.offset + unwind.u.expression.length);
                 auto val = stack.eval(p, reader, this, elfReloc);
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                 if (unwind.type == EXPRESSION)
@@ -403,8 +419,14 @@ StackFrame::unwind(Process &p)
     }
 
     // If the return address isn't defined, then we can't unwind.
-    auto rarInfo = dcf.registers.find(cie->rar);
     if (rarInfo == dcf.registers.end() || rarInfo->second.type == UNDEF) {
+        if (verbose > 1) {
+           *debug << "DWARF unwinding stopped at "
+              << std::hex << scopeIP() << std::dec
+              << ": " << (rarInfo == dcf.registers.end() ?
+                    "no RAR register found" : "RAR register undefined")
+              << std::endl;
+        }
         delete out;
         return nullptr;
     }

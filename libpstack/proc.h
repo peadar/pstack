@@ -26,42 +26,65 @@ public:
 
     ExpressionStack(): isReg(false) {}
     Elf::Addr poptop() { Elf::Addr tos = top(); pop(); return tos; }
-    Elf::Addr eval(const Process &, Dwarf::DWARFReader &r, const StackFrame *frame, Elf::Addr);
-    Elf::Addr eval(const Process &, const Dwarf::Attribute &, const StackFrame *, Elf::Addr);
+    Elf::Addr eval(const Process &, Dwarf::DWARFReader &r, const StackFrame*, Elf::Addr);
+    Elf::Addr eval(const Process &, const Dwarf::Attribute &, const StackFrame*, Elf::Addr);
 };
 
 // this works for i386 and x86_64 - might need to change for other archs.
 typedef unsigned long cpureg_t;
 
-struct StackFrame {
-    bool top; // this stack frame is the live tos: the instruction pointer here is the machine IP, not a saved IP
+/*
+ * The unwind mechanism tells us how this stack frame was created
+ */
+enum class UnwindMechanism {
+   // this frame was created from machine state - it's the "top of stack".
+   MACHINEREGS,
 
+   // created by using DWARF unwinding information from previous.
+   DWARF,
+
+   // frame pointer register in previous frame.
+   FRAMEPOINTER,
+
+   // attempt was made to recover stack state by assuming the previous frame
+   // was target of a call to a bad address
+   BAD_IP_RECOVERY,
+
+   // The previous frame was a signal "trampoline" - On receipt of a signal,
+   // the kernel saved the processor state on the stack, and arranged for the
+   // previous frame to be invoked. Unwinding requires decoding the register
+   // state stored by the kernel on the stack.
+   TRAMPOLINE,
+};
+
+struct StackFrame {
     Elf::Addr rawIP() const;
     Elf::Addr scopeIP() const;
     Elf::Addr cfa;
     std::map<unsigned, cpureg_t> regs;
     Elf::Object::sptr elf;
     Elf::Addr elfReloc;
+    const Elf::Phdr *phdr;
     Info::sptr dwarf;
     Dwarf::DIE function;
     CFI *frameInfo;
     const FDE *fde;
     const CIE *cie;
-    StackFrame()
-        : top(false)
-        , cfa(0)
+    UnwindMechanism mechanism;
+    StackFrame(UnwindMechanism mechanism)
+        : cfa(0)
         , elfReloc(0)
+        , phdr(0)
         , dwarf(0)
         , function()
         , frameInfo(0)
         , fde(0)
         , cie(0)
+        , mechanism(mechanism)
     {}
-    StackFrame(const StackFrame &prev)
-       : StackFrame()
-    {
-       regs = prev.regs;
-    }
+    StackFrame(const StackFrame &prev, UnwindMechanism mechanism)
+       : StackFrame(mechanism)
+       { regs = prev.regs; }
     StackFrame &operator = (const StackFrame &) = delete;
     void setReg(unsigned, cpureg_t);
     cpureg_t getReg(unsigned regno) const;

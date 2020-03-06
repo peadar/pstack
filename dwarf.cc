@@ -33,8 +33,12 @@ struct Stats {
     int currentDIEs;
     Stats() : totalDIEs{}, maxDIEs{}, currentDIEs{} {}
     ~Stats() {
-        if (verbose)
-            std::clog << "DIEs: current=" << currentDIEs << ", total=" << totalDIEs << ", max=" << maxDIEs << std::endl;
+        if (verbose > 2)
+            std::clog
+                << "DIEs: current=" << currentDIEs
+                << ", total=" << totalDIEs
+                << ", max=" << maxDIEs
+                << std::endl;
     }
     void addone() {
         totalDIEs++;
@@ -1171,7 +1175,7 @@ CallFrame::CallFrame()
 {
     cfaReg = 0;
     cfaValue.type = UNDEF;
-#define REGMAP(number, field) registers[number].type = SAME;
+#define REGMAP(number, field) registers[number].type = UNDEF;
 #include "libpstack/dwarf/archreg.h"
 #undef REGMAP
 #ifdef CFA_RESTORE_REGNO

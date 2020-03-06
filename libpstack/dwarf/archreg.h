@@ -25,6 +25,7 @@ REGMAP(14, xfs)
 #define CFA_RESTORE_REGNO 7
 #define IPREG 16
 #define SPREG 7
+#define BPREG 6
 REGMAP(0, rax)
 REGMAP(1, rdx)
 REGMAP(2, rcx)
