@@ -166,10 +166,89 @@ operator << (std::ostream &os, const JSON<td_thr_type_e, ctx> &jt)
     }
 }
 
+static bool
+dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
+   // use the specification DIE instead of this if we have one.
+   auto spec = die.attribute(Dwarf::DW_AT_specification);
+   if (spec.valid()) {
+      return dieName(os, Dwarf::DIE(spec), first);
+   }
+   auto parent = die.getParentOffset();
+   bool printedParent = parent != 0 && dieName(os, die.getUnit()->offsetToDIE(parent), false);
+   if (die.tag() != Dwarf::DW_TAG_compile_unit) { // don't print out compile unit
+      if (printedParent)
+         os << "::";
+      os << die.name();
+      return true;
+   }
+   return printedParent;
+}
+
+struct PrintableFrame {
+    int frameNumber;
+    std::string dieName;
+    std::string symName;
+    std::string imageFileName;
+    Elf::Sym symbol;
+    std::vector<std::pair<std::string, int>> source;
+    bool isSignalFrame;
+    const PstackOptions &options;
+    Elf::Addr functionOffset;
+    bool haveSym;
+
+    PrintableFrame(Dwarf::StackFrame *frame, int frameNo, const PstackOptions &options)
+        : frameNumber(frameNo)
+        , isSignalFrame(frame->cie != nullptr && frame->cie->isSignalHandler)
+        , options(options)
+        , functionOffset(std::numeric_limits<Elf::Addr>::max())
+        , haveSym(false)
+    {
+        if (frame->elf == nullptr)
+            return;
+        Elf::Addr objIp = frame->scopeIP() - frame->elfReloc;
+        Dwarf::Unit::sptr dwarfUnit = frame->dwarf->lookupUnit(objIp);
+        if (dwarfUnit == nullptr) {
+            // no ranges - try each dwarf unit in turn. (This seems to happen
+            // for single-unit exe's only, so it's no big loss)
+            for (const auto &u : frame->dwarf->getUnits()) {
+                frame->function = Dwarf::findEntryForFunc(objIp, u->root());
+                if (frame->function)
+                    break;
+            }
+        } else {
+            frame->function = Dwarf::findEntryForFunc(objIp, dwarfUnit->root());
+        }
+
+        if (frame->function) {
+            std::ostringstream sos;
+            ::dieName(sos, frame->function);
+            this->dieName = sos.str();
+
+            auto lowpc = frame->function.attribute(Dwarf::DW_AT_low_pc);
+            if (lowpc.valid())
+                functionOffset = objIp - Elf::Addr(lowpc);
+        }
+
+        if (!options[PstackOption::nosrc])
+            source = frame->dwarf->sourceFromAddr(objIp);
+
+        haveSym = frame->elf->findSymbolByAddress(objIp, STT_FUNC, symbol, symName);
+        if (haveSym && functionOffset == std::numeric_limits<Elf::Addr>::max())
+            functionOffset = objIp - symbol.st_value;
+
+    }
+    PrintableFrame(const PrintableFrame &) = delete;
+    PrintableFrame() = delete;
+};
+
+
 std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
 {
     auto &frame =jt.object;
+    PstackOptions options;
+    options[doargs] = true;
+    PrintableFrame pframe(frame, 0, options);
     auto proc = jt.context;
 
     JObject jo(os);
@@ -426,24 +505,6 @@ operator << (std::ostream &os, const ArgPrint &ap)
     return os;
 }
 
-static bool
-dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
-   // use the specification DIE instead of this if we have one.
-   auto spec = die.attribute(Dwarf::DW_AT_specification);
-   if (spec.valid()) {
-      return dieName(os, Dwarf::DIE(spec), first);
-   }
-   auto parent = die.getParentOffset();
-   bool printedParent = parent != 0 && dieName(os, die.getUnit()->offsetToDIE(parent), false);
-   if (die.tag() != Dwarf::DW_TAG_compile_unit) { // don't print out compile unit
-      if (printedParent)
-         os << "::";
-      os << die.name();
-      return true;
-   }
-   return printedParent;
-}
-
 std::ostream &operator << (std::ostream &os, Dwarf::UnwindMechanism mech) {
    switch (mech) {
       case Dwarf::UnwindMechanism::MACHINEREGS: return os << "machine registers";
@@ -454,61 +515,6 @@ std::ostream &operator << (std::ostream &os, Dwarf::UnwindMechanism mech) {
    }
    abort();
 }
-
-struct PrintableFrame {
-    int frameNumber;
-    std::string dieName;
-    std::string symName;
-    std::string imageFileName;
-    Elf::Sym symbol;
-    std::vector<std::pair<std::string, int>> source;
-    bool isSignalFrame;
-    const PstackOptions &options;
-    Elf::Addr functionOffset;
-    bool haveSym;
-
-    PrintableFrame(Dwarf::StackFrame *frame, int frameNo, const PstackOptions &options)
-        : frameNumber(frameNo)
-        , isSignalFrame(frame->cie != nullptr && frame->cie->isSignalHandler)
-        , options(options)
-        , functionOffset(std::numeric_limits<Elf::Addr>::max())
-    {
-        if (frame->elf == nullptr)
-            return;
-        Elf::Addr objIp = frame->scopeIP() - frame->elfReloc;
-        Dwarf::Unit::sptr dwarfUnit = frame->dwarf->lookupUnit(objIp);
-        if (dwarfUnit == nullptr) {
-            // no ranges - try each dwarf unit in turn. (This seems to happen
-            // for single-unit exe's only, so it's no big loss)
-            for (const auto &u : frame->dwarf->getUnits()) {
-                frame->function = Dwarf::findEntryForFunc(objIp, u->root());
-                if (frame->function)
-                    break;
-            }
-        } else {
-            frame->function = Dwarf::findEntryForFunc(objIp, dwarfUnit->root());
-        }
-
-        if (frame->function) {
-            std::ostringstream sos;
-            ::dieName(sos, frame->function);
-            this->dieName = sos.str();
-
-            auto lowpc = frame->function.attribute(Dwarf::DW_AT_low_pc);
-            if (lowpc.valid())
-                functionOffset = objIp - Elf::Addr(lowpc);
-        }
-
-        if (!options[PstackOption::nosrc])
-            source = frame->dwarf->sourceFromAddr(objIp);
-
-        haveSym = frame->elf->findSymbolByAddress(objIp, STT_FUNC, symbol, symName);
-        if (haveSym && functionOffset == std::numeric_limits<Elf::Addr>::max())
-            functionOffset = objIp - symbol.st_value;
-    }
-    PrintableFrame(const PrintableFrame &) = delete;
-    PrintableFrame() = delete;
-};
 
 std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options) const
@@ -526,19 +532,19 @@ std::ostream &
 Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
         Dwarf::StackFrame *frame) const
 {
-    {
-        IOFlagSave _(os);
-        os << "#" << std::left << std::dec << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " ";
-        os << std::right << std::hex << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->rawIP();
-        if (verbose > 0)
-            os << "/" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa;
-        os << " ";
-    }
+
+    IOFlagSave _(os);
+
+    os << "#"
+        << std::left << std::dec << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
+        << std::right << std::hex << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->rawIP();
+    if (verbose > 0)
+        os << "/" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa;
+    os << " ";
 
     if (frame->elf) {
         std::string name;
         std::string flags = "";
-
         if (pframe.isSignalFrame)
             flags += "*";
         if (pframe.dieName != "") {
@@ -549,10 +555,11 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
         } else {
             name = "<unknown>";
         }
-
         os << " in "
             << name
-            << flags << "(" << ArgPrint(*this, frame, pframe.options) << ") ";
+            << flags
+            << "(" << ArgPrint(*this, frame, pframe.options) << ") ";
+
         if (pframe.functionOffset != std::numeric_limits<Elf::Addr>::max())
             os << "+" << pframe.functionOffset;
         os << " in " << stringify(*frame->elf->io);
