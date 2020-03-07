@@ -66,17 +66,16 @@ struct StackFrame {
     Elf::Addr elfReloc;
     const Elf::Phdr *phdr;
     Info::sptr dwarf;
-    Dwarf::DIE function;
     CFI *frameInfo;
     const FDE *fde;
     const CIE *cie;
+    Dwarf::DIE function;
     UnwindMechanism mechanism;
     StackFrame(UnwindMechanism mechanism)
         : cfa(0)
         , elfReloc(0)
         , phdr(0)
         , dwarf(0)
-        , function()
         , frameInfo(0)
         , fde(0)
         , cie(0)
@@ -130,6 +129,7 @@ struct Lwp {
 };
 
 typedef std::vector<std::pair<std::string, std::string>> PathReplacementList;
+class PrintableFrame;
 class Process : public ps_prochandle {
     Elf::Addr findRDebugAddr();
     Elf::Addr entry;
@@ -164,8 +164,9 @@ public:
 
     virtual void resumeProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
-    std::ostream &dumpStackText(std::ostream &, const ThreadStack &, const PstackOptions &);
-    std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &);
+    std::ostream &dumpStackText(std::ostream &, const ThreadStack &, const PstackOptions &) const;
+    std::ostream &dumpFrameText(std::ostream &, const PrintableFrame &, Dwarf::StackFrame *) const;
+    std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &) const;
     template <typename T> void listThreads(const T &);
     Elf::Addr findSymbolByName(const char *symbolName,
           std::function<bool(Elf::Addr, const Elf::Object::sptr &)> matcher = [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;

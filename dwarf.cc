@@ -389,18 +389,15 @@ Unit::offsetToRawDIE(const DIE &parent, off_t offset) {
     return rawptr;
 }
 
-
 DIE
 Unit::offsetToDIE(const DIE &parent, off_t offset) {
     return DIE(shared_from_this(), offset, offsetToRawDIE(parent, offset));
 }
 
-
 DIE
 Unit::offsetToDIE(off_t offset) {
     return DIE(shared_from_this(), offset, offsetToRawDIE(DIE(), offset));
 }
-
 
 string
 Unit::name()
