@@ -477,19 +477,17 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         if (frame->elf) {
             fileName = stringify(*frame->elf->io);
             Elf::Addr objIp = frame->scopeIP() - frame->elfReloc;
-            Dwarf::Info::sptr dwarf = getDwarf(frame->elf);
 
             std::string sigmsg = frame->cie != nullptr && frame->cie->isSignalHandler ?  "*" : ""; // * indicates signal frame
 
             // We may need to process a Units iterable, or a std::list<Unit::sptr>
-            auto processUnit = [ this, &os, &frame, &symName, &objIp, &dwarf, &sym, &options, &sigmsg ] (const Dwarf::Unit::sptr &u) {
+            auto processUnit = [ this, &os, &frame, &symName, &objIp, &sym, &options, &sigmsg ] (const Dwarf::Unit::sptr &u) {
                 // find the DIE for this function
                 const auto &unitRoot = u->root();
                 auto de = Dwarf::findEntryForFunc(objIp, unitRoot);
                 if (!de)
                     return false;
                 frame->function = de;
-                frame->dwarf = dwarf; // hold on to 'de'
                 os << "in ";
                 if (!dieName(os, de)) {
                     frame->elf->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
@@ -511,11 +509,11 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                 return true;
             };
 
-            Dwarf::Unit::sptr dwarfUnit = dwarf->lookupUnit(objIp);
+            Dwarf::Unit::sptr dwarfUnit = frame->dwarf->lookupUnit(objIp);
             if (dwarfUnit == nullptr) {
                 // no ranges - try each dwarf unit in turn. (This seems to happen
                 // for single-unit exe's only, so it's no big loss)
-                for (const auto &u : dwarf->getUnits()) {
+                for (const auto &u : frame->dwarf->getUnits()) {
                     if (processUnit(u)) {
                         dwarfUnit = u;
                         break;
@@ -538,8 +536,8 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             }
 
             os << " in " << fileName;
-            if (!options[PstackOption::nosrc] && dwarf) {
-                auto source = dwarf->sourceFromAddr(objIp);
+            if (!options[PstackOption::nosrc] && frame->dwarf) {
+                auto source = frame->dwarf->sourceFromAddr(objIp);
                 for (auto ent : source)
                     os << " at " << ent.first << ":" << std::dec << ent.second;
             }
