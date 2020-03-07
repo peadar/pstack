@@ -477,19 +477,31 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         if (frame->elf) {
             fileName = stringify(*frame->elf->io);
             Elf::Addr objIp = frame->scopeIP() - frame->elfReloc;
+            bool signalFrame = frame->cie != nullptr && frame->cie->isSignalHandler;
 
-            std::string sigmsg = frame->cie != nullptr && frame->cie->isSignalHandler ?  "*" : ""; // * indicates signal frame
+            // From object-relative instruction pointer, find any DWARF info
+            // associated with the current function.
 
-            // We may need to process a Units iterable, or a std::list<Unit::sptr>
-            auto processUnit = [ this, &os, &frame, &symName, &objIp, &sym, &options, &sigmsg ] (const Dwarf::Unit::sptr &u) {
-                // find the DIE for this function
-                const auto &unitRoot = u->root();
-                auto de = Dwarf::findEntryForFunc(objIp, unitRoot);
-                if (!de)
-                    return false;
-                frame->function = de;
+            Dwarf::Unit::sptr dwarfUnit = frame->dwarf->lookupUnit(objIp);
+            if (dwarfUnit == nullptr) {
+                // no ranges - try each dwarf unit in turn. (This seems to happen
+                // for single-unit exe's only, so it's no big loss)
+                for (const auto &u : frame->dwarf->getUnits()) {
+                    frame->function = Dwarf::findEntryForFunc(objIp, u->root());
+                    if (frame->function) {
+                        dwarfUnit = u;
+                        break;
+                    }
+                }
+            } else {
+                frame->function = Dwarf::findEntryForFunc(objIp, dwarfUnit->root());
+                if (!frame->function)
+                    dwarfUnit = nullptr;
+            }
+
+            if (dwarfUnit) {
                 os << "in ";
-                if (!dieName(os, de)) {
+                if (!dieName(os, frame->function)) {
                     frame->elf->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
                     if (symName != "")
                         symName += "%"; // mark the lack of a name in a dwarf DIE.
@@ -497,42 +509,24 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                         symName = "<unknown>";
                     os << symName;
                 }
-                os << sigmsg;
-                auto lowpc = de.attribute(Dwarf::DW_AT_low_pc);
+                os << (signalFrame ? "*" : "");
+                auto lowpc = frame->function.attribute(Dwarf::DW_AT_low_pc);
                 if (lowpc.valid())
                     os << "+" << objIp - uintmax_t(lowpc);
                 os << "(";
-                if (options[PstackOption::doargs]) {
+                if (options[PstackOption::doargs])
                     os << ArgPrint(*this, frame);
-                }
                 os << ")";
-                return true;
-            };
-
-            Dwarf::Unit::sptr dwarfUnit = frame->dwarf->lookupUnit(objIp);
-            if (dwarfUnit == nullptr) {
-                // no ranges - try each dwarf unit in turn. (This seems to happen
-                // for single-unit exe's only, so it's no big loss)
-                for (const auto &u : frame->dwarf->getUnits()) {
-                    if (processUnit(u)) {
-                        dwarfUnit = u;
-                        break;
-                    }
-                }
             } else {
-                if (!processUnit(dwarfUnit))
-                    dwarfUnit = nullptr;
-            }
 
-            if (!dwarfUnit) {
                 bool haveSym = frame->elf->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
-                if (symName != "" || sigmsg != "")
+                if (symName != "" || signalFrame)
                     os << "in " << (haveSym ? symName : "unknown function")
-                        << sigmsg << "!+"
+                        << (signalFrame ? "*" : "") << "!+"
                         << objIp - (haveSym ? sym.st_value : 0)
                         << "()";
                 else
-                    os << "in <unknown>" << sigmsg << "()";
+                    os << "in <unknown>" << (signalFrame ? "*" : "") << "()";
             }
 
             os << " in " << fileName;
