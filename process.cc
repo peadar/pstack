@@ -188,7 +188,6 @@ struct PrintableFrame {
     int frameNumber;
     std::string dieName;
     std::string symName;
-    std::string imageFileName;
     Elf::Sym symbol;
     std::vector<std::pair<std::string, int>> source;
     bool isSignalFrame;
@@ -243,48 +242,35 @@ struct PrintableFrame {
 
 
 std::ostream &
+operator << (std::ostream &os, const JSON<std::pair<std::string, int>> &jt)
+{
+    return JObject(os)
+        .field("file", jt.object.first)
+        .field("line", jt.object.second);
+}
+
+std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
 {
     auto &frame =jt.object;
     PstackOptions options;
     options[doargs] = true;
     PrintableFrame pframe(frame, 0, options);
-    auto proc = jt.context;
 
     JObject jo(os);
-
-    Elf::Addr objIp = 0;
-    Elf::Object::sptr obj;
-    Elf::Sym sym;
-    std::string fileName;
-    std::string symName = "unknown";
-    if (frame->rawIP() == proc->sysent) {
-        symName = "(syscall)";
-    } else {
-        Elf::Off loadAddr;
-        const Elf::Phdr *phdr;
-        std::tie(loadAddr, obj, phdr) = proc->findObject(frame->scopeIP());
-        if (obj) {
-            fileName = stringify(*obj->io);
-            objIp = frame->scopeIP() - loadAddr;
-            obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
-        }
-    }
-
-    jo.field("ip", frame->rawIP());
-    if (symName != "")
-        jo.field("function", symName);
-
-    if (obj) {
-        jo.field("off", objIp - sym.st_value)
-            .field("file", fileName);
-        const auto &di = proc->getDwarf(obj);
-        if (di) {
-            auto src = di->sourceFromAddr(objIp);
-            jo.field("source", src);
-        }
-    }
-    return os;
+    jo
+        .field("ip", frame->rawIP());
+    if (frame->elf)
+        jo
+            .field("object", stringify(*frame->elf->io))
+            .field("symbol", pframe.symName)
+            .field("source", pframe.source)
+            .field("die", pframe.dieName)
+            .field("cfa", frame->cfa)
+            .field("offset", pframe.functionOffset)
+            .field("trampoline", pframe.isSignalFrame)
+        ;
+    return jo;
 }
 
 std::ostream &
@@ -535,11 +521,15 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
 
     IOFlagSave _(os);
 
+    os << std::hex;
     os << "#"
-        << std::left << std::dec << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
-        << std::right << std::hex << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->rawIP();
+        << std::left << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
+        << std::right << "0x" << std::setw(ELF_BITS/4) << std::setfill('0')
+        << frame->rawIP();
+    os << std::dec;
+
     if (verbose > 0)
-        os << "/" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa;
+        os << "/" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa;
     os << " ";
 
     if (frame->elf) {
