@@ -451,6 +451,7 @@ std::ostream &operator << (std::ostream &os, Dwarf::UnwindMechanism mech) {
    }
    abort();
 }
+
 std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options)
 {
@@ -473,19 +474,15 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
         std::string fileName = "unknown file";
         std::string symName;
 
-        Elf::Off loadAddr;
-        Elf::Object::sptr obj;
-        const Elf::Phdr *_;
-        std::tie(loadAddr, obj, _) = findObject(frame->scopeIP());
-        if (obj) {
-            fileName = stringify(*obj->io);
-            Elf::Addr objIp = frame->scopeIP() - loadAddr;
-            Dwarf::Info::sptr dwarf = getDwarf(obj);
+        if (frame->elf) {
+            fileName = stringify(*frame->elf->io);
+            Elf::Addr objIp = frame->scopeIP() - frame->elfReloc;
+            Dwarf::Info::sptr dwarf = getDwarf(frame->elf);
 
             std::string sigmsg = frame->cie != nullptr && frame->cie->isSignalHandler ?  "*" : ""; // * indicates signal frame
 
             // We may need to process a Units iterable, or a std::list<Unit::sptr>
-            auto processUnit = [ this, &os, &frame, &symName, &objIp, &dwarf, &sym, &options, &obj, &sigmsg ] (const Dwarf::Unit::sptr &u) {
+            auto processUnit = [ this, &os, &frame, &symName, &objIp, &dwarf, &sym, &options, &sigmsg ] (const Dwarf::Unit::sptr &u) {
                 // find the DIE for this function
                 const auto &unitRoot = u->root();
                 auto de = Dwarf::findEntryForFunc(objIp, unitRoot);
@@ -495,7 +492,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
                 frame->dwarf = dwarf; // hold on to 'de'
                 os << "in ";
                 if (!dieName(os, de)) {
-                    obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+                    frame->elf->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
                     if (symName != "")
                         symName += "%"; // mark the lack of a name in a dwarf DIE.
                     else
@@ -530,7 +527,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const Pstack
             }
 
             if (!dwarfUnit) {
-                bool haveSym = obj->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
+                bool haveSym = frame->elf->findSymbolByAddress(objIp, STT_FUNC, sym, symName);
                 if (symName != "" || sigmsg != "")
                     os << "in " << (haveSym ? symName : "unknown function")
                         << sigmsg << "!+"
