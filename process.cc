@@ -225,7 +225,7 @@ struct PrintableFrame {
 
             auto lowpc = frame->function.attribute(Dwarf::DW_AT_low_pc);
             if (lowpc.valid())
-                functionOffset = objIp - intmax_t(lowpc);
+                functionOffset = objIp - uintmax_t(lowpc);
         }
 
         if (!options[PstackOption::nosrc])
