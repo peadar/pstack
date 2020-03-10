@@ -6,17 +6,9 @@ add_subdirectory(tests)
 
 math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 set(PSTACK_BIN "pstack" CACHE STRING "Name of the 'pstack' binary")
-set(ELF_BITS ${PLATFORM_BITS} CACHE STRING "32 or 64 - set to 32 to build 32-bit binary on 64-bit platform")
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib" CACHE STRING "Rpath to install for binaries or the empty string")
 set(LIBTYPE "SHARED" CACHE STRING "Build libraries as STATIC or SHARED")
 option(TIDY "Run clang-tidy on the source" False)
-
-if(PLATFORM_BITS EQUAL 64 AND ELF_BITS EQUAL 32)
-    # we want a 32-bit binary in a 64-bit build environment: use -m32 everywhere
-    add_definitions("-m32")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -m32")
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -m32")
-endif()
 
 find_library(LTHREADDB NAMES thread_db PATHS (/usr/lib /usr/local/lib))
 find_package(LibLZMA)
@@ -43,7 +35,7 @@ add_definitions("-DVERSION=${VERSION_TAG}")
 
 set(CMAKE_CXX_STANDARD 14)
 
-add_definitions("-Wall -Wextra -DELF_BITS=${ELF_BITS} -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
+add_definitions("-Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Make sure to use the local libpstack headers rather than what's installed.
 include_directories(${CMAKE_SOURCE_DIR})

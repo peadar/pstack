@@ -350,7 +350,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
     , version(r.getu16())
 {
     if (version <= 2) // DWARF Version 2 uses the architecture's address size.
-       dwarfLen = ELF_BITS / 8;
+       dwarfLen = ELF_WORDSIZE;
 
     off_t abbrevOffset;
     if (version >= 5) {
@@ -1375,7 +1375,7 @@ FDE::FDE(CFI *fi, DWARFReader &reader, Elf::Off cieOff_, Elf::Off endOff_)
 CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
     : frameInfo(fi)
     , addressEncoding(0)
-    , addressSize(ELF_BITS/8)
+    , addressSize(ELF_WORDSIZE)
     , segmentSize(0)
     , lsdaEncoding(0)
     , isSignalHandler(false)

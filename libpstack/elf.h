@@ -48,11 +48,10 @@
 #include "libpstack/json.h"
 
 #ifndef ELF_BITS
-#define ELF_BITS 64
+#define ELF_BITS __WORDSIZE
 #endif
 
 #define ELF_WORDSIZE ((ELF_BITS)/8)
-
 
 #ifndef SHF_COMPRESSED // Old headers may not have SHF_COMPRESSED: define it here.
 #define SHF_COMPRESSED (1<<11)
