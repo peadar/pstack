@@ -246,4 +246,15 @@ operator << (std::ostream &os, const JSON<std::pair<F, S>, C> &json) {
        .field("first", json.object.first)
        .field("second", json.object.second);
 }
+
+
+class JsonNull {};
+
+template <typename C>
+std::ostream &
+operator << (std::ostream &os, const JSON<JsonNull, C> &) {
+   return os << "null";
+}
+
+
 #endif

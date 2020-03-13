@@ -250,6 +250,19 @@ operator << (std::ostream &os, const JSON<std::pair<std::string, int>> &jt)
 }
 
 std::ostream &
+operator << (std::ostream &os, const JSON<std::pair<Elf::Sym *, std::string>> &js)
+{
+    const auto &obj = js.object;
+    return JObject(os)
+        .field("st_name", obj.second)
+        .field("st_value", obj.first->st_value)
+        .field("st_size", obj.first->st_size)
+        .field("st_info", int(obj.first->st_info))
+        .field("st_other", int(obj.first->st_other))
+        .field("st_shndx", obj.first->st_shndx);
+}
+
+std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
 {
     auto &frame =jt.object;
@@ -263,13 +276,18 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
     if (frame->elf)
         jo
             .field("object", stringify(*frame->elf->io))
-            .field("symbol", pframe.symName)
+            .field("loadaddr", frame->elfReloc)
             .field("source", pframe.source)
             .field("die", pframe.dieName)
             .field("cfa", frame->cfa)
             .field("offset", pframe.functionOffset)
             .field("trampoline", pframe.isSignalFrame)
         ;
+    if (pframe.haveSym)
+        jo.field("symbol", std::make_pair(&pframe.symbol, pframe.symName));
+    else
+        jo.field("symbol", JsonNull());
+
     return jo;
 }
 

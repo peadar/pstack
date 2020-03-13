@@ -12,14 +12,14 @@ sigsegv(int segv)
     my_abort();
 }
 
-void g(int a)
+static void g(int a)
 {
    (void)a;
     *(int *)1 = 0;
     pause();
 }
 
-void f(int argc, char *argv[])
+static void f(int argc, char *argv[])
 {
     (void)argc;
     (void)argv;
