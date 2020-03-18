@@ -51,7 +51,7 @@
 #define ELF_BITS __WORDSIZE
 #endif
 
-#define ELF_WORDSIZE ((ELF_BITS)/8)
+#define ELF_BYTES ((ELF_BITS)/8)
 
 #ifndef SHF_COMPRESSED // Old headers may not have SHF_COMPRESSED: define it here.
 #define SHF_COMPRESSED (1<<11)

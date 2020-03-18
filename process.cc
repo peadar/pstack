@@ -841,12 +841,12 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                 oldBp = curFrame->getReg(BPREG);
                 if (oldBp == 0)
                    return; // null base pointer means we're done.
-                p.io->readObj(oldBp + ELF_WORDSIZE, &newIp);
+                p.io->readObj(oldBp + ELF_BYTES, &newIp);
                 p.io->readObj(oldBp, &newBp);
                 if (newBp > oldBp && newIp > 4096) {
                     nextFrame = new Dwarf::StackFrame(*curFrame,
                           Dwarf::UnwindMechanism::FRAMEPOINTER);
-                    nextFrame->setReg(SPREG, oldBp + ELF_WORDSIZE * 2);
+                    nextFrame->setReg(SPREG, oldBp + ELF_BYTES * 2);
                     nextFrame->setReg(BPREG, newBp);
                     nextFrame->setReg(IPREG, newIp);
                     continue;
