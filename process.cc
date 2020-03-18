@@ -544,10 +544,10 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
         << std::left << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
         << std::right << "0x" << std::setw(ELF_BITS/4) << std::setfill('0')
         << frame->rawIP();
-    os << std::dec;
 
     if (verbose > 0)
-        os << "/" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa;
+        os << "/" << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa;
+    os << std::dec;
     os << " ";
 
     if (frame->elf) {
