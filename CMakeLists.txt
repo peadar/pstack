@@ -64,13 +64,11 @@ add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc
    dwarfproc.cc procdump.cc ${stubsrc})
 
 add_executable(canal canal.cc ${pysrc})
-add_executable(prst prst.cc)
 add_executable(${PSTACK_BIN} pstack.cc ${pysrc})
 
 target_link_libraries(procman ${LTHREADDB} dwelf)
 target_link_libraries(${PSTACK_BIN} dwelf procman)
 target_link_libraries(canal dwelf procman)
-target_link_libraries(prst dwelf)
 
 if (TIDY)
 set (CLANG_TIDY "clang-tidy;-checks=*,-*readability-braces-around-statements,-fuchsia*,-hicpp-braces-around-statements")
@@ -111,6 +109,6 @@ add_test(NAME args COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/args-test.py)
 add_test(NAME badfp COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/badfp-test.py)
 add_test(NAME basic COMMAND ${CMAKE_SOURCE_DIR}/tests/basic-test.py)
 add_test(NAME cpp COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp-test.py)
-add_test(NAME noreturn COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/tests/noreturn-test.py)
+add_test(NAME noreturn COMMAND python2 ${CMAKE_CURRENT_SOURCE_DIR}/tests/noreturn-test.py)
 add_test(NAME segv COMMAND ${CMAKE_SOURCE_DIR}/tests/segv-test.py)
 add_test(NAME thread COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/thread-test.py)

@@ -1,12 +1,8 @@
-#!/usr/bin/python
+#!/usr/bin/python2
 # This tests argument printing works to some extent
 
-import subprocess,json
-import coremonitor
-import os.path
+import pstack
 import re
 
-cm = coremonitor.CoreMonitor(["tests/args"])
-
-text = subprocess.check_output(["./pstack", "-a", cm.core()])
+text = pstack.TEXT(["tests/args"])
 assert re.search('aFunctionWithArgs.*msg="tweet", value=42', text)

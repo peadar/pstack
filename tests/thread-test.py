@@ -1,12 +1,7 @@
-#!/usr/bin/python
+#!/usr/bin/python2
 
-import subprocess,json
-import coremonitor
-cm = coremonitor.CoreMonitor(["tests/thread"])
-
-pstack_result = subprocess.check_output(["./pstack", "-j", cm.core()])
-threads = json.loads(pstack_result)
-print("%s" % pstack_result)
+import pstack
+threads = pstack.JSON(["tests/thread"])
 # we have 10 threads + main
 assert len(threads) == 11
 entryThreads = 0
@@ -23,4 +18,3 @@ for thread in threads:
                 # we should be between unlocking the mutex and pausing
                 assert lineNo >= 23 and lineNo <= 24
 assert entryThreads == 10
-

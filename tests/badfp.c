@@ -6,6 +6,7 @@ void
 sighandle(int sig)
 {
    (void)sig;
+   printf("handled signal\n");
    abort();
 }
 

@@ -1,22 +1,16 @@
-#!/usr/bin/python
+#!/usr/bin/python2
 # This tests argument printing works to some extent
 
-import subprocess,json
-import coremonitor
-import os.path
-import re
-
+import pstack
 
 def child():
+    import os
     print os.getcwd()
     import ctypes
     dll = ctypes.CDLL("tests/libnoreturn.so")
     dll.thisFunctionWontReturn()
 
-# child()
-cm = coremonitor.CoreMonitor(None, child)
-
-process = json.loads(subprocess.check_output(["./pstack", "-j", cm.core()]))
+process = pstack.JSON(None, child)
 stack = process[0]["ti_stack"]
 frames = [ frame for frame in stack if "die" in frame and frame["die"] == "thisFunctionWontReturn" ]
 assert len(frames) == 1, "we should see our function on the stack"

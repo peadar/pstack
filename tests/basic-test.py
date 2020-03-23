@@ -1,13 +1,8 @@
-#!/usr/bin/python
+#!/usr/bin/python2
 
-import subprocess,json
-import coremonitor
+import pstack
 
-cm = coremonitor.CoreMonitor(["tests/basic"])
-
-print("core is %s" % cm.core())
-text = subprocess.check_output(["./pstack", "-j", cm.core()])
-threads = json.loads(text)
+threads = pstack.JSON(["tests/basic"])
 assert len(threads) == 1
 thread = threads[0]
 stack = thread["ti_stack"]
