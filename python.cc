@@ -332,7 +332,7 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
     catch (...) {
        libpython = nullptr;
        for (auto &o : proc.objects) {
-           std::string module = stringify(o.second->io);
+           std::string module = stringify(*o.second->io);
            if (module.find("python") == std::string::npos)
                continue;
            auto dwarf = proc.imageCache.getDwarf(o.second);
