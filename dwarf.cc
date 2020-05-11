@@ -34,11 +34,8 @@ struct Stats {
     Stats() : totalDIEs{}, maxDIEs{}, currentDIEs{} {}
     ~Stats() {
         if (verbose > 2)
-            std::clog
-                << "DIEs: current=" << currentDIEs
-                << ", total=" << totalDIEs
-                << ", max=" << maxDIEs
-                << std::endl;
+            *debug << "DIEs: current=" << currentDIEs << ", total=" << totalDIEs
+                << ", max=" << maxDIEs << std::endl;
     }
     void addone() {
         totalDIEs++;
@@ -195,7 +192,7 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
             return make_unique<CFI>(this, sec->shdr.sh_addr, io, ftype);
         }
         catch (const Exception &ex) {
-            std::clog << "can't decode " << name << " for " << *obj->io << ": "
+            *debug << "can't decode " << name << " for " << *obj->io << ": "
                 << ex.what() << "\n";
         }
         return std::unique_ptr<CFI>();
@@ -230,7 +227,7 @@ UnitsCache::get(const Info *info, off_t offset)
         DWARFReader r(info->io, offset);
         ent = make_shared<Unit>(info, r);
         if (verbose >= 3)
-            std::clog << "create unit " << ent->name() << "@" << offset
+            *debug << "create unit " << ent->name() << "@" << offset
                       << " in " << *info->io << "\n";
     }
     LRU.push_front(ent);
@@ -244,7 +241,7 @@ UnitsCache::get(const Info *info, off_t offset)
         // determine which unit contains a particular DIE.
         byOffset[old->offset] = 0;
         if (verbose > 3)
-            std::clog << "evicted unit " << old->name() << "@" << old->offset
+            *debug << "evicted unit " << old->name() << "@" << old->offset
                       << " in " << *info->io << "\n";
     }
     return ent;
@@ -275,7 +272,7 @@ Info::offsetToDIE(off_t offset) const
         DIE entry = u->offsetToDIE(offset);
         if (entry) {
             if (verbose > 2)
-                std::clog << "search for DIE at " << offset
+                *debug << "search for DIE at " << offset
                           << " started at " << uOffset
                           << " and took " << i << " iterations\n";
             return entry;
@@ -942,7 +939,7 @@ Unit::purge()
     }
     auto end = stats.currentDIEs;
     if (verbose >= 3)
-        std::clog << "purging " << name() << " in " << *dwarf->elf->io
+        *debug << "purging " << name() << " in " << *dwarf->elf->io
                   << " freed " << start - end << " DIEs (total now "
                   << stats.currentDIEs << ")" << std::endl;
 }
@@ -1424,7 +1421,7 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
             case '\0':
                 break;
             default:
-                std::clog << "unknown augmentation '" << aug << "' in "
+                *debug << "unknown augmentation '" << aug << "' in "
                     << augmentation << std::endl;
                 // The augmentations are in order, so we can't make any sense
                 // of the remaining data in the augmentation block
@@ -1435,7 +1432,7 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
             break;
     }
     if (r.getOffset() != endaugdata) {
-        std::clog << "warning: " << endaugdata - r.getOffset()
+        *debug << "warning: " << endaugdata - r.getOffset()
             << " bytes of augmentation ignored" << std::endl;
         r.setOffset(endaugdata);
     }
@@ -1495,7 +1492,7 @@ DIE::getParentOffset() const
         // tree from the root down. (This also fixes the problem for any other
         // dies in the same unit.
         if (verbose)
-            std::clog << "warning: no parent offset "
+            *debug << "warning: no parent offset "
                 << "for die " << name()
                 << " at offset " << offset
                 << " in unit " << unit->name()

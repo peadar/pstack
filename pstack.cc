@@ -1,7 +1,8 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/proc.h"
 #include "libpstack/ps_callback.h"
-#ifdef WITH_PYTHON
+#if defined(WITH_PYTHON2) || defined(WITH_PYTHON3)
+#define WITH_PYTHON
 #include "libpstack/python.h"
 #endif
 
@@ -76,6 +77,19 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
     return os;
 }
 
+template<int V> bool doPy(Process &proc, std::ostream &o, const PstackOptions &options) {
+    try {
+        PythonPrinter<V> printer(proc, o, options);
+        if (!printer.interpFound())
+            return false;
+        printer.printStacks();
+    }
+    catch (...) {
+        return false;
+    }
+    return true;
+}
+
 int
 emain(int argc, char **argv)
 {
@@ -87,7 +101,9 @@ emain(int argc, char **argv)
     double sleepTime = 0.0;
     PstackOptions options;
 
+#if defined(WITH_PYTHON)
     bool python = false;
+#endif
     bool coreOnExit = false;
 
     while ((c = getopt(argc, argv, "F:b:d:CD:hjsVvag:ptz:")) != -1) {
@@ -128,7 +144,7 @@ emain(int argc, char **argv)
             sleepTime = strtod(optarg, nullptr);
             break;
         case 'p':
-#ifdef WITH_PYTHON
+#if defined(WITH_PYTHON)
             python = true;
 #else
             std::clog << "no python support compiled in" << std::endl;
@@ -158,16 +174,19 @@ emain(int argc, char **argv)
             auto doStack = [=, &options] (Process &proc) {
                 proc.load(options);
                 for (;;) {
-#ifdef WITH_PYTHON
+#if defined(WITH_PYTHON)
                    if (python) {
-                       PythonPrinter printer(proc, std::cout, options);
-                       printer.printStacks();
-                   }
-                   else
+#ifdef WITH_PYTHON2
+                       if (python && doPy<2>(proc, std::cout, options))
+                           return;
 #endif
-                   {
-                       pstack(proc, std::cout, options);
+#ifdef WITH_PYTHON3
+                       doPy<3>(proc, std::cout, options);
+                       return;
+#endif
                    }
+#endif
+                   pstack(proc, std::cout, options);
                    if (sleepTime != 0.0) {
                       usleep(sleepTime * 1000000);
                    } else {

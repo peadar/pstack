@@ -182,10 +182,11 @@ struct Section {
     Section(const Section &) = default;
 };
 
-struct Notes {
+class Notes {
+   Object *object;
+public:
    NoteIter begin() const;
    NoteIter end() const;
-   Object *object;
    Notes(Object *object_) : object(object_) {}
    typedef NoteDesc value_type;
    typedef NoteIter iterator;

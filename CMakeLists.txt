@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.11)
+cmake_minimum_required(VERSION 3.12) # That's when we get FindPython{2,3}
 project(pstack C CXX)
 enable_testing()
 
@@ -13,7 +13,8 @@ option(TIDY "Run clang-tidy on the source" False)
 find_library(LTHREADDB NAMES thread_db PATHS (/usr/lib /usr/local/lib))
 find_package(LibLZMA)
 find_package(ZLIB)
-find_package(PythonLibs 2)
+find_package(Python3 COMPONENTS Development)
+find_package(Python2 COMPONENTS Development)
 
 find_package(Git)
 if (GIT_FOUND)
@@ -52,10 +53,21 @@ if (ZLIB_FOUND)
    include_directories(${ZLIB_INCLUDES})
 endif()
 
-if (PythonLibs_FOUND OR PYTHONLIBS_FOUND)
+if (Python3_Development_FOUND OR Python2_Development_FOUND)
    set(pysrc python.cc)
-   add_definitions("-DWITH_PYTHON")
-   include_directories(${PYTHON_INCLUDE_DIRS})
+endif()
+
+if (Python3_Development_FOUND)
+   message(STATUS  "Python3_INCLUDE_DIRS are ${Python3_INCLUDE_DIRS}")
+   set(pysrc ${pysrc} python3.cc)
+   add_definitions("-DWITH_PYTHON3")
+   include_directories(${Python3_INCLUDE_DIRS})
+endif()
+
+if (Python2_Development_FOUND)
+   set(pysrc ${pysrc} python2.cc)
+   add_definitions("-DWITH_PYTHON2")
+   include_directories(${Python2_INCLUDE_DIRS})
 endif()
 
 add_library(dwelf ${LIBTYPE} dump.cc dwarf.cc elf.cc reader.cc util.cc
@@ -94,8 +106,12 @@ else()
    message(WARNING "no LZMA support found")
 endif()
 
-if (NOT (PythonLibs_FOUND OR PYTHONLIBS_FOUND))
-   message(WARNING "no python support found")
+if (NOT (Python3_Development_FOUND))
+   message(WARNING "no python3 support found")
+endif()
+
+if (NOT (Python2_Development_FOUND))
+   message(WARNING "no python2 support found")
 endif()
 
 install(TARGETS ${PSTACK_BIN} canal DESTINATION bin)

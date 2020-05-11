@@ -277,7 +277,7 @@ mainExcept(int argc, char *argv[])
     off_t filesize = 0;
     off_t memsize = 0;
 #ifdef WITH_PYTHON
-    PythonPrinter py(*process, std::cout, PstackOptions());
+    PythonPrinter<2> py(*process, std::cout, PstackOptions());
 #endif
     for (auto &hdr : core->getSegments(PT_LOAD)) {
         Elf::Off p;
@@ -324,7 +324,7 @@ mainExcept(int argc, char *argv[])
                                 << found->name << " 0x" << std::hex << loc
                                 << std::dec <<  " ... size=" << found->sym.st_size
                                 << ", diff=" << p - found->memaddr() << endl;
-#if WITH_PYTHON
+#if 0 && WITH_PYTHON
                         if (doPython) {
                             std::cout << "pyo " << Elf::Addr(loc) << " ";
                             py.print(Elf::Addr(loc) - sizeof (PyObject) +

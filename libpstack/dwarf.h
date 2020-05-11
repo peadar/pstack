@@ -18,15 +18,16 @@ namespace Dwarf {
 enum HasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
 
 class Attribute;
-class RawDIE;
+class DIE;
+class DIEIter;
+class DWARFReader;
 class ExpressionStack;
 class Info;
 class LineInfo;
-class DWARFReader;
-class DIE;
-struct CIE;
-struct CFI;
+class RawDIE;
 class Unit;
+struct CFI;
+struct CIE;
 
 typedef std::vector<size_t> Entries;
 
@@ -133,7 +134,6 @@ union Value {
     bool flag;
 };
 
-class DIEIter;
 class DIEChildren {
     const DIE &parent;
 public:

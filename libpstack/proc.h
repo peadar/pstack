@@ -1,3 +1,5 @@
+#ifndef libpstack_proc_h
+#define libpstack_proc_h
 #include <elf.h>
 extern "C" {
 // Some thread_db headers are not safe to include unwrapped in extern "C"
@@ -255,3 +257,4 @@ public:
     StopLWP(Process *proc_, lwpid_t lwp_) : proc(proc_), lwp(lwp_) { proc->stop(lwp); }
     ~StopLWP() { proc->resume(lwp); }
 };
+#endif
