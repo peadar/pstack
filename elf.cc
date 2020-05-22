@@ -85,6 +85,51 @@ Object::endVA() const
 }
 
 
+static uint32_t gnu_hash(const char *s) {
+   auto name = (const uint8_t *)s;
+   uint32_t h = 5381;
+   while (*name)
+      h = (h << 5) + h + *name++;
+   return h;
+}
+
+static uint32_t gnu_hash(const std::string &s) {
+   return gnu_hash(s.c_str());
+}
+
+struct GnuHash {
+   Reader::csptr io;
+   struct Header {
+      uint32_t nbuckets;
+      uint32_t symoffset;
+      uint32_t bloom_size;
+      uint32_t bloom_shift;
+   };
+   Header header;
+   uint32_t bloomoff(size_t idx) const { return sizeof header + idx * sizeof(Elf::Off); }
+   uint32_t bucketoff(size_t idx) const { return bloomoff(header.bloom_size) + idx * 4; }
+   uint32_t chainoff(size_t idx) const { return bucketoff(header.nbuckets) + idx * 4; }
+   GnuHash(const Reader::csptr &io_, const Reader::csptr &, const Reader::csptr &) :
+      io(io_), header(io->readObj<Header>(0)) { }
+   void findsymC(const char *name);
+   void findsym(const std::string &name) { return findsymC(name.c_str()); }
+};
+
+void
+GnuHash:: findsymC(const char *name) {
+   auto h1 = gnu_hash(name);
+   auto h2 = h1 >> header.bloom_shift;
+
+   auto N = (h1/ELF_BITS) % header.bloom_size;
+   auto B1 = h1 % ELF_BITS;
+   auto B2 = h2 % ELF_BITS;
+   auto W = io->readObj<Elf::Addr>(bloomoff(N));
+   auto found = W & ((1 << B1) | (1 << B2));
+   std::clog << (found ? "FOUND     " : "NOT FOUND ") << name << std::endl;
+}
+
+
+
 Object::Object(ImageCache &cache, Reader::csptr io_)
     : io(std::move(io_))
     , notes(this)
@@ -125,6 +170,13 @@ Object::Object(ImageCache &cache, Reader::csptr io_)
         auto &strings = getLinkedSection(syms);
         if (tab && syms && strings)
             hash = make_unique<SymHash>(tab.io, syms.io, strings.io);
+
+        auto &gnuhash = getSection(".gnu.hash", SHT_GNU_HASH);
+        auto &gnusyms = getLinkedSection(gnuhash);
+        auto &gnustrings = getLinkedSection(gnusyms);
+        if (gnuhash && gnusyms && gnustrings) {
+           auto gnuhashSection = make_unique<GnuHash>(gnuhash.io, gnusyms.io, gnustrings.io);
+        }
     } else {
         hash = nullptr;
     }
