@@ -107,8 +107,6 @@ emain(int argc, char **argv)
         case 'd': {
             /* Undocumented option to dump image contents */
             std::cout << json(Elf::Object(imageCache, loadFile(optarg)));
-            Elf::Object obj(imageCache, loadFile(optarg));
-            std::cout << json( c == 'd' ? obj : *obj.debugData);
             goto done;
         }
         case 'h':
