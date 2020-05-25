@@ -68,14 +68,17 @@ typedef struct {
 #endif
 
 namespace Elf {
-    class Object;
+class Object;
+class ImageCache;
+struct SymbolSection;
+class NoteIter;
+class NoteDesc;
 };
 
 std::ostream &operator<< (std::ostream &, const JSON<Elf::Object> &);
 
 namespace Elf {
-class ImageCache;
-class Object;
+
 #ifndef __FreeBSD__
 typedef Elf32_Nhdr Elf32_Note;
 typedef Elf64_Nhdr Elf64_Note;
@@ -116,7 +119,7 @@ roundup2(size_t val, size_t align)
 #endif
 
 /*
- * Helper class to provide a hashed lookup of a symbol table.
+ * SymHash provides symbol lookup via ".hash" section hashtable.
  */
 class SymHash {
     Reader::csptr hash;
@@ -132,7 +135,34 @@ public:
     bool findSymbol(Sym &sym, const std::string &name);
 };
 
-struct SymbolSection;
+/*
+ * GnuHash provides symbol lookup via ".gnu.hash" section hashtable. This
+ * performs a lot better when looking up a symbol that is not in the table. We
+ * use this in preference to SymHash if the image provides the section.
+ * https://flapenguin.me/elf-dt-gnu-hash
+ */
+class GnuHash {
+    Reader::csptr hash;
+    Reader::csptr syms;
+    Reader::csptr strings;
+    struct Header {
+        uint32_t nbuckets;
+        uint32_t symoffset;
+        uint32_t bloom_size;
+        uint32_t bloom_shift;
+    };
+    Header header;
+    uint32_t bloomoff(size_t idx) const { return sizeof header + idx * sizeof(Elf::Off); }
+    uint32_t bucketoff(size_t idx) const { return bloomoff(header.bloom_size) + idx * 4; }
+    uint32_t chainoff(size_t idx) const { return bucketoff(header.nbuckets) + idx * 4; }
+public:
+    GnuHash(const Reader::csptr &hash_, const Reader::csptr &syms_, const Reader::csptr &strings_) :
+        hash(hash_), syms(syms_), strings(strings_), header(hash->readObj<Header>(0)) { }
+    bool findSymbol(Sym &sym, const char *) const;
+    bool findSymbol(Sym &sym, const std::string &name) const {
+       return findSymbol(sym, name.c_str());
+    }
+};
 
 /*
  * An ELF section is effectively a pair of an Shdr to describe an ELF
@@ -146,9 +176,6 @@ struct Section {
     Section() { shdr.sh_type = SHT_NULL; }
     Section(const Section &) = default;
 };
-
-struct NoteIter;
-class NoteDesc;
 
 struct Notes {
    NoteIter begin() const;
@@ -173,15 +200,20 @@ public:
     // Accessing sections.
     const Section &getSection(Word idx) const;
     const Section &getLinkedSection(const Section &sec) const;
+
+    // Get a section by name. If type is not SHT_NULL, the type of the section
+    // must match the passed type.
     const Section &getSection(const std::string &name, Word type) const;
 
     // Accessing segments.
     const ProgramHeaders &getSegments(Word type) const;
 
-    // Accessing symbols
+    // Accessing symbols - table name will be either .dynsym or .symtab.
+    // You probably don't want to use this to find a symbol by name - use the
+    // gnu_hash or hash objects instead.
     SymbolSection getSymbols(const std::string &tableName);
     bool findSymbolByAddress(Addr addr, int type, Sym &, std::string &);
-    bool findSymbolByName(const std::string &name, Sym &sym);
+    bool findSymbolByName(const std::string &name, Sym &sym, bool includeDebug);
 
     Reader::csptr io;
 
@@ -190,21 +222,23 @@ public:
     const Ehdr &getHeader() const { return elfHeader; }
     const Phdr *getSegmentForAddress(Off) const;
     Notes notes;
-    mutable Object::sptr debugData; // symbol table data as extracted from .gnu.debugdata
+    // symbol table data as extracted from .gnu.debugdata -
+    // https://sourceware.org/gdb/current/onlinedocs/gdb/MiniDebugInfo.html
     Elf::Addr endVA() const;
 private:
     // Elf header, section headers, program headers.
+    mutable Object::sptr debugData;
     Ehdr elfHeader;
     ImageCache &imageCache;
     SectionHeaders sectionHeaders;
     std::map<std::string, Section *> namedSection;
     std::map<Word, ProgramHeaders> programHeaders;
 
-
     mutable bool debugLoaded; // We've at least attempted to load debugObject: don't try again
     mutable Object::sptr debugObject; // debug object as per .gnu_debuglink/other.
 
     std::unique_ptr<SymHash> hash; // Symbol hash table.
+    std::unique_ptr<GnuHash> gnu_hash; // Enhanced GNU symbol hash table.
     Object *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
     friend std::ostream &::operator<< (std::ostream &, const JSON<Elf::Object> &);
     struct CachedSymbol {
@@ -251,6 +285,10 @@ typedef struct pt_regs CoreRegisters;
 typedef struct user_regs_struct CoreRegisters;
 #endif
 
+
+/*
+ * Describes a note. Notes have a name, a type, and some associated data.
+ */
 class NoteDesc {
    Note note;
    Reader::csptr io;
@@ -264,7 +302,6 @@ public:
 
    std::string name() const;
    Reader::csptr data() const;
-   size_t size() const;
    int type()  const { return note.n_type; }
    NoteDesc(const Note &note_, Reader::csptr io_)
       : note(note_)
@@ -276,7 +313,10 @@ public:
    }
 };
 
-struct NoteIter {
+/*
+ * Iterator over all notes in an image.
+ */
+class NoteIter {
     Object *object;
     const Object::ProgramHeaders &phdrs;
     Object::ProgramHeaders::const_iterator phdrsi;
@@ -284,8 +324,8 @@ struct NoteIter {
     Note curNote;
     Reader::csptr io;
 
-    NoteDesc operator *() {
-        return NoteDesc(curNote, std::make_shared<const OffsetReader>(io, offset));
+    void readNote() {
+        io->readObj(offset, &curNote);
     }
 
     void startSection() {
@@ -295,6 +335,25 @@ struct NoteIter {
               off_t(phdrsi->p_filesz));
     }
 
+    NoteIter(Object *object_, bool begin)
+        : object(object_)
+        , phdrs(object_->getSegments(PT_NOTE))
+        , offset(0)
+    {
+        phdrsi = begin ? phdrs.begin() : phdrs.end();
+        if (phdrsi != phdrs.end()) {
+            startSection();
+            readNote();
+        }
+    }
+    friend class Notes;
+public:
+    bool operator == (const NoteIter &rhs) const {
+        return &phdrs == &rhs.phdrs && phdrsi == rhs.phdrsi && offset == rhs.offset;
+    }
+    bool operator != (const NoteIter &rhs) const {
+        return !(*this == rhs);
+    }
     NoteIter &operator++() {
         auto newOff = offset;
         newOff += sizeof curNote + curNote.n_namesz;
@@ -313,27 +372,8 @@ struct NoteIter {
         readNote();
         return *this;
     }
-
-    NoteIter(Object *object_, bool begin)
-        : object(object_)
-        , phdrs(object_->getSegments(PT_NOTE))
-        , offset(0)
-    {
-        phdrsi = begin ? phdrs.begin() : phdrs.end();
-        if (phdrsi != phdrs.end()) {
-            startSection();
-            readNote();
-        }
-    }
-
-    void readNote() {
-        io->readObj(offset, &curNote);
-    }
-    bool operator == (const NoteIter &rhs) const {
-        return &phdrs == &rhs.phdrs && phdrsi == rhs.phdrsi && offset == rhs.offset;
-    }
-    bool operator != (const NoteIter &rhs) const {
-        return !(*this == rhs);
+    NoteDesc operator *() {
+        return NoteDesc(curNote, std::make_shared<const OffsetReader>(io, offset));
     }
 };
 

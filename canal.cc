@@ -188,7 +188,8 @@ mainExcept(int argc, char *argv[])
                     Elf::Off end = *p ? strtoll(p, &p, 0) : start + 1;
                     searchaddrs.push_back(make_pair(start, end));
                     IOFlagSave _(std::clog);
-                    std::clog << "push " << hex << start << ", " << end  << " (" << int(*p) << ")" << std::endl;
+                    std::clog << "push " << hex << start << ", " << end
+                       << " (" << int(*p) << ")" << std::endl;
                 }
                 break;
             }
@@ -258,7 +259,8 @@ mainExcept(int argc, char *argv[])
                for (auto &pattern : patterns) {
                    auto &name = sym.second;
                    if (globmatch(pattern, name)) {
-                       listed.push_back(ListedSymbol(sym.first, loaded.first, name, stringify(*loaded.second->io)));
+                       listed.push_back(ListedSymbol(sym.first, loaded.first,
+                                name, stringify(*loaded.second->io)));
                        if (verbose > 1 || showsyms)
                           std::cout << sym.second << "\n";
                        count++;
@@ -317,7 +319,8 @@ mainExcept(int argc, char *argv[])
                     if (found != listed.end() &&
                             (symOffset != -1
                                 ? found->memaddr() + symOffset == p
-                                : found->memaddr() <= p && found->memaddr() + found->sym.st_size > p)) {
+                                : found->memaddr() <= p && found->memaddr() +
+                                               found->sym.st_size > p)) {
                         if (showaddrs)
                             cout
                                 << found->name << " 0x" << std::hex << loc
@@ -326,7 +329,8 @@ mainExcept(int argc, char *argv[])
 #if WITH_PYTHON
                         if (doPython) {
                             std::cout << "pyo " << Elf::Addr(loc) << " ";
-                            py.print(Elf::Addr(loc) - sizeof (PyObject) + sizeof (struct _typeobject *));
+                            py.print(Elf::Addr(loc) - sizeof (PyObject) +
+                                  sizeof (struct _typeobject *));
                             std::cout << "\n";
                         }
 #endif
@@ -342,7 +346,8 @@ mainExcept(int argc, char *argv[])
 
     }
     if (verbose)
-        *debug << "core file contains " << filesize << " out of " << memsize << " bytes of memory\n";
+        *debug << "core file contains " << filesize << " out of "
+           << memsize << " bytes of memory\n";
 
     sort(listed.begin() , listed.end() , compareSymbolsByFrequency);
 

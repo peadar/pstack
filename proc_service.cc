@@ -38,11 +38,12 @@ ps_err_e ps_pdmodel(struct ps_prochandle * /* unused */, int * /* unused */)
 }
 
 ps_err_e
-ps_pglobal_lookup(struct ps_prochandle *ph, const char *ld_object_name, const char *ld_symbol_name, psaddr_t *ld_symbol_addr)
+ps_pglobal_lookup(struct ps_prochandle *ph, const char *ld_object_name,
+                  const char *ld_symbol_name, psaddr_t *ld_symbol_addr)
 {
     auto p = static_cast<const Process *>(ph);
     try {
-        *ld_symbol_addr = psaddr_t(intptr_t(p->findSymbolByName(ld_symbol_name,
+        *ld_symbol_addr = psaddr_t(intptr_t(p->findSymbolByName(ld_symbol_name, true,
             [ld_object_name](const Elf::Addr, const Elf::Object::sptr &o) {
                 return basename(stringify(*o->io)) == std::string(ld_object_name);
             })));
@@ -52,7 +53,6 @@ ps_pglobal_lookup(struct ps_prochandle *ph, const char *ld_object_name, const ch
         return PS_ERR;
     }
 }
-
 
 void
 ps_plog(const char *fmt, ...)
@@ -114,21 +114,24 @@ ps_pdread(struct ps_prochandle *p, psaddr_t addr, void *d, size_t l)
 }
 
 ps_err_e
-ps_pdwrite(struct ps_prochandle * /* unused */, psaddr_t /* unused */, const void * /* unused */, size_t /* unused */)
+ps_pdwrite(struct ps_prochandle * /* unused */, psaddr_t /* unused */,
+      const void * /* unused */, size_t /* unused */)
 {
     abort();
     return PS_ERR;
 }
 
 ps_err_e
-ps_ptread(struct ps_prochandle * /* unused */, psaddr_t /* unused */, void * /* unused */, size_t /* unused */)
+ps_ptread(struct ps_prochandle * /* unused */, psaddr_t /* unused */,
+      void * /* unused */, size_t /* unused */)
 {
     abort();
     return PS_ERR;
 }
 
 ps_err_e
-ps_ptwrite(struct ps_prochandle * /* unused */, psaddr_t /* unused */, const void * /* unused */, size_t /* unused */)
+ps_ptwrite(struct ps_prochandle * /* unused */, psaddr_t /* unused */,
+      const void * /* unused */, size_t /* unused */)
 {
     abort();
     return PS_ERR;
@@ -137,20 +140,23 @@ ps_ptwrite(struct ps_prochandle * /* unused */, psaddr_t /* unused */, const voi
 
 #ifdef __i386__
 ps_err_e
-ps_lgetxmmregs (struct ps_prochandle * /* unused */, lwpid_t /* unused */, char * /* unused */)
+ps_lgetxmmregs (struct ps_prochandle * /* unused */,
+      lwpid_t /* unused */, char * /* unused */)
 {
     abort();
     return (PS_ERR);
 }
 ps_err_e
-ps_lsetxmmregs (struct ps_prochandle * /* unused */, lwpid_t /* unused */, const char * /* unused */)
+ps_lsetxmmregs (struct ps_prochandle * /* unused */, lwpid_t /* unused */,
+      const char * /* unused */)
 {
     abort();
     return (PS_ERR);
 }
 #endif
 
-ps_err_e ps_lgetfpregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */, prfpregset_t * /* unused */)
+ps_err_e ps_lgetfpregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */,
+      prfpregset_t * /* unused */)
 {
     abort();
     return (PS_ERR);
@@ -162,13 +168,15 @@ ps_err_e ps_lgetregs(struct ps_prochandle *ph, lwpid_t pid, prgregset_t gregset)
     return p->getRegs(pid, (Elf::CoreRegisters *)gregset) ? PS_OK : PS_ERR;
 }
 
-ps_err_e ps_lsetfpregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */, const prfpregset_t * /* unused */)
+ps_err_e ps_lsetfpregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */,
+      const prfpregset_t * /* unused */)
 {
     abort();
     return (PS_ERR);
 }
 
-ps_err_e ps_lsetregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */, const prgregset_t /* unused */)
+ps_err_e ps_lsetregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */,
+      const prgregset_t /* unused */)
 {
     abort();
     return (PS_ERR);

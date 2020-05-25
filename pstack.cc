@@ -220,7 +220,7 @@ usage(const char *name)
         "\t[-V]                         dump git tag of source\n"
         "\t[-s]                         don't include source-level details\n"
         "\t[-g]                         add global debug directory\n"
-        "\t[-a]                         show arguments to functions where possible (TODO: not finished)\n"
+        "\t[-a]                         show arguments to functions where possible\n"
         "\t[-n]                         don't try to find external debug images\n"
         "\t[-t]                         don't try to use the thread_db library\n"
         "\t[-b<n>]                      batch mode: repeat every 'n' seconds\n"

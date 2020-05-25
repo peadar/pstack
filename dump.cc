@@ -481,7 +481,8 @@ operator << (std::ostream &os, const JSON<AddrStr> &addr)
 std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::CFI> &info)
 {
-    Mapper<AddrStr, decltype(info.object.cies)::mapped_type, decltype(info.object.cies)> ciesByString(info.object.cies);
+    Mapper<AddrStr, decltype(info.object.cies)::mapped_type, decltype(info.object.cies)>
+       ciesByString(info.object.cies);
     return JObject(os)
         .field("cielist", ciesByString, &info.object)
         .field("fdelist", info.object.fdeList, &info.object);
@@ -523,7 +524,8 @@ std::ostream &operator << (std::ostream &os, const JSON<Elf::NoteDesc> &note)
         }
     } else if (note->name() == "GNU") {
         switch (note->type()) {
-            case NT_GNU_ABI_TAG: { // https://refspecs.linuxfoundation.org/LSB_1.2.0/gLSB/noteabitag.html
+            case NT_GNU_ABI_TAG: {
+                // https://refspecs.linuxfoundation.org/LSB_1.2.0/gLSB/noteabitag.html
                 uint32_t isExecutable;
                 data->readObj(0, &isExecutable);
                 writer.field("abi-executable-marker", isExecutable);
@@ -605,7 +607,8 @@ std::ostream &operator<< (std::ostream &os, const JSON<Elf::Object> &elf)
     auto &ehdr = elf->getHeader();
     auto brand = ehdr.e_ident[EI_OSABI];
 
-    Mapper<ProgramHeaderName, decltype(elf->programHeaders)::mapped_type, std::map<Elf::Word, Elf::Object::ProgramHeaders>> mappedSegments(elf->programHeaders);
+    Mapper<ProgramHeaderName, decltype(elf->programHeaders)::mapped_type,
+       std::map<Elf::Word, Elf::Object::ProgramHeaders>> mappedSegments(elf->programHeaders);
     JObject writer(os);
     writer
         .field("type", typeNames[ehdr.e_type])
@@ -842,7 +845,8 @@ operator<< (std::ostream &os, const JSON<Elf::Phdr, const Elf::Object *> &phdr)
                   break;
                }
             }
-            writer.field("dynamic", ReaderArray<Elf::Dyn>(dynReader), std::make_pair(phdr.context, strtab));
+            writer.field("dynamic",
+                  ReaderArray<Elf::Dyn>(dynReader), std::make_pair(phdr.context, strtab));
             break;
         }
     }

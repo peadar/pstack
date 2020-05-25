@@ -168,7 +168,7 @@ public:
     std::ostream &dumpFrameText(std::ostream &, const PrintableFrame &, Dwarf::StackFrame *) const;
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &) const;
     template <typename T> void listThreads(const T &);
-    Elf::Addr findSymbolByName(const char *symbolName,
+    Elf::Addr findSymbolByName(const char *symbolName, bool includeDebug,
           std::function<bool(Elf::Addr, const Elf::Object::sptr &)> matcher = [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
     virtual ~Process();
     virtual void load(const PstackOptions &);

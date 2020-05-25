@@ -23,7 +23,9 @@ linkResolve(string name)
         buf[rc] = 0;
         if (buf[0] != '/') {
             auto lastSlash = name.rfind('/');
-            name = lastSlash == string::npos ? string(buf) : name.substr(0, lastSlash + 1) + string(buf);
+            name = lastSlash == string::npos
+               ? string(buf)
+               : name.substr(0, lastSlash + 1) + string(buf);
         } else {
             name = buf;
         }

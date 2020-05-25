@@ -29,7 +29,8 @@ LzmaReader::LzmaReader(Reader::csptr upstream_)
    off -= options.backward_size;
    uint8_t indexBuffer[options.backward_size];
    upstream->readObj(off, indexBuffer, options.backward_size);
-   rc = lzma_index_buffer_decode(&index, &memlimit, allocator(), indexBuffer, &pos, options.backward_size);
+   rc = lzma_index_buffer_decode(&index, &memlimit, allocator(), indexBuffer, &pos,
+         options.backward_size);
    if (rc != LZMA_OK)
        throw (Exception() << "can't decode index buffer");
    if (verbose >= 2)

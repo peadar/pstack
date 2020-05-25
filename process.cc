@@ -75,6 +75,15 @@ Process::getDwarf(Elf::Object::sptr elf)
     return imageCache.getDwarf(elf);
 }
 
+
+const char *
+auxtype2str(int auxtype) {
+#define AUX_TYPE(t, v) if (auxtype == t) return #t;
+#include "libpstack/elf/aux.h"
+   return "unknown type";
+#undef AUX_TYPE
+}
+
 void
 Process::processAUXV(const Reader &auxio)
 {
@@ -112,12 +121,14 @@ Process::processAUXV(const Reader &auxio)
                         VDSOReader( Reader::csptr up, off_t start, off_t length) :
                             OffsetReader(std::move(up), start, length) {}
                     };
-                    auto elf = std::make_shared<Elf::Object>(imageCache, std::make_shared<VDSOReader>(io, hdr, 65536));
+                    auto elf = std::make_shared<Elf::Object>(imageCache,
+                                    std::make_shared<VDSOReader>(io, hdr, 65536));
                     vdsoBase = hdr;
                     addElfObject(elf, hdr);
                     vdsoImage = elf;
                     if (verbose >= 2) {
-                        *debug << "auxv: VDSO " << *elf->io << " loaded at " << std::hex << hdr << "\n";
+                        *debug << "auxv: VDSO " << *elf->io
+                           << " loaded at " << std::hex << hdr << "\n";
                     }
 
                 }
@@ -149,7 +160,7 @@ Process::processAUXV(const Reader &auxio)
 #endif
             default:
                 if (verbose > 2)
-                   *debug << "auxv: unknown entry " << aux.a_type <<"=" << hdr << std::endl;
+                   *debug << "auxv: " << auxtype2str( aux.a_type) << ": " << hdr << std::endl;
         }
     }
 }
@@ -366,7 +377,8 @@ operator << (std::ostream &os, const RemoteValue &rv)
         buf.resize(size);
         auto rc = rv.p.io->read(rv.addr, size, &buf[0]);
         if (rc != size) {
-            return os << "<error reading " << size << " bytes from " << rv.addr << ", got " << rc << ">";
+            return os << "<error reading " << size << " bytes from " << rv.addr
+               << ", got " << rc << ">";
         }
     } else {
        size = 0;
@@ -489,7 +501,8 @@ operator << (std::ostream &os, const ArgPrint &ap)
                         addr = fbstack.eval(ap.p, attr, ap.frame, ap.frame->elfReloc);
                         os << "=";
                         if (fbstack.isReg) {
-                           os << ProcPtr(ap.p, type, addr) << "{r" << fbstack.inReg << "}";
+                           os << ProcPtr(ap.p, type, addr)
+                              << "{r" << fbstack.inReg << "}";
                         } else {
                            os << RemoteValue(ap.p, addr, type);
                         }
@@ -521,7 +534,8 @@ std::ostream &operator << (std::ostream &os, Dwarf::UnwindMechanism mech) {
 }
 
 std::ostream &
-Process::dumpStackText(std::ostream &os, const ThreadStack &thread, const PstackOptions &options) const
+Process::dumpStackText(std::ostream &os, const ThreadStack &thread,
+      const PstackOptions &options) const
 {
     os << std::dec;
     os << "thread: " << (void *)thread.info.ti_tid << ", lwp: "
@@ -588,7 +602,8 @@ Process::addElfObject(Elf::Object::sptr obj, Elf::Addr load)
     objects[load] = obj;
     if (verbose >= 2) {
         IOFlagSave _(*debug);
-        *debug << "object " << *obj->io << " loaded at address " << std::hex << load << std::endl;
+        *debug << "object " << *obj->io << " loaded at address "
+           << std::hex << load << std::endl;
     }
 }
 
@@ -607,7 +622,8 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
     for (auto mapAddr = Elf::Addr(rDebug.r_map); mapAddr != 0; mapAddr = Elf::Addr(map.l_next)) {
         io->readObj(mapAddr, &map);
 
-        // If we see the executable, just add it in and avoid going through the path replacement work
+        // If we see the executable, just add it in and avoid going through the path
+        // replacement work
         if (mapAddr == Elf::Addr(rDebug.r_map)) {
             assert(map.l_addr == entry - execImage->getHeader().e_entry);
             addElfObject(execImage, map.l_addr);
@@ -672,10 +688,11 @@ Process::findRDebugAddr()
     if (interpBase && execImage->getInterpreter() != "") {
         try {
             addElfObject(imageCache.getImageForName(execImage->getInterpreter()), interpBase);
-            return findSymbolByName("_r_debug", [this](const Elf::Addr, const Elf::Object::sptr &o) {
-                auto name = stringify(*o->io);
-                return execImage->getInterpreter() == name;
-            });
+            return findSymbolByName("_r_debug", false,
+                  [this](const Elf::Addr, const Elf::Object::sptr &o) {
+                      auto name = stringify(*o->io);
+                      return execImage->getInterpreter() == name;
+                  });
         }
         catch (...) {
         }
@@ -703,13 +720,18 @@ Process::findObject(Elf::Addr addr) const
 }
 
 Elf::Addr
-Process::findSymbolByName(const char *symbolName,
+Process::findSymbolByName(const char *symbolName, bool includeDebug,
         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
 {
     Elf::Sym sym;
     for (auto &loaded : objects)
-        if (match(loaded.first, loaded.second) && loaded.second->findSymbolByName(symbolName, sym))
-            return sym.st_value + loaded.first;
+        if (match(loaded.first, loaded.second) &&
+              loaded.second->findSymbolByName(symbolName, sym, includeDebug)) {
+            auto rv = sym.st_value + loaded.first;
+            if (verbose >= 3)
+               *debug << "found symbol '" << symbolName << "' at "<< rv << std::endl;
+            return rv;
+        }
     Exception e;
     e << "symbol " << symbolName << " not found";
     throw e;
@@ -798,9 +820,11 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                     Elf::Sym symbol;
                     Elf::Addr sigContextAddr = 0;
                     auto objip = curFrame->rawIP() - reloc;
-                    if (obj->findSymbolByName("__restore", symbol) && objip == symbol.st_value)
+                    if (obj->findSymbolByName("__restore", symbol, true) &&
+                          objip == symbol.st_value)
                         sigContextAddr = curFrame->getReg(SPREG) + 4;
-                    else if (obj->findSymbolByName("__restore_rt", symbol) && objip == symbol.st_value)
+                    else if (obj->findSymbolByName("__restore_rt", symbol, true) &&
+                          objip == symbol.st_value)
                         sigContextAddr = p.io->readObj<Elf::Addr>(curFrame->getReg(SPREG) + 8) + 20;
                     if (sigContextAddr != 0) {
                        // This mapping is based on DWARF regnos, and ucontext.h
@@ -825,7 +849,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                            { 14, REG_FS }
                        };
                        p.io->readObj(sigContextAddr, &regs);
-                       nextFrame = new Dwarf::StackFrame(*curFrame, Dwarf::UnwindMechanism::TRAMPOLINE);
+                       nextFrame = new Dwarf::StackFrame(*curFrame,
+                             Dwarf::UnwindMechanism::TRAMPOLINE);
                        for (auto &reg : gregmap)
                            nextFrame->setReg(reg.dwarf, regs[reg.greg]);
                        continue;

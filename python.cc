@@ -15,7 +15,7 @@ pthreadTidOffset(const Process &proc, size_t *offsetp)
     static enum { notDone, notFound, found } status;
     if (status == notDone) {
         try {
-            auto addr = proc.findSymbolByName("_thread_db_pthread_tid");
+            auto addr = proc.findSymbolByName("_thread_db_pthread_tid", true);
             uint32_t desc[3];
             proc.io->readObj(addr, &desc[0], 3);
             offset = desc[2];
@@ -295,7 +295,7 @@ void
 PythonPrinter::addPrinter(const char *symbol, python_printfunc func, bool dupDetect)
 {
     Elf::Sym sym;
-    if (!libpython->findSymbolByName(symbol, sym))
+    if (!libpython->findSymbolByName(symbol, sym, false))
         throw 999;
     auto typeptr = sym.st_value + libpythonAddr;
     printers.emplace(std::piecewise_construct, std::forward_as_tuple(typeptr), std::forward_as_tuple(func, dupDetect));
@@ -318,7 +318,7 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
 {
     // First search the ELF symbol table.
     try {
-       auto interp_headp = proc.findSymbolByName("Py_interp_headp",
+       auto interp_headp = proc.findSymbolByName("Py_interp_headp", false,
                 [this](Elf::Addr loadAddr, const Elf::Object::sptr &o) {
                     libpython = o;
                     libpythonAddr = loadAddr;
@@ -345,7 +345,8 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
                    continue;
                // Do we have a global variable called interp_head?
                for (auto var : compile.children()) {
-                   if (var.tag() == Dwarf::DW_TAG_variable && (var.name() == "interp_head" || var.name() == "Py_interp_head")) {
+                   if (var.tag() == Dwarf::DW_TAG_variable
+                         && (var.name() == "interp_head" || var.name() == "Py_interp_head")) {
                        Dwarf::ExpressionStack evalStack;
                        auto location = var.attribute(Dwarf::DW_AT_location);
                        if (!location.valid())
@@ -415,7 +416,8 @@ PythonPrinter::print(Elf::Addr remoteAddr)
                 } else if (printer == 0 && (pto.tp_flags & Py_TPFLAGS_HEAPTYPE)) {
                     printer = heapPrinter;
                 } else {
-                    os <<  remoteAddr << " unprintable-type-" << tn << "@"<< Elf::Addr(baseObj.ob_type);
+                    os <<  remoteAddr << " unprintable-type-" << tn
+                       << "@"<< Elf::Addr(baseObj.ob_type);
                     break;
                 }
             }

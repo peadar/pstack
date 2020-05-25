@@ -81,7 +81,8 @@ LiveProcess::resume(lwpid_t pid)
         intmax_t usecs = (tv.tv_sec - tcb.stoppedAt.tv_sec) * 1000000;
         usecs += tv.tv_usec;
         usecs -= tcb.stoppedAt.tv_usec;
-        *debug << "resumed LWP " << pid << ": was stopped for " << std::dec << usecs << " microseconds" << std::endl;
+        *debug << "resumed LWP " << pid << ": was stopped for " << std::dec <<
+           usecs << " microseconds" << std::endl;
     }
 }
 
@@ -124,7 +125,8 @@ LiveProcess::stopProcess()
         (void)lwps[info.ti_lid]; // make sure we have the LWP
         if (td_thr_dbsuspend(thr) == TD_NOCAPAB) {
             if (verbose >= 3)
-                *debug << "can't suspend thread "  << thr << ": will suspend it's LWP " << info.ti_lid << "\n";
+                *debug << "can't suspend thread "  << thr
+                       << ": will suspend it's LWP " << info.ti_lid << "\n";
         }
     });
 

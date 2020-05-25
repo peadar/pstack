@@ -62,12 +62,6 @@ NoteDesc::data() const
    return make_shared<OffsetReader>(io, sizeof note + roundup2(note.n_namesz, 4), note.n_descsz);
 }
 
-size_t
-NoteDesc::size() const
-{
-   return note.n_descsz;
-}
-
 std::pair<const Sym, const string>
 SymbolIterator::operator *()
 {
@@ -84,51 +78,61 @@ Object::endVA() const
     return last.p_vaddr + last.p_memsz;
 }
 
-
 static uint32_t gnu_hash(const char *s) {
-   auto name = (const uint8_t *)s;
-   uint32_t h = 5381;
-   while (*name)
-      h = (h << 5) + h + *name++;
-   return h;
+    auto name = (const uint8_t *)s;
+    uint32_t h = 5381;
+    while (*name)
+        h = (h << 5) + h + *name++;
+    return h;
 }
 
-static uint32_t gnu_hash(const std::string &s) {
-   return gnu_hash(s.c_str());
+bool
+GnuHash::findSymbol(Sym &sym, const char *name) const {
+    auto h1 = gnu_hash(name);
+    auto h2 = h1 >> header.bloom_shift;
+
+    auto N = (h1/ELF_BITS) % header.bloom_size;
+    auto B1 = h1 % ELF_BITS;
+    auto B2 = h2 % ELF_BITS;
+    auto W = hash->readObj<Elf::Addr>(bloomoff(N));
+
+    // If either bit is not set in the bloom filter, we're done.
+    if ((W & (1 << B1)) == 0) {
+       if (verbose >= 2)
+          *debug << "failed to find '" << name << "' using GNU hash: bloom filter 1\n";
+       return false;
+    }
+    if ((W & (1 << B2)) == 0) {
+        if (verbose >= 2)
+            *debug << "failed to find '" << name << "' using GNU hash: bloom filter 2\n";
+        return false;
+    }
+
+    auto idx = hash->readObj<uint32_t>(bucketoff(h1 % header.nbuckets));
+    if (idx < header.symoffset) {
+        if (verbose >= 2)
+            *debug << "failed to find '" << name << "' bad index in hash table\n";
+        return false;
+    }
+    for (;;) {
+        sym = syms->readObj<Sym>(idx * sizeof (Sym));
+        auto symhash = hash->readObj<uint32_t>(chainoff(idx - header.symoffset));
+        if ((symhash | 1)  == (h1 | 1)) {
+           if (strings->readString(sym.st_name) == name) {
+              if (verbose >= 2)
+                 *debug << "found '" << name << "' using GNU hash\n";
+              return true;
+           }
+        }
+        if (symhash & 1) {
+           if (verbose >= 2)
+               *debug << "failed to find '" << name << "' hit end of hash chain\n";
+           return false;
+
+        }
+        ++idx;
+    }
 }
-
-struct GnuHash {
-   Reader::csptr io;
-   struct Header {
-      uint32_t nbuckets;
-      uint32_t symoffset;
-      uint32_t bloom_size;
-      uint32_t bloom_shift;
-   };
-   Header header;
-   uint32_t bloomoff(size_t idx) const { return sizeof header + idx * sizeof(Elf::Off); }
-   uint32_t bucketoff(size_t idx) const { return bloomoff(header.bloom_size) + idx * 4; }
-   uint32_t chainoff(size_t idx) const { return bucketoff(header.nbuckets) + idx * 4; }
-   GnuHash(const Reader::csptr &io_, const Reader::csptr &, const Reader::csptr &) :
-      io(io_), header(io->readObj<Header>(0)) { }
-   void findsymC(const char *name);
-   void findsym(const std::string &name) { return findsymC(name.c_str()); }
-};
-
-void
-GnuHash:: findsymC(const char *name) {
-   auto h1 = gnu_hash(name);
-   auto h2 = h1 >> header.bloom_shift;
-
-   auto N = (h1/ELF_BITS) % header.bloom_size;
-   auto B1 = h1 % ELF_BITS;
-   auto B2 = h2 % ELF_BITS;
-   auto W = io->readObj<Elf::Addr>(bloomoff(N));
-   auto found = W & ((1 << B1) | (1 << B2));
-   std::clog << (found ? "FOUND     " : "NOT FOUND ") << name << std::endl;
-}
-
-
 
 Object::Object(ImageCache &cache, Reader::csptr io_)
     : io(std::move(io_))
@@ -174,9 +178,8 @@ Object::Object(ImageCache &cache, Reader::csptr io_)
         auto &gnuhash = getSection(".gnu.hash", SHT_GNU_HASH);
         auto &gnusyms = getLinkedSection(gnuhash);
         auto &gnustrings = getLinkedSection(gnusyms);
-        if (gnuhash && gnusyms && gnustrings) {
-           auto gnuhashSection = make_unique<GnuHash>(gnuhash.io, gnusyms.io, gnustrings.io);
-        }
+        if (gnuhash && gnusyms && gnustrings)
+            gnu_hash = make_unique<GnuHash>(gnuhash.io, gnusyms.io, gnustrings.io);
     } else {
         hash = nullptr;
     }
@@ -331,20 +334,29 @@ Object::getSymbols(const string &tableName)
 
 /*
  * Locate a named symbol in an ELF image.
+ * Passing "includeDebug" will search "symtab" as well as "dynsym", and will
+ * also look in .gnu_debugdata compressed section if present.
  */
 bool
-Object::findSymbolByName(const string &name, Sym &sym)
+Object::findSymbolByName(const string &name, Sym &sym, bool includeDebug)
 {
-    auto &syment = cachedSymbols[name];
+    auto &syment = cachedSymbols[name]; // XXX: maybe don't cache symbols that are in a hash table?
     auto findUncached  = [&](Sym &sym) {
-        if (hash && hash->findSymbol(sym, name))
-            return CachedSymbol::SYM_FOUND;
-        for (const char *sec : { ".dynsym", ".symtab" }) {
-            SymbolSection sect = getSymbols(sec);
-            if (sect.linearSearch(name, sym))
+        // We assume there's a hash table covering .dynsym - either .hash or
+        // .gnu.hash Observation shows you get either .gnu.hash or .hash, but
+        // not both. If we do, we only use .gnu.hash
+        if (gnu_hash) {
+            if (gnu_hash->findSymbol(sym, name))
+                return CachedSymbol::SYM_FOUND;
+        } else if (hash) {
+            if (hash->findSymbol(sym, name))
                 return CachedSymbol::SYM_FOUND;
         }
-        return CachedSymbol::SYM_NOTFOUND;
+        if (!includeDebug)
+           return CachedSymbol::SYM_NOTFOUND;
+        SymbolSection sect = getSymbols(".symtab");
+        return sect.linearSearch(name, sym) ?
+           CachedSymbol::SYM_FOUND : CachedSymbol::SYM_NOTFOUND;
     };
     if (syment.disposition == CachedSymbol::SYM_NEW)
         syment.disposition = findUncached(syment.sym);
@@ -352,8 +364,8 @@ Object::findSymbolByName(const string &name, Sym &sym)
         sym = syment.sym;
         return true;
     }
-    if (debugData)
-        return debugData->findSymbolByName(name, sym);
+    if (includeDebug && debugData)
+        return debugData->findSymbolByName(name, sym, true);
     return false;
 }
 
@@ -381,7 +393,7 @@ Object::getDebug() const
                     io->readObj(0, &data[0], io->size());
                     dir << std::hex << std::setw(2) << std::setfill('0') << int(data[0]);
                     dir << "/";
-                    for (i = 1; i < note.size(); ++i)
+                    for (i = 1; i < size_t(io->size()); ++i)
                         dir << std::setw(2) << int(data[i]);
                     dir << ".debug";
                     debugObject = imageCache.getDebugImage(dir.str());
@@ -396,7 +408,10 @@ Object::getDebug() const
             if (d.shdr.sh_addr != s.shdr.sh_addr) {
                 Elf::Addr diff = s.shdr.sh_addr - d.shdr.sh_addr;
                 IOFlagSave _(std::clog);
-                std::clog << "warning: dynamic section for debug symbols " << *debugObject->io << " loaded for object " << *this->io << " at different offset: diff is " << std::hex << diff << std::endl;
+                std::clog << "warning: dynamic section for debug symbols "
+                   << *debugObject->io << " loaded for object "
+                   << *this->io << " at different offset: diff is "
+                   << std::hex << diff << std::endl;
                 // looks like the exe has been prelinked - adjust the debug info too.
                 for (auto &sect : debugObject->sectionHeaders) {
                     sect.shdr.sh_addr += diff;

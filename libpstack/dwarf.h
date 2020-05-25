@@ -133,16 +133,15 @@ union Value {
     bool flag;
 };
 
-
 struct DIEIter;
-struct DIEChildren {
-    using const_iterator = DIEIter;
-    using value_type = DIE;
-    std::shared_ptr<const Unit> unit;
+class DIEChildren {
     const DIE &parent;
+public:
+    DIEChildren(const DIE &parent_) : parent(parent_) {}
     DIEIter begin() const;
     DIEIter end() const;
-    DIEChildren(const DIE &parent_) : parent(parent_) {}
+    using const_iterator = DIEIter;
+    using value_type = DIE;
 };
 
 class DIEAttributes {
@@ -445,6 +444,7 @@ struct ARanges {
 class ImageCache;
 /*
  * Info represents all the interesting bits of the DWARF data.
+ * It's primary function is to provide access to the DIE tree.
  */
 class Info : public std::enable_shared_from_this<Info> {
 public:
@@ -505,13 +505,16 @@ public:
     ~ImageCache();
 };
 
-struct DIEIter {
+class DIEIter {
     const std::shared_ptr<const Unit> u;
     DIE parent;
     DIE currentDIE;
-    const DIE &operator *() const { return currentDIE; }
-    DIEIter &operator++();
     DIEIter(const DIE &first, const DIE & parent_);
+    friend DIEChildren;
+public:
+    const DIE &operator *() const { return currentDIE; }
+
+    DIEIter &operator++();
 
     bool operator == (const DIEIter &rhs) const {
         if (!currentDIE)

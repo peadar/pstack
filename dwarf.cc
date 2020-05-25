@@ -135,7 +135,8 @@ PubnameUnit::PubnameUnit(DWARFReader &r)
 }
 
 static Reader::csptr
-sectionReader(Elf::Object &obj, const char *name, const char *compressedName, const Elf::Section **secp = nullptr)
+sectionReader(Elf::Object &obj, const char *name, const char *compressedName,
+        const Elf::Section **secp = nullptr)
 {
     const auto &raw = obj.getSection(name, SHT_PROGBITS);
     if (secp != nullptr)
@@ -194,7 +195,8 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
             return make_unique<CFI>(this, sec->shdr.sh_addr, io, ftype);
         }
         catch (const Exception &ex) {
-            std::clog << "can't decode " << name << " for " << *obj->io << ": " << ex.what() << "\n";
+            std::clog << "can't decode " << name << " for " << *obj->io << ": "
+                << ex.what() << "\n";
         }
         return std::unique_ptr<CFI>();
     };
@@ -1103,10 +1105,9 @@ CFI::findFDE(Elf::Addr addr) const
     return nullptr;
 }
 
-
-
 bool
-sourceFromAddrInUnit(const Unit::sptr &unit, Elf::Addr addr, std::vector<std::pair<string, int>> &info) {
+sourceFromAddrInUnit(const Unit::sptr &unit, Elf::Addr addr,
+        std::vector<std::pair<string, int>> &info) {
     DIE d = unit->root();
     if (d.containsAddress(addr) == ContainsAddr::NO)
         return false;
@@ -1423,9 +1424,10 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
             case '\0':
                 break;
             default:
-                std::clog << "unknown augmentation '" << aug << "' in " << augmentation << std::endl;
-                // The augmentations are in order, so we can't make any sense of the remaining data in the
-                // augmentation block
+                std::clog << "unknown augmentation '" << aug << "' in "
+                    << augmentation << std::endl;
+                // The augmentations are in order, so we can't make any sense
+                // of the remaining data in the augmentation block
                 earlyExit = true;
                 break;
         }
@@ -1583,7 +1585,8 @@ DIE::attribute(AttrName name) const
     if (loc != raw->type->attrName2Idx.end())
         return Attribute(*this, &raw->type->forms.at(loc->second));
 
-    // If we have attributes of any of these types, we can look for other attributes in the referenced entry.
+    // If we have attributes of any of these types, we can look for other
+    // attributes in the referenced entry.
     static std::set<AttrName> derefs = {
         DW_AT_abstract_origin,
         DW_AT_specification
@@ -1627,7 +1630,8 @@ ImageCache::ImageCache() : dwarfHits(0), dwarfLookups(0)
 
 ImageCache::~ImageCache() {
     if (verbose >= 2)
-        *debug << "DWARF image cache: lookups: " << dwarfLookups << ", hits=" << dwarfHits << std::endl;
+        *debug << "DWARF image cache: lookups: " << dwarfLookups << ", hits="
+            << dwarfHits << std::endl;
 }
 
 void
@@ -1722,7 +1726,17 @@ DIEAttributes::const_iterator
 DIEAttributes::end() const {
     return const_iterator(die, die.raw->type->attrName2Idx.end());
 }
-const Value &Attribute::value() const { return dieref.raw->values.at(formp - &dieref.raw->type->forms[0]); }
-Tag DIE::tag() const { return raw->type->tag; }
-bool DIE::hasChildren() const { return raw->type->hasChildren; }
+
+const Value &Attribute::value() const {
+    return dieref.raw->values.at(formp - &dieref.raw->type->forms[0]);
+}
+
+Tag DIE::tag() const {
+    return raw->type->tag;
+}
+
+bool DIE::hasChildren() const {
+    return raw->type->hasChildren;
+}
+
 }

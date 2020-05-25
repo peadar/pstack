@@ -4,7 +4,8 @@
 #include <zlib.h>
 
 InflateReader::InflateReader(size_t inflatedSize, const Reader &upstream)
-    : MemReader(std::string("inflated content from ") + stringify(upstream), inflatedSize, new char[inflatedSize])
+    : MemReader(std::string("inflated content from ") + stringify(upstream),
+          inflatedSize, new char[inflatedSize])
 {
     char xferbuf[32768];
 

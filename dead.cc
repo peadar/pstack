@@ -31,7 +31,8 @@ void CoreReader::describe(std::ostream &os) const
 }
 
 static size_t
-readFromHdr(const Elf::Object &obj, const Elf::Phdr *hdr, Elf::Off addr, char *ptr, Elf::Off size, Elf::Off *toClear)
+readFromHdr(const Elf::Object &obj, const Elf::Phdr *hdr, Elf::Off addr,
+            char *ptr, Elf::Off size, Elf::Off *toClear)
 {
     Elf::Off rv, off = addr - hdr->p_vaddr; // offset in header of our ptr.
     if (off < hdr->p_filesz) {
@@ -72,7 +73,8 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
             remoteAddr += rc;
             ptr += rc;
             size -= rc;
-            if (rc != 0 && zeroes == 0) // we got some data from the header, and there's nothing to default
+            if (rc != 0 && zeroes == 0)
+                // we got some data from the header, and there's nothing to default
                 continue;
         }
 
