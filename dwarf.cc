@@ -95,18 +95,18 @@ DIEIter::DIEIter(const DIE &first, const DIE & parent_)
 }
 
 uintmax_t
-DWARFReader::getuleb128shift(int *shift, bool &isSigned)
+DWARFReader::getuleb128shift(int &shift, bool &msb)
 {
     uintmax_t result;
     unsigned char byte;
-    for (result = 0, *shift = 0;;) {
+    for (result = 0, shift = 0;;) {
         io->readObj(off++, &byte);
-        result |= uintmax_t(byte & 0x7f) << *shift;
-        *shift += 7;
+        result |= uintmax_t(byte & 0x7f) << shift;
+        shift += 7;
         if ((byte & 0x80) == 0)
             break;
     }
-    isSigned = (byte & 0x40) != 0;
+    msb = (byte & 0x40) != 0;
     return result;
 }
 

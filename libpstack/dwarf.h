@@ -544,7 +544,7 @@ enum CFAInstruction {
 class DWARFReader {
     Elf::Off off;
     Elf::Off end;
-    uintmax_t getuleb128shift(int *shift, bool &isSigned);
+    uintmax_t getuleb128shift(int &shift, bool &msb);
 public:
     ::Reader::csptr io;
     unsigned addrLen;
@@ -609,14 +609,16 @@ public:
     }
     uintmax_t getuleb128() {
         int shift;
-        bool isSigned;
-        return getuleb128shift(&shift, isSigned);
+        bool msb;
+        return getuleb128shift(shift, msb);
     }
     intmax_t getsleb128() {
         int shift;
-        bool isSigned;
-        intmax_t result = (intmax_t) getuleb128shift(&shift, isSigned);
-        if (isSigned)
+        bool msb;
+        intmax_t result = (intmax_t) getuleb128shift(shift, msb);
+        // sign-extend the MSB to the rest of the intmax_t. Don't shift more
+        // than the number of bits in intmax_t though!
+        if (msb && shift < std::numeric_limits<intmax_t>::digits)
             result |= - ((uintmax_t)1 << shift);
         return result;
     }
