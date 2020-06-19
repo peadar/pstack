@@ -94,15 +94,15 @@ GnuHash::findSymbol(Sym &sym, const char *name) const {
     auto N = (h1/ELF_BITS) % header.bloom_size;
     auto B1 = h1 % ELF_BITS;
     auto B2 = h2 % ELF_BITS;
-    auto W = hash->readObj<Elf::Addr>(bloomoff(N));
+    auto W = hash->readObj<Elf::Off>(bloomoff(N));
 
     // If either bit is not set in the bloom filter, we're done.
-    if ((W & (1 << B1)) == 0) {
+    if ((W & (Elf::Off(1) << B1)) == 0) {
        if (verbose >= 2)
           *debug << "failed to find '" << name << "' using GNU hash: bloom filter 1\n";
        return false;
     }
-    if ((W & (1 << B2)) == 0) {
+    if ((W & (Elf::Off(1) << B2)) == 0) {
         if (verbose >= 2)
             *debug << "failed to find '" << name << "' using GNU hash: bloom filter 2\n";
         return false;
