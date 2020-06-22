@@ -10,12 +10,10 @@ def JSON(cmd, childfunc = None):
         args.append(sys.executable)
     args.append(cm.core())
     text = subprocess.check_output(args)
-    print text
     j = json.loads( text )
     return j
 
 def TEXT(cmd):
     cm = coremonitor.CoreMonitor( cmd, None )
     text = subprocess.check_output(["./pstack", "-a", cm.core()])
-    print text
     return text

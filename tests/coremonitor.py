@@ -33,4 +33,3 @@ class CoreMonitor( object ):
 
 if __name__ == "__main__":
    cm = CoreMonitor([ "tests/segv", "hello" ] )
-   print cm.core()
