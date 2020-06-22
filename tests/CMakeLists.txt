@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 2.8.11)
 project(pstack-tests C CXX)
 
-set(CMAKE_CXX_STANDARD 14)
+# Force debug build for tests. Many of the tests are looking at debug info that
+# we need
+set(CMAKE_BUILD_TYPE Debug)
 
-add_definitions("-Wall -Wextra -DELF_BITS=${ELF_BITS} -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
+set(CMAKE_CXX_STANDARD 14)
 
 add_library(testhelper STATIC abort.c)
 
