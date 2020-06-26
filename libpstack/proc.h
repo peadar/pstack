@@ -129,7 +129,7 @@ struct Lwp {
 };
 
 typedef std::vector<std::pair<std::string, std::string>> PathReplacementList;
-class PrintableFrame;
+struct PrintableFrame;
 class Process : public ps_prochandle {
     Elf::Addr findRDebugAddr();
     Elf::Addr entry;
