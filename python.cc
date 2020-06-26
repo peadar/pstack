@@ -15,7 +15,7 @@ pthreadTidOffset(const Process &proc, size_t *offsetp)
     static enum { notDone, notFound, found } status;
     if (status == notDone) {
         try {
-            auto addr = proc.findSymbolByName("_thread_db_pthread_tid", true);
+            auto addr = proc.findSymbol("_thread_db_pthread_tid", true);
             uint32_t desc[3];
             proc.io->readObj(addr, &desc[0], 3);
             offset = desc[2];
@@ -295,7 +295,7 @@ void
 PythonPrinter::addPrinter(const char *symbol, python_printfunc func, bool dupDetect)
 {
     Elf::Sym sym;
-    if (!libpython->findSymbolByName(symbol, sym, false))
+    if (!libpython->findDynamicSymbol(symbol, sym))
         throw 999;
     auto typeptr = sym.st_value + libpythonAddr;
     printers.emplace(std::piecewise_construct, std::forward_as_tuple(typeptr), std::forward_as_tuple(func, dupDetect));
@@ -318,7 +318,7 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
 {
     // First search the ELF symbol table.
     try {
-       auto interp_headp = proc.findSymbolByName("Py_interp_headp", false,
+       auto interp_headp = proc.findSymbol("Py_interp_headp", false,
                 [this](Elf::Addr loadAddr, const Elf::Object::sptr &o) {
                     libpython = o;
                     libpythonAddr = loadAddr;

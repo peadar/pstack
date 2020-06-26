@@ -688,7 +688,7 @@ Process::findRDebugAddr()
     if (interpBase && execImage->getInterpreter() != "") {
         try {
             addElfObject(imageCache.getImageForName(execImage->getInterpreter()), interpBase);
-            return findSymbolByName("_r_debug", false,
+            return findSymbol("_r_debug", false,
                   [this](const Elf::Addr, const Elf::Object::sptr &o) {
                       auto name = stringify(*o->io);
                       return execImage->getInterpreter() == name;
@@ -720,20 +720,21 @@ Process::findObject(Elf::Addr addr) const
 }
 
 Elf::Addr
-Process::findSymbolByName(const char *symbolName, bool includeDebug,
+Process::findSymbol(const char *name, bool includeDebug,
         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
 {
     Elf::Sym sym;
     for (auto &loaded : objects)
         if (match(loaded.first, loaded.second) &&
-              loaded.second->findSymbolByName(symbolName, sym, includeDebug)) {
-            auto rv = sym.st_value + loaded.first;
-            if (verbose >= 3)
-               *debug << "found symbol '" << symbolName << "' at "<< rv << std::endl;
-            return rv;
+            (loaded.second->findDynamicSymbol(name, sym) ||
+                    (includeDebug && loaded.second->findDebugSymbol(name, sym)))) {
+                auto rv = sym.st_value + loaded.first;
+                if (verbose >= 3)
+                   *debug << "found symbol '" << name << "' at "<< rv << std::endl;
+                return rv;
         }
     Exception e;
-    e << "symbol " << symbolName << " not found";
+    e << "symbol " << name << " not found";
     throw e;
 }
 
@@ -820,11 +821,9 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                     Elf::Sym symbol;
                     Elf::Addr sigContextAddr = 0;
                     auto objip = curFrame->rawIP() - reloc;
-                    if (obj->findSymbolByName("__restore", symbol, true) &&
-                          objip == symbol.st_value)
+                    if (obj->findDebugSymbol("__restore", symbol) && objip == symbol.st_value)
                         sigContextAddr = curFrame->getReg(SPREG) + 4;
-                    else if (obj->findSymbolByName("__restore_rt", symbol, true) &&
-                          objip == symbol.st_value)
+                    else if (obj->findDebugSymbol("__restore_rt", symbol) && objip == symbol.st_value)
                         sigContextAddr = p.io->readObj<Elf::Addr>(curFrame->getReg(SPREG) + 8) + 20;
                     if (sigContextAddr != 0) {
                        // This mapping is based on DWARF regnos, and ucontext.h

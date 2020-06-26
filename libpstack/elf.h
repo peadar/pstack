@@ -100,6 +100,9 @@ Type(Rela);
 Type(Chdr);
 Type(Sword);
 Type(Addr);
+Type(Half);
+Type(Verdef);
+Type(Verdaux);
 
 #if ELF_BITS==64
 #define ELF_ST_TYPE ELF64_ST_TYPE
@@ -132,7 +135,7 @@ class SymHash {
     const Word *buckets;
 public:
     SymHash(Reader::csptr hash_, Reader::csptr syms_, Reader::csptr strings_);
-    bool findSymbol(Sym &sym, const std::string &name);
+    uint32_t findSymbol(Sym &sym, const std::string &name); // fills sym, and returns index.
 };
 
 /*
@@ -158,8 +161,8 @@ class GnuHash {
 public:
     GnuHash(const Reader::csptr &hash_, const Reader::csptr &syms_, const Reader::csptr &strings_) :
         hash(hash_), syms(syms_), strings(strings_), header(hash->readObj<Header>(0)) { }
-    bool findSymbol(Sym &sym, const char *) const;
-    bool findSymbol(Sym &sym, const std::string &name) const {
+    uint32_t findSymbol(Sym &sym, const char *) const;
+    uint32_t findSymbol(Sym &sym, const std::string &name) const {
        return findSymbol(sym, name.c_str());
     }
 };
@@ -186,6 +189,11 @@ struct Notes {
    typedef NoteIter iterator;
 };
 
+struct VersionDef {
+   Verdef versionDefinition;
+   std::string name;
+};
+
 class Object : public std::enable_shared_from_this<Object> {
 public:
     typedef std::shared_ptr<Object> sptr;
@@ -205,6 +213,22 @@ public:
     // must match the passed type.
     const Section &getSection(const std::string &name, Word type) const;
 
+    struct CommonSections {
+       const Section *symtab = nullptr;
+       const Section *dynsym = nullptr;
+       const Section *gnu_hash = nullptr;
+       const Section *hash = nullptr;
+       const Section *gnu_version = nullptr;
+       const Section *gnu_version_d = nullptr;
+       const Section *gnu_debugdata = nullptr;
+       const Section *dynamic = nullptr;
+    };
+
+    std::map<int, VersionDef> symbolVersions;
+    std::map<int, std::vector<Dyn>> dynamic;
+
+    CommonSections commonSections;
+
     // Accessing segments.
     const ProgramHeaders &getSegments(Word type) const;
 
@@ -213,7 +237,8 @@ public:
     // gnu_hash or hash objects instead.
     SymbolSection getSymbols(const std::string &tableName);
     bool findSymbolByAddress(Addr addr, int type, Sym &, std::string &);
-    bool findSymbolByName(const std::string &name, Sym &sym, bool includeDebug);
+    bool findDynamicSymbol(const std::string &name, Sym &sym, std::string *version = nullptr, bool *hidden = nullptr);
+    bool findDebugSymbol(const std::string &name, Sym &sym);
 
     Reader::csptr io;
 
@@ -255,10 +280,10 @@ private:
  */
 struct SymbolIterator {
     SymbolSection *sec;
-    off_t off;
-    SymbolIterator(SymbolSection *sec_, off_t off_) : sec(sec_), off(off_) {}
-    bool operator != (const SymbolIterator &rhs) { return rhs.off != off; }
-    SymbolIterator &operator++ () { off += sizeof (Sym); return *this; }
+    size_t idx;
+    SymbolIterator(SymbolSection *sec_, size_t idx_) : sec(sec_), idx(idx_) {}
+    bool operator != (const SymbolIterator &rhs) { return rhs.idx != idx; }
+    SymbolIterator &operator++ () { ++idx; return *this; }
     std::pair<const Sym, const std::string> operator *();
 };
 
@@ -271,7 +296,7 @@ struct SymbolSection {
     Reader::csptr symbols;
     Reader::csptr strings;
     SymbolIterator begin() { return SymbolIterator(this, 0); }
-    SymbolIterator end() { return SymbolIterator(this, symbols ? symbols->size() : 0); }
+    SymbolIterator end() { return SymbolIterator(this, symbols ? symbols->size() / sizeof(Sym) : 0); }
     SymbolSection(Reader::csptr symbols_, Reader::csptr strings_)
        : symbols(symbols_), strings(strings_)
     {}

@@ -65,7 +65,7 @@ NoteDesc::data() const
 std::pair<const Sym, const string>
 SymbolIterator::operator *()
 {
-    auto sym = sec->symbols->readObj<Sym>(off);
+    auto sym = sec->symbols->readObj<Sym>(idx * sizeof(Sym));
     string name = sec->strings->readString(sym.st_name);
     return std::make_pair(sym, name);
 }
@@ -86,7 +86,7 @@ static uint32_t gnu_hash(const char *s) {
     return h;
 }
 
-bool
+uint32_t
 GnuHash::findSymbol(Sym &sym, const char *name) const {
     auto h1 = gnu_hash(name);
     auto h2 = h1 >> header.bloom_shift;
@@ -112,7 +112,7 @@ GnuHash::findSymbol(Sym &sym, const char *name) const {
     if (idx < header.symoffset) {
         if (verbose >= 2)
             *debug << "failed to find '" << name << "' bad index in hash table\n";
-        return false;
+        return 0;
     }
     for (;;) {
         sym = syms->readObj<Sym>(idx * sizeof (Sym));
@@ -121,7 +121,7 @@ GnuHash::findSymbol(Sym &sym, const char *name) const {
            if (strings->readString(sym.st_name) == name) {
               if (verbose >= 2)
                  *debug << "found '" << name << "' using GNU hash\n";
-              return true;
+              return idx;
            }
         }
         if (symhash & 1) {
@@ -163,25 +163,77 @@ Object::Object(ImageCache &cache, Reader::csptr io_)
         off += elfHeader.e_shentsize;
     }
 
-    if (elfHeader.e_shstrndx != SHN_UNDEF) {
-        auto &sshdr = sectionHeaders[elfHeader.e_shstrndx];
-        for (auto &h : sectionHeaders) {
-            auto name = sshdr.io->readString(h.shdr.sh_name);
-            namedSection[name] = &h;
-        }
-        auto &tab = getSection(".hash", SHT_HASH);
-        auto &syms = getLinkedSection(tab);
-        auto &strings = getLinkedSection(syms);
-        if (tab && syms && strings)
-            hash = make_unique<SymHash>(tab.io, syms.io, strings.io);
+    if (elfHeader.e_shstrndx == SHN_UNDEF)
+        return;
 
-        auto &gnuhash = getSection(".gnu.hash", SHT_GNU_HASH);
-        auto &gnusyms = getLinkedSection(gnuhash);
-        auto &gnustrings = getLinkedSection(gnusyms);
-        if (gnuhash && gnusyms && gnustrings)
-            gnu_hash = make_unique<GnuHash>(gnuhash.io, gnusyms.io, gnustrings.io);
-    } else {
-        hash = nullptr;
+    auto &sshdr = sectionHeaders[elfHeader.e_shstrndx];
+    for (auto &h : sectionHeaders) {
+        auto name = sshdr.io->readString(h.shdr.sh_name);
+        namedSection[name] = &h;
+    }
+
+    struct {
+       std::string name;
+       const Section **sec;
+       Elf::Word type;
+    } secs[] = {
+       { ".gnu.hash", &commonSections.gnu_hash, SHT_GNU_HASH },
+       { ".hash", &commonSections.hash, SHT_HASH },
+       { ".symtab", &commonSections.symtab, SHT_SYMTAB },
+       { ".dynsym", &commonSections.dynsym, SHT_DYNSYM },
+       { ".gnu.version", &commonSections.gnu_version, SHT_GNU_versym },
+       { ".gnu.version_d", &commonSections.gnu_version_d, SHT_GNU_verdef },
+       { ".gnu_debugdata", &commonSections.gnu_debugdata, SHT_PROGBITS },
+       { ".dynamic", &commonSections.dynamic, SHT_DYNAMIC },
+    };
+    for (auto &s : secs) {
+       *s.sec = &getSection(s.name, s.type);
+       if (!**s.sec)
+          *s.sec = nullptr;
+    }
+
+
+    /* Setup common hashtables */
+
+    if (commonSections.hash) {
+        auto &syms = getLinkedSection(*commonSections.hash);
+        auto &strings = getLinkedSection(syms);
+        if (syms && strings)
+            hash = make_unique<SymHash>(commonSections.hash->io, syms.io, strings.io);
+    }
+
+    if (commonSections.dynamic) {
+        ReaderArray<Dyn> content(*commonSections.dynamic->io);
+        for (auto dyn : content)
+           dynamic[dyn.d_tag].push_back(dyn);
+    }
+
+    if (commonSections.gnu_hash) {
+        auto &syms = getLinkedSection(*commonSections.gnu_hash);
+        auto &strings = getLinkedSection(syms);
+        if (syms && strings)
+            gnu_hash = make_unique<GnuHash>(commonSections.gnu_hash->io, syms.io, strings.io);
+    }
+
+    const Section *s;
+    if ((s = commonSections.gnu_version_d) != 0) {
+       auto &strings = getLinkedSection(*s);
+       auto &verdefnum = dynamic[DT_VERDEFNUM];
+       if (verdefnum.size() != 0) {
+          size_t off = 0;
+          for (size_t cnt = verdefnum[0].d_un.d_val; cnt; --cnt) {
+             auto verdef = s->io->readObj<Verdef>(off);
+             auto &v = symbolVersions[verdef.vd_ndx];
+             v.versionDefinition = verdef;
+             off_t auxOff = off + verdef.vd_aux;
+             for (auto i = 0; i < verdef.vd_cnt; ++i) {
+                auto aux = s->io->readObj<Verdaux>(auxOff);
+                v.name = strings.io->readString(aux.vda_name);
+                auxOff += aux.vda_next;
+             }
+             off += verdef.vd_next;
+          }
+       }
     }
 }
 
@@ -231,11 +283,10 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
 {
     /* Try to find symbols in these sections */
     bool haveExactZeroSizeMatch = false;
-    for (auto secname : { ".symtab", ".dynsym" }) {
-        const auto &symSection = getSection(secname, SHT_NULL);
-        if (symSection.shdr.sh_type == SHT_NOBITS)
+    for (auto symSection : { commonSections.symtab, commonSections.dynsym }) {
+        if (!symSection)
             continue;
-        SymbolSection syms(symSection.io, getLinkedSection(symSection).io);
+        SymbolSection syms(symSection->io, getLinkedSection(*symSection).io);
         for (const auto syminfo : syms) {
             auto &candidate = syminfo.first;
             if (candidate.st_shndx >= sectionHeaders.size())
@@ -266,10 +317,9 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
     //
     if (debugData == nullptr) {
 #ifdef WITH_LZMA
-        const auto &sect = getSection(".gnu_debugdata", SHT_NULL);
-        if (sect)
+        if (commonSections.gnu_debugdata)
             debugData = make_shared<Object>(imageCache,
-                                            make_shared<const LzmaReader>(sect.io));
+                                            make_shared<const LzmaReader>(commonSections.gnu_debugdata->io));
 #else
         static bool warned = false;
         if (!warned) {
@@ -338,34 +388,53 @@ Object::getSymbols(const string &tableName)
  * also look in .gnu_debugdata compressed section if present.
  */
 bool
-Object::findSymbolByName(const string &name, Sym &sym, bool includeDebug)
+Object::findDynamicSymbol(const string &name, Sym &sym, std::string *version, bool *hidden)
 {
-    auto &syment = cachedSymbols[name]; // XXX: maybe don't cache symbols that are in a hash table?
-    auto findUncached  = [&](Sym &sym) {
-        // We assume there's a hash table covering .dynsym - either .hash or
-        // .gnu.hash Observation shows you get either .gnu.hash or .hash, but
-        // not both. If we do, we only use .gnu.hash
-        if (gnu_hash) {
-            if (gnu_hash->findSymbol(sym, name))
-                return CachedSymbol::SYM_FOUND;
-        } else if (hash) {
-            if (hash->findSymbol(sym, name))
-                return CachedSymbol::SYM_FOUND;
+    // We assume there's a hash table covering .dynsym - either .hash or
+    // .gnu.hash.
+    // Observation shows you get either .gnu.hash or .hash, but
+    // not both. If we do, we only use .gnu.hash
+    //
+    Half idx = 0;
+    if (gnu_hash)
+       idx = gnu_hash->findSymbol(sym, name);
+    if (idx == 0 && hash)
+       idx = hash->findSymbol(sym, name);
+    if (idx == 0)
+       return false;
+    // We found a symbol in our hash table. Find its version if we can.
+    //
+    if (version != nullptr) {
+        if (commonSections.gnu_version) {
+           auto versionidx = commonSections.gnu_version->io->readObj<Half>(idx * sizeof (Half));
+           if (hidden)
+              *hidden = (versionidx & 0x8000) != 0;
+           *version = symbolVersions[versionidx & 0x7fff].name;
+        } else {
+            *version = "";
+            *hidden = false;
         }
-        if (!includeDebug)
-           return CachedSymbol::SYM_NOTFOUND;
+    }
+    return true;
+}
+
+// XXX: if we're doing name lookups on symbols, consider caching them all in a
+// hash table, rather than doing linear scans for each symbol we haven't
+// looked-up yet.
+bool
+Object::findDebugSymbol(const string &name, Sym &sym)
+{
+    auto &syment = cachedSymbols[name];
+    if (syment.disposition == CachedSymbol::SYM_NEW) {
         SymbolSection sect = getSymbols(".symtab");
-        return sect.linearSearch(name, sym) ?
-           CachedSymbol::SYM_FOUND : CachedSymbol::SYM_NOTFOUND;
-    };
-    if (syment.disposition == CachedSymbol::SYM_NEW)
-        syment.disposition = findUncached(syment.sym);
+        auto found = sect.linearSearch(name, sym);
+        syment.disposition = found ? CachedSymbol::SYM_FOUND : CachedSymbol::SYM_NOTFOUND;
+        return found;
+    }
     if (syment.disposition == CachedSymbol::SYM_FOUND) {
         sym = syment.sym;
         return true;
     }
-    if (includeDebug && debugData)
-        return debugData->findSymbolByName(name, sym, true);
     return false;
 }
 
@@ -453,7 +522,7 @@ SymHash::SymHash(Reader::csptr hash_,
     chains = buckets + nbucket;
 }
 
-bool
+uint32_t
 SymHash::findSymbol(Sym &sym, const string &name)
 {
     uint32_t bucket = elf_hash(name) % nbucket;
@@ -462,10 +531,10 @@ SymHash::findSymbol(Sym &sym, const string &name)
         auto candidateName = strings->readString(candidate.st_name);
         if (candidateName == name) {
             sym = candidate;
-            return true;
+            return i;
         }
     }
-    return false;
+    return 0;
 }
 
 /*
