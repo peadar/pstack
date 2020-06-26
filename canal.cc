@@ -249,13 +249,13 @@ mainExcept(int argc, char *argv[])
     for (auto &loaded : process->objects) {
         size_t count = 0;
 
-        struct Elf::SymbolSection symtabs[2] = {
-           loaded.second->getSymbols(".dynsym"),
-           loaded.second->getSymbols(".symtab")
+        const Elf::SymbolSection *symtabs[2] = {
+           &loaded.second->commonSections->dynamicSymbols,
+           &loaded.second->commonSections->debugSymbols
         };
 
-        for (auto &syms : symtabs) {
-           for (const auto &sym : syms) {
+        for (auto syms : symtabs) {
+           for (const auto &sym : *syms) {
                for (auto &pattern : patterns) {
                    auto &name = sym.second;
                    if (globmatch(pattern, name)) {

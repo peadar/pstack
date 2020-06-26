@@ -194,6 +194,35 @@ struct VersionDef {
    std::string name;
 };
 
+/*
+ * See SymbolSection below - provides an iterator for the symbols in a section.
+ */
+struct SymbolIterator {
+    const SymbolSection *sec;
+    size_t idx;
+    SymbolIterator(const SymbolSection *sec_, size_t idx_) : sec(sec_), idx(idx_) {}
+    bool operator != (const SymbolIterator &rhs) { return rhs.idx != idx; }
+    SymbolIterator &operator++ () { ++idx; return *this; }
+    std::pair<const Sym, const std::string> operator *();
+};
+
+/*
+ * A symbol section represents a symbol table - this requires two sections, the
+ * set of Sym objects, and the section that contains the strings to name
+ * those symbols
+ */
+struct SymbolSection {
+    Reader::csptr symbols;
+    Reader::csptr strings;
+    SymbolIterator begin() const { return SymbolIterator(this, 0); }
+    SymbolIterator end() const { return SymbolIterator(this, symbols ? symbols->size() / sizeof(Sym) : 0); }
+    SymbolSection(Reader::csptr symbols_, Reader::csptr strings_)
+       : symbols(symbols_), strings(strings_)
+    {}
+    bool linearSearch(const std::string &name, Sym &) const;
+};
+
+
 class Object : public std::enable_shared_from_this<Object> {
 public:
     typedef std::shared_ptr<Object> sptr;
@@ -214,28 +243,30 @@ public:
     const Section &getSection(const std::string &name, Word type) const;
 
     struct CommonSections {
-       const Section *symtab = nullptr;
-       const Section *dynsym = nullptr;
-       const Section *gnu_hash = nullptr;
-       const Section *hash = nullptr;
-       const Section *gnu_version = nullptr;
-       const Section *gnu_version_d = nullptr;
-       const Section *gnu_debugdata = nullptr;
-       const Section *dynamic = nullptr;
+
+       const Section &dynamic;
+       const Section &dynsym;
+       const Section &gnu_debugdata;
+       const Section &gnu_hash;
+       const Section &gnu_version;
+       const Section &gnu_version_d;
+       const Section &hash;
+       const Section &symtab;
+
+       const SymbolSection debugSymbols;
+       const SymbolSection dynamicSymbols;
+
+       CommonSections(Object *);
     };
 
     std::map<int, VersionDef> symbolVersions;
     std::map<int, std::vector<Dyn>> dynamic;
 
-    CommonSections commonSections;
+    std::unique_ptr<CommonSections> commonSections;
 
     // Accessing segments.
     const ProgramHeaders &getSegments(Word type) const;
 
-    // Accessing symbols - table name will be either .dynsym or .symtab.
-    // You probably don't want to use this to find a symbol by name - use the
-    // gnu_hash or hash objects instead.
-    SymbolSection getSymbols(const std::string &tableName);
     bool findSymbolByAddress(Addr addr, int type, Sym &, std::string &);
     bool findDynamicSymbol(const std::string &name, Sym &sym, std::string *version = nullptr, bool *hidden = nullptr);
     bool findDebugSymbol(const std::string &name, Sym &sym);
@@ -274,35 +305,6 @@ private:
     std::map<std::string, CachedSymbol> cachedSymbols;
     mutable const Phdr *lastSegmentForAddress; // cache of last segment returned for a specific address.
 };
-
-/*
- * See SymbolSection below - provides an iterator for the symbols in a section.
- */
-struct SymbolIterator {
-    SymbolSection *sec;
-    size_t idx;
-    SymbolIterator(SymbolSection *sec_, size_t idx_) : sec(sec_), idx(idx_) {}
-    bool operator != (const SymbolIterator &rhs) { return rhs.idx != idx; }
-    SymbolIterator &operator++ () { ++idx; return *this; }
-    std::pair<const Sym, const std::string> operator *();
-};
-
-/*
- * A symbol section represents a symbol table - this requires two sections, the
- * set of Sym objects, and the section that contains the strings to name
- * those symbols
- */
-struct SymbolSection {
-    Reader::csptr symbols;
-    Reader::csptr strings;
-    SymbolIterator begin() { return SymbolIterator(this, 0); }
-    SymbolIterator end() { return SymbolIterator(this, symbols ? symbols->size() / sizeof(Sym) : 0); }
-    SymbolSection(Reader::csptr symbols_, Reader::csptr strings_)
-       : symbols(symbols_), strings(strings_)
-    {}
-    bool linearSearch(const std::string &name, Sym &);
-};
-
 // These are the architecture specific types representing the NT_PRSTATUS registers.
 #if defined(__PPC)
 typedef struct pt_regs CoreRegisters;
