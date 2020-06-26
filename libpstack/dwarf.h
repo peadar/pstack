@@ -133,7 +133,7 @@ union Value {
     bool flag;
 };
 
-struct DIEIter;
+class DIEIter;
 class DIEChildren {
     const DIE &parent;
 public:
@@ -179,7 +179,7 @@ class DIE {
     off_t offset;
 public:
     std::shared_ptr<RawDIE> raw;
-    friend struct DIEIter;
+    friend class DIEIter;
     friend class Attribute;
     friend class DIEAttributes;
     friend class RawDIE;

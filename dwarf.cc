@@ -71,7 +71,7 @@ public:
     friend class DIE;
     friend class DIEAttributes;
     friend class Unit;
-    friend struct DIEIter;
+    friend class DIEIter;
 };
 
 DIEIter &DIEIter::operator++() {
