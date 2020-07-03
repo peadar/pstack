@@ -70,7 +70,7 @@ typedef struct {
 namespace Elf {
 class Object;
 class ImageCache;
-struct SymbolSection;
+template <typename SymbolType> struct SymbolSection;
 class NoteIter;
 class NoteDesc;
 };
@@ -103,6 +103,8 @@ Type(Addr);
 Type(Half);
 Type(Verdef);
 Type(Verdaux);
+Type(Verneed);
+Type(Vernaux);
 
 #if ELF_BITS==64
 #define ELF_ST_TYPE ELF64_ST_TYPE
@@ -189,21 +191,36 @@ struct Notes {
    typedef NoteIter iterator;
 };
 
-struct VersionDef {
-   Verdef versionDefinition;
-   std::string name;
+struct NamedSymbol {
+   const Sym symbol;
+   const std::string name;
+   operator bool () const { return symbol.st_shndx != SHN_UNDEF || name != ""; }
+   NamedSymbol() : symbol{0, 0, 0, 0, 0, SHN_UNDEF}, name("") { }
+   NamedSymbol(const Sym &symbol_, const std::string &name_) : symbol{symbol_}, name{name_} { }
+   NamedSymbol(const Sym &symbol_, const Reader::csptr &strings) : symbol{symbol_}, name{strings->readString(symbol.st_name)} { }
+};
+
+struct VersionedSymbol : public NamedSymbol {
+   int versionIdx;
+   VersionedSymbol() : NamedSymbol(), versionIdx(-1) {}
+   VersionedSymbol(const Sym &sym_, const std::string &name_, const Section &versionInfo, size_t idx);
+   VersionedSymbol(const Sym &sym_, const Reader::csptr &strings, const Section &versionInfo, size_t idx)
+       : VersionedSymbol(sym_, strings->readString(sym_.st_name), versionInfo, idx) {}
+   bool isHidden() const { return versionIdx != -1 && ((versionIdx & 0x8000) != 0 || versionIdx == 0); }
+   bool isVersioned() const { return (versionIdx & 0x7fff) > 1; }
 };
 
 /*
  * See SymbolSection below - provides an iterator for the symbols in a section.
  */
+template <typename SymbolType>
 struct SymbolIterator {
-    const SymbolSection *sec;
+    const SymbolSection<SymbolType> *sec;
     size_t idx;
-    SymbolIterator(const SymbolSection *sec_, size_t idx_) : sec(sec_), idx(idx_) {}
+    SymbolIterator(const SymbolSection<SymbolType> *sec_, size_t idx_) : sec(sec_), idx(idx_) {}
     bool operator != (const SymbolIterator &rhs) { return rhs.idx != idx; }
     SymbolIterator &operator++ () { ++idx; return *this; }
-    std::pair<const Sym, const std::string> operator *();
+    SymbolType operator *();
 };
 
 /*
@@ -211,13 +228,15 @@ struct SymbolIterator {
  * set of Sym objects, and the section that contains the strings to name
  * those symbols
  */
+template <typename SymbolType>
 struct SymbolSection {
+    Object *elf;
     Reader::csptr symbols;
     Reader::csptr strings;
-    SymbolIterator begin() const { return SymbolIterator(this, 0); }
-    SymbolIterator end() const { return SymbolIterator(this, symbols ? symbols->size() / sizeof(Sym) : 0); }
-    SymbolSection(Reader::csptr symbols_, Reader::csptr strings_)
-       : symbols(symbols_), strings(strings_)
+    SymbolIterator<SymbolType> begin() const { return SymbolIterator<SymbolType>(this, 0); }
+    SymbolIterator<SymbolType> end() const { return SymbolIterator<SymbolType>(this, symbols ? symbols->size() / sizeof(Sym) : 0); }
+    SymbolSection(Object *elf_, Reader::csptr symbols_, Reader::csptr strings_)
+       : elf(elf_), symbols(symbols_), strings(strings_)
     {}
     bool linearSearch(const std::string &name, Sym &) const;
 };
@@ -250,16 +269,16 @@ public:
        const Section &gnu_hash;
        const Section &gnu_version;
        const Section &gnu_version_d;
+       const Section &gnu_version_r;
        const Section &hash;
        const Section &symtab;
 
-       const SymbolSection debugSymbols;
-       const SymbolSection dynamicSymbols;
+       const SymbolSection<NamedSymbol> debugSymbols;
+       const SymbolSection<VersionedSymbol> dynamicSymbols;
 
        CommonSections(Object *);
     };
 
-    std::map<int, VersionDef> symbolVersions;
     std::map<int, std::vector<Dyn>> dynamic;
 
     std::unique_ptr<CommonSections> commonSections;
@@ -268,8 +287,8 @@ public:
     const ProgramHeaders &getSegments(Word type) const;
 
     bool findSymbolByAddress(Addr addr, int type, Sym &, std::string &);
-    bool findDynamicSymbol(const std::string &name, Sym &sym, std::string *version = nullptr, bool *hidden = nullptr);
-    bool findDebugSymbol(const std::string &name, Sym &sym);
+    VersionedSymbol findDynamicSymbol(const std::string &name);
+    NamedSymbol findDebugSymbol(const std::string &name);
 
     Reader::csptr io;
 
@@ -281,7 +300,11 @@ public:
     // symbol table data as extracted from .gnu.debugdata -
     // https://sourceware.org/gdb/current/onlinedocs/gdb/MiniDebugInfo.html
     Elf::Addr endVA() const;
+
+    // find text version from versioned symbol.
+    std::string symbolVersion(const VersionedSymbol &) const;
 private:
+    std::map<int, std::string> symbolVersions;
     // Elf header, section headers, program headers.
     mutable Object::sptr debugData;
     Ehdr elfHeader;

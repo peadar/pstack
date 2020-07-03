@@ -249,25 +249,23 @@ mainExcept(int argc, char *argv[])
     for (auto &loaded : process->objects) {
         size_t count = 0;
 
-        const Elf::SymbolSection *symtabs[2] = {
-           &loaded.second->commonSections->dynamicSymbols,
-           &loaded.second->commonSections->debugSymbols
-        };
-
-        for (auto syms : symtabs) {
-           for (const auto &sym : *syms) {
+        auto findSymbols = [&count, verbose, showsyms, &listed, &patterns, &loaded]( auto &table ) {
+           for (const auto &sym : table) {
                for (auto &pattern : patterns) {
-                   auto &name = sym.second;
-                   if (globmatch(pattern, name)) {
-                       listed.push_back(ListedSymbol(sym.first, loaded.first,
-                                name, stringify(*loaded.second->io)));
+                   if (globmatch(pattern, sym.name)) {
+                       listed.push_back(ListedSymbol(sym.symbol, loaded.first,
+                                sym.name, stringify(*loaded.second->io)));
                        if (verbose > 1 || showsyms)
-                          std::cout << sym.second << "\n";
+                          std::cout << sym.name << "\n";
                        count++;
                    }
                }
            }
-        }
+        };
+
+        findSymbols( loaded.second->commonSections->dynamicSymbols );
+        findSymbols( loaded.second->commonSections->debugSymbols );
+
         if (verbose)
             *debug << "found " << count << " symbols in " << *loaded.second->io << endl;
     }

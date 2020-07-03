@@ -723,16 +723,19 @@ Elf::Addr
 Process::findSymbol(const char *name, bool includeDebug,
         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
 {
-    Elf::Sym sym;
-    for (auto &loaded : objects)
-        if (match(loaded.first, loaded.second) &&
-            (loaded.second->findDynamicSymbol(name, sym) ||
-                    (includeDebug && loaded.second->findDebugSymbol(name, sym)))) {
-                auto rv = sym.st_value + loaded.first;
-                if (verbose >= 3)
-                   *debug << "found symbol '" << name << "' at "<< rv << std::endl;
-                return rv;
+    for (auto &loaded : objects) {
+        if (!match(loaded.first, loaded.second))
+           continue;
+        auto sym = loaded.second->findDynamicSymbol(name);
+        if (sym) {
+           return sym.symbol.st_value + loaded.first;
         }
+        if (includeDebug) {
+           auto sym = loaded.second->findDebugSymbol(name);
+           if (sym)
+              return sym.symbol.st_value + loaded.first;
+        }
+    }
     Exception e;
     e << "symbol " << name << " not found";
     throw e;
@@ -818,13 +821,16 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                 Elf::Object::sptr obj;
                 std::tie(reloc, obj, segment) = p.findObject(curFrame->rawIP());
                 if (obj) {
-                    Elf::Sym symbol;
                     Elf::Addr sigContextAddr = 0;
                     auto objip = curFrame->rawIP() - reloc;
-                    if (obj->findDebugSymbol("__restore", symbol) && objip == symbol.st_value)
+                    auto restoreSym = obj->findDebugSymbol("__restore");
+                    if (restoreSym && objip == restoreSym.symbol.st_value)
                         sigContextAddr = curFrame->getReg(SPREG) + 4;
-                    else if (obj->findDebugSymbol("__restore_rt", symbol) && objip == symbol.st_value)
-                        sigContextAddr = p.io->readObj<Elf::Addr>(curFrame->getReg(SPREG) + 8) + 20;
+                    else {
+                        auto restoreRtSym = obj->findDebugSymbol("__restore_rt");
+                        if (restoreRtSym && objip == restoreRtSym.symbol.st_value)
+                            sigContextAddr = p.io->readObj<Elf::Addr>(curFrame->getReg(SPREG) + 8) + 20;
+                    }
                     if (sigContextAddr != 0) {
                        // This mapping is based on DWARF regnos, and ucontext.h
                        gregset_t regs;

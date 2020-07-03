@@ -294,10 +294,10 @@ PyPrinterEntry::PyPrinterEntry(python_printfunc dumpfunc_, bool dupdetect_)
 void
 PythonPrinter::addPrinter(const char *symbol, python_printfunc func, bool dupDetect)
 {
-    Elf::Sym sym;
-    if (!libpython->findDynamicSymbol(symbol, sym))
-        throw 999;
-    auto typeptr = sym.st_value + libpythonAddr;
+    auto sym = libpython->findDynamicSymbol(symbol);
+    if (!sym)
+       throw (Exception() << "cannot find well-known symbol " << symbol);
+    auto typeptr = sym.symbol.st_value + libpythonAddr;
     printers.emplace(std::piecewise_construct, std::forward_as_tuple(typeptr), std::forward_as_tuple(func, dupDetect));
 }
 
@@ -326,7 +326,7 @@ PythonPrinter::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOpti
                     return name.find("python") != std::string::npos;
                 });
        if (verbose)
-          *debug << "found interp_headp in ELF syms" << std::endl;
+          *debug << "found interp_headp " << interp_headp << " in ELF syms of " << stringify(*libpython->io) << std::endl;
        proc.io->readObj(interp_headp, &interp_head);
     }
     catch (...) {
