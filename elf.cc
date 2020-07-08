@@ -160,7 +160,6 @@ Object::CommonSections::CommonSections(Object *o):
        gnu_version_r( o->getSection(".gnu.version_r", SHT_GNU_verneed )),
        hash( o->getSection( ".hash", SHT_HASH ) ),
        symtab( o->getSection( ".symtab", SHT_SYMTAB ) ),
-
        debugSymbols( o, symtab.io, o->getLinkedSection(symtab).io),
        dynamicSymbols( o, dynsym.io, o->getLinkedSection(dynsym).io)
 {}
@@ -618,7 +617,7 @@ ImageCache::getImageForName(const string &name) {
     if (res != nullptr) {
         return res;
     }
-    auto item = make_shared<Object>(*this, loadFile(name));
+    auto item = make_shared<Object>(*this, std::make_shared<MmapReader>(name));
     // don't cache negative entries: assign into the cache after we've constructed:
     // a failure to load the image will throw.
     cache[name] = item;

@@ -1,6 +1,7 @@
 #include "libpstack/util.h"
 
 #include <sys/stat.h>
+#include <sys/mman.h>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -46,38 +47,39 @@ FileReader::size() const
     return fileSize;
 }
 
-static bool
-openFileDirect(int &file, const std::string &name_)
+static int
+openFileDirect(const std::string &name_)
 {
     auto fd = open(name_.c_str(), O_RDONLY);
-    if (fd != -1) {
-        file = fd;
-        if (verbose > 1)
-           *debug << "opened " << name_ << ", fd=" << file << std::endl;
-        return true;
+    if (verbose > 1) {
+       if (fd != -1)
+          *debug << "opened " << name_ << ", fd=" << fd << std::endl;
+       else
+          *debug << "failed to open " << name_ << ": " << strerror(errno) << std::endl;
     }
-     if (verbose > 1)
-        *debug << "failed to open " << name_ << ": " << strerror(errno) << std::endl;
-    return false;
+    return fd;
 }
 
-bool
-FileReader::openfile(int &file, const std::string &name_)
+static int
+openfile(const std::string &name)
 {
-    name = name_;
-    if (g_openPrefix != "" && openFileDirect(file, g_openPrefix + name_)) {
-          return true;
+    int fd;
+    if (g_openPrefix != "") {
+       int fd = openFileDirect(g_openPrefix + name);
+       if (fd != -1)
+          return fd;
     }
-    return openFileDirect(file, name_);
+    fd = openFileDirect(name);
+    if (fd != -1)
+       return fd;
+    throw (Exception() << "cannot open file '" << name << "': " << strerror(errno));
 }
 
 FileReader::FileReader(string name_)
     : name(std::move(name_))
-    , file(-1)
+    , file(openfile(name))
     , fileSize(-1)
 {
-    if (!openfile(file, name))
-        throw (Exception() << "cannot open file '" << name << "': " << strerror(errno));
 }
 
 FileReader::~FileReader()
@@ -227,4 +229,33 @@ loadFile(const std::string &path)
 {
     return std::make_shared<CacheReader>(
         std::make_shared<FileReader>(path));
+}
+
+size_t
+MmapReader::read(off_t off, size_t count, char *ptr) const {
+   off_t size = std::min(count, len - size_t(off));
+   memcpy(ptr, (char *)base + off, size);
+   return count;
+}
+
+MmapReader::MmapReader(const std::string &name_)
+   : name(name_)
+{
+   int fd = openfile(name);
+   struct stat s;
+   fstat(fd, &s);
+   len = s.st_size;
+   base = mmap(0, len, PROT_READ, MAP_PRIVATE, fd, 0);
+   close(fd);
+   if (base == MAP_FAILED)
+      throw (Exception() << "mmap failed" << strerror(errno));
+}
+
+std::string
+MmapReader::readString(off_t offset) const {
+   return std::string((char *)base + offset);
+}
+
+MmapReader::~MmapReader() {
+   munmap(base, len);
 }

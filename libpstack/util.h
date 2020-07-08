@@ -158,7 +158,6 @@ class FileReader : public Reader {
     std::string name;
     int file;
     mutable off_t fileSize;
-    bool openfile(int &file, const std::string &name_);
 public:
     virtual size_t read(off_t off, size_t count, char *ptr) const override ;
     FileReader(std::string name_);
@@ -167,6 +166,21 @@ public:
     std::string filename() const override { return name; }
     off_t size() const override;
 };
+// Reader implementations
+class MmapReader : public Reader {
+    std::string name;
+    size_t len;
+    void *base;
+public:
+    virtual size_t read(off_t off, size_t count, char *ptr) const override ;
+    MmapReader(const std::string &name_);
+    ~MmapReader();
+    std::string readString(off_t offset) const override;
+    void describe(std::ostream &os) const  override { os << name; }
+    std::string filename() const override { return name; }
+    off_t size() const override { return len; }
+};
+
 
 class CacheReader : public Reader {
     struct CacheEnt {
