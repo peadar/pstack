@@ -84,7 +84,7 @@ emain(int argc, char **argv)
     std::string execFile;
     Elf::Object::sptr exec;
     Dwarf::ImageCache imageCache;
-    int sleepTime = 0;
+    double sleepTime = 0.0;
     PstackOptions options;
 
     bool python = false;
@@ -125,7 +125,7 @@ emain(int argc, char **argv)
             verbose++;
             break;
         case 'b':
-            sleepTime = atoi(optarg);
+            sleepTime = strtod(optarg, nullptr);
             break;
         case 'p':
 #ifdef WITH_PYTHON
@@ -186,8 +186,9 @@ emain(int argc, char **argv)
                std::cerr << "failed to process " << argv[i] << ": " << e.what() << "\n";
            }
        }
-       if (sleepTime != 0)
-          sleep(sleepTime);
+       if (sleepTime != 0.0) {
+          usleep(sleepTime * 1000000);
+       }
     } while (sleepTime != 0);
 done:
     if (coreOnExit)
