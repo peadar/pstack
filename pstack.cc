@@ -152,44 +152,49 @@ emain(int argc, char **argv)
     if (optind == argc)
         return usage(argv[0]);
 
-    do {
-       for (i = optind; i < argc; i++) {
-           pid = atoi(argv[i]);
-           try {
-               auto doStack = [python, &options] (Process &proc) {
-                   proc.load(options);
+    for (i = optind; i < argc; i++) {
+        pid = atoi(argv[i]);
+        try {
+            auto doStack = [=, &options] (Process &proc) {
+                proc.load(options);
+                for (;;) {
 #ifdef WITH_PYTHON
                    if (python) {
                        PythonPrinter printer(proc, std::cout, options);
                        printer.printStacks();
-                   } else
-#endif
-                       pstack(proc, std::cout, options);
-               };
-               if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
-                   // It's a file: should be ELF, treat core and exe differently
-                   // Don't put cores in the cache
-                   auto obj = std::make_shared<Elf::Object>(imageCache, loadFile(argv[i]));
-
-                   if (obj->getHeader().e_type == ET_CORE) {
-                       CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
-                       doStack(proc);
-                   } else {
-                       exec = obj;
                    }
-               } else {
-                   // It's a PID.
-                   LiveProcess proc(exec, pid, PathReplacementList(), imageCache);
-                   doStack(proc);
+                   else
+#endif
+                   {
+                       pstack(proc, std::cout, options);
+                   }
+                   if (sleepTime != 0.0) {
+                      usleep(sleepTime * 1000000);
+                   } else {
+                      break;
+                   }
                }
-           } catch (const std::exception &e) {
-               std::cerr << "failed to process " << argv[i] << ": " << e.what() << "\n";
-           }
-       }
-       if (sleepTime != 0.0) {
-          usleep(sleepTime * 1000000);
-       }
-    } while (sleepTime != 0);
+            };
+            if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
+                // It's a file: should be ELF, treat core and exe differently
+                // Don't put cores in the cache
+                auto obj = std::make_shared<Elf::Object>(imageCache, loadFile(argv[i]));
+
+                if (obj->getHeader().e_type == ET_CORE) {
+                    CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
+                    doStack(proc);
+                } else {
+                    exec = obj;
+                }
+            } else {
+                // It's a PID.
+                LiveProcess proc(exec, pid, PathReplacementList(), imageCache);
+                doStack(proc);
+            }
+        } catch (const std::exception &e) {
+            std::cerr << "failed to process " << argv[i] << ": " << e.what() << "\n";
+        }
+    }
 done:
     if (coreOnExit)
         abort();
