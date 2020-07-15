@@ -542,7 +542,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread,
        << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
     int frameNo = 0;
     for (auto frame : thread.stack)
-        dumpFrameText(os, PrintableFrame(frame, frameNo, options), frame);
+        dumpFrameText(os, PrintableFrame(frame, frameNo++, options), frame);
     return os;
 }
 
@@ -553,16 +553,14 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
 
     IOFlagSave _(os);
 
-    os << std::hex;
     os << "#"
         << std::left << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
-        << std::right << "0x" << std::setw(ELF_BITS/4) << std::setfill('0')
+        << std::right << "0x" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0')
         << frame->rawIP();
 
     if (verbose > 0)
         os << "/" << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa;
     os << std::dec;
-    os << " ";
 
     if (frame->elf) {
         std::string name;
@@ -580,7 +578,7 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
         os << " in "
             << name
             << flags
-            << "(" << ArgPrint(*this, frame, pframe.options) << ") ";
+            << "(" << ArgPrint(*this, frame, pframe.options) << ")";
 
         if (pframe.functionOffset != std::numeric_limits<Elf::Addr>::max())
             os << "+" << pframe.functionOffset;
@@ -588,7 +586,7 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
         for (auto &ent : pframe.source)
             os << " at " << ent.first << ":" << std::dec << ent.second;
     } else {
-        os << "no information for frame";
+        os << " no information for frame";
     }
     if (verbose)
        os << " via " << frame->mechanism;
