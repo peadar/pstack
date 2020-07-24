@@ -1680,24 +1680,30 @@ typeName(const DIE &type)
 }
 
 DIE
-findEntryForFunc(Elf::Addr address, const DIE &entry)
+findEntryForAddr(Elf::Addr address, Tag t, const DIE &start, bool skipStart)
 {
-    switch ( entry.containsAddress(address) ) {
+    switch (start.containsAddress(address)) {
         case ContainsAddr::NO:
             return DIE();
         case ContainsAddr::YES:
-            if (entry.tag() == DW_TAG_subprogram)
-                return entry;
+            if (!skipStart && start.tag() == t)
+                return start;
             /* FALLTHRU */
         case ContainsAddr::UNKNOWN:
-            for (auto child : entry.children()) {
-                auto descendent = findEntryForFunc(address, child);
+            for (auto child : start.children()) {
+                auto descendent = findEntryForAddr(address, t, child, false);
                 if (descendent)
                     return descendent;
             }
             return DIE();
     }
     return DIE();
+}
+
+DIE
+findEntryForAddr(Elf::Addr address, Tag t, const DIE &start)
+{
+    return findEntryForAddr(address, t, start, true);
 }
 
 DIEIter

@@ -642,7 +642,10 @@ public:
 };
 
 std::string typeName(const DIE &);
-DIE findEntryForFunc(Elf::Addr address, const DIE &entry);
+
+DIE
+findEntryForAddr(Elf::Addr address, Tag, const DIE &start);
+
 
 inline
 UnitIterator UnitIterator::operator ++() {

@@ -179,20 +179,32 @@ operator << (std::ostream &os, const JSON<td_thr_type_e, ctx> &jt)
 
 static bool
 dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
-   // use the specification DIE instead of this if we have one.
-   auto spec = die.attribute(Dwarf::DW_AT_specification);
-   if (spec.valid()) {
-      return dieName(os, Dwarf::DIE(spec), first);
-   }
-   auto parent = die.getParentOffset();
-   bool printedParent = parent != 0 && dieName(os, die.getUnit()->offsetToDIE(parent), false);
-   if (die.tag() != Dwarf::DW_TAG_compile_unit) { // don't print out compile unit
-      if (printedParent)
-         os << "::";
-      os << die.name();
-      return true;
-   }
-   return printedParent;
+
+    // use the specification DIE instead of this if we have one.
+    auto spec = die.attribute(Dwarf::DW_AT_specification);
+    if (spec.valid()) {
+        return dieName(os, Dwarf::DIE(spec), first);
+    }
+
+    // Don't walk up past compile units.
+    if (die.tag() == Dwarf::DW_TAG_compile_unit || die.tag() == Dwarf::DW_TAG_partial_unit)
+        return false;
+
+    auto parent = die.getParentOffset();
+    assert(parent != 0); // because die would have been a unit or partial unit
+    bool printedParent = dieName(os, die.getUnit()->offsetToDIE(parent), false);
+
+    auto tag = die.tag();
+    if (first ||
+            tag == Dwarf::DW_TAG_structure_type ||
+            tag == Dwarf::DW_TAG_class_type ||
+            tag == Dwarf::DW_TAG_namespace ) {
+        if (printedParent)
+            os << "::";
+       os << die.name();
+       return true;
+    }
+    return printedParent;
 }
 
 struct PrintableFrame {
@@ -205,6 +217,8 @@ struct PrintableFrame {
     const PstackOptions &options;
     Elf::Addr functionOffset;
     bool haveSym;
+    Dwarf::StackFrame *frame;
+    std::vector<Dwarf::DIE> inlined; // func + inlined.
 
     PrintableFrame(Dwarf::StackFrame *frame, int frameNo, const PstackOptions &options)
         : frameNumber(frameNo)
@@ -212,31 +226,42 @@ struct PrintableFrame {
         , options(options)
         , functionOffset(std::numeric_limits<Elf::Addr>::max())
         , haveSym(false)
+        , frame(frame)
     {
         if (frame->elf == nullptr)
             return;
         Elf::Addr objIp = frame->scopeIP() - frame->elfReloc;
         Dwarf::Unit::sptr dwarfUnit = frame->dwarf->lookupUnit(objIp);
+        Dwarf::DIE function;
         if (dwarfUnit == nullptr) {
             // no ranges - try each dwarf unit in turn. (This seems to happen
             // for single-unit exe's only, so it's no big loss)
             for (const auto &u : frame->dwarf->getUnits()) {
-                frame->function = Dwarf::findEntryForFunc(objIp, u->root());
-                if (frame->function)
+                function = Dwarf::findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram, u->root());
+                if (function)
                     break;
             }
         } else {
-            frame->function = Dwarf::findEntryForFunc(objIp, dwarfUnit->root());
+            function = Dwarf::findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram, dwarfUnit->root());
         }
 
-        if (frame->function) {
+
+        if (function) {
+            frame->function = function;
             std::ostringstream sos;
-            ::dieName(sos, frame->function);
+            ::dieName(sos, function);
             this->dieName = sos.str();
 
-            auto lowpc = frame->function.attribute(Dwarf::DW_AT_low_pc);
+            auto lowpc = function.attribute(Dwarf::DW_AT_low_pc);
             if (lowpc.valid())
                 functionOffset = objIp - uintmax_t(lowpc);
+            while( function ) {
+               auto inl = Dwarf::findEntryForAddr(objIp, Dwarf::DW_TAG_inlined_subroutine, function);
+               if (!inl)
+                  break;
+               inlined.push_back(inl);
+               function = inl;
+            }
         }
 
         if (!options[PstackOption::nosrc])
@@ -553,6 +578,24 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
 
     IOFlagSave _(os);
 
+    std::pair<std::string, int> src = pframe.source.size() ? pframe.source[0] : std::make_pair( "", std::numeric_limits<Elf::Addr>::max());
+    for (auto i = pframe.inlined.rbegin(); i != pframe.inlined.rend(); ++i) {
+       os << "#"
+           << std::left << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
+           << std::setw(ELF_BITS/4 + 2) << std::setfill(' ')
+           << "inlined";
+       os << " in ";
+       ::dieName(os, *i);
+       auto lineinfo = i->getUnit()->getLines();
+       if (lineinfo) {
+          os << " at " << src.first << ":" << src.second;
+          src = std::make_pair(
+                lineinfo->files[intmax_t( i->attribute(Dwarf::DW_AT_call_file))].name,
+                intmax_t(i->attribute(Dwarf::DW_AT_call_line)));
+          os << "\n";
+       }
+    }
+
     os << "#"
         << std::left << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
         << std::right << "0x" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0')
@@ -583,8 +626,8 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
         if (pframe.functionOffset != std::numeric_limits<Elf::Addr>::max())
             os << "+" << pframe.functionOffset;
         os << " in " << stringify(*frame->elf->io);
-        for (auto &ent : pframe.source)
-            os << " at " << ent.first << ":" << std::dec << ent.second;
+        if (src.first != "")
+           os << " at " << src.first << ":" << std::dec << src.second;
     } else {
         os << " no information for frame";
     }
