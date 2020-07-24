@@ -58,11 +58,11 @@ class RawDIE {
     static void readValue(DWARFReader &, const FormEntry &form, Value &value, Unit *);
     const Abbreviation *type;
     std::vector<Value> values;
-    off_t parent; // 0 implies we do not yet know the parent's offset.
-    off_t firstChild;
-    off_t nextSibling;
+    Elf::Off parent; // 0 implies we do not yet know the parent's offset.
+    Elf::Off firstChild;
+    Elf::Off nextSibling;
 public:
-    RawDIE(Unit *, DWARFReader &, size_t, off_t parent);
+    RawDIE(Unit *, DWARFReader &, size_t, Elf::Off parent);
     ~RawDIE();
     friend class Attribute;
     friend class DIE;
@@ -217,7 +217,7 @@ Info::pubnames() const
 static size_t UNITCACHE_SIZE=256;
 
 Unit::sptr
-UnitsCache::get(const Info *info, off_t offset)
+UnitsCache::get(const Info *info, Elf::Off offset)
 {
     auto &ent = byOffset[offset];
     if (ent != nullptr) {
@@ -249,17 +249,17 @@ UnitsCache::get(const Info *info, off_t offset)
 }
 
 DIE
-Info::offsetToDIE(off_t offset) const
+Info::offsetToDIE(Elf::Off offset) const
 {
     // find the appropriate unit for a die with that offset.
     auto it = std::lower_bound(
             units.byOffset.begin(),
             units.byOffset.end(),
             offset,
-            [] (const std::pair<off_t, std::shared_ptr<Unit>> &u, off_t offset)
+            [] (const std::pair<Elf::Off, std::shared_ptr<Unit>> &u, Elf::Off offset)
 
                 { return u.first < offset; });
-    off_t uOffset;
+    Elf::Off uOffset;
     if (it == units.byOffset.begin() || it == units.byOffset.end()) {
         uOffset = 0;
     } else {
@@ -283,7 +283,7 @@ Info::offsetToDIE(off_t offset) const
 }
 
 Unit::sptr
-Info::getUnit(off_t offset) const
+Info::getUnit(Elf::Off offset) const
 {
     return units.get(this, offset);
 }
@@ -303,7 +303,7 @@ Info::decodeARangeSet(DWARFReader &r) const {
     Elf::Off next = r.getOffset() + length;
     uint16_t version = r.getu16();
     (void)version;
-    off_t debugInfoOffset = r.getu32();
+    Elf::Off debugInfoOffset = r.getu32();
     uint8_t addrlen = r.getu8();
     if (addrlen == 0)
        addrlen = 1;
@@ -384,7 +384,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
     if (version <= 2) // DWARF Version 2 uses the architecture's address size.
        dwarfLen = ELF_BYTES;
 
-    off_t abbrevOffset;
+    Elf::Off abbrevOffset;
     if (version >= 5) {
         unitType = UnitType(r.getu8());
         r.addrLen = addrlen = r.getu8();
@@ -412,7 +412,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
  */
 
 std::shared_ptr<RawDIE>
-Unit::offsetToRawDIE(const DIE &parent, off_t offset) {
+Unit::offsetToRawDIE(const DIE &parent, Elf::Off offset) {
     if (offset == 0 || offset < this->offset || offset >= this->end)
         return nullptr;
     auto &rawptr = allEntries[offset];
@@ -422,12 +422,12 @@ Unit::offsetToRawDIE(const DIE &parent, off_t offset) {
 }
 
 DIE
-Unit::offsetToDIE(const DIE &parent, off_t offset) {
+Unit::offsetToDIE(const DIE &parent, Elf::Off offset) {
     return DIE(shared_from_this(), offset, offsetToRawDIE(parent, offset));
 }
 
 DIE
-Unit::offsetToDIE(off_t offset) {
+Unit::offsetToDIE(Elf::Off offset) {
     return DIE(shared_from_this(), offset, offsetToRawDIE(DIE(), offset));
 }
 
@@ -716,7 +716,7 @@ Attribute::operator std::string() const
                 throw Exception() << "no string offsets table, but have strx form";
             // Get the root die, and the string offset base.
             auto root = die().unit->root();
-            auto base = off_t(root.attribute(DW_AT_str_offsets_base));
+            auto base = intmax_t(root.attribute(DW_AT_str_offsets_base));
             auto idx = value().addr;
             auto len = die().unit->dwarfLen;
             DWARFReader r(dwarf->strOffsets, base + len * idx);
@@ -909,14 +909,14 @@ Unit::getLines()
     if (!attr.valid())
         return nullptr;
 
-    auto stmts = off_t(attr);
+    auto stmts = intmax_t(attr);
     DWARFReader r2(dwarf->lineshdr, stmts);
     lines.reset(new LineInfo());
     lines->build(r2, this);
     return lines.get();
 }
 
-RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, off_t parent_)
+RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, Elf::Off parent_)
     : type(unit->findAbbreviation(abbrev))
     , values(type->forms.size())
     , parent(parent_)
@@ -948,7 +948,7 @@ Unit::findAbbreviation(size_t code) const
 }
 
 std::shared_ptr<RawDIE>
-Unit::decodeEntry(const DIE &parent, off_t offset)
+Unit::decodeEntry(const DIE &parent, Elf::Off offset)
 {
     DWARFReader r(io, offset);
     size_t abbrev = r.getuleb128();
@@ -1100,7 +1100,7 @@ CFI::CFI(Info *info, Elf::Addr addr, Reader::csptr io_, enum FIType type_)
 {
     DWARFReader reader(io);
     // decode in 2 passes: first for CIE, then for FDE
-    off_t nextoff;
+    Elf::Off nextoff;
     for (; !reader.empty();  reader.setOffset(nextoff)) {
         size_t startOffset = reader.getOffset();
         Elf::Off associatedCIE;
@@ -1172,7 +1172,7 @@ Info::sourceFromAddr(uintmax_t addr) const
 }
 
 Ranges
-Info::rangesAt(off_t offset) const {
+Info::rangesAt(Elf::Off offset) const {
     Ranges ranges;
     DWARFReader reader(rangesh, offset);
     for (;;) {
@@ -1467,7 +1467,7 @@ Attribute::operator DIE() const
         return DIE();
 
     const Info *dwarf = dieref.unit->dwarf;
-    off_t off;
+    Elf::Off off;
     switch (formp->form) {
         case DW_FORM_ref_addr:
             off = value().addr;
@@ -1503,7 +1503,7 @@ Attribute::operator DIE() const
 }
 
 static void walk(const DIE & die) { for (auto c : die.children()) { walk(c); } };
-off_t
+Elf::Off
 DIE::getParentOffset() const
 {
     if (raw->parent == 0 && !unit->isRoot(*this)) {

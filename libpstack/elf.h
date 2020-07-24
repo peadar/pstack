@@ -177,7 +177,7 @@ struct Section {
     Shdr shdr;
     Reader::csptr io;
     operator bool() const { return shdr.sh_type != SHT_NULL; }
-    Section(const Reader::csptr &image, off_t off);
+    Section(const Reader::csptr &image, Off off);
     Section() { shdr.sh_type = SHT_NULL; }
     Section(const Section &) = default;
 };
@@ -382,8 +382,8 @@ class NoteIter {
     void startSection() {
         offset = 0;
         io = std::make_shared<OffsetReader>(object->io,
-              off_t(phdrsi->p_offset),
-              off_t(phdrsi->p_filesz));
+              Off(phdrsi->p_offset),
+              Off(phdrsi->p_filesz));
     }
 
     NoteIter(Object *object_, bool begin)

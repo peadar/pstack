@@ -21,7 +21,7 @@ class ClassPrinter : public PythonTypePrinter<2> {
     Elf::Addr print(const PythonPrinter<2> *pc, const PyObject *po, const PyTypeObject *, Elf::Addr) const override {
         auto pco = reinterpret_cast<const PyClassObject *>(po);
         pc->os << "<class ";
-        pc->print(Elf::Addr(pco->cl_name));
+        pc->print(intmax_t(pco->cl_name));
         pc->os << ">";
         return 0;
     };

@@ -274,8 +274,8 @@ mainExcept(int argc, char *argv[])
     sort(listed.begin() , listed.end() , compareSymbolsByAddress);
 
     // Now run through the corefile, searching for virtual objects.
-    off_t filesize = 0;
-    off_t memsize = 0;
+    Elf::Off filesize = 0;
+    Elf::Off memsize = 0;
 #ifdef WITH_PYTHON
     PythonPrinter<2> py(*process, std::cout, PstackOptions());
 #endif

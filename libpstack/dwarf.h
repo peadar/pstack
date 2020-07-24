@@ -121,8 +121,8 @@ struct PubnameUnit {
 };
 
 struct Block {
-    off_t offset;
-    off_t length;
+   Elf::Off offset;
+   Elf::Off length;
 };
 
 union Value {
@@ -176,7 +176,7 @@ enum class ContainsAddr { YES, NO, UNKNOWN };
 
 class DIE {
     std::shared_ptr<Unit> unit;
-    off_t offset;
+    Elf::Off offset;
 public:
     std::shared_ptr<RawDIE> raw;
     friend class DIEIter;
@@ -184,8 +184,8 @@ public:
     friend class DIEAttributes;
     friend class RawDIE;
     ContainsAddr containsAddress(Elf::Addr addr) const;
-    off_t getParentOffset() const;
-    off_t getOffset() const { return offset; }
+    Elf::Off getParentOffset() const;
+    Elf::Off getOffset() const { return offset; }
     const std::shared_ptr<Unit> & getUnit() const { return unit; }
     DIE(const std::shared_ptr<Unit> &unit, size_t offset_, const std::shared_ptr<RawDIE> &raw) : unit(unit), offset(offset_), raw(raw) {}
     DIE() : unit(nullptr), offset(0), raw(nullptr) {}
@@ -285,10 +285,10 @@ class Unit : public std::enable_shared_from_this<Unit> {
     Unit(const Unit &) = delete;
     std::unique_ptr<LineInfo> lines;
     std::unordered_map<size_t, Abbreviation> abbreviations;
-    off_t topDIEOffset;
-    using AllEntries = std::unordered_map<off_t, std::shared_ptr<RawDIE>>;
+    Elf::Off topDIEOffset;
+    using AllEntries = std::unordered_map<Elf::Off, std::shared_ptr<RawDIE>>;
     AllEntries allEntries;
-    std::shared_ptr<RawDIE> decodeEntry(const DIE &parent, off_t offset);
+    std::shared_ptr<RawDIE> decodeEntry(const DIE &parent, Elf::Off offset);
     UnitType unitType;
 public:
     void purge(); // Remove all RawDIEs from allEntries, potentially freeing memory.
@@ -298,16 +298,16 @@ public:
     typedef std::shared_ptr<const Unit> csptr;
     const Abbreviation *findAbbreviation(size_t) const;
     DIE root() { return offsetToDIE(topDIEOffset); }
-    DIE offsetToDIE(off_t offset);
-    DIE offsetToDIE(const DIE &parent, off_t offset);
-    std::shared_ptr<RawDIE> offsetToRawDIE(const DIE &parent, off_t offset);
+    DIE offsetToDIE(Elf::Off offset);
+    DIE offsetToDIE(const DIE &parent, Elf::Off offset);
+    std::shared_ptr<RawDIE> offsetToRawDIE(const DIE &parent, Elf::Off offset);
     const Info *dwarf;
     Reader::csptr io;
 
     // header fields
-    off_t offset;
+    Elf::Off offset;
     uint32_t length;
-    off_t end; // a.k.a. start of next unit.
+    Elf::Off end; // a.k.a. start of next unit.
     uint16_t version;
     size_t dwarfLen;
     uint8_t addrlen;
@@ -337,7 +337,7 @@ public:
     bool operator != (const UnitIterator &rhs) const {
         return !(*this == rhs);
     }
-    UnitIterator(const Info *info_, off_t offset);
+    UnitIterator(const Info *info_, Elf::Off offset);
     UnitIterator() : info(nullptr), currentUnit(nullptr) {}
 };
 
@@ -352,10 +352,10 @@ struct Units {
 };
 
 struct UnitsCache {
-    std::map<off_t, Unit::sptr> byOffset;
+    std::map<Elf::Off, Unit::sptr> byOffset;
     std::list<Unit::sptr> LRU;
-    Unit::sptr get(const Info *, off_t);
-    Unit::sptr unitForDIE(const Info *, off_t offset);
+    Unit::sptr get(const Info *, Elf::Off);
+    Unit::sptr unitForDIE(const Info *, Elf::Off offset);
 };
 
 struct FDE {
@@ -438,7 +438,7 @@ struct CFI {
 };
 
 struct ARanges {
-    std::map<Elf::Addr, std::pair<Elf::Addr, off_t>> ranges;
+    std::map<Elf::Addr, std::pair<Elf::Addr, Elf::Off>> ranges;
 };
 
 class ImageCache;
@@ -463,11 +463,11 @@ public:
     Info::sptr getAltDwarf() const;
     const ARanges &getARanges() const;
     const std::list<PubnameUnit> &pubnames() const;
-    Unit::sptr getUnit(off_t offset) const;
+    Unit::sptr getUnit(Elf::Off offset) const;
     Units getUnits() const;
-    DIE offsetToDIE(off_t) const;
+    DIE offsetToDIE(Elf::Off) const;
     bool hasRanges() const { return bool(rangesh); }
-    Ranges rangesAt(off_t) const;
+    Ranges rangesAt(Elf::Off) const;
     bool hasARanges() const;
     Unit::sptr lookupUnit(Elf::Addr addr) const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
@@ -669,7 +669,7 @@ bool UnitIterator::atend() const {
 }
 
 inline
-UnitIterator::UnitIterator(const Info *info_, off_t offset)
+UnitIterator::UnitIterator(const Info *info_, Elf::Off offset)
     : info(info_), currentUnit(info->getUnit(offset)) {}
 
 #define DWARF_OP(op, value, args) op = value,

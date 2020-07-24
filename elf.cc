@@ -243,7 +243,7 @@ Object::Object(ImageCache &cache, Reader::csptr io_)
           size_t off = 0;
           for (size_t cnt = verneednum[0].d_un.d_val; cnt; --cnt) {
              auto verneed = commonSections->gnu_version_r.io->readObj<Verneed>(off);
-             off_t auxOff = off + verneed.vn_aux;
+             Off auxOff = off + verneed.vn_aux;
              auto file = strings.io->readString(verneed.vn_file);
              if (verbose >= 3)
                 *debug << "reading version requirement aux entries for " << file << std::endl;
@@ -266,7 +266,7 @@ Object::Object(ImageCache &cache, Reader::csptr io_)
           size_t off = 0;
           for (size_t cnt = verdefnum[0].d_un.d_val; cnt; --cnt) {
              auto verdef = commonSections->gnu_version_d.io->readObj<Verdef>(off);
-             off_t auxOff = off + verdef.vd_aux;
+             Off auxOff = off + verdef.vd_aux;
              // There's two verdaux entries for some symbols. First is
              // "predecessor" of some sort. Last is the version string, so
              // we'll pick that one
@@ -583,7 +583,7 @@ elf_hash(const string &text)
     return (h);
 }
 
-Section::Section(const Reader::csptr &image, off_t off)
+Section::Section(const Reader::csptr &image, Off off)
 {
     image->readObj(off, &shdr);
     // Null sections get null readers.

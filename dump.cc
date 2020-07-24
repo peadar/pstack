@@ -19,9 +19,9 @@
 #endif
 
 struct DumpCFAInsns {
-    off_t start;
-    off_t end;
-    explicit DumpCFAInsns(off_t start_, off_t end_)
+    Elf::Off start;
+    Elf::Off end;
+    explicit DumpCFAInsns(Elf::Off start_, Elf::Off end_)
           : start(start_)
           , end(end_)
     {}
@@ -835,7 +835,7 @@ operator<< (std::ostream &os, const JSON<Elf::Phdr, const Elf::Object *> &phdr)
         .field("flags", flags)
         .field("alignment", phdr->p_align);
 
-    off_t strtab = 0;
+    Elf::Off strtab = 0;
     switch (phdr->p_type) {
         case PT_DYNAMIC: {
             OffsetReader dynReader(phdr.context->io, phdr->p_offset, phdr->p_filesz);
@@ -870,14 +870,14 @@ operator << (std::ostream &os, const JSON<DynTag> &tag)
 }
 
 std::ostream &
-operator<< (std::ostream &os, const JSON<Elf::Dyn, std::pair<const Elf::Object *, off_t>> &d)
+operator<< (std::ostream &os, const JSON<Elf::Dyn, std::pair<const Elf::Object *, Elf::Off>> &d)
 {
     JObject o(os);
     o.field("tag", DynTag(d->d_tag))
      .field("word", d->d_un.d_val);
 
    auto stringSeg = d.context.first->getSegmentForAddress(d.context.second);
-   off_t strings = stringSeg->p_offset;
+   Elf::Off strings = stringSeg->p_offset;
    strings += d.context.second - stringSeg->p_vaddr;
 
    auto printString = [&](const char *text) {
