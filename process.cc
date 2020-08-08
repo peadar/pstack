@@ -584,6 +584,10 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
            << std::left << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
            << std::setw(ELF_BITS/4 + 2) << std::setfill(' ')
            << "inlined";
+       if (verbose > 0) {
+           os << std::setw(ELF_BITS/4 + 2) << std::setfill(' ') << "/";
+           os << " ";
+       }
        os << " in ";
        ::dieName(os, *i);
        auto lineinfo = i->getUnit()->getLines();
