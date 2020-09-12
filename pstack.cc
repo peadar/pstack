@@ -7,6 +7,7 @@
 #endif
 
 #include <sys/types.h>
+#include <sys/signal.h>
 
 #include <sysexits.h>
 #include <unistd.h>
@@ -18,12 +19,13 @@
 
 #define XSTR(a) #a
 #define STR(a) XSTR(a)
-
-static bool doJson = false;
-
 extern std::ostream & operator << (std::ostream &os, const JSON<ThreadStack, Process *> &jt);
 
-static int usage(const char *);
+namespace {
+bool doJson = false;
+volatile bool interrupted = false;
+
+int usage(const char *);
 std::ostream &
 pstack(Process &proc, std::ostream &os, const PstackOptions &options)
 {
@@ -173,7 +175,7 @@ emain(int argc, char **argv)
         try {
             auto doStack = [=, &options] (Process &proc) {
                 proc.load(options);
-                for (;;) {
+                while (!interrupted) {
 #if defined(WITH_PYTHON)
                    if (python) {
 #ifdef WITH_PYTHON2
@@ -221,18 +223,6 @@ done:
 }
 
 int
-main(int argc, char **argv)
-{
-    try {
-        emain(argc, argv);
-    }
-    catch (std::exception &ex) {
-        std::clog << "error: " << ex.what() << std::endl;
-        return EX_SOFTWARE;
-    }
-}
-
-static int
 usage(const char *name)
 {
     std::clog <<
@@ -257,4 +247,24 @@ usage(const char *name)
         "\t                             to predict location of the executable\n"
         ;
     return (EX_USAGE);
+}
+
+}
+
+int
+main(int argc, char **argv)
+{
+    try {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof sa);
+        sa.sa_handler = [](int) { interrupted = true; };
+        // Only interrupt cleanly once. Then just terminate, in case we're stuck in a loop
+        sa.sa_flags = SA_RESETHAND;
+        sigaction(SIGINT, &sa, nullptr);
+        emain(argc, argv);
+    }
+    catch (std::exception &ex) {
+        std::clog << "error: " << ex.what() << std::endl;
+        return EX_SOFTWARE;
+    }
 }
