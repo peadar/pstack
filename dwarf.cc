@@ -324,6 +324,10 @@ Info::decodeARangeSet(DWARFReader &r) const {
     }
 }
 
+bool Info::hasARanges() const {
+    return arangesh || aranges.ranges.size() != 0;
+}
+
 Unit::sptr
 Info::lookupUnit(Elf::Addr addr) const {
     if (arangesh) {

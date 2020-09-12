@@ -231,20 +231,20 @@ struct PrintableFrame {
         if (frame->elf == nullptr)
             return;
         Elf::Addr objIp = frame->scopeIP() - frame->elfReloc;
-        Dwarf::Unit::sptr dwarfUnit = frame->dwarf->lookupUnit(objIp);
         Dwarf::DIE function;
-        if (dwarfUnit == nullptr) {
-            // no ranges - try each dwarf unit in turn. (This seems to happen
+
+        if (frame->dwarf->hasARanges()) {
+            Dwarf::Unit::sptr u = frame->dwarf->lookupUnit(objIp);
+            if (u)
+                function = Dwarf::findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram, u->root());
+        } else {
+            // no aranges - try each dwarf unit in turn. (This seems to happen
             // for single-unit exe's only, so it's no big loss)
             for (const auto &u : frame->dwarf->getUnits()) {
                 function = Dwarf::findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram, u->root());
-                if (function)
-                    break;
+                break;
             }
-        } else {
-            function = Dwarf::findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram, dwarfUnit->root());
         }
-
 
         if (function) {
             frame->function = function;

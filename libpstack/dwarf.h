@@ -468,6 +468,7 @@ public:
     DIE offsetToDIE(off_t) const;
     bool hasRanges() const { return bool(rangesh); }
     Ranges rangesAt(off_t) const;
+    bool hasARanges() const;
     Unit::sptr lookupUnit(Elf::Addr addr) const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
     mutable Reader::csptr strOffsets;
