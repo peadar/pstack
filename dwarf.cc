@@ -182,6 +182,7 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     , arangesh(sectionReader(*obj, ".debug_aranges", ".zdebug_aranges"))
     , rangesh(sectionReader(*obj, ".debug_ranges", ".zdebug_ranges"))
     , haveLines(bool(lineshdr))
+    , haveARanges(bool(arangesh))
 {
     auto f = [this, &obj](const char *name, const char *zname, FIType ftype) {
         const Elf::Section *sec;
@@ -325,7 +326,7 @@ Info::decodeARangeSet(DWARFReader &r) const {
 }
 
 bool Info::hasARanges() const {
-    return arangesh || aranges.ranges.size() != 0;
+    return haveARanges;
 }
 
 Unit::sptr
@@ -1146,11 +1147,13 @@ Info::sourceFromAddr(uintmax_t addr) const
     if (!haveLines)
         return info;
 
-    const auto &unit = lookupUnit(addr);
-    if (unit == nullptr)
+    if (hasARanges()) {
+        const auto &unit = lookupUnit(addr);
+        if (unit)
+            sourceFromAddrInUnit(unit, Elf::Addr(addr), info);
+    } else {
         sourceFromAddrInUnits(getUnits(), addr);
-    else
-        sourceFromAddrInUnit(unit, Elf::Addr(addr), info);
+    }
     return info;
 }
 

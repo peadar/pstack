@@ -488,6 +488,7 @@ private:
     mutable Reader::csptr rangesh;
     mutable ARanges aranges; // maps starting address to length + unit offset.
     bool haveLines;
+    bool haveARanges;
 };
 
 /*
