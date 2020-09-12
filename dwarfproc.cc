@@ -335,7 +335,7 @@ StackFrame::getCFA(const Process &proc, const CallFrame &dcf) const
 StackFrame *
 StackFrame::unwind(Process &p)
 {
-    std::tie(elfReloc, elf, phdr) = p.findObject(scopeIP());
+    std::tie(elfReloc, elf, phdr) = p.findSegment(scopeIP());
     if (elf == nullptr)
         throw (Exception() << "no image for instruction address "
               << std::hex << scopeIP() << std::dec);

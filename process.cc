@@ -753,7 +753,7 @@ operator < (const std::pair<Elf::Addr, Elf::Object::sptr> &entry, Elf::Addr addr
 }
 
 std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>
-Process::findObject(Elf::Addr addr) const
+Process::findSegment(Elf::Addr addr) const
 {
     auto it = std::lower_bound(objects.begin(), objects.end(), addr);
     if (it != objects.end()) {
@@ -864,7 +864,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                 Elf::Addr reloc;
                 const Elf::Phdr *segment;
                 Elf::Object::sptr obj;
-                std::tie(reloc, obj, segment) = p.findObject(curFrame->rawIP());
+                std::tie(reloc, obj, segment) = p.findSegment(curFrame->rawIP());
                 if (obj) {
                     Elf::Addr sigContextAddr = 0;
                     auto objip = curFrame->rawIP() - reloc;

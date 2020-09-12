@@ -80,7 +80,7 @@ CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
 
         // Either no data in core, or it was incomplete to this point: search loaded objects.
         Elf::Off loadAddr;
-        std::tie(loadAddr, obj, hdr) = p->findObject(remoteAddr);
+        std::tie(loadAddr, obj, hdr) = p->findSegment(remoteAddr);
         if (hdr != nullptr) {
             // header in an object - try reading from here.
             size_t rc = readFromHdr(*obj, hdr, remoteAddr - loadAddr, ptr, size, &zeroes);
