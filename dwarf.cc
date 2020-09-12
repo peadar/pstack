@@ -1537,8 +1537,8 @@ ContainsAddr
 DIE::containsAddress(Elf::Addr addr) const
 {
     Elf::Addr start, end;
-    auto low = attribute(DW_AT_low_pc);
-    auto high = attribute(DW_AT_high_pc);
+    auto low = attribute(DW_AT_low_pc, true);
+    auto high = attribute(DW_AT_high_pc, true);
 
     ContainsAddr rc = ContainsAddr::UNKNOWN;
     if (low.valid() && high.valid()) {
@@ -1568,7 +1568,7 @@ DIE::containsAddress(Elf::Addr addr) const
         rc = start <= addr && end > addr ? ContainsAddr::YES : ContainsAddr::NO;
     } else if (unit->dwarf->hasRanges()) {
         Elf::Addr base = low.valid() ? uintmax_t(low) : 0;
-        auto ranges = attribute(DW_AT_ranges);
+        auto ranges = attribute(DW_AT_ranges, true);
         if (ranges.valid()) {
             rc = ContainsAddr::NO;
             for (auto &range : unit->dwarf->rangesAt(uintmax_t(ranges))) {
@@ -1583,7 +1583,7 @@ DIE::containsAddress(Elf::Addr addr) const
 }
 
 Attribute
-DIE::attribute(AttrName name) const
+DIE::attribute(AttrName name, bool local) const
 {
     auto loc = raw->type->attrName2Idx.find(name);
     if (loc != raw->type->attrName2Idx.end())
@@ -1597,7 +1597,7 @@ DIE::attribute(AttrName name) const
     };
 
     // don't dereference declarations, or any types that provide dereference aliases.
-    if (name != DW_AT_declaration && derefs.find(name) == derefs.end()) {
+    if (!local && name != DW_AT_declaration && derefs.find(name) == derefs.end()) {
         for (auto alt : derefs) {
             auto ao = DIE(attribute(alt));
             if (ao && ao.raw != raw)

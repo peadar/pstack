@@ -190,7 +190,7 @@ public:
     DIE(const std::shared_ptr<Unit> &unit, size_t offset_, const std::shared_ptr<RawDIE> &raw) : unit(unit), offset(offset_), raw(raw) {}
     DIE() : unit(nullptr), offset(0), raw(nullptr) {}
     operator bool() const { return raw != nullptr; }
-    Attribute attribute(AttrName name) const;
+    Attribute attribute(AttrName name, bool local = false) const;
     inline std::string name() const;
     DIEAttributes attributes() const { return DIEAttributes(*this); }
     Tag tag() const;
