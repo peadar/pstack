@@ -20,7 +20,7 @@
 
 static size_t gMaxFrames = 1024; /* max number of frames to read */
 
-Process::Process(Elf::Object::sptr exec, Reader::csptr memory,
+Process::Process(Elf::Object::sptr exec, Reader::sptr memory,
                   const PathReplacementList &prl, Dwarf::ImageCache &cache)
     : entry(0)
     , interpBase(0)

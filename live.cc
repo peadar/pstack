@@ -75,6 +75,7 @@ LiveProcess::resume(lwpid_t pid)
     kill(pid, SIGCONT);
     if (ptrace(PT_DETACH, pid, caddr_t(1), 0) != 0)
         std::clog << "failed to detach from process " << pid << ": " << strerror(errno) << "\n";
+    dynamic_cast<CacheReader&>(*io).flush();
     if (verbose >= 1) {
         timeval tv;
         gettimeofday(&tv, nullptr);

@@ -151,13 +151,13 @@ public:
     Dwarf::ImageCache &imageCache;
     std::map<Elf::Addr, Elf::Object::sptr> objects;
     void processAUXV(const Reader &);
-    Reader::csptr io;
+    Reader::sptr io;
 
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) = 0;
     void addElfObject(Elf::Object::sptr obj, Elf::Addr load);
     std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>  findObject(Elf::Addr addr) const;
     Dwarf::Info::sptr getDwarf(Elf::Object::sptr);
-    Process(Elf::Object::sptr exec, Reader::csptr memory, const PathReplacementList &prl, Dwarf::ImageCache &cache);
+    Process(Elf::Object::sptr exec, Reader::sptr memory, const PathReplacementList &prl, Dwarf::ImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
     virtual void findLWPs() = 0;

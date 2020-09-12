@@ -204,6 +204,7 @@ class CacheReader : public Reader {
     mutable std::list<Page *> pages;
     Page *getPage(off_t pageoff) const;
 public:
+    void flush();
     virtual size_t read(off_t off, size_t count, char *ptr) const override;
     virtual void describe(std::ostream &os) const override {
         // this must be the same as the underlying stream: we sometimes rely on the

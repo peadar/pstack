@@ -156,10 +156,17 @@ CacheReader::CacheReader(Reader::csptr upstream_)
 {
 }
 
+void
+CacheReader::flush() {
+    std::list<Page *> clearpages;
+    std::swap(pages, clearpages);
+    for (auto &i : clearpages)
+        delete i;
+}
+
 CacheReader::~CacheReader()
 {
-    for (auto &i : pages)
-        delete i;
+    flush();
 }
 
 CacheReader::Page *
