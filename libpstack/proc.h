@@ -175,8 +175,16 @@ public:
     std::ostream &dumpFrameText(std::ostream &, const PrintableFrame &, Dwarf::StackFrame *) const;
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &) const;
     template <typename T> void listThreads(const T &);
+
+
+    // find address of named symbol in the process.
     Elf::Addr findSymbol(const char *symbolName, bool includeDebug,
           std::function<bool(Elf::Addr, const Elf::Object::sptr &)> matcher = [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
+
+    // find symbol data of named symbol in the process.
+    // like findSymbol, but include the library and that library's load address.
+    std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr> findSymbolDetail(const char *name, bool includeDebug,
+        std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match = [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
     virtual ~Process();
     virtual void load(const PstackOptions &);
     virtual pid_t getPID() const = 0;

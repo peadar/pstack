@@ -763,8 +763,8 @@ Process::findSegment(Elf::Addr addr) const
     return std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>();
 }
 
-Elf::Addr
-Process::findSymbol(const char *name, bool includeDebug,
+std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+Process::findSymbolDetail(const char *name, bool includeDebug,
         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
 {
     for (auto &loaded : objects) {
@@ -772,17 +772,24 @@ Process::findSymbol(const char *name, bool includeDebug,
            continue;
         auto sym = loaded.second->findDynamicSymbol(name);
         if (sym) {
-           return sym.symbol.st_value + loaded.first;
+           return std::make_tuple(loaded.second, loaded.first, sym.symbol.st_value + loaded.first);
         }
         if (includeDebug) {
            auto sym = loaded.second->findDebugSymbol(name);
            if (sym)
-              return sym.symbol.st_value + loaded.first;
+              return std::make_tuple(loaded.second, loaded.first, sym.symbol.st_value + loaded.first);
         }
     }
-    Exception e;
-    e << "symbol " << name << " not found";
-    throw e;
+    throw (Exception() << "symbol " << name << " not found");
+}
+
+Elf::Addr
+Process::findSymbol(const char *name, bool includeDebug,
+        std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
+{
+    auto info = findSymbolDetail(name, includeDebug, match);
+    return std::get<2>(info);
+
 }
 
 Process::~Process()
