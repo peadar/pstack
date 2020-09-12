@@ -22,8 +22,10 @@ static BoolPrinter boolPrinter;
 template<>
 void PythonPrinter<3>::findInterpHeadFallback() {
     libpython = nullptr;
-    auto addr = proc.findSymbol("_PyRuntime", false);
-    if (addr == 0)
+
+    Elf::Addr pyRuntime;
+    std::tie(libpython, libpythonAddr, pyRuntime) = proc.findSymbolDetail("_PyRuntime", false);
+    if (pyRuntime == 0)
        return;
 #if 0
     typedef struct pyruntimestate {
@@ -76,10 +78,10 @@ WANT THIS-> PyInterpreterState *head;
 
     } _PyRuntimeState;
 #endif
-    interp_head = addr + sizeof(int) * 4  + sizeof(void *)*2;
+    interp_head = pyRuntime + sizeof(int) * 4  + sizeof(void *)*2;
     if (verbose)
        *debug << "python library is " << *libpython->io
-          << ", _PyRuntime at " << addr
+          << ", _PyRuntime at " << pyRuntime
           << ", interp head is " << interp_head << std::endl;
 }
 
