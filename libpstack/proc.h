@@ -132,12 +132,16 @@ struct Lwp {
 
 typedef std::vector<std::pair<std::string, std::string>> PathReplacementList;
 struct PrintableFrame;
+
+
+struct ProcessLocation {
+};
+
 class Process : public ps_prochandle {
     Elf::Addr findRDebugAddr();
     Elf::Addr entry;
     Elf::Addr interpBase;
     void loadSharedObjects(Elf::Addr);
-    bool isStatic;
     Elf::Addr vdsoBase;
 
 protected:

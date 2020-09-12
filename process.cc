@@ -24,7 +24,6 @@ Process::Process(Elf::Object::sptr exec, Reader::sptr memory,
                   const PathReplacementList &prl, Dwarf::ImageCache &cache)
     : entry(0)
     , interpBase(0)
-    , isStatic(false)
     , vdsoBase(0)
     , agent(nullptr)
     , execImage(std::move(exec))
@@ -51,7 +50,7 @@ Process::load(const PstackOptions &options)
         throw (Exception() << "no executable image located for process");
 
     Elf::Addr r_debug_addr = findRDebugAddr();
-    isStatic = r_debug_addr == 0 || r_debug_addr == Elf::Addr(-1);
+    bool isStatic = r_debug_addr == 0 || r_debug_addr == Elf::Addr(-1);
     if (isStatic)
         addElfObject(execImage, 0);
     else
