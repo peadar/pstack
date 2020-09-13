@@ -489,6 +489,7 @@ private:
     mutable ARanges aranges; // maps starting address to length + unit offset.
     bool haveLines;
     bool haveARanges;
+    mutable bool unitRangesCached = false;
 };
 
 /*

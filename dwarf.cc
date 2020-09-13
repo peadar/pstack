@@ -338,9 +338,37 @@ Info::lookupUnit(Elf::Addr addr) const {
         arangesh = nullptr;
     }
     auto it = aranges.ranges.upper_bound(addr);
-    if (it == aranges.ranges.end() || it->first - it->second.first > addr)
-        return nullptr;
-    return getUnit(it->second.second);
+    if (it != aranges.ranges.end() && it->first - it->second.first <= addr)
+        return getUnit(it->second.second);
+
+    if (!unitRangesCached) {
+        // Clang does not add debug_aranges.  If we fail to find the unit via
+        // the aranges, walk through all the units, and check out their
+        // DW_AT_range attribute, and fold its content into the aranges data.
+        unitRangesCached = true;
+        for (auto u : getUnits()) {
+            auto root = u->root();
+            auto lowpc = root.attribute(DW_AT_low_pc);
+            auto highpc = root.attribute(DW_AT_high_pc);
+            auto ranges = root.attribute(DW_AT_ranges);
+            if (lowpc.valid() && highpc.valid()) {
+                aranges.ranges[uintmax_t(highpc)] = std::make_pair(uintmax_t(highpc) - uintmax_t(lowpc), u->offset);
+            }
+            if (ranges.valid()) {
+                auto rs = rangesAt(uintmax_t(ranges));
+                for (auto r : rs) {
+                    aranges.ranges[r.second] = std::make_pair(r.first, u->offset);
+                }
+            }
+        }
+    }
+
+    // Try again now we've added all the unit ranges.
+    it = aranges.ranges.upper_bound(addr);
+    if (it != aranges.ranges.end() && it->first - it->second.first <= addr)
+        return getUnit(it->second.second);
+    return nullptr;
+
 }
 
 Info::~Info() = default;
@@ -1128,17 +1156,6 @@ sourceFromAddrInUnit(const Unit::sptr &unit, Elf::Addr addr,
     return false;
 }
 
-template<typename T>
-std::vector<std::pair<string, int>>
-sourceFromAddrInUnits(const T &units, uintmax_t addr) {
-    std::vector<std::pair<string, int>> info;
-    for (const auto &unit : units)
-        if (sourceFromAddrInUnit(unit, addr, info))
-            break;
-    return info;
-}
-
-
 std::vector<std::pair<std::string, int>>
 Info::sourceFromAddr(uintmax_t addr) const
 {
@@ -1147,12 +1164,9 @@ Info::sourceFromAddr(uintmax_t addr) const
     if (!haveLines)
         return info;
 
-    if (hasARanges()) {
-        const auto &unit = lookupUnit(addr);
-        if (unit)
-            sourceFromAddrInUnit(unit, Elf::Addr(addr), info);
-    } else {
-        sourceFromAddrInUnits(getUnits(), addr);
+    const auto &unit = lookupUnit(addr);
+    if (unit) {
+        sourceFromAddrInUnit(unit, Elf::Addr(addr), info);
     }
     return info;
 }

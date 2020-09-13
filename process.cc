@@ -230,36 +230,24 @@ struct PrintableFrame {
         if (frame->elf == nullptr)
             return;
         Elf::Addr objIp = frame->scopeIP() - frame->elfReloc;
-        Dwarf::DIE function;
-
-        if (frame->dwarf->hasARanges()) {
-            Dwarf::Unit::sptr u = frame->dwarf->lookupUnit(objIp);
-            if (u)
-                function = Dwarf::findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram, u->root());
-        } else {
-            // no aranges - try each dwarf unit in turn. (This seems to happen
-            // for single-unit exe's only, so it's no big loss)
-            for (const auto &u : frame->dwarf->getUnits()) {
-                function = Dwarf::findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram, u->root());
-                break;
-            }
-        }
-
-        if (function) {
-            frame->function = function;
-            std::ostringstream sos;
-            ::dieName(sos, function);
-            this->dieName = sos.str();
-
-            auto lowpc = function.attribute(Dwarf::DW_AT_low_pc);
-            if (lowpc.valid())
-                functionOffset = objIp - uintmax_t(lowpc);
-            while( function ) {
-               auto inl = Dwarf::findEntryForAddr(objIp, Dwarf::DW_TAG_inlined_subroutine, function);
-               if (!inl)
-                  break;
-               inlined.push_back(inl);
-               function = inl;
+        Dwarf::Unit::sptr u = frame->dwarf->lookupUnit(objIp);
+        if (u) {
+            Dwarf::DIE function = Dwarf::findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram, u->root());
+            if (function) {
+                frame->function = function;
+                std::ostringstream sos;
+                ::dieName(sos, function);
+                this->dieName = sos.str();
+                auto lowpc = function.attribute(Dwarf::DW_AT_low_pc);
+                if (lowpc.valid())
+                    functionOffset = objIp - uintmax_t(lowpc);
+                while (function) {
+                   auto inl = Dwarf::findEntryForAddr(objIp, Dwarf::DW_TAG_inlined_subroutine, function);
+                   if (!inl)
+                      break;
+                   inlined.push_back(inl);
+                   function = inl;
+                }
             }
         }
 
