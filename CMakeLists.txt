@@ -57,7 +57,7 @@ if (Python3_Development_FOUND OR Python2_Development_FOUND)
    set(pysrc python.cc)
 endif()
 
-if (Python3_Development_FOUND)
+if (False AND Python3_Development_FOUND)
    message(STATUS  "Python3_INCLUDE_DIRS are ${Python3_INCLUDE_DIRS}")
    set(pysrc ${pysrc} python3.cc)
    add_definitions("-DWITH_PYTHON3")
