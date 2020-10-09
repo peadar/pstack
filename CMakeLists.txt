@@ -118,7 +118,7 @@ install(TARGETS ${PSTACK_BIN} canal DESTINATION bin)
 install(TARGETS dwelf procman DESTINATION lib${LIB_SUFFIX})
 install(FILES ${CMAKE_SOURCE_DIR}/pstack.1 DESTINATION share/man/man1 RENAME ${PSTACK_BIN}.1 )
 install(DIRECTORY libpstack DESTINATION include)
-install(CODE "execute_process (COMMAND setcap cap_sys_ptrace+ep ${CMAKE_INSTALL_PREFIX}/bin/${PSTACK_BIN})")
+install(CODE "execute_process (COMMAND setcap cap_sys_ptrace+ep ${DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/${PSTACK_BIN})")
 
 
 add_test(NAME args COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/args-test.py)
