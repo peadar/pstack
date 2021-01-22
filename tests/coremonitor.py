@@ -21,7 +21,10 @@ class CoreMonitor( object ):
           self.exe = os.path.basename( args[0] )
           ( self.input, self.output ) = p.communicate()
       self.corefile = self.core_pattern.replace( "%e", self.exe )
-      self.corefile = self.corefile.replace( "%p", "%d" % self.pid )
+      if '%p' in self.core_pattern:
+          self.corefile = self.corefile.replace( "%p", "%d" % self.pid )
+      elif open("/proc/sys/kernel/core_uses_pid").read() == "1\n":
+          self.corefile = "%s.%d" % (self.corefile, self.pid)
       self.corefile = self.corefile.replace( "%t", "*" )
       print("expected core %s" % self.corefile)
 
