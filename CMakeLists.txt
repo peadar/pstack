@@ -118,8 +118,11 @@ install(TARGETS ${PSTACK_BIN} canal DESTINATION bin)
 install(TARGETS dwelf procman DESTINATION lib${LIB_SUFFIX})
 install(FILES ${CMAKE_SOURCE_DIR}/pstack.1 DESTINATION share/man/man1 RENAME ${PSTACK_BIN}.1 )
 install(DIRECTORY libpstack DESTINATION include)
-install(CODE "execute_process (COMMAND setcap cap_sys_ptrace+ep ${DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/${PSTACK_BIN} || true)")
-
+install(CODE "execute_process (COMMAND setcap cap_sys_ptrace+ep ${DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/${PSTACK_BIN} RESULT_VARIABLE ret)
+if (NOT ret EQUAL \"0\")
+   message(\"(setcap failed - you might need to use sudo to use pstack: \${ret})\")
+endif()
+")
 
 add_test(NAME args COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/args-test.py)
 add_test(NAME badfp COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/badfp-test.py)
