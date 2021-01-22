@@ -266,3 +266,31 @@ MmapReader::readString(off_t offset) const {
 MmapReader::~MmapReader() {
    munmap(base, len);
 }
+
+OffsetReader::OffsetReader(Reader::csptr upstream_, off_t offset_, off_t length_)
+    : upstream(upstream_)
+    , offset(offset_)
+{
+    for (;;) {
+        auto orReader = dynamic_cast<const OffsetReader *>(upstream.get());
+        if (!orReader)
+            break;
+        if (verbose > 2)
+            *debug << "optimize: collapse OR reader : "
+                << upstream.get() << "->" << orReader->upstream.get() << "\n";
+        offset += orReader->offset;
+        upstream = orReader->upstream;
+        if (length_ != std::numeric_limits<off_t>::max())
+            length -= orReader->offset;
+    }
+    length = length_ == std::numeric_limits<off_t>::max() ? upstream->size() - offset : length_;
+}
+
+size_t
+OffsetReader:: read(off_t off, size_t count, char *ptr) const {
+    if (off > length)
+       throw Exception() << "read past end of object " << *this;
+    if (off + off_t(count) > length)
+       count = length - off;
+    return upstream->read(off + offset, count, ptr);
+}

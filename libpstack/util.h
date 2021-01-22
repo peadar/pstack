@@ -251,19 +251,9 @@ public:
     std::string readString(off_t absoff) const override {
         return upstream->readString(absoff + offset);
     }
-    virtual size_t read(off_t off, size_t count, char *ptr) const override {
-        if (off > length)
-           throw Exception() << "read past end of object " << *this;
-        if (off + off_t(count) > length)
-           count = length - off;
-        return upstream->read(off + offset, count, ptr);
-    }
-    OffsetReader(Reader::csptr upstream_, off_t offset_,
-          off_t length_ = std::numeric_limits<off_t>::max())
-       : upstream(upstream_)
-       , offset(offset_)
-       , length(length_ == std::numeric_limits<off_t>::max() ? upstream->size() - offset : length_)
-    { }
+    virtual size_t read(off_t off, size_t count, char *ptr) const override;
+    OffsetReader(Reader::csptr upstream_, off_t offset_, off_t length_ =
+                 std::numeric_limits<off_t>::max());
     void describe(std::ostream &os) const override {
         os << *upstream << "[" << offset << "," << offset + length << "]";
     }
