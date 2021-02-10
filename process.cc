@@ -617,6 +617,8 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
         if (pframe.functionOffset != std::numeric_limits<Elf::Addr>::max())
             os << "+" << pframe.functionOffset;
         os << " in " << stringify(*frame->elf->io);
+        if (verbose)
+           os << "@0x" << std::hex << frame->rawIP() - frame->elfReloc << std::dec;
         if (src.first != "")
            os << " at " << src.first << ":" << std::dec << src.second;
     } else {
