@@ -79,12 +79,12 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
     return os;
 }
 
-template<int V> bool doPy(Process &proc, std::ostream &o, const PstackOptions &options) {
+template<int V> bool doPy(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules) {
     try {
         PythonPrinter<V> printer(proc, o, options);
         if (!printer.interpFound())
             return false;
-        printer.printStacks();
+        printer.printInterpreters(showModules);
     }
     catch (...) {
         return false;
@@ -105,10 +105,11 @@ emain(int argc, char **argv)
 
 #if defined(WITH_PYTHON)
     bool python = false;
+    bool pythonModules = false;
 #endif
     bool coreOnExit = false;
 
-    while ((c = getopt(argc, argv, "F:b:d:CD:hjsVvag:ptz:")) != -1) {
+    while ((c = getopt(argc, argv, "F:b:d:CD:hjmsVvag:ptz:")) != -1) {
         switch (c) {
         case 'F': g_openPrefix = optarg;
                   break;
@@ -145,6 +146,13 @@ emain(int argc, char **argv)
         case 'b':
             sleepTime = strtod(optarg, nullptr);
             break;
+        case 'm':
+#if defined(WITH_PYTHON)
+            pythonModules = true;
+#else
+            std::clog << "no python support compiled in" << std::endl;
+#endif
+            break;
         case 'p':
 #if defined(WITH_PYTHON)
             python = true;
@@ -179,7 +187,7 @@ emain(int argc, char **argv)
 #if defined(WITH_PYTHON)
                    if (python) {
 #ifdef WITH_PYTHON2
-                       if (python && doPy<2>(proc, std::cout, options))
+                       if (python && doPy<2>(proc, std::cout, options, pythonModules))
                            return;
 #endif
 #ifdef WITH_PYTHON3
