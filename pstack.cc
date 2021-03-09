@@ -80,6 +80,7 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
 }
 
 template<int V> bool doPy(Process &proc, std::ostream &o, const PstackOptions &options) {
+#ifdef WITH_PYTHON
     try {
         PythonPrinter<V> printer(proc, o, options);
         if (!printer.interpFound())
@@ -90,6 +91,9 @@ template<int V> bool doPy(Process &proc, std::ostream &o, const PstackOptions &o
         return false;
     }
     return true;
+#else
+	return false;
+#endif
 }
 
 int
