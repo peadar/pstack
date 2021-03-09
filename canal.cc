@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 #include <sys/types.h>
+#include <map>
 
 #include "libpstack/proc.h"
 #include "libpstack/elf.h"
@@ -50,7 +51,7 @@ struct ListedSymbol {
     Elf::Sym sym;
     Elf::Off objbase;
     string name;
-    size_t count;
+    mutable size_t count;
     string objname;
     ListedSymbol(const Elf::Sym &sym_, Elf::Off objbase_, string name_, string object)
         : sym(sym_)
@@ -62,6 +63,52 @@ struct ListedSymbol {
     Elf::Off memaddr() const { return  sym.st_value + objbase; }
 };
 
+class SymbolStore {
+    std::map<Elf::Off, ListedSymbol> store_;
+public:
+
+    void add(ListedSymbol symbol) {
+        store_.emplace(symbol.memaddr() + symbol.sym.st_size, symbol);
+    }
+
+    std::tuple<bool, const ListedSymbol*> find(Elf::Off address) const {
+        auto pos = store_.lower_bound(address);
+        auto sym = &pos->second;
+        if (pos != store_.end() && match(address, sym)) {
+            return std::tuple(true, sym);
+        }
+        return std::tuple(false, nullptr);
+    }
+
+    std::vector<ListedSymbol> flatten() const {
+        std::vector<ListedSymbol> retv;
+        retv.reserve(store_.size());
+        for(const auto & item : store_) {
+            retv.emplace_back( item.second );
+        }
+        return retv;
+    }
+protected:
+   virtual bool match(Elf::Off address, const ListedSymbol * sym) const =0;
+};
+
+class OffsetFreeSymbolStore final: public SymbolStore {
+public:
+    bool match(Elf::Off address, const ListedSymbol * sym) const override {
+      return sym->memaddr() <= address && sym->memaddr() + sym->sym.st_size > address;
+    }
+
+};
+
+class OffsetBoundSymbolStore final: public SymbolStore {
+   const Elf::Off offset_;
+public:
+    OffsetBoundSymbolStore(Elf::Addr offset): offset_(offset) {}
+    bool match(Elf::Off address, const ListedSymbol * sym) const override {
+       return sym->memaddr() + offset_ == address;
+    }
+};
+
 class Usage {};
 
 bool operator < (const ListedSymbol &sym, Elf::Off addr) {
@@ -69,8 +116,6 @@ bool operator < (const ListedSymbol &sym, Elf::Off addr) {
 }
 
 static const char *virtpattern = "_ZTV*"; /* wildcard for all vtbls */
-static bool compareSymbolsByAddress(const ListedSymbol &l, const ListedSymbol &r)
-    { return l.memaddr() < r.memaddr(); }
 static bool compareSymbolsByFrequency(const ListedSymbol &l, const ListedSymbol &r)
     { return l.count > r.count; }
 
@@ -245,15 +290,17 @@ mainExcept(int argc, char *argv[])
     if (patterns.empty())
         patterns.push_back(virtpattern);
 
-    vector<ListedSymbol> listed;
+    OffsetFreeSymbolStore freeStore;
+    OffsetBoundSymbolStore boundStore(symOffset);
+    SymbolStore & store = symOffset > -1 ? static_cast<SymbolStore&>(boundStore) : freeStore;
     for (auto &loaded : process->objects) {
         size_t count = 0;
 
-        auto findSymbols = [&count, verbose, showsyms, &listed, &patterns, &loaded]( auto &table ) {
+        auto findSymbols = [&count, verbose, showsyms, &store, &patterns, &loaded]( auto &table ) {
            for (const auto &sym : table) {
                for (auto &pattern : patterns) {
                    if (globmatch(pattern, sym.name)) {
-                       listed.push_back(ListedSymbol(sym.symbol, loaded.first,
+                       store.add(ListedSymbol(sym.symbol, loaded.first,
                                 sym.name, stringify(*loaded.second->io)));
                        if (verbose > 1 || showsyms)
                           std::cout << sym.name << "\n";
@@ -271,7 +318,6 @@ mainExcept(int argc, char *argv[])
     }
     if (showsyms)
        exit(0);
-    sort(listed.begin() , listed.end() , compareSymbolsByAddress);
 
     // Now run through the corefile, searching for virtual objects.
     Elf::Off filesize = 0;
@@ -279,8 +325,8 @@ mainExcept(int argc, char *argv[])
 #ifdef WITH_PYTHON
     PythonPrinter<2> py(*process, std::cout, PstackOptions());
 #endif
+    std::vector<Elf::Off> data;
     for (auto &hdr : core->getSegments(PT_LOAD)) {
-        Elf::Off p;
         filesize += hdr.p_filesz;
         memsize += hdr.p_memsz;
         int seg_count = 0;
@@ -300,11 +346,16 @@ mainExcept(int argc, char *argv[])
                 }
             }
         } else {
-            for (auto loc = hdr.p_vaddr; loc < hdr.p_vaddr + hdr.p_filesz; loc += sizeof p) {
+            const size_t step = sizeof(Elf::Off);
+            data.resize(hdr.p_filesz/step);
+            auto n = process->io->read(hdr.p_vaddr, hdr.p_filesz, reinterpret_cast<char*>(data.data()));
+            data.resize(n / step);
+            auto loc=hdr.p_vaddr;
+            for ( auto it=data.begin(); it != data.end(); ++it, loc+=step) {
+                const auto & p=*it;
                 // log a '.' every megabyte.
                 if (verbose && (loc - hdr.p_vaddr) % (1024 * 1024) == 0)
                     clog << '.';
-                process->io->readObj(loc, &p);
                 if (searchaddrs.size()) {
                     for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
                         if (p >= range->first && p < range->second && (p % 4 == 0)) {
@@ -313,17 +364,13 @@ mainExcept(int argc, char *argv[])
                         }
                     }
                 } else {
-                    auto found = lower_bound(listed.begin(), listed.end(), p);
-                    if (found != listed.end() &&
-                            (symOffset != -1
-                                ? found->memaddr() + symOffset == p
-                                : found->memaddr() <= p && found->memaddr() +
-                                               found->sym.st_size > p)) {
+                    auto [found, sym] = store.find(p);
+                    if (found) {
                         if (showaddrs)
                             cout
-                                << found->name << " 0x" << std::hex << loc
-                                << std::dec <<  " ... size=" << found->sym.st_size
-                                << ", diff=" << p - found->memaddr() << endl;
+                                << sym->name << " 0x" << std::hex << loc
+                                << std::dec <<  " ... size=" << sym->sym.st_size
+                                << ", diff=" << p - sym->memaddr() << endl;
 #if 0 && WITH_PYTHON
                         if (doPython) {
                             std::cout << "pyo " << Elf::Addr(loc) << " ";
@@ -332,7 +379,7 @@ mainExcept(int argc, char *argv[])
                             std::cout << "\n";
                         }
 #endif
-                        found->count++;
+                        sym->count++;
                         seg_count++;
                     }
                 }
@@ -346,10 +393,10 @@ mainExcept(int argc, char *argv[])
     if (verbose)
         *debug << "core file contains " << filesize << " out of "
            << memsize << " bytes of memory\n";
+    auto histogram = store.flatten();
+    sort(histogram.begin(), histogram.end(), compareSymbolsByFrequency);
 
-    sort(listed.begin() , listed.end() , compareSymbolsByFrequency);
-
-    for (auto &i : listed)
+    for (auto &i : histogram)
         if (i.count)
             cout << dec << i.count << " " << i.name << " ( from " << i.objname << ")" << endl;
     return 0;
