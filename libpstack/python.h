@@ -52,9 +52,9 @@ struct PythonPrinter {
 
     PythonPrinter(Process &proc_, std::ostream &os_, const PstackOptions &);
     const char *prefix() const;
-    void printStacks();
+    void printInterpreters(bool withModules);
     Elf::Addr printThread(Elf::Addr);
-    Elf::Addr printInterp(Elf::Addr);
+    Elf::Addr printInterp(Elf::Addr, bool withModules);
 
     Process &proc;
     std::ostream &os;
