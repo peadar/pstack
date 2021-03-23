@@ -1148,7 +1148,7 @@ sourceFromAddrInUnit(const Unit::sptr &unit, Elf::Addr addr,
                 continue;
             auto next = i+1;
             if (i->addr <= addr && next->addr > addr) {
-                info.emplace_back(i->file->name, i->line);
+                info.emplace_back(verbose ? i->file->directory + "/" + i->file->name : i->file->name, i->line);
                 return true;
             }
         }

@@ -580,9 +580,9 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
        auto lineinfo = i->getUnit()->getLines();
        if (lineinfo) {
           os << " at " << src.first << ":" << src.second;
-          src = std::make_pair(
-                lineinfo->files[intmax_t( i->attribute(Dwarf::DW_AT_call_file))].name,
-                intmax_t(i->attribute(Dwarf::DW_AT_call_line)));
+          auto &fileEnt = lineinfo->files[intmax_t(i->attribute(Dwarf::DW_AT_call_file))];
+          const auto &name = verbose ? fileEnt.directory + "/" + fileEnt.name : fileEnt.name;
+          src = std::make_pair( name, intmax_t(i->attribute(Dwarf::DW_AT_call_line)));
           os << "\n";
        }
     }
