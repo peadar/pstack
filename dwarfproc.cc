@@ -5,6 +5,7 @@
 #include <cassert>
 #include <limits>
 #include <stack>
+extern std::ostream & operator << (std::ostream &os, const Dwarf::DIE &dieo);
 
 namespace Dwarf {
 void
