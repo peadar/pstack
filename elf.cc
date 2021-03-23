@@ -165,14 +165,14 @@ Object::CommonSections::CommonSections(Object *o):
 {}
 
 
-Object::Object(ImageCache &cache, Reader::csptr io_)
+Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
     : io(std::move(io_))
     , notes(this)
     , elfHeader(io->readObj<Ehdr>(0))
     , imageCache(cache)
+    , debugLoaded(isDebug) // don't attempt to load separate debug info for a debug ELF.
     , lastSegmentForAddress(nullptr)
 {
-    debugLoaded = false;
     int i;
     size_t off;
 
@@ -371,7 +371,8 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
 #ifdef WITH_LZMA
         if (commonSections->gnu_debugdata)
             debugData = make_shared<Object>(imageCache,
-                    make_shared<const LzmaReader>(commonSections->gnu_debugdata.io));
+                    make_shared<const LzmaReader>(commonSections->gnu_debugdata.io),
+                    true);
 #else
         static bool warned = false;
         if (!warned) {
@@ -612,12 +613,12 @@ Section::Section(const Reader::csptr &image, Off off)
 }
 
 Object::sptr
-ImageCache::getImageForName(const string &name) {
+ImageCache::getImageForName(const string &name, bool isDebug) {
     auto res = getImageIfLoaded(name);
     if (res != nullptr) {
         return res;
     }
-    auto item = make_shared<Object>(*this, std::make_shared<MmapReader>(name));
+    auto item = make_shared<Object>(*this, std::make_shared<MmapReader>(name), isDebug);
     // don't cache negative entries: assign into the cache after we've constructed:
     // a failure to load the image will throw.
     cache[name] = item;
@@ -657,7 +658,7 @@ ImageCache::getDebugImage(const string &name) {
     }
     for (const auto &dir : globalDebugDirectories.dirs) {
         try {
-           return getImageForName(stringify(dir, "/", name));
+           return getImageForName(stringify(dir, "/", name), true);
         }
         catch (const std::exception &ex) {
             continue;

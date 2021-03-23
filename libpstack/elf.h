@@ -251,7 +251,7 @@ public:
 
     // construct/destruct. Note you will generally need to use make_shared to
     // create an Object
-    Object(ImageCache &, Reader::csptr);
+    Object(ImageCache &, Reader::csptr, bool isDebug=false);
     ~Object();
 
     // Accessing sections.
@@ -456,7 +456,7 @@ public:
     ImageCache();
     virtual ~ImageCache();
     virtual void flush(Object::sptr);
-    Object::sptr getImageForName(const std::string &name);
+    Object::sptr getImageForName(const std::string &name, bool isDebug = false);
     Object::sptr getImageIfLoaded(const std::string &name);
     Object::sptr getDebugImage(const std::string &name);
 };
