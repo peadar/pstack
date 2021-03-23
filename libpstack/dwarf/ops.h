@@ -151,6 +151,7 @@ DWARF_OP(DW_OP_stack_value, 0x9f, 0)
 DWARF_OP(DW_OP_lo_user, 0xe0, 0)
 DWARF_OP(DW_OP_hi_user, 0xff, 0)
 DWARF_OP(DW_OP_GNU_entry_value, 0xf3, 0)
+DWARF_OP(DW_OP_GNU_parameter_ref, 0xfa, 0)
 DWARF_OP(DW_OP_entry_value, 0xa3, 0)
 
 // DWARF V3
