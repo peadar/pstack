@@ -51,7 +51,7 @@ static int
 openFileDirect(const std::string &name_)
 {
     auto fd = open(name_.c_str(), O_RDONLY);
-    if (verbose > 1) {
+    if (verbose > 2) {
        if (fd != -1)
           *debug << "opened " << name_ << ", fd=" << fd << std::endl;
        else
