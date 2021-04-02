@@ -674,7 +674,12 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
         // If we see the executable, just add it in and avoid going through the path
         // replacement work
         if (mapAddr == Elf::Addr(rDebug.r_map)) {
-            assert(map.l_addr == entry - execImage->getHeader().e_entry);
+            auto loadAddr = entry - execImage->getHeader().e_entry;
+            if (loadAddr != map.l_addr) {
+                *debug << "calculated load address for executable from process entrypoint ("
+                << std::hex << loadAddr << ") does not match link map (" << map.l_addr
+                << "). Trusting link-map\n" << std::dec;
+            }
             addElfObject(execImage, map.l_addr);
             continue;
         }
