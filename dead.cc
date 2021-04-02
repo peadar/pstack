@@ -185,27 +185,25 @@ CoreProcess::loadSharedObjectsFromFileNote()
             Elf::Off stroff = 0;
             auto entries = std::make_shared<OffsetReader>(data, sizeof header, header.count * sizeof (FileEntry));
             auto fileNames = std::make_shared<OffsetReader>(data, sizeof header + header.count * sizeof (FileEntry));
-	    uintptr_t totalSize = 0;
+            uintptr_t totalSize = 0;
             for (auto entry : ReaderArray<FileEntry>(*entries)) {
                 auto name = fileNames->readString(stroff);
                 stroff += name.size() + 1;
                 uintptr_t size = entry.end - entry.start;
                 totalSize += size;
-		if (verbose > 2) {
-
-                        *debug << "NT_FILE mapping " << name << " " << (void *)entry.start << " " << entry.end - entry.start << std::endl;
-		}
+                if (verbose > 2)
+                    *debug << "NT_FILE mapping " << name << " " << (void *)entry.start << " " << size << std::endl;
                 if (entry.fileOff == 0) {
                     try {
                         // Just try and load it like an ELF object.
-                        addElfObject(std::make_shared<Elf::Object>(imageCache, loadFile(name)), entry.start);
+                        addElfObject(imageCache.getImageForName(name), entry.start);
                     }
                     catch (...) {
                     }
                 }
             }
-	    if (verbose)
-		*debug << "total mapped file size: " << totalSize << std::endl;
+            if (verbose)
+                *debug << "total mapped file size: " << totalSize << std::endl;
             return true; // found an NT_FILE note, so success.
         }
     }
