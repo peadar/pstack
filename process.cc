@@ -661,10 +661,10 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
         // We were unable to read the link map.
         // The primary cause is that the core file is truncated.
         // Go do the Hail Mary version.
-        loadSharedObjectsFromFileNote();
-        return;
+        if (loadSharedObjectsFromFileNote())
+            return;
+        throw;
     }
-
 
     /* Iterate over the r_debug structure's entries, loading libraries */
     struct link_map map;

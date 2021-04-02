@@ -462,4 +462,8 @@ public:
 };
 
 } // Elf namespace
+
+#ifndef NT_FILE
+#define NT_FILE 0x46494c45
+#endif
 #endif /* Guard. */
