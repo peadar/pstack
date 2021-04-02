@@ -304,7 +304,13 @@ mainExcept(int argc, char *argv[])
                 // log a '.' every megabyte.
                 if (verbose && (loc - hdr.p_vaddr) % (1024 * 1024) == 0)
                     clog << '.';
-                process->io->readObj(loc, &p);
+                try {
+                    process->io->readObj(loc, &p);
+                }
+                catch (...) {
+                    *debug << "read failed\n";
+                    break;
+		}
                 if (searchaddrs.size()) {
                     for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
                         if (p >= range->first && p < range->second && (p % 4 == 0)) {

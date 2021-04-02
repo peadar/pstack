@@ -145,13 +145,18 @@ Process::processAUXV(const Reader &auxio)
             case AT_EXECFN: {
                 if (verbose > 2)
                    *debug << "auxv: AT_EXECFN=" << hdr << std::endl;
-                auto exeName = io->readString(hdr);
-                if (verbose >= 2)
-                    *debug << "filename from auxv: " << exeName << "\n";
-                if (!execImage) {
-                    execImage = imageCache.getImageForName(exeName);
-                    if (entry == 0)
-                       entry = execImage->getHeader().e_entry;
+                try {
+                    auto exeName = io->readString(hdr);
+                    if (verbose >= 2)
+                        *debug << "filename from auxv: " << exeName << "\n";
+                    if (!execImage) {
+                        execImage = imageCache.getImageForName(exeName);
+                        if (entry == 0)
+                           entry = execImage->getHeader().e_entry;
+                    }
+                }
+                catch (const Exception &ex) {
+                    *debug << "failed to read AT_EXECFN: " << ex.what() << std::endl;
                 }
 
                 break;
@@ -649,7 +654,17 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
 {
 
     struct r_debug rDebug;
-    io->readObj(rdebugAddr, &rDebug);
+    try {
+        io->readObj(rdebugAddr, &rDebug);
+    }
+    catch (const Exception &) {
+        // We were unable to read the link map.
+        // The primary cause is that the core file is truncated.
+        // Go do the Hail Mary version.
+        loadSharedObjectsFromFileNote();
+        return;
+    }
+
 
     /* Iterate over the r_debug structure's entries, loading libraries */
     struct link_map map;
