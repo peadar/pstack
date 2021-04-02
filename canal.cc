@@ -1,3 +1,11 @@
+/*
+ * Canal searches through core files looking for references to symbols.  The
+ * symbols can be provided by a glob style pattern, and defaults to a pattern
+ * that matches symbols associated with vtables.  So, by default, canal finds
+ * likely instances of classes with virtual methods in the process's address
+ * space, and can be useful to help identify memory leaks.
+ */
+
 #include <unistd.h>
 #include <signal.h>
 #include <fstream>
@@ -17,6 +25,7 @@
 
 using namespace std;
 
+// does "name" match the glob pattern "pattern"?
 static int
 globmatchR(const char *pattern, const char *name)
 {
