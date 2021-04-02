@@ -279,6 +279,7 @@ mainExcept(int argc, char *argv[])
 #ifdef WITH_PYTHON
     PythonPrinter<2> py(*process, std::cout, PstackOptions());
 #endif
+    long searchmatches = 0;
     for (auto &hdr : core->getSegments(PT_LOAD)) {
         Elf::Off p;
         filesize += hdr.p_filesz;
@@ -313,9 +314,12 @@ mainExcept(int argc, char *argv[])
 		}
                 if (searchaddrs.size()) {
                     for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
-                        if (p >= range->first && p < range->second && (p % 4 == 0)) {
-                            IOFlagSave _(cout);
-                            cout << "0x" << hex << loc << "\n";
+                        if (p >= range->first && p < range->second ) {
+			    searchmatches++;
+			    if (verbose) {
+				IOFlagSave _(cout);
+				cout << "0x" << hex << loc << "\n";
+			    }
                         }
                     }
                 } else {
@@ -352,6 +356,7 @@ mainExcept(int argc, char *argv[])
     if (verbose)
         *debug << "core file contains " << filesize << " out of "
            << memsize << " bytes of memory\n";
+    *debug << "search matched " << searchmatches << " items\n";
 
     sort(listed.begin() , listed.end() , compareSymbolsByFrequency);
 
