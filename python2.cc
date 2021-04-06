@@ -6,6 +6,17 @@ template<> std::set<const PythonTypePrinter<2> *> PythonTypePrinter<2>::all = st
 template<>
 char PythonTypePrinter<2>::pyBytesType[] = "PyString_Type";
 
+/**
+ * @brief Reads a Python2 string
+ * 
+ * @param r The reader used
+ * @param addr Address of PyStringObject
+ * @return std::string 
+ */
+template <> std::string readString<2>(const Reader &r, const Elf::Addr addr) {
+    return r.readString(addr + offsetof(PyBytesObject, ob_sval));
+}
+
 class BoolPrint : public PythonTypePrinter<2> {
     Elf::Addr print(const PythonPrinter<2> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         auto pio = (const PyIntObject *)pyo;

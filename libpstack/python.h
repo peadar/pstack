@@ -39,6 +39,7 @@ template <int V, typename T> T readPyObj(const Reader &r, off_t offset) {
     return r.readObj<VersionedType<V, T>>(offset).t;
 }
 
+template <int V> std::string readString(const Reader &r, const Elf::Addr addr);
 
 template <int V>
 class PythonTypePrinter {
