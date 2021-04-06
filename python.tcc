@@ -86,7 +86,7 @@ template<int PyV> class ModulePrinter : public PythonTypePrinter<PyV> {
 template<int PyV> class ListPrinter : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *po, const PyTypeObject *, Elf::Addr) const override {
         auto plo = reinterpret_cast<const PyListObject *>(po);
-        pc->os << "list: \n";
+        pc->os << "[ \n";
         auto size = std::min(((PyVarObject *)plo)->ob_size, Py_ssize_t(100));
         PyObject *objects[size];
         pc->proc.io->readObj(Elf::Addr(plo->ob_item), &objects[0], size);
@@ -94,10 +94,10 @@ template<int PyV> class ListPrinter : public PythonTypePrinter<PyV> {
         for (auto addr : objects) {
           pc->os << pc->prefix();
           pc->print(Elf::Addr(addr));
-          pc->os << "\n";
+          pc->os << ",\n";
         }
         pc->depth--;
-        pc->os << "\n";
+        pc->os << pc->prefix() << "]\n";
         return 0;
     }
     const char *type() const override { return "PyList_Type"; }
@@ -128,6 +128,27 @@ template <int PyV> class LongPrinter : public PythonTypePrinter<PyV> {
         return "PyLong_Type";
     }
     bool dupdetect() const override { return false; }
+};
+
+template <int PyV> class TuplePrinter : public PythonTypePrinter<PyV> {
+    Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr remoteAddr) const override {
+        PyVarObject pvo;
+        pc->proc.io->readObj(remoteAddr, &pvo);
+        pc->os << "(\n";
+        pc->depth++;
+        for (Py_ssize_t i = 0; i < pvo.ob_size; i++) {
+            PyObject *o;
+            pc->proc.io->readObj(remoteAddr + offsetof(PyTupleObject, ob_item) + i * sizeof(PyObject *), &o);
+            pc->os << pc->prefix();
+            pc->print(Elf::Addr(o));
+            pc->os << ",\n";
+        }
+        pc->depth--;
+        pc->os << pc->prefix();
+        pc->os << ")\n";
+    }
+    const char *type() const override {return "PyTuple_Type";}
+    bool dupdetect() const override {return true;}
 };
 
 template <int PyV>
@@ -266,6 +287,7 @@ PythonPrinter<PyV>::PythonPrinter(Process &proc_, std::ostream &os_, const Pstac
     static TypePrinter<PyV> typePrinter;
     static LongPrinter<PyV> longPrinter;
     static FramePrinter<PyV> framePrinter;
+    static TuplePrinter<PyV> tuplePrinter;
 
     for (auto ps : PythonTypePrinter<PyV>::all) {
         if (ps->type() == nullptr)
