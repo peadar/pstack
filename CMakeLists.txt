@@ -4,6 +4,8 @@ enable_testing()
 
 add_subdirectory(tests)
 
+option(PYTHON3 "Compile with experimental python 3 support" OFF)
+
 math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 set(PSTACK_BIN "pstack" CACHE STRING "Name of the 'pstack' binary")
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib" CACHE STRING "Rpath to install for binaries or the empty string")
@@ -13,8 +15,10 @@ option(TIDY "Run clang-tidy on the source" False)
 find_library(LTHREADDB NAMES thread_db PATHS (/usr/lib /usr/local/lib))
 find_package(LibLZMA)
 find_package(ZLIB)
-find_package(Python3 COMPONENTS Development)
 find_package(Python2 COMPONENTS Development)
+if (PYTHON3)
+   find_package(Python3 COMPONENTS Development)
+endif()
 
 find_package(Git)
 if (GIT_FOUND)
@@ -57,7 +61,7 @@ if (Python3_Development_FOUND OR Python2_Development_FOUND)
    set(pysrc python.cc)
 endif()
 
-if (False AND Python3_Development_FOUND)
+if (PYTHON3 AND Python3_Development_FOUND)
    message(STATUS  "Python3_INCLUDE_DIRS are ${Python3_INCLUDE_DIRS}")
    set(pysrc ${pysrc} python3.cc)
    add_definitions("-DWITH_PYTHON3")
@@ -106,7 +110,7 @@ else()
    message(WARNING "no LZMA support found")
 endif()
 
-if (NOT (Python3_Development_FOUND))
+if ((NOT (Python3_Development_FOUND)) AND PYTHON3)
    message(WARNING "no python3 support found")
 endif()
 

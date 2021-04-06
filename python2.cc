@@ -6,6 +6,17 @@ template<> std::set<const PythonTypePrinter<2> *> PythonTypePrinter<2>::all = st
 template<>
 char PythonTypePrinter<2>::pyBytesType[] = "PyString_Type";
 
+/**
+ * @brief Reads a Python2 string
+ * 
+ * @param r The reader used
+ * @param addr Address of PyStringObject
+ * @return std::string 
+ */
+template <> std::string readString<2>(const Reader &r, const Elf::Addr addr) {
+    return r.readString(addr + offsetof(PyBytesObject, ob_sval));
+}
+
 class BoolPrint : public PythonTypePrinter<2> {
     Elf::Addr print(const PythonPrinter<2> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         auto pio = (const PyIntObject *)pyo;
@@ -85,32 +96,6 @@ class IntPrint : public PythonTypePrinter<2> {
 
 };
 static IntPrint intPrinter;
-
-template<>
-void PythonPrinter<2>::findInterpHeadFallback() {
-    libpython = nullptr;
-    for (auto &o : proc.objects) {
-        std::string module = stringify(*o.second->io);
-        if (module.find("python") == std::string::npos)
-            continue;
-        auto image = o.second;
-        auto &syms = image->commonSections->debugSymbols;
-        for (auto sym : syms) {
-            if (sym.name.substr(0, 11) != "interp_head")
-                continue;
-            libpython = o.second;
-            libpythonAddr = o.first;
-            interp_head = libpythonAddr + sym.symbol.st_value;
-            break;
-        }
-        if (interp_head)
-            break;
-    }
-    if (libpython == nullptr)
-        throw Exception() << "No libpython found";
-    if (verbose)
-       *debug << "python2 library is " << *libpython->io << std::endl;
-}
 
 #include "python.tcc"
 

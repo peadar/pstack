@@ -49,7 +49,6 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
                 threadStacks.back().unwind(proc, regs);
                 tracedLwps.insert(threadStacks.back().info.ti_lid);
             }
-
             });
 
         for (auto &lwp : proc.lwps) {
@@ -79,17 +78,40 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
     return os;
 }
 
-template<int V> bool doPy(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules) {
+template<int V> bool doPy(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules, const PyInterpInfo &info) {
     try {
-        PythonPrinter<V> printer(proc, o, options);
+        PythonPrinter<V> printer(proc, o, options, info);
         if (!printer.interpFound())
             return false;
         printer.printInterpreters(showModules);
-    }
-    catch (...) {
+    } catch (...) {
         return false;
     }
     return true;
+}
+
+bool pystack(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules) {
+    PyInterpInfo info = getPyInterpInfo(proc);
+
+    if (info.versionHex < V2HEX(3, 0)) { // Python 2.x
+#ifdef WITH_PYTHON2
+    if (doPy<2>(proc, o, options, showModules, info))
+        return true;
+#else
+    std::clog << "pstack was compiled without python 2 support" << std::endl;
+    return false;
+#endif
+    } else { // Python 3.x
+
+#ifdef WITH_PYTHON3
+    if (doPy<3>(proc, o, options, showModules, info))
+        return true;
+#else
+    std::clog << "pstack was compiled without python 3 support" << std::endl;
+    return false;
+#endif
+    }
+    return false;
 }
 
 int
@@ -186,14 +208,10 @@ emain(int argc, char **argv)
                 while (!interrupted) {
 #if defined(WITH_PYTHON)
                    if (python) {
-#ifdef WITH_PYTHON2
-                       if (python && doPy<2>(proc, std::cout, options, pythonModules))
-                           return;
-#endif
-#ifdef WITH_PYTHON3
-                       doPy<3>(proc, std::cout, options);
-                       return;
-#endif
+                        if(pystack(proc, std::cout, options, pythonModules))
+                            return;
+                        
+                        std::clog << "-p specified but failed to print python stack trace" << std::endl;
                    }
 #endif
                    pstack(proc, std::cout, options);
