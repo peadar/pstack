@@ -1,3 +1,11 @@
+/*
+ * Canal searches through core files looking for references to symbols.  The
+ * symbols can be provided by a glob style pattern, and defaults to a pattern
+ * that matches symbols associated with vtables.  So, by default, canal finds
+ * likely instances of classes with virtual methods in the process's address
+ * space, and can be useful to help identify memory leaks.
+ */
+
 #include <unistd.h>
 #include <signal.h>
 #include <fstream>
@@ -17,6 +25,7 @@
 
 using namespace std;
 
+// does "name" match the glob pattern "pattern"?
 static int
 globmatchR(const char *pattern, const char *name)
 {
@@ -279,6 +288,7 @@ mainExcept(int argc, char *argv[])
 #ifdef WITH_PYTHON
     PythonPrinter<2> py(*process, std::cout, PstackOptions());
 #endif
+    long searchmatches = 0;
     for (auto &hdr : core->getSegments(PT_LOAD)) {
         Elf::Off p;
         filesize += hdr.p_filesz;
@@ -304,12 +314,21 @@ mainExcept(int argc, char *argv[])
                 // log a '.' every megabyte.
                 if (verbose && (loc - hdr.p_vaddr) % (1024 * 1024) == 0)
                     clog << '.';
-                process->io->readObj(loc, &p);
+                try {
+                    process->io->readObj(loc, &p);
+                }
+                catch (...) {
+                    *debug << "read failed\n";
+                    break;
+		}
                 if (searchaddrs.size()) {
                     for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
-                        if (p >= range->first && p < range->second && (p % 4 == 0)) {
-                            IOFlagSave _(cout);
-                            cout << "0x" << hex << loc << "\n";
+                        if (p >= range->first && p < range->second ) {
+			    searchmatches++;
+			    if (verbose) {
+				IOFlagSave _(cout);
+				cout << "0x" << hex << loc << "\n";
+			    }
                         }
                     }
                 } else {
@@ -346,6 +365,7 @@ mainExcept(int argc, char *argv[])
     if (verbose)
         *debug << "core file contains " << filesize << " out of "
            << memsize << " bytes of memory\n";
+    *debug << "search matched " << searchmatches << " items\n";
 
     sort(listed.begin() , listed.end() , compareSymbolsByFrequency);
 

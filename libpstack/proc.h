@@ -145,6 +145,7 @@ class Process : public ps_prochandle {
     Elf::Addr vdsoBase;
 
 protected:
+    virtual bool loadSharedObjectsFromFileNote() = 0;
     td_thragent_t *agent;
     Elf::Object::sptr execImage;
     Elf::Object::sptr vdsoImage;
@@ -225,6 +226,8 @@ public:
     virtual void load(const PstackOptions &) override;
     virtual void findLWPs() override;
     virtual pid_t getPID() const override;
+protected:
+    bool loadSharedObjectsFromFileNote() override;
 };
 
 class CoreProcess;
@@ -252,6 +255,8 @@ public:
     virtual void findLWPs() override;
     virtual void load(const PstackOptions &) override;
     virtual pid_t getPID() const override;
+protected:
+    bool loadSharedObjectsFromFileNote() override;
 };
 
 // RAII to stop a process.

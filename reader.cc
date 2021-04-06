@@ -51,7 +51,7 @@ static int
 openFileDirect(const std::string &name_)
 {
     auto fd = open(name_.c_str(), O_RDONLY);
-    if (verbose > 1) {
+    if (verbose > 2) {
        if (fd != -1)
           *debug << "opened " << name_ << ", fd=" << fd << std::endl;
        else
@@ -135,6 +135,12 @@ FileReader::read(off_t off, size_t count, char *ptr) const
             << " at " << off
             << " on " << *this
             << " failed: " << strerror(errno));
+    if (rc == 0)
+        throw (Exception()
+            << "read " << count
+            << " at " << off
+            << " on " << *this
+            << " hit unexpected EOF");
     return rc;
 }
 
@@ -142,13 +148,8 @@ void
 CacheReader::Page::load(const Reader &r, off_t offset_)
 {
     assert(offset_ % PAGESIZE == 0);
-    try {
-        len = r.read(offset_, PAGESIZE, data);
-        offset = offset_;
-    }
-    catch (std::exception &ex) {
-        len = 0;
-    }
+    len = r.read(offset_, PAGESIZE, data);
+    offset = offset_;
 }
 
 CacheReader::CacheReader(Reader::csptr upstream_)
@@ -192,9 +193,17 @@ CacheReader::getPage(off_t pageoff) const
     } else {
         p = new Page();
     }
-    p->load(*upstream, pageoff);
-    pages.push_front(p);
-    return p;
+    try {
+        p->load(*upstream, pageoff);
+        pages.push_front(p);
+        return p;
+    }
+    catch (...) {
+        // failed to load page - delete it, and continue with error.
+        delete p;
+        throw;
+    }
+
 }
 
 size_t
