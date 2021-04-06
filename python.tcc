@@ -5,6 +5,7 @@
 #include <stddef.h>
 
 #include "libpstack/dwarf.h"
+#include "libpstack/python.h"
 
 // This reimplements PyCode_Addr2Line
 template<int PyV> int
@@ -242,37 +243,18 @@ template <int PyV> bool PythonPrinter<PyV>::interpFound() const {
     return interp_head != 0;
 }
 
-template <int PyV> void PythonPrinter<PyV>::findInterpreter() {
-
-    // First search the ELF symbol table.
-    try {
-        auto interp_headp = proc.findSymbol("Py_interp_headp", false,
-                [this](Elf::Addr loadAddr, const Elf::Object::sptr &o) {
-                libpython = o;
-                libpythonAddr = loadAddr;
-                auto name = stringify(*o->io);
-                return name.find("python") != std::string::npos;
-                });
-        if (verbose)
-            *debug << "found interp_headp in ELF syms" << std::endl;
-        proc.io->readObj(interp_headp, &interp_head);
-        return;
-    }
-    catch (...) {
-    }
-    findInterpHeadFallback();
-}
 
 template <int PyV>
-PythonPrinter<PyV>::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOptions &options_)
+PythonPrinter<PyV>::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOptions &options_, const PyInterpInfo &info_)
     : proc(proc_)
     , os(os_)
     , depth(0)
-    , interp_head(0)
-    , libpython(nullptr)
+    , interp_head(info_.interpreterHead)
+    , libpython(info_.libpython)
+    , libpythonAddr(info_.libpythonAddr)
     , options(options_)
+    , info(info_)
 {
-    findInterpreter();
     if (!interpFound())
         return;
 

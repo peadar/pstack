@@ -1,5 +1,20 @@
+#ifndef PSTACK_PYTHON_H
+#define PSTACK_PYTHON_H
+
 #include "libpstack/elf.h"
 #include "libpstack/proc.h"
+
+// version to hex
+#define V2HEX(major, minor) ((major << 24) | (minor << 16))
+
+struct PyInterpInfo {
+    Elf::Object::sptr libpython;
+    Elf::Addr libpythonAddr;
+    Elf::Addr interpreterHead;
+    std::string version;
+    int versionHex;
+};
+
 template <int PyV> struct PythonPrinter;
 
 struct _object;
@@ -50,7 +65,7 @@ struct PythonPrinter {
     };
     mutable std::map<_typeobject *, std::unique_ptr<_typeobject, freetype>> types;
 
-    PythonPrinter(Process &proc_, std::ostream &os_, const PstackOptions &);
+    PythonPrinter(Process &proc_, std::ostream &os_, const PstackOptions &, const PyInterpInfo &info_);
     const char *prefix() const;
     void printInterpreters(bool withModules);
     Elf::Addr printThread(Elf::Addr);
@@ -64,9 +79,11 @@ struct PythonPrinter {
     Elf::Object::sptr libpython;
     Elf::Addr libpythonAddr;
     const PstackOptions &options;
+    const PyInterpInfo &info;
     std::map<const _typeobject *, const PythonTypePrinter<PyV> *> printers;
-    void findInterpreter();
     bool interpFound() const; // returns true if the printer could find the interpreter.
-    void findInterpHeadFallback();
 };
 bool pthreadTidOffset(const Process &proc, size_t *offsetp);
+PyInterpInfo getPyInterpInfo(const Process &proc);
+
+#endif

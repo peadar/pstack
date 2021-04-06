@@ -1,4 +1,134 @@
 #include "libpstack/python.h"
+#include <dlfcn.h>
+#include <string.h>
+#include <regex.h>
+
+static
+std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+getInterpHead(const Process &);
+
+template <int V>
+std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+getInterpHead(const Process &);
+
+PyInterpInfo
+getPyInterpInfo(const Process &proc) {
+    Elf::Object::sptr libpython;
+    Elf::Addr libpythonAddr;
+    Elf::Addr interpreterHead;
+    
+    std::tie(libpython, libpythonAddr, interpreterHead) = getInterpHead(proc);
+
+    std::string filename = libpython->io->filename();
+
+    auto index = filename.find("python");
+
+    if (filename.length() < index + 9) //index + len("pythonX.Y")
+        throw Exception() << "Can't parse python version from lib/exec name: " << filename;
+
+    char majorChar = filename[index + 6];
+    char minorChar = filename[index + 8];
+
+    if (!isdigit(majorChar) || !isdigit(minorChar))
+        throw Exception() << "lib/exec name doesn't match \"*pythonX.Y.*\" format";
+
+    int major = majorChar - '0';
+    int minor = minorChar - '0';
+
+    if (verbose)
+        std::clog << "python version is: " << major << "." << minor << std::endl;
+
+    return PyInterpInfo {
+        libpython, libpythonAddr, interpreterHead, 
+        "v" + std::to_string(major) + "." + std::to_string(minor),
+        V2HEX(major, minor)};
+}
+
+template <>
+std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+getInterpHead<2>(const Process &proc) {
+    for (auto &o : proc.objects) {
+        std::string module = stringify(*o.second->io);
+        if (module.find("python") == std::string::npos)
+            continue;
+        auto image = o.second;
+        auto &syms = image->commonSections->debugSymbols;
+        for (auto sym : syms) {
+            if (sym.name.substr(0, 11) != "interp_head")
+                continue;
+            auto libpython = o.second;
+            auto libpythonAddr = o.first;
+            auto interpHead = libpythonAddr + sym.symbol.st_value;
+            if (verbose)
+                *debug << "python2 library is " << *libpython->io << std::endl;
+            return std::make_tuple(libpython, libpythonAddr, interpHead);
+        }
+    }
+
+    throw Exception() << "No libpython2 found";
+}
+
+template <>
+std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+getInterpHead<3>(const Process &proc) {
+    Elf::Object::sptr libpython;
+    Elf::Addr libpythonAddr;
+    Elf::Addr _PyRuntime;
+
+    std::tie(libpython, libpythonAddr, _PyRuntime) = proc.findSymbolDetail("_PyRuntime", false);
+        
+    Elf::Addr interpHead = _PyRuntime + sizeof(int) * 2  + sizeof(void *)*2;
+
+    if (libpython == nullptr) {
+        if (verbose)
+            std::clog << "Python 3 interpreter not found" << std::endl;
+        throw Exception() << "No libpython3 found";
+    }
+
+    if (verbose)
+       *debug << "python3 library is " << *libpython->io << std::endl;
+    
+    return std::make_tuple(libpython, libpythonAddr, interpHead);
+}
+
+std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+getInterpHead(const Process &proc) {
+    try {
+        Elf::Object::sptr libpython;
+        Elf::Addr libpythonAddr;
+        Elf::Addr interpHead = proc.findSymbol("Py_interp_headp", false,
+                [&](Elf::Addr loadAddr, const Elf::Object::sptr &o) mutable {
+                    libpython = o;
+                    libpythonAddr = loadAddr;
+                    auto name = stringify(*o->io);
+                    return name.find("python") != std::string::npos;
+                });
+        if (verbose)
+            *debug << "found interp_headp in ELF syms" << std::endl;
+        // proc.io->readObj(interp_headp, &interp_head);
+        return std::make_tuple(libpython, libpythonAddr, interpHead);
+    }
+    catch (...) {
+        if (verbose)
+            std::clog << "Py_interp_headp symbol not found. Trying fallback" << std::endl;
+    }
+
+    try {
+        return getInterpHead<2>(proc);
+    } catch (...) {
+        if (verbose)
+            std::clog << "Python 2 interpreter not found" << std::endl;
+    }
+
+    try {
+        return getInterpHead<3>(proc);
+    } catch (...) {
+        if (verbose)
+            std::clog << "Python 3 interpreter not found" << std::endl;
+    }
+
+    throw Exception() << "Couldn't find a Python interpreter";
+}
 
 bool
 pthreadTidOffset(const Process &proc, size_t *offsetp)

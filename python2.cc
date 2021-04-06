@@ -86,32 +86,6 @@ class IntPrint : public PythonTypePrinter<2> {
 };
 static IntPrint intPrinter;
 
-template<>
-void PythonPrinter<2>::findInterpHeadFallback() {
-    libpython = nullptr;
-    for (auto &o : proc.objects) {
-        std::string module = stringify(*o.second->io);
-        if (module.find("python") == std::string::npos)
-            continue;
-        auto image = o.second;
-        auto &syms = image->commonSections->debugSymbols;
-        for (auto sym : syms) {
-            if (sym.name.substr(0, 11) != "interp_head")
-                continue;
-            libpython = o.second;
-            libpythonAddr = o.first;
-            interp_head = libpythonAddr + sym.symbol.st_value;
-            break;
-        }
-        if (interp_head)
-            break;
-    }
-    if (libpython == nullptr)
-        throw Exception() << "No libpython found";
-    if (verbose)
-       *debug << "python2 library is " << *libpython->io << std::endl;
-}
-
 #include "python.tcc"
 
 template struct PythonPrinter<2>;
