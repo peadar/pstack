@@ -132,20 +132,20 @@ template <int PyV> class LongPrinter : public PythonTypePrinter<PyV> {
 
 template <int PyV> class TuplePrinter : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr remoteAddr) const override {
-        PyVarObject pvo;
-        pc->proc.io->readObj(remoteAddr, &pvo);
-        pc->os << "(\n";
+        auto tuple = reinterpret_cast<const PyTupleObject *>(pyo);
+        pc->os << "( \n";
+        auto size = std::min(((PyVarObject *)tuple)->ob_size, Py_ssize_t(100));
+        PyObject *objects[size];
+        pc->proc.io->readObj(remoteAddr + offsetof(PyTupleObject, ob_item), &objects[0], size);
         pc->depth++;
-        for (Py_ssize_t i = 0; i < pvo.ob_size; i++) {
-            PyObject *o;
-            pc->proc.io->readObj(remoteAddr + offsetof(PyTupleObject, ob_item) + i * sizeof(PyObject *), &o);
-            pc->os << pc->prefix();
-            pc->print(Elf::Addr(o));
-            pc->os << ",\n";
+        for (auto addr : objects) {
+          pc->os << pc->prefix();
+          pc->print(Elf::Addr(addr));
+          pc->os << ",\n";
         }
         pc->depth--;
-        pc->os << pc->prefix();
-        pc->os << ")\n";
+        pc->os << pc->prefix() << ")\n";
+        return 0;
     }
     const char *type() const override {return "PyTuple_Type";}
     bool dupdetect() const override {return true;}
