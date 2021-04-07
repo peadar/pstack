@@ -205,7 +205,7 @@ Process::listThreads(const T &callback)
 
 class LiveReader : public FileReader {
 public:
-    off_t size() const override { return std::numeric_limits<off_t>::max(); }
+    Off size() const override { return std::numeric_limits<Off>::max(); }
     LiveReader(pid_t, const std::string &);
 };
 
@@ -234,11 +234,11 @@ class CoreProcess;
 class CoreReader : public Reader {
     CoreProcess *p;
 protected:
-    virtual size_t read(off_t remoteAddr, size_t size, char *ptr) const override;
+    virtual size_t read(Off remoteAddr, size_t size, char *ptr) const override;
 public:
     CoreReader (CoreProcess *);
     virtual void describe(std::ostream &os) const override;
-    off_t size() const override { return std::numeric_limits<off_t>::max(); }
+    Off size() const override { return std::numeric_limits<Off>::max(); }
     std::string filename() const override { return "process memory"; }
 };
 

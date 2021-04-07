@@ -23,6 +23,9 @@
 #include "libpstack/python.h"
 #endif
 
+#ifdef WITH_PYTHON
+#undef WITH_PYTHON
+#endif
 using namespace std;
 
 // does "name" match the glob pattern "pattern"?

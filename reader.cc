@@ -34,17 +34,11 @@ linkResolve(string name)
     return name;
 }
 
-off_t
+Reader::Off
 FileReader::size() const
 {
-    if (fileSize == -1) {
-       struct stat buf{};
-       int rc = fstat(file, &buf);
-       if (rc == -1)
-           throw (Exception() << "fstat failed: can't find size of file: " << strerror(errno));
-       fileSize = buf.st_size;
-    }
     return fileSize;
+
 }
 
 static int
@@ -78,8 +72,12 @@ openfile(const std::string &name)
 FileReader::FileReader(string name_)
     : name(std::move(name_))
     , file(openfile(name))
-    , fileSize(-1)
 {
+    struct stat buf{};
+    int rc = fstat(file, &buf);
+    if (rc == -1)
+       throw (Exception() << "fstat failed: can't find size of file: " << strerror(errno));
+    fileSize = buf.st_size;
 }
 
 FileReader::~FileReader()
@@ -95,9 +93,9 @@ MemReader::MemReader(const std::string &descr, size_t len_, const char *data_)
 }
 
 size_t
-MemReader::read(off_t off, size_t count, char *ptr) const
+MemReader::read(Off off, size_t count, char *ptr) const
 {
-    if (off > off_t(len))
+    if (off > Off(len))
         throw (Exception() << "read past end of memory");
     size_t rc = std::min(count, len - size_t(off));
     memcpy(ptr, data + off, rc);
@@ -111,10 +109,10 @@ MemReader::describe(std::ostream &os) const
 }
 
 std::string
-Reader::readString(off_t offset) const
+Reader::readString(Off offset) const
 {
     string res;
-    for (off_t s = size(); offset < s; ++offset) {
+    for (Off s = size(); offset < s; ++offset) {
         char c;
         if (read(offset, 1, &c) != 1)
             break;
@@ -126,7 +124,7 @@ Reader::readString(off_t offset) const
 }
 
 size_t
-FileReader::read(off_t off, size_t count, char *ptr) const
+FileReader::read(Off off, size_t count, char *ptr) const
 {
     auto rc = pread(file, ptr, count, off);
     if (rc == -1)
@@ -145,7 +143,7 @@ FileReader::read(off_t off, size_t count, char *ptr) const
 }
 
 void
-CacheReader::Page::load(const Reader &r, off_t offset_)
+CacheReader::Page::load(const Reader &r, Off offset_)
 {
     assert(offset_ % PAGESIZE == 0);
     len = r.read(offset_, PAGESIZE, data);
@@ -171,7 +169,7 @@ CacheReader::~CacheReader()
 }
 
 CacheReader::Page *
-CacheReader::getPage(off_t pageoff) const
+CacheReader::getPage(Off pageoff) const
 {
     Page *p;
     bool first = true;
@@ -207,14 +205,14 @@ CacheReader::getPage(off_t pageoff) const
 }
 
 size_t
-CacheReader::read(off_t off, size_t count, char *ptr) const
+CacheReader::read(Off off, size_t count, char *ptr) const
 {
-    off_t startoff = off;
+    Off startoff = off;
     for (;;) {
         if (count == 0)
             break;
         size_t offsetOfDataInPage = off % PAGESIZE;
-        off_t offsetOfPageInFile = off - offsetOfDataInPage;
+        Off offsetOfPageInFile = off - offsetOfDataInPage;
         Page *page = getPage(offsetOfPageInFile);
         if (page == nullptr)
             break;
@@ -230,7 +228,7 @@ CacheReader::read(off_t off, size_t count, char *ptr) const
 }
 
 string
-CacheReader::readString(off_t off) const
+CacheReader::readString(Off off) const
 {
     auto &entry = stringCache[off];
     if (entry.isNew) {
@@ -248,8 +246,8 @@ loadFile(const std::string &path)
 }
 
 size_t
-MmapReader::read(off_t off, size_t count, char *ptr) const {
-   off_t size = std::min(count, len - size_t(off));
+MmapReader::read(Off off, size_t count, char *ptr) const {
+   Off size = std::min(count, len - size_t(off));
    memcpy(ptr, (char *)base + off, size);
    return count;
 }
@@ -268,7 +266,7 @@ MmapReader::MmapReader(const std::string &name_)
 }
 
 std::string
-MmapReader::readString(off_t offset) const {
+MmapReader::readString(Off offset) const {
    return std::string((char *)base + offset);
 }
 
@@ -276,7 +274,7 @@ MmapReader::~MmapReader() {
    munmap(base, len);
 }
 
-OffsetReader::OffsetReader(Reader::csptr upstream_, off_t offset_, off_t length_)
+OffsetReader::OffsetReader(Reader::csptr upstream_, Off offset_, Off length_)
     : upstream(upstream_)
     , offset(offset_)
 {
@@ -289,17 +287,17 @@ OffsetReader::OffsetReader(Reader::csptr upstream_, off_t offset_, off_t length_
                 << upstream.get() << "->" << orReader->upstream.get() << "\n";
         offset += orReader->offset;
         upstream = orReader->upstream;
-        if (length_ != std::numeric_limits<off_t>::max())
+        if (length_ != std::numeric_limits<Off>::max())
             length -= orReader->offset;
     }
-    length = length_ == std::numeric_limits<off_t>::max() ? upstream->size() - offset : length_;
+    length = length_ == std::numeric_limits<Off>::max() ? upstream->size() - offset : length_;
 }
 
 size_t
-OffsetReader:: read(off_t off, size_t count, char *ptr) const {
+OffsetReader:: read(Off off, size_t count, char *ptr) const {
     if (off > length)
        throw Exception() << "read past end of object " << *this;
-    if (off + off_t(count) > length)
+    if (off + Off(count) > length)
        count = length - off;
     return upstream->read(off + offset, count, ptr);
 }

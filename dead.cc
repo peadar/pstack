@@ -58,7 +58,7 @@ readFromHdr(const Elf::Object &obj, const Elf::Phdr *hdr, Elf::Off addr,
 }
 
 size_t
-CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
+CoreReader::read(Off remoteAddr, size_t size, char *ptr) const
 {
     Elf::Off start = remoteAddr;
     while (size != 0) {

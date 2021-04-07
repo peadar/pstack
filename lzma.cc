@@ -37,14 +37,14 @@ LzmaReader::LzmaReader(Reader::csptr upstream_)
       *debug << "lzma inflate: " << *this << "\n";
 }
 
-off_t
+Reader::Off
 LzmaReader::size() const
 {
     return lzma_index_uncompressed_size(index);
 }
 
 size_t
-LzmaReader::read(off_t offset, size_t size, char *data) const
+LzmaReader::read(Off offset, size_t size, char *data) const
 {
     size_t startSize = size;
     while (size != 0) {
