@@ -78,6 +78,7 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
     return os;
 }
 
+#ifdef WITH_PYTHON
 template<int V> bool doPy(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules, const PyInterpInfo &info) {
     try {
         PythonPrinter<V> printer(proc, o, options, info);
@@ -113,6 +114,7 @@ bool pystack(Process &proc, std::ostream &o, const PstackOptions &options, bool 
     }
     return false;
 }
+#endif
 
 int
 emain(int argc, char **argv)
