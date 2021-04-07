@@ -1,10 +1,9 @@
-#include <python3.7/Python.h>
-#include <python3.7/frameobject.h>
-#include <python3.7/dictobject.h>
-#include <python3.7/longintrepr.h>
-#include <python3.7/longintrepr.h>
-#include <python3.7/unicodeobject.h>
-#include "../cpython3.7.10/Objects/dict-common.h"
+#include <Python.h>
+#include <frameobject.h>
+#include <dictobject.h>
+#include <longintrepr.h>
+#include <longintrepr.h>
+#include <unicodeobject.h>
 #include "libpstack/python.h"
 
 template<> std::set<const PythonTypePrinter<3> *> PythonTypePrinter<3>::all = std::set<const PythonTypePrinter<3> *>();
