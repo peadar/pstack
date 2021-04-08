@@ -397,7 +397,7 @@ class NoteIter {
             readNote();
         }
     }
-    friend struct Notes;
+    friend class Notes;
 public:
     bool operator == (const NoteIter &rhs) const {
         return &phdrs == &rhs.phdrs && phdrsi == rhs.phdrsi && offset == rhs.offset;
