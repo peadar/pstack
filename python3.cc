@@ -67,6 +67,18 @@ class BoolPrinter : public PythonTypePrinter<3> {
     const char *type() const override { return "PyBool_Type"; }
     bool dupdetect() const override { return false; }
 };
+
+template <typename T, int pyv>  ssize_t
+pyRefcnt(const T *o) {
+   return o->ob_base.ob_refcnt;
+}
+
+template <int pyv, typename T>  const PyTypeObject *
+pyObjtype(const T *o) {
+   return o->ob_base.ob_type;
+}
+
+
 static BoolPrinter boolPrinter;
 
 #include "python.tcc"

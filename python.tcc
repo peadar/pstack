@@ -310,19 +310,19 @@ PythonPrinter<PyV>::print(Elf::Addr remoteAddr) const {
     try {
         while (remoteAddr) {
             auto baseObj = readPyObj<PyV, PyVarObject>(*proc.io, remoteAddr);
-            if (((PyObject *)&baseObj)->ob_refcnt == 0) {
+            if (pyRefcnt<const PyVarObject, PyV>(&baseObj) == 0) {
                 os << "(dead object)";
             }
 
-            auto objtype = reinterpret_cast<const PyObject *>(&baseObj)->ob_type;
+            auto objtype = pyObjtype<PyV>(&baseObj);
             auto it = printers.find(objtype);
             const PythonTypePrinter<PyV> *printer = it == printers.end() ? nullptr : it->second;
 
-            auto &pto = types[reinterpret_cast<PyObject *>(&baseObj)->ob_type];
+            auto &pto = types[pyObjtype<PyV>(&baseObj)];
             if (pto == nullptr) {
                 pto.reset((_typeobject *)malloc(sizeof(PyTypeObject)));
                 readPyObj<PyV, PyTypeObject>(*proc.io,
-                        (Elf::Addr)reinterpret_cast<PyObject *>(&baseObj)->ob_type,
+                        (Elf::Addr)pyObjtype<PyV>(&baseObj),
                         pto.get());
             }
 
@@ -336,7 +336,7 @@ PythonPrinter<PyV>::print(Elf::Addr remoteAddr) const {
                     static HeapPrinter<PyV> heapPrinter;
                     printer = &heapPrinter;
                 } else {
-                    os <<  remoteAddr << " unprintable-type-" << tn << "@"<< ((PyObject *)&baseObj)->ob_type << std::endl;
+                    os <<  remoteAddr << " unprintable-type-" << tn << "@"<< pyObjtype<PyV>(&baseObj) << std::endl;
                     break;
                 }
             }

@@ -54,9 +54,6 @@ public:
 };
 
 template <int PyV>
-using python_printfunc = Elf::Addr (*)(const _object *pyo, const _typeobject *, PythonPrinter<PyV> *pc, Elf::Addr);
-
-template <int PyV>
 struct PythonPrinter {
     void print(Elf::Addr remoteAddr) const;
     struct freetype {
@@ -64,7 +61,7 @@ struct PythonPrinter {
             free(to);
         }
     };
-    mutable std::map<_typeobject *, std::unique_ptr<_typeobject, freetype>> types;
+    mutable std::map<const _typeobject *, std::unique_ptr<_typeobject, freetype>> types;
 
     PythonPrinter(Process &proc_, std::ostream &os_, const PstackOptions &, const PyInterpInfo &info_);
     const char *prefix() const;
@@ -86,5 +83,5 @@ struct PythonPrinter {
 };
 bool pthreadTidOffset(const Process &proc, size_t *offsetp);
 PyInterpInfo getPyInterpInfo(const Process &proc);
-
+template <int PyV, typename T> ssize_t pyRefcnt(const T *t);
 #endif

@@ -95,6 +95,19 @@ class IntPrint : public PythonTypePrinter<2> {
     bool dupdetect() const override { return false; }
 
 };
+
+template <typename T, int pyv>
+ssize_t
+pyRefcnt(const T *o) {
+   return o->ob_refcnt;
+}
+
+template <int pyv, typename T>  const PyTypeObject *
+pyObjtype(const T *o) {
+   return o->ob_type;
+}
+
+
 static IntPrint intPrinter;
 
 #include "python.tcc"
