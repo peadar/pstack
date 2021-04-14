@@ -96,7 +96,7 @@ getInterpHead(const Process &proc) {
     try {
         Elf::Object::sptr libpython;
         Elf::Addr libpythonAddr;
-        Elf::Addr interpHead = proc.findSymbol("Py_interp_headp", false,
+        Elf::Addr interpHeadp = proc.findSymbol("Py_interp_headp", false,
                 [&](Elf::Addr loadAddr, const Elf::Object::sptr &o) mutable {
                     libpython = o;
                     libpythonAddr = loadAddr;
@@ -105,7 +105,8 @@ getInterpHead(const Process &proc) {
                 });
         if (verbose)
             *debug << "found interp_headp in ELF syms" << std::endl;
-        // proc.io->readObj(interp_headp, &interp_head);
+        Elf::Addr interpHead;
+        proc.io->readObj(interpHeadp, &interpHead);
         return std::make_tuple(libpython, libpythonAddr, interpHead);
     }
     catch (...) {
