@@ -1,4 +1,5 @@
 #include <iostream>
+#include <iomanip>
 #include <algorithm>
 #include <stdlib.h>
 #include <stddef.h>
@@ -59,16 +60,23 @@ template <int PyV> class StringPrinter : public PythonTypePrinter<PyV> {
 template <int PyV> class FloatPrinter : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         auto *pfo = (const PyFloatObject *)pyo;
-        pc->os << pfo->ob_fval;
+        pc->os << std::fixed << std::setprecision(6) << pfo->ob_fval;
         return 0;
     }
     const char *type() const override { return "PyFloat_Type"; }
     bool dupdetect() const override { return false; }
 };
 
+
+struct PyModuleObject {
+   PyObject_HEAD
+   PyObject *md_dict;
+};
+
 template<int PyV> class ModulePrinter : public PythonTypePrinter<PyV> {
-    Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *, const PyTypeObject *, Elf::Addr) const override {
-        pc->os << "<python module>";
+    Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
+        auto *pmo = (PyModuleObject *)pyo;
+        pc->print((Elf::Addr)pmo->md_dict);
         return 0;
     }
     const char *type() const override { return "PyModule_Type"; }
@@ -222,11 +230,11 @@ PythonTypePrinter<PyV>::~PythonTypePrinter()
 
 template<int PyV>
 void
-PythonPrinter<PyV>::printStacks()
+PythonPrinter<PyV>::printInterpreters(bool withModules)
 {
     Elf::Addr ptr;
     for (proc.io->readObj(interp_head, &ptr); ptr; )
-        ptr = printInterp(ptr);
+        ptr = printInterp(ptr, withModules);
 }
 
 
@@ -302,7 +310,9 @@ PythonPrinter<PyV>::print(Elf::Addr remoteAddr) const {
                 os << "(dead object)";
             }
 
-            const PythonTypePrinter<PyV> *printer = printers.at(reinterpret_cast<const PyObject *>(&baseObj)->ob_type);
+            auto objtype = reinterpret_cast<const PyObject *>(&baseObj)->ob_type;
+            auto it = printers.find(objtype);
+            const PythonTypePrinter<PyV> *printer = it == printers.end() ? nullptr : it->second;
 
             auto &pto = types[reinterpret_cast<PyObject *>(&baseObj)->ob_type];
             if (pto == nullptr) {
@@ -353,6 +363,9 @@ PythonPrinter<PyV>::print(Elf::Addr remoteAddr) const {
             remoteAddr = printer->print(this, (const PyObject *)buf, pto.get(), remoteAddr);
         }
     }
+    catch (const std::exception &ex) {
+        os <<  "(print failed:" << ex.what() << ")";
+    }
     catch (...) {
         os <<  "(print failed)";
     }
@@ -388,12 +401,13 @@ PythonPrinter<PyV>::printThread(Elf::Addr ptr)
  */
 template <int PyV>
 Elf::Addr
-PythonPrinter<PyV>::printInterp(Elf::Addr ptr)
+PythonPrinter<PyV>::printInterp(Elf::Addr ptr, bool showModules)
 {
     // these are the first two fields in PyInterpreterState - next and tstate_head.
     struct State {
         Elf::Addr next;
         Elf::Addr head;
+        Elf::Addr modules;
     };
     State state;
     proc.io->readObj(ptr, &state);
@@ -401,6 +415,10 @@ PythonPrinter<PyV>::printInterp(Elf::Addr ptr)
     for (Elf::Addr tsp = state.head; tsp; ) {
         tsp = printThread(tsp);
         os << std::endl;
+    }
+    if (showModules) {
+       os << "---- modules:" << std::endl;
+       print(state.modules);
     }
     return state.next;
 }
