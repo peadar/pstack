@@ -11,38 +11,14 @@
 #include <iostream>
 
 using std::string;
-
-string
-linkResolve(string name)
-{
-    char buf[1024];
-    int rc;
-    for (;;) {
-        rc = readlink(name.c_str(), buf, sizeof buf - 1);
-        if (rc == -1)
-            break;
-        buf[rc] = 0;
-        if (buf[0] != '/') {
-            auto lastSlash = name.rfind('/');
-            name = lastSlash == string::npos
-               ? string(buf)
-               : name.substr(0, lastSlash + 1) + string(buf);
-        } else {
-            name = buf;
-        }
-    }
-    return name;
-}
-
 Reader::Off
 FileReader::size() const
 {
     return fileSize;
-
 }
 
 static int
-openFileDirect(const std::string &name_)
+openFileDirect(const string &name_)
 {
     auto fd = open(name_.c_str(), O_RDONLY);
     if (verbose > 2) {
@@ -55,7 +31,7 @@ openFileDirect(const std::string &name_)
 }
 
 static int
-openfile(const std::string &name)
+openfile(const string &name)
 {
     int fd;
     if (g_openPrefix != "") {
@@ -85,7 +61,7 @@ FileReader::~FileReader()
     ::close(file);
 }
 
-MemReader::MemReader(const std::string &descr, size_t len_, const char *data_)
+MemReader::MemReader(const string &descr, size_t len_, const char *data_)
     : descr(descr)
     , len(len_)
     , data(data_)
@@ -108,7 +84,7 @@ MemReader::describe(std::ostream &os) const
     os << descr;
 }
 
-std::string
+string
 Reader::readString(Off offset) const
 {
     string res;
@@ -239,7 +215,7 @@ CacheReader::readString(Off off) const
 }
 
 std::shared_ptr<const Reader>
-loadFile(const std::string &path)
+loadFile(const string &path)
 {
     return std::make_shared<CacheReader>(
         std::make_shared<FileReader>(path));
@@ -252,7 +228,7 @@ MmapReader::read(Off off, size_t count, char *ptr) const {
    return count;
 }
 
-MmapReader::MmapReader(const std::string &name_)
+MmapReader::MmapReader(const string &name_)
    : name(name_)
 {
    int fd = openfile(name);
@@ -265,9 +241,9 @@ MmapReader::MmapReader(const std::string &name_)
       throw (Exception() << "mmap failed" << strerror(errno));
 }
 
-std::string
+string
 MmapReader::readString(Off offset) const {
-   return std::string((char *)base + offset);
+   return string((char *)base + offset);
 }
 
 MmapReader::~MmapReader() {
