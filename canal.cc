@@ -381,9 +381,10 @@ mainExcept(int argc, char *argv[])
                             }
                         }
                     } else {
-                        auto tuple = store.find(p);
-                        auto found = std::get<0>(tuple);
-                        auto sym = std::get<1>(tuple);
+                        bool found;
+                        ListedSymbol * sym;
+                        std::tie(found, sym) = store.find(p);
+
                         if (found) {
                             if (showaddrs)
                                 cout
