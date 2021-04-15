@@ -165,14 +165,14 @@ Object::CommonSections::CommonSections(Object *o):
 {}
 
 
-Object::Object(ImageCache &cache, Reader::csptr io_)
+Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
     : io(std::move(io_))
     , notes(this)
     , elfHeader(io->readObj<Ehdr>(0))
     , imageCache(cache)
+    , debugLoaded(isDebug) // don't attempt to load separate debug info for a debug ELF.
     , lastSegmentForAddress(nullptr)
 {
-    debugLoaded = false;
     int i;
     size_t off;
 
@@ -371,7 +371,8 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
 #ifdef WITH_LZMA
         if (commonSections->gnu_debugdata)
             debugData = make_shared<Object>(imageCache,
-                    make_shared<const LzmaReader>(commonSections->gnu_debugdata.io));
+                    make_shared<const LzmaReader>(commonSections->gnu_debugdata.io),
+                    true);
 #else
         static bool warned = false;
         if (!warned) {
@@ -473,53 +474,70 @@ Object::~Object() = default;
 Object *
 Object::getDebug() const
 {
-    if (!debugLoaded) {
-        debugLoaded = true;
-        auto &hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
-        if (!hdr)
-            return 0;
-        auto link = hdr.io->readString(0);
-        auto dir = dirname(stringify(*io));
-        debugObject = imageCache.getDebugImage(dir + "/" + link);
-        if (!debugObject) {
-            for (const auto &note : notes) {
-                if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
-                    std::ostringstream dir;
-                    dir << ".build-id/";
-                    size_t i;
-                    auto io = note.data();
-                    std::vector<unsigned char> data(io->size());
-                    io->readObj(0, &data[0], io->size());
-                    dir << std::hex << std::setw(2) << std::setfill('0') << int(data[0]);
-                    dir << "/";
-                    for (i = 1; i < size_t(io->size()); ++i)
-                        dir << std::setw(2) << int(data[i]);
-                    dir << ".debug";
-                    debugObject = imageCache.getDebugImage(dir.str());
-                    break;
-                }
-            }
-        } else {
-            if (verbose >= 2)
-                *debug << "found debug object " << *debugObject->io << " for " << *io << "\n";
-            auto &s = getSection(".dynamic", SHT_NULL);
-            auto &d = debugObject->getSection(".dynamic", SHT_NULL);
-            if (d.shdr.sh_addr != s.shdr.sh_addr) {
-                Elf::Addr diff = s.shdr.sh_addr - d.shdr.sh_addr;
-                IOFlagSave _(std::clog);
-                std::clog << "warning: dynamic section for debug symbols "
-                   << *debugObject->io << " loaded for object "
-                   << *this->io << " at different offset: diff is "
-                   << std::hex << diff << std::endl;
-                // looks like the exe has been prelinked - adjust the debug info too.
-                for (auto &sect : debugObject->sectionHeaders) {
-                    sect.shdr.sh_addr += diff;
-                }
-                for (auto &sectType : debugObject->programHeaders)
-                    for (auto &sect : sectType.second)
-                        sect.p_vaddr += diff;
-            }
+    if (debugLoaded)
+        return debugObject.get();
+    debugLoaded = true;
+
+    // Use the build ID to find debug data.
+    for (const auto &note : notes) {
+        if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
+            std::ostringstream dir;
+            dir << ".build-id/";
+            size_t i;
+            auto io = note.data();
+            std::vector<unsigned char> data(io->size());
+            io->readObj(0, &data[0], io->size());
+            dir << std::hex << std::setw(2) << std::setfill('0') << int(data[0]);
+            dir << "/";
+            for (i = 1; i < size_t(io->size()); ++i)
+                dir << std::setw(2) << int(data[i]);
+            dir << ".debug";
+            debugObject = imageCache.getDebugImage(dir.str());
+            break;
         }
+    }
+
+    // If that doesn't work, maybe the gnu_debuglink is valid?
+    if (!debugObject) {
+        // if we have a debug link, use that to attempt to find the debug file.
+        auto &hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
+        if (hdr) {
+            auto link = hdr.io->readString(0);
+            auto dir = dirname(stringify(*io));
+            debugObject = imageCache.getDebugImage(dir + "/" + link); //
+        }
+    }
+
+    if (!debugObject) {
+        if (verbose >= 2)
+           *debug << "no debug object for " << *this->io << "\n";
+        return nullptr;
+    }
+
+    if (verbose >= 2)
+        *debug << "found debug object " << *debugObject->io << " for " << *io << "\n";
+
+    // Validate that the .dynamic section in the debug object and the one in
+    // the original image have the same .sh_addr.
+    auto &s = getSection(".dynamic", SHT_NULL);
+    auto &d = debugObject->getSection(".dynamic", SHT_NULL);
+
+    if (d.shdr.sh_addr != s.shdr.sh_addr) {
+        Elf::Addr diff = s.shdr.sh_addr - d.shdr.sh_addr;
+        IOFlagSave _(std::clog);
+        std::clog << "warning: dynamic section for debug symbols "
+           << *debugObject->io << " loaded for object "
+           << *this->io << " at different offset: diff is "
+           << std::hex << diff
+           << ", assuming " << *this->io << " is prelinked" << std::endl;
+
+        // looks like the exe has been prelinked - adjust the debug info too.
+        for (auto &sect : debugObject->sectionHeaders)
+            sect.shdr.sh_addr += diff;
+
+        for (auto &sectType : debugObject->programHeaders)
+            for (auto &sect : sectType.second)
+                sect.p_vaddr += diff;
     }
     return debugObject.get();
 }
@@ -612,12 +630,12 @@ Section::Section(const Reader::csptr &image, Off off)
 }
 
 Object::sptr
-ImageCache::getImageForName(const string &name) {
+ImageCache::getImageForName(const string &name, bool isDebug) {
     auto res = getImageIfLoaded(name);
     if (res != nullptr) {
         return res;
     }
-    auto item = make_shared<Object>(*this, std::make_shared<MmapReader>(name));
+    auto item = make_shared<Object>(*this, std::make_shared<MmapReader>(name), isDebug);
     // don't cache negative entries: assign into the cache after we've constructed:
     // a failure to load the image will throw.
     cache[name] = item;
@@ -657,7 +675,7 @@ ImageCache::getDebugImage(const string &name) {
     }
     for (const auto &dir : globalDebugDirectories.dirs) {
         try {
-           return getImageForName(stringify(dir, "/", name));
+           return getImageForName(stringify(dir, "/", name), true);
         }
         catch (const std::exception &ex) {
             continue;

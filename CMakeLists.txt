@@ -4,17 +4,26 @@ enable_testing()
 
 add_subdirectory(tests)
 
+option(PYTHON3 "Compile with experimental python 3 support" OFF)
+option(PYTHON2 "Compile with python 2 support" ON)
+
 math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 set(PSTACK_BIN "pstack" CACHE STRING "Name of the 'pstack' binary")
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib" CACHE STRING "Rpath to install for binaries or the empty string")
 set(LIBTYPE "SHARED" CACHE STRING "Build libraries as STATIC or SHARED")
+set (PYTHON3_SOURCE "" CACHE STRING "Path to the CPython source code")
 option(TIDY "Run clang-tidy on the source" False)
 
 find_library(LTHREADDB NAMES thread_db PATHS (/usr/lib /usr/local/lib))
 find_package(LibLZMA)
 find_package(ZLIB)
-find_package(Python3 COMPONENTS Development)
-find_package(Python2 COMPONENTS Development)
+
+if (PYTHON2)
+   find_package(Python2 COMPONENTS Development)
+endif()
+if (PYTHON3)
+   find_package(Python3 COMPONENTS Development)
+endif()
 
 find_package(Git)
 if (GIT_FOUND)
@@ -57,17 +66,22 @@ if (Python3_Development_FOUND OR Python2_Development_FOUND)
    set(pysrc python.cc)
 endif()
 
-if (False AND Python3_Development_FOUND)
+if (PYTHON3 AND Python3_Development_FOUND)
    message(STATUS  "Python3_INCLUDE_DIRS are ${Python3_INCLUDE_DIRS}")
    set(pysrc ${pysrc} python3.cc)
    add_definitions("-DWITH_PYTHON3")
-   include_directories(${Python3_INCLUDE_DIRS})
+   set_source_files_properties(python3.cc PROPERTIES COMPILE_FLAGS -I${Python3_INCLUDE_DIRS})
+   if ("${PYTHON3_SOURCE}" STREQUAL "") # not set
+      message(FATAL_ERROR "Path to CPython source code needed for Python 3 support\nSpecify with -DPYTHON3_SOURCE=<path>")
+   else()
+      set_property(SOURCE python3.cc APPEND PROPERTY COMPILE_OPTIONS "-I${PYTHON3_SOURCE}")
+   endif()
 endif()
 
 if (Python2_Development_FOUND)
    set(pysrc ${pysrc} python2.cc)
    add_definitions("-DWITH_PYTHON2")
-   include_directories(${Python2_INCLUDE_DIRS})
+   set_source_files_properties(python2.cc PROPERTIES COMPILE_FLAGS -I${Python2_INCLUDE_DIRS})
 endif()
 
 add_library(dwelf ${LIBTYPE} dump.cc dwarf.cc elf.cc reader.cc util.cc
@@ -106,7 +120,7 @@ else()
    message(WARNING "no LZMA support found")
 endif()
 
-if (NOT (Python3_Development_FOUND))
+if ((NOT (Python3_Development_FOUND)) AND PYTHON3)
    message(WARNING "no python3 support found")
 endif()
 

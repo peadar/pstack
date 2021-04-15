@@ -16,13 +16,13 @@ class LzmaReader : public Reader {
     uint64_t memlimit = std::numeric_limits<uint64_t>::max();
     size_t pos = 0;
     Reader::csptr upstream;
-    mutable std::map<off_t, std::vector<unsigned char>> lzBlocks;
+    mutable std::map<Off, std::vector<unsigned char>> lzBlocks;
 public:
     LzmaReader(Reader::csptr upstream_);
     ~LzmaReader();
-    size_t read(off_t, size_t, char *) const override;
+    size_t read(Off, size_t, char *) const override;
     void describe(std::ostream &) const override;
-    off_t size() const override;
+    Off size() const override;
     std::string filename() const override { return upstream->filename(); }
 };
 

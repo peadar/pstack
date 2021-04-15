@@ -1,3 +1,11 @@
+/*
+ * Canal searches through core files looking for references to symbols.  The
+ * symbols can be provided by a glob style pattern, and defaults to a pattern
+ * that matches symbols associated with vtables.  So, by default, canal finds
+ * likely instances of classes with virtual methods in the process's address
+ * space, and can be useful to help identify memory leaks.
+ */
+
 #include <unistd.h>
 #include <signal.h>
 #include <fstream>
@@ -16,8 +24,12 @@
 #include "libpstack/python.h"
 #endif
 
+#ifdef WITH_PYTHON
+#undef WITH_PYTHON
+#endif
 using namespace std;
 
+// does "name" match the glob pattern "pattern"?
 static int
 globmatchR(const char *pattern, const char *name)
 {
@@ -326,6 +338,7 @@ mainExcept(int argc, char *argv[])
     PythonPrinter<2> py(*process, std::cout, PstackOptions());
 #endif
     std::vector<Elf::Off> data;
+    long searchmatches = 0;
     for (auto &hdr : core->getSegments(PT_LOAD)) {
         filesize += hdr.p_filesz;
         memsize += hdr.p_memsz;
@@ -363,9 +376,12 @@ mainExcept(int argc, char *argv[])
                     const auto & p=*it;
                     if (searchaddrs.size()) {
                         for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
-                            if (p >= range->first && p < range->second && (p % 4 == 0)) {
-                                IOFlagSave _(cout);
-                                cout << "0x" << hex << loc << "\n";
+                            if (p >= range->first && p < range->second) {
+                                searchmatches++;
+                                if (verbose) {
+                                    IOFlagSave _(cout);
+                                    cout << "0x" << hex << loc << "\n";
+                                }
                             }
                         }
                     } else {
@@ -403,6 +419,7 @@ mainExcept(int argc, char *argv[])
            << memsize << " bytes of memory\n";
     auto histogram = store.flatten();
     sort(histogram.begin(), histogram.end(), compareSymbolsByFrequency);
+    *debug << "search matched " << searchmatches << " items\n";
 
     for (auto &i : histogram)
         if (i.count)

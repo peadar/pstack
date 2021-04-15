@@ -176,3 +176,11 @@ LiveProcess::stop(lwpid_t pid)
     if (waitedpid == -1)
         *debug << "failed to stop LWP " << pid << ": wait failed: " << strerror(errno) << "\n";
 }
+
+bool
+LiveProcess::loadSharedObjectsFromFileNote()
+{
+    // In theory we can implement this by grovelling in /proc/<pid>/maps, but
+    // it mostly exists for truncated core files, so don't bother now.
+    return false;
+}

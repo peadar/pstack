@@ -58,7 +58,7 @@ readFromHdr(const Elf::Object &obj, const Elf::Phdr *hdr, Elf::Off addr,
 }
 
 size_t
-CoreReader::read(off_t remoteAddr, size_t size, char *ptr) const
+CoreReader::read(Off remoteAddr, size_t size, char *ptr) const
 {
     Elf::Off start = remoteAddr;
     while (size != 0) {
@@ -157,4 +157,55 @@ CoreProcess::findLWPs()
         if (note.name() == "CORE" && note.type() == NT_PRSTATUS)
             (void)lwps[note.data()->readObj<prstatus_t>(0).pr_pid];
     }
+}
+
+
+// Types for the NT_FILE note.
+struct FileNoteHeader {
+    Elf::Off count;
+    Elf::Off pageSize;
+};
+struct FileEntry {
+    Elf::Off start;
+    Elf::Off end;
+    Elf::Off fileOff;
+};
+
+bool
+CoreProcess::loadSharedObjectsFromFileNote()
+{
+    // If the core is truncated, and we have no access to the link map, we make
+    // a guess at what shared libraries are mapped by looking in the NT_FILE
+    // note if present.
+    for (auto note : coreImage->notes) {
+        if (note.name() == "CORE" && note.type() == NT_FILE) {
+            auto data = note.data();
+            FileNoteHeader header;
+            data->readObj(0, &header);
+            Elf::Off stroff = 0;
+            auto entries = std::make_shared<OffsetReader>(data, sizeof header, header.count * sizeof (FileEntry));
+            auto fileNames = std::make_shared<OffsetReader>(data, sizeof header + header.count * sizeof (FileEntry));
+            uintptr_t totalSize = 0;
+            for (auto entry : ReaderArray<FileEntry>(*entries)) {
+                auto name = fileNames->readString(stroff);
+                stroff += name.size() + 1;
+                uintptr_t size = entry.end - entry.start;
+                totalSize += size;
+                if (verbose > 2)
+                    *debug << "NT_FILE mapping " << name << " " << (void *)entry.start << " " << size << std::endl;
+                if (entry.fileOff == 0) {
+                    try {
+                        // Just try and load it like an ELF object.
+                        addElfObject(imageCache.getImageForName(name), entry.start);
+                    }
+                    catch (...) {
+                    }
+                }
+            }
+            if (verbose)
+                *debug << "total mapped file size: " << totalSize << std::endl;
+            return true; // found an NT_FILE note, so success.
+        }
+    }
+    return false;
 }

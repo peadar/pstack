@@ -102,16 +102,17 @@ extern int verbose;
 class Reader {
     Reader(const Reader &);
 public:
+    using Off = unsigned long;
     Reader() {}
     virtual ~Reader() {}
 
     // Read a consecutive sequence of objects type Obj starting at Offset.
-    template <typename Obj> void readObj(off_t offset, Obj *object, size_t count = 1) const;
+    template <typename Obj> void readObj(Off offset, Obj *object, size_t count = 1) const;
 
     // Helper to read a single object.
-    template <typename Obj> Obj readObj(off_t offset) const;
+    template <typename Obj> Obj readObj(Off offset) const;
     // read a sequence of count bytes at offset off. May give a short return.
-    virtual size_t read(off_t off, size_t count, char *ptr) const = 0;
+    virtual size_t read(Off off, size_t count, char *ptr) const = 0;
 
     // describe this reader.
     virtual void describe(std::ostream &os) const = 0;
@@ -120,9 +121,9 @@ public:
     virtual std::string filename() const = 0;
 
     // read a text string at an offset
-    virtual std::string readString(off_t offset) const;
+    virtual std::string readString(Off offset) const;
 
-    virtual off_t size() const = 0;
+    virtual Off size() const = 0;
     typedef std::shared_ptr<Reader> sptr;
     typedef std::shared_ptr<const Reader> csptr;
 };
@@ -134,7 +135,7 @@ static inline std::ostream &operator << (std::ostream &os, const Reader &reader)
 }
 
 template <typename Obj> void
-Reader::readObj(off_t offset, Obj *object, size_t count) const
+Reader::readObj(Off offset, Obj *object, size_t count) const
 {
     if (count == 0)
         return;
@@ -146,7 +147,7 @@ Reader::readObj(off_t offset, Obj *object, size_t count) const
 }
 
 template <typename Obj> Obj
-Reader::readObj(off_t offset) const
+Reader::readObj(Off offset) const
 {
    Obj t;
    readObj(offset, &t);
@@ -157,14 +158,14 @@ Reader::readObj(off_t offset) const
 class FileReader : public Reader {
     std::string name;
     int file;
-    mutable off_t fileSize;
+    mutable Off fileSize;
 public:
-    virtual size_t read(off_t off, size_t count, char *ptr) const override ;
+    virtual size_t read(Off off, size_t count, char *ptr) const override ;
     FileReader(std::string name_);
     ~FileReader();
     void describe(std::ostream &os) const  override { os << name; }
     std::string filename() const override { return name; }
-    off_t size() const override;
+    Off size() const override;
 };
 // Reader implementations
 class MmapReader : public Reader {
@@ -172,13 +173,13 @@ class MmapReader : public Reader {
     size_t len;
     void *base;
 public:
-    virtual size_t read(off_t off, size_t count, char *ptr) const override ;
+    virtual size_t read(Off off, size_t count, char *ptr) const override ;
     MmapReader(const std::string &name_);
     ~MmapReader();
-    std::string readString(off_t offset) const override;
+    std::string readString(Off offset) const override;
     void describe(std::ostream &os) const  override { os << name; }
     std::string filename() const override { return name; }
-    off_t size() const override { return len; }
+    Off size() const override { return len; }
 };
 
 
@@ -189,32 +190,32 @@ class CacheReader : public Reader {
         CacheEnt() : isNew(true) {}
     };
     Reader::csptr upstream;
-    mutable std::unordered_map<off_t, CacheEnt> stringCache;
+    mutable std::unordered_map<Off, CacheEnt> stringCache;
     static const size_t PAGESIZE = 256;
     static const size_t MAXPAGES = 16;
     class Page {
         Page(const Page &) = delete;
     public:
-        off_t offset;
+        Off offset;
         size_t len;
         char data[PAGESIZE];
         Page() {};
-        void load(const Reader &r, off_t offset_);
+        void load(const Reader &r, Off offset_);
     };
     mutable std::list<Page *> pages;
-    Page *getPage(off_t pageoff) const;
+    Page *getPage(Off pageoff) const;
 public:
     void flush();
-    virtual size_t read(off_t off, size_t count, char *ptr) const override;
+    virtual size_t read(Off off, size_t count, char *ptr) const override;
     virtual void describe(std::ostream &os) const override {
         // this must be the same as the underlying stream: we sometimes rely on the
         // FileReader's filename
         os << *upstream;
     }
     CacheReader(Reader::csptr upstream_);
-    std::string readString(off_t off) const override;
+    std::string readString(Off off) const override;
     ~CacheReader();
-    off_t size() const override { return upstream->size(); }
+    Off size() const override { return upstream->size(); }
     std::string filename() const override { return upstream->filename(); }
 };
 
@@ -224,40 +225,40 @@ protected:
     size_t len;
     const char *data;
 public:
-    virtual size_t read(off_t off, size_t count, char *ptr) const override;
+    virtual size_t read(Off off, size_t count, char *ptr) const override;
     MemReader(const std::string &, size_t, const char *);
     void describe(std::ostream &) const override;
-    off_t size() const override { return len; }
+    Off size() const override { return len; }
     std::string filename() const override { return "in-memory"; }
 };
 
 class NullReader : public Reader {
 public:
-    virtual size_t read(off_t, size_t, char *) const override {
+    virtual size_t read(Off, size_t, char *) const override {
         throw Exception() << " read from null reader";
     }
     void describe(std::ostream &os) const override {
         os << "empty reader";
     }
-    off_t size() const override { return 0; }
+    Off size() const override { return 0; }
     std::string filename() const override { return "nowhere"; }
 };
 
 class OffsetReader : public Reader {
     Reader::csptr upstream;
-    off_t offset;
-    off_t length;
+    Off offset;
+    Off length;
 public:
-    std::string readString(off_t absoff) const override {
+    std::string readString(Off absoff) const override {
         return upstream->readString(absoff + offset);
     }
-    virtual size_t read(off_t off, size_t count, char *ptr) const override;
-    OffsetReader(Reader::csptr upstream_, off_t offset_, off_t length_ =
-                 std::numeric_limits<off_t>::max());
+    virtual size_t read(Off off, size_t count, char *ptr) const override;
+    OffsetReader(Reader::csptr upstream_, Off offset_, Off length_ =
+                 std::numeric_limits<Off>::max());
     void describe(std::ostream &os) const override {
         os << *upstream << "[" << offset << "," << offset + length << "]";
     }
-    off_t size() const override { return length; }
+    Off size() const override { return length; }
     std::string filename() const override { return upstream->filename(); }
 };
 
@@ -293,10 +294,10 @@ template <typename T>
 struct ReaderArray {
    class iterator {
       const Reader *reader;
-      off_t offset;
+      Reader::Off offset;
    public:
       T operator *();
-      iterator(const Reader *reader_, off_t offset_) : reader(reader_),offset(offset_) {}
+      iterator(const Reader *reader_, Reader::Off offset_) : reader(reader_),offset(offset_) {}
       bool operator == (const iterator &rhs) { return offset == rhs.offset && reader == rhs.reader; }
       bool operator != (const iterator &rhs) { return ! (*this == rhs); }
       void operator++() { offset += sizeof (T); }

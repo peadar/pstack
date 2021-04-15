@@ -251,7 +251,7 @@ public:
 
     // construct/destruct. Note you will generally need to use make_shared to
     // create an Object
-    Object(ImageCache &, Reader::csptr);
+    Object(ImageCache &, Reader::csptr, bool isDebug=false);
     ~Object();
 
     // Accessing sections.
@@ -397,7 +397,7 @@ class NoteIter {
             readNote();
         }
     }
-    friend struct Notes;
+    friend class Notes;
 public:
     bool operator == (const NoteIter &rhs) const {
         return &phdrs == &rhs.phdrs && phdrsi == rhs.phdrsi && offset == rhs.offset;
@@ -456,10 +456,14 @@ public:
     ImageCache();
     virtual ~ImageCache();
     virtual void flush(Object::sptr);
-    Object::sptr getImageForName(const std::string &name);
+    Object::sptr getImageForName(const std::string &name, bool isDebug = false);
     Object::sptr getImageIfLoaded(const std::string &name);
     Object::sptr getDebugImage(const std::string &name);
 };
 
 } // Elf namespace
+
+#ifndef NT_FILE
+#define NT_FILE 0x46494c45
+#endif
 #endif /* Guard. */

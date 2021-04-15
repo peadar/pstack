@@ -5,6 +5,7 @@
 #include <cassert>
 #include <limits>
 #include <stack>
+extern std::ostream & operator << (std::ostream &os, const Dwarf::DIE &dieo);
 
 namespace Dwarf {
 void
@@ -296,6 +297,19 @@ ExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *fra
 
             case DW_OP_stack_value:
                 break; // XXX: the returned value is not a location, but the underlying value itself.
+            case DW_OP_GNU_parameter_ref:
+                {
+                  auto unit = frame->function.getUnit();
+                  auto off = r.getuint(4);
+                  auto die = unit->offsetToDIE(off + unit->offset);
+                  std::clog << die << "\n";
+                  auto attr = die.attribute(DW_AT_type);
+                  if (attr) {
+                     auto typeDie = DIE(attr);
+                     std::clog << typeDie << "\n";
+                  }
+                }
+                // FALLTHROUGH
 
             default:
                 std::clog << "error evaluating DWARF OP " << op << " (" << int(op) << ")\n";

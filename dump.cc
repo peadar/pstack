@@ -265,6 +265,10 @@ std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIE, C> &jo) {
     return o;
 }
 
+std::ostream & operator << (std::ostream &os, const Dwarf::DIE &die) {
+   return os << json(die);
+}
+
 template <typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::Abbreviation, C> &abbr) {
