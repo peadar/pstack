@@ -985,8 +985,8 @@ Info::getAltImageName() const
     if (name[0] == '/')
         return name;
 
-    // Not relative - prefix it with dirname of the image
-    const auto &exedir = dirname(io->filename());
+    // relative - prefix it with dirname of the image
+    const auto &exedir = dirname(linkResolve(io->filename()));
     return stringify(exedir, "/", name);
 }
 
