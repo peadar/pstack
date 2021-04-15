@@ -214,7 +214,7 @@ Info::pubnames() const
     return pubnameUnits;
 }
 
-static size_t UNITCACHE_SIZE=256;
+static size_t UNITCACHE_SIZE=1024;
 
 Unit::sptr
 UnitsCache::get(const Info *info, Elf::Off offset)
