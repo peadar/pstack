@@ -79,40 +79,29 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
 }
 
 #ifdef WITH_PYTHON
-template<int V> bool doPy(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules, const PyInterpInfo &info) {
-    try {
-        PythonPrinter<V> printer(proc, o, options, info);
-        if (!printer.interpFound())
-            return false;
-        printer.printInterpreters(showModules);
-    } catch (...) {
-        return false;
-    }
-    return true;
+template<int V> void doPy(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules, const PyInterpInfo &info) {
+    PythonPrinter<V> printer(proc, o, options, info);
+    if (!printer.interpFound())
+        throw Exception() << "no python interpreter found";
+    printer.printInterpreters(showModules);
 }
 
-bool pystack(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules) {
+void pystack(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules) {
     PyInterpInfo info = getPyInterpInfo(proc);
 
     if (info.versionHex < V2HEX(3, 0)) { // Python 2.x
 #ifdef WITH_PYTHON2
-    if (doPy<2>(proc, o, options, showModules, info))
-        return true;
+        doPy<2>(proc, o, options, showModules, info);
 #else
-    std::clog << "pstack was compiled without python 2 support" << std::endl;
-    return false;
+        throw (Exception() << "no support for discovered python 2 interpreter");
 #endif
     } else { // Python 3.x
-
 #ifdef WITH_PYTHON3
-    if (doPy<3>(proc, o, options, showModules, info))
-        return true;
+        doPy<3>(proc, o, options, showModules, info);
 #else
-    std::clog << "pstack was compiled without python 3 support" << std::endl;
-    return false;
+        throw (Exception() << "no support for discovered python 3 interpreter");
 #endif
     }
-    return false;
 }
 #endif
 
@@ -120,7 +109,6 @@ int
 emain(int argc, char **argv)
 {
     int i, c;
-    pid_t pid;
     std::string execFile;
     Elf::Object::sptr exec;
     Dwarf::ImageCache imageCache;
@@ -203,27 +191,27 @@ emain(int argc, char **argv)
         return usage(argv[0]);
 
     for (i = optind; i < argc; i++) {
-        pid = atoi(argv[i]);
         try {
             auto doStack = [=, &options] (Process &proc) {
                 proc.load(options);
                 while (!interrupted) {
 #if defined(WITH_PYTHON)
-                   if (python) {
-                        if(pystack(proc, std::cout, options, pythonModules))
-                            return;
-                        
-                        std::clog << "-p specified but failed to print python stack trace" << std::endl;
-                   }
+                    if (python) {
+                        pystack(proc, std::cout, options, pythonModules);
+                    }
+                    else
 #endif
-                   pstack(proc, std::cout, options);
-                   if (sleepTime != 0.0) {
-                      usleep(sleepTime * 1000000);
-                   } else {
-                      break;
-                   }
-               }
+                    {
+                        pstack(proc, std::cout, options);
+                    }
+                    if (sleepTime != 0.0) {
+                        usleep(sleepTime * 1000000);
+                    } else {
+                        break;
+                    }
+                }
             };
+            pid_t pid = strtoul(argv[i], 0, 0);
             if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
                 // It's a file: should be ELF, treat core and exe differently
                 // Don't put cores in the cache
