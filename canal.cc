@@ -365,7 +365,14 @@ mainExcept(int argc, char *argv[])
             while (loc < end_loc) {
                 size_t read_size = std::min(chunk_size, end_loc - loc);
                 data.resize(read_size/step);
-                read_size = process->io->read(loc, read_size, reinterpret_cast<char*>(data.data()));
+		try {
+		    read_size = process->io->read(loc, read_size, reinterpret_cast<char*>(data.data()));
+		}
+		catch (const std::exception &ex) {
+		    std::cerr << "error reading chunk from core: " << ex.what() << std::endl;
+                    loc = end_loc;
+		    continue;
+		}
                 data.resize(read_size / step);
                 if (verbose) {
                     // log a '.' every megabyte.
