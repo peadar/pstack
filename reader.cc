@@ -183,6 +183,8 @@ CacheReader::getPage(Off pageoff) const
 size_t
 CacheReader::read(Off off, size_t count, char *ptr) const
 {
+    if (count >= PAGESIZE)
+        return upstream->read(off, count, ptr);
     Off startoff = off;
     for (;;) {
         if (count == 0)
