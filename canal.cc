@@ -83,7 +83,8 @@ public:
         store_.emplace(symbol.memaddr() + symbol.sym.st_size, symbol);
     }
 
-    std::tuple<bool, ListedSymbol*> find(Elf::Off address) {
+    template <typename Match>
+    std::tuple<bool, ListedSymbol*> find(Elf::Off address, const Match match) {
         auto pos = store_.lower_bound(address);
         auto sym = &pos->second;
         if (pos != store_.end() && match(address, sym)) {
@@ -100,23 +101,20 @@ public:
         }
         return retv;
     }
-protected:
-   virtual bool match(Elf::Off address, const ListedSymbol * sym) const =0;
 };
 
-class OffsetFreeSymbolStore final: public SymbolStore {
+class OffsetFreeSymbolMatcher {
 public:
-    bool match(Elf::Off address, const ListedSymbol * sym) const override {
+    bool operator()(Elf::Off address, const ListedSymbol * sym) const {
       return sym->memaddr() <= address && sym->memaddr() + sym->sym.st_size > address;
     }
-
 };
 
-class OffsetBoundSymbolStore final: public SymbolStore {
+class OffsetBoundSymbolMatcher {
    const Elf::Off offset_;
 public:
-    OffsetBoundSymbolStore(Elf::Addr offset): offset_(offset) {}
-    bool match(Elf::Off address, const ListedSymbol * sym) const override {
+    OffsetBoundSymbolMatcher(Elf::Addr offset): offset_(offset) {}
+    bool operator()(Elf::Off address, const ListedSymbol * sym) const {
        return sym->memaddr() + offset_ == address;
     }
 };
@@ -302,9 +300,7 @@ mainExcept(int argc, char *argv[])
     if (patterns.empty())
         patterns.push_back(virtpattern);
 
-    OffsetFreeSymbolStore freeStore;
-    OffsetBoundSymbolStore boundStore(symOffset);
-    SymbolStore & store = symOffset > -1 ? static_cast<SymbolStore&>(boundStore) : freeStore;
+    SymbolStore store;
     for (auto &loaded : process->objects) {
         size_t count = 0;
 
@@ -358,59 +354,65 @@ mainExcept(int argc, char *argv[])
                 }
             }
         } else {
-            const size_t step = sizeof(Elf::Off);
-            const size_t chunk_size = 1'048'576;
-            Elf::Addr loc=hdr.p_vaddr;
-            const Elf::Addr end_loc = loc + hdr.p_filesz;
-            while (loc < end_loc) {
-                size_t read_size = std::min(chunk_size, end_loc - loc);
-                data.resize(read_size/step);
-		try {
-		    read_size = process->io->read(loc, read_size, reinterpret_cast<char*>(data.data()));
-		}
-		catch (const std::exception &ex) {
-		    std::cerr << "error reading chunk from core: " << ex.what() << std::endl;
-                    loc = end_loc;
-		    continue;
-		}
-                data.resize(read_size / step);
-                if (verbose) {
-                    // log a '.' every megabyte.
-                    clog << '.';
-                }
-                for (auto it=data.begin(); it != data.end(); ++it, loc+=step) {
-                    const auto & p=*it;
-                    if (searchaddrs.size()) {
-                        for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
-                            if (p >= range->first && p < range->second && (p % 4 == 0)) {
-                                IOFlagSave _(cout);
-                                cout << "0x" << hex << loc << "\n";
+            auto search = [&](auto m) {
+                const size_t step = sizeof(Elf::Off);
+                const size_t chunk_size = 1'048'576;
+                Elf::Addr loc=hdr.p_vaddr;
+                const Elf::Addr end_loc = loc + hdr.p_filesz;
+                while (loc < end_loc) {
+                    size_t read_size = std::min(chunk_size, end_loc - loc);
+                    data.resize(read_size/step);
+                    try {
+                        read_size = process->io->read(loc, read_size, reinterpret_cast<char*>(data.data()));
+                    }
+                    catch (const std::exception &ex) {
+                        std::cerr << "error reading chunk from core: " << ex.what() << std::endl;
+                        loc = end_loc;
+                        continue;
+                    }
+                    data.resize(read_size / step);
+                    if (verbose) {
+                        // log a '.' every megabyte.
+                        clog << '.';
+                    }
+                    for (auto it=data.begin(); it != data.end(); ++it, loc+=step) {
+                        const auto & p=*it;
+                        if (searchaddrs.size()) {
+                            for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
+                                if (p >= range->first && p < range->second && (p % 4 == 0)) {
+                                    IOFlagSave _(cout);
+                                    cout << "0x" << hex << loc << "\n";
+                                }
                             }
-                        }
-                    } else {
-                        auto tuple = store.find(p);
-                        auto found = std::get<0>(tuple);
-                        auto sym = std::get<1>(tuple);
-                        if (found) {
-                            if (showaddrs)
-                                cout
-                                    << sym->name << " 0x" << std::hex << loc
-                                    << std::dec <<  " ... size=" << sym->sym.st_size
-                                    << ", diff=" << p - sym->memaddr() << endl;
+                        } else {
+                            auto tuple = store.find(p, m);
+                            auto found = std::get<0>(tuple);
+                            auto sym = std::get<1>(tuple);
+                            if (found) {
+                                if (showaddrs)
+                                    cout
+                                        << sym->name << " 0x" << std::hex << loc
+                                        << std::dec <<  " ... size=" << sym->sym.st_size
+                                        << ", diff=" << p - sym->memaddr() << endl;
 #if 0 && WITH_PYTHON
-                            if (doPython) {
-                                std::cout << "pyo " << Elf::Addr(loc) << " ";
-                                py.print(Elf::Addr(loc) - sizeof (PyObject) +
-                                    sizeof (struct _typeobject *));
-                                std::cout << "\n";
-                            }
+                                if (doPython) {
+                                    std::cout << "pyo " << Elf::Addr(loc) << " ";
+                                    py.print(Elf::Addr(loc) - sizeof (PyObject) +
+                                        sizeof (struct _typeobject *));
+                                    std::cout << "\n";
+                                }
 #endif
-                            sym->count++;
-                            seg_count++;
+                                sym->count++;
+                                seg_count++;
+                            }
                         }
                     }
                 }
-            }
+            };
+            if (symOffset > 0)
+                search(OffsetBoundSymbolMatcher(symOffset));
+            else
+                search(OffsetFreeSymbolMatcher());
         }
 
         if (verbose)
