@@ -1,4 +1,4 @@
-FROM i386/debian:stretch
+FROM i386/debian:stable
 RUN env DEBIAN_FRONTEND=noninteractive apt-get update
 RUN env DEBIAN_FRONTEND=noninteractive apt-get install -y cmake
 RUN env DEBIAN_FRONTEND=noninteractive apt-get install -y g++
