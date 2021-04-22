@@ -153,7 +153,6 @@ mainExcept(int argc, char *argv[])
     std::vector<std::string> patterns;
     Elf::Object::sptr exec;
     Elf::Object::sptr core;
-    shared_ptr<Process> process;
     int c;
     int verbose = 0;
     bool showaddrs = false;
@@ -273,17 +272,7 @@ mainExcept(int argc, char *argv[])
         return 0;
     }
 
-    pid_t pid = 0;
-    std::istringstream(argv[optind]) >> pid;
-    if (pid != 0 && kill(pid, 0) == 0) {
-       std::clog << "attaching to live process" << std::endl;
-       process = make_shared<LiveProcess>(exec, pid, pathReplacements, imageCache);
-    } else {
-       core = make_shared<Elf::Object>(imageCache, loadFile(argv[optind]));
-       process = make_shared<CoreProcess>(exec, core, pathReplacements, imageCache);
-    }
-    process->load(PstackOptions());
-
+    auto process = Process::load(exec, argv[optind], PstackOptions(), imageCache);
     if (searchaddrs.size()) {
         std::clog << "finding references to " << dec << searchaddrs.size() << " addresses\n";
         for (auto &addr : searchaddrs)
@@ -334,18 +323,19 @@ mainExcept(int argc, char *argv[])
     PythonPrinter<2> py(*process, std::cout, PstackOptions());
 #endif
     std::vector<Elf::Off> data;
-    for (auto &hdr : core->getSegments(PT_LOAD)) {
-        filesize += hdr.p_filesz;
-        memsize += hdr.p_memsz;
+    auto as = process->addressSpace();
+    for (auto &segment : as ) {
+        filesize += segment.fileSize;
+        memsize += segment.memSize;
         int seg_count = 0;
         if (verbose) {
             IOFlagSave _(*debug);
-            *debug << "scan " << hex << hdr.p_vaddr <<  " to " << hdr.p_vaddr + hdr.p_memsz
-                << " (filesiz = " << hdr.p_filesz  << ", memsiz=" << hdr.p_memsz << ") ";
+            *debug << "scan " << hex << segment.start <<  " to " << segment.start + segment.memSize
+                << " (filesiz = " << segment.fileSize  << ", memsiz=" << segment.memSize << ") ";
         }
 
         if (findstr) {
-            for (auto loc = hdr.p_vaddr; loc < hdr.p_vaddr + hdr.p_filesz - findstrlen; loc++) {
+            for (auto loc = segment.start; loc < segment.start + segment.fileSize - findstrlen; loc++) {
                 size_t rc = process->io->read(loc, findstrlen, strbuf);
                 assert(rc == findstrlen);
                 if (memcmp(strbuf, findstr, rc) == 0) {
@@ -357,8 +347,8 @@ mainExcept(int argc, char *argv[])
             auto search = [&](auto m) {
                 const size_t step = sizeof(Elf::Off);
                 const size_t chunk_size = 1'048'576;
-                Elf::Addr loc=hdr.p_vaddr;
-                const Elf::Addr end_loc = loc + hdr.p_filesz;
+                Elf::Addr loc=segment.start;
+                const Elf::Addr end_loc = loc + segment.fileSize;
                 while (loc < end_loc) {
                     size_t read_size = std::min(chunk_size, end_loc - loc);
                     data.resize(read_size/step);

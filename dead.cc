@@ -5,8 +5,8 @@
 #include <iostream>
 
 CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
-        const PathReplacementList &pathReplacements_, Dwarf::ImageCache &imageCache)
-    : Process(std::move(exec), std::make_shared<CoreReader>(this), pathReplacements_, imageCache)
+        const PstackOptions &options, Dwarf::ImageCache &imageCache)
+    : Process(std::move(exec), std::make_shared<CoreReader>(this), options, imageCache)
     , coreImage(std::move(core))
 {
 }
@@ -159,6 +159,13 @@ CoreProcess::findLWPs()
     }
 }
 
+std::vector<AddressRange>
+CoreProcess::addressSpace() const {
+    std::vector<AddressRange> rv;
+    for (auto &hdr : coreImage->getSegments(PT_LOAD))
+        rv.emplace_back(hdr.p_vaddr, hdr.p_filesz, hdr.p_memsz);
+    return rv;
+}
 
 // Types for the NT_FILE note.
 struct FileNoteHeader {
