@@ -117,10 +117,12 @@ template <int PyV> class TypePrinter : public PythonTypePrinter<PyV> {
 template <int PyV> class LongPrinter : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         auto plo = (PyLongObject *)pyo;
+        auto size = ((PyVarObject *)plo)->ob_size;
         intmax_t value = 0;
-        for (int i = 0; i < ((PyVarObject *)plo)->ob_size; ++i) {
+        for (int i = 0; i < abs(size); ++i) {
             value += intmax_t(plo->ob_digit[i]) << (PyLong_SHIFT * i) ;
         }
+        if (size < 0) value *= -1;
         pc->os << value;
         return 0;
     }
@@ -354,11 +356,11 @@ PythonPrinter<PyV>::print(Elf::Addr remoteAddr) const {
             ssize_t fullSize;
             if (itemsize != 0) {
                 // object is a variable length object:
-                if (baseObj.ob_size > 65536 || baseObj.ob_size < 0) {
+                if (baseObj.ob_size > 65536) {
                     os << "(skip massive object " << baseObj.ob_size << ")";
                     break;
                 }
-                fullSize = size + itemsize * baseObj.ob_size;
+                fullSize = size + itemsize * abs(baseObj.ob_size);
             } else {
                 fullSize = size;
             }
