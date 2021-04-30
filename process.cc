@@ -17,17 +17,18 @@
 #include <limits>
 #include <set>
 #include <sys/ucontext.h>
+#include <signal.h>
 
 static size_t gMaxFrames = 1024; /* max number of frames to read */
 
 Process::Process(Elf::Object::sptr exec, Reader::sptr memory,
-                  const PathReplacementList &prl, Dwarf::ImageCache &cache)
+                  const PstackOptions &options, Dwarf::ImageCache &cache)
     : entry(0)
     , interpBase(0)
     , vdsoBase(0)
     , agent(nullptr)
     , execImage(std::move(exec))
-    , pathReplacements(prl)
+    , options(options)
     , sysent(0)
     , imageCache(cache)
     , io(std::move(memory))
@@ -56,7 +57,7 @@ Process::load(const PstackOptions &options)
     else
         loadSharedObjects(r_debug_addr);
 
-    if (!options[PstackOption::nothreaddb]) {
+    if (!options.flags[PstackOptions::nothreaddb]) {
         td_err_e the;
         the = td_ta_new(this, &agent);
         if (the != TD_OK) {
@@ -256,7 +257,7 @@ struct PrintableFrame {
             }
         }
 
-        if (!options[PstackOption::nosrc])
+        if (!options.flags[PstackOptions::nosrc])
             source = frame->dwarf->sourceFromAddr(objIp);
 
         haveSym = frame->elf->findSymbolByAddress(objIp, STT_FUNC, symbol, symName);
@@ -295,7 +296,7 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
 {
     auto &frame =jt.object;
     PstackOptions options;
-    options[doargs] = true;
+    options.flags[PstackOptions::doargs] = true;
     PrintableFrame pframe(frame, 0, options);
 
     JObject jo(os);
@@ -499,7 +500,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
 std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
-    if (!ap.frame->function || !ap.options[PstackOption::doargs])
+    if (!ap.frame->function || !ap.options.flags[PstackOptions::doargs])
         return os;
     using namespace Dwarf;
     const char *sep = "";
@@ -696,7 +697,7 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
             continue;
 
         std::string startPath = path;
-        for (auto &it : pathReplacements) {
+        for (auto &it : options.pathReplacements) {
             size_t found = path.find(it.first);
             if (found != std::string::npos)
                 path.replace(found, it.first.size(), it.second);
@@ -950,4 +951,24 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
     catch (const std::exception &ex) {
         std::clog << "warning: exception unwinding stack: " << ex.what() << std::endl;
     }
+}
+
+std::shared_ptr<Process> Process::load(Elf::Object::sptr exec, std::string id, const PstackOptions &options, Dwarf::ImageCache &imageCache) {
+    pid_t pid;
+    std::istringstream(id) >> pid;
+    std::shared_ptr<Process> proc;
+    if (pid != 0 && kill(pid, 0) == 0) {
+       *debug << "attaching to live process" << std::endl;
+       proc = std::make_shared<LiveProcess>(exec, pid, options, imageCache);
+    } else {
+       // don't use imagecache for cores. We don't want to mmap them (they can
+       // be enormous, esp. from a leaky process), use loadFile and a caching
+       // reader on the underlying file instead.
+       auto core = std::make_shared<Elf::Object>(imageCache, loadFile(id));
+       if (core->getHeader().e_type != ET_CORE)
+          return nullptr; // image is ELF, but not a core - just return null
+       proc = std::make_shared<CoreProcess>(exec, core, options, imageCache);
+    }
+    proc->load(options);
+    return proc;
 }

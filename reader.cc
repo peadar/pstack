@@ -106,13 +106,13 @@ FileReader::read(Off off, size_t count, char *ptr) const
     if (rc == -1)
         throw (Exception()
             << "read " << count
-            << " at " << off
+            << " at " << (void *)off
             << " on " << *this
             << " failed: " << strerror(errno));
     if (rc == 0)
         throw (Exception()
             << "read " << count
-            << " at " << off
+            << " at " << (void *)off
             << " on " << *this
             << " hit unexpected EOF");
     return rc;
@@ -183,6 +183,8 @@ CacheReader::getPage(Off pageoff) const
 size_t
 CacheReader::read(Off off, size_t count, char *ptr) const
 {
+    if (count >= PAGESIZE)
+        return upstream->read(off, count, ptr);
     Off startoff = off;
     for (;;) {
         if (count == 0)

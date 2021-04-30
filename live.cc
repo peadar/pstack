@@ -13,6 +13,7 @@
 #include <climits>
 #include <iostream>
 #include <utility>
+#include <fstream>
 
 std::string
 procname(pid_t pid, const std::string &base)
@@ -24,11 +25,11 @@ LiveReader::LiveReader(pid_t pid, const std::string &base)
    : FileReader(procname(pid, base)) {}
 
 LiveProcess::LiveProcess(Elf::Object::sptr &ex, pid_t pid_,
-            const PathReplacementList &repls, Dwarf::ImageCache &imageCache)
+            const PstackOptions &options, Dwarf::ImageCache &imageCache)
     : Process(
             ex ? ex : imageCache.getImageForName(procname(pid_, "exe")),
             std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")),
-            repls, imageCache)
+            options, imageCache)
     , pid(pid_)
 {
     (void)ps_getpid(this);
@@ -176,6 +177,31 @@ LiveProcess::stop(lwpid_t pid)
     if (waitedpid == -1)
         *debug << "failed to stop LWP " << pid << ": wait failed: " << strerror(errno) << "\n";
 }
+
+std::vector<AddressRange>
+LiveProcess::addressSpace() const {
+    std::vector<AddressRange> rv;
+    std::ifstream input(procname(pid, "maps"));
+    for (;;) {
+       std::string startS, endS, restS;
+       getline(input, startS, '-');
+       getline(input, endS, ' ');
+       getline(input, restS);
+       if (input.eof() || !input.good())
+          break;
+
+       size_t pos;
+       Elf::Addr start = stoull(startS, &pos, 16);
+       if (startS[pos] != 0)
+          continue;
+       Elf::Addr end = stoull(endS, &pos, 16);
+       if (endS[pos] != 0)
+          continue;
+       rv.emplace_back(start, end - start, end - start);
+    }
+    return rv;
+}
+
 
 bool
 LiveProcess::loadSharedObjectsFromFileNote()

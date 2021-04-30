@@ -63,14 +63,8 @@ class DictPrinter : public PythonTypePrinter<3> {
         const PyDictKeysObject keys = readPyObj<3, PyDictKeysObject>(*pc->proc.io, Elf::Addr(dict->ma_keys));
         const size_t indexSize = DK_IXSIZE(&keys);
         const Elf::Addr keyEntries = Elf::Addr(dict->ma_keys) + offsetof(PyDictKeysObject, dk_indices) + (keys.dk_size * indexSize);
-
         const bool isSplit = dict->ma_values != NULL;
 
-        PyObject* splitValues = NULL;
-
-        if (isSplit)
-            splitValues = readPyObj<3, PyObject*>(*pc->proc.io, Elf::Addr(dict->ma_values));
-            
         pc->os << "{\n";
         pc->depth++;
         for (Py_ssize_t i = 0; i < keys.dk_size; ++i) {

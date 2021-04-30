@@ -144,13 +144,13 @@ emain(int argc, char **argv)
             usage(argv[0]);
             goto done;
         case 'a':
-            options.set(PstackOption::doargs);
+            options.flags.set(PstackOptions::doargs);
             break;
         case 'j':
             doJson = true;
             break;
         case 's':
-            options.set(PstackOption::nosrc);
+            options.flags.set(PstackOptions::nosrc);
             break;
         case 'v':
             verbose++;
@@ -173,7 +173,7 @@ emain(int argc, char **argv)
 #endif
             break;
         case 't':
-            options.set(PstackOption::nothreaddb);
+            options.flags.set(PstackOptions::nothreaddb);
             break;
 
         case 'V':
@@ -211,22 +211,11 @@ emain(int argc, char **argv)
                     }
                 }
             };
-            pid_t pid = strtoul(argv[i], 0, 0);
-            if (pid == 0 || (kill(pid, 0) == -1 && errno == ESRCH)) {
-                // It's a file: should be ELF, treat core and exe differently
-                // Don't put cores in the cache
-                auto obj = std::make_shared<Elf::Object>(imageCache, loadFile(argv[i]));
-
-                if (obj->getHeader().e_type == ET_CORE) {
-                    CoreProcess proc(exec, obj, PathReplacementList(), imageCache);
-                    doStack(proc);
-                } else {
-                    exec = obj;
-                }
+            auto process = Process::load(exec, argv[i], options, imageCache);
+            if (process == nullptr) {
+                exec = imageCache.getImageForName(argv[i]);
             } else {
-                // It's a PID.
-                LiveProcess proc(exec, pid, PathReplacementList(), imageCache);
-                doStack(proc);
+                doStack(*process);
             }
         } catch (const std::exception &e) {
             std::cerr << "failed to process " << argv[i] << ": " << e.what() << "\n";

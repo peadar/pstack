@@ -110,14 +110,17 @@ struct ThreadStack {
     void unwind(Process &, Elf::CoreRegisters &regs);
 };
 
-enum PstackOption {
-    nosrc,
-    doargs,
-    nothreaddb,
-    maxopt // leave this last
-};
 
-using PstackOptions = std::bitset<PstackOption::maxopt>;
+struct PstackOptions {
+   enum Flags {
+       nosrc,
+       doargs,
+       nothreaddb,
+       maxopt // leave this last
+   };
+   std::bitset<maxopt> flags;
+   std::vector<std::pair<std::string, std::string>> pathReplacements;
+};
 
 /*
  * This contains information about an LWP.  In linux, since NPTL, this is
@@ -130,11 +133,19 @@ struct Lwp {
     Lwp() : stopCount{0}, stoppedAt{0,0} {}
 };
 
-typedef std::vector<std::pair<std::string, std::string>> PathReplacementList;
 struct PrintableFrame;
 
 
 struct ProcessLocation {
+};
+
+struct AddressRange {
+   Elf::Addr start;
+   Elf::Addr fileSize;
+   Elf::Addr memSize;
+   AddressRange( Elf::Addr start_, Elf::Addr fileSize_, Elf::Addr memSize_ ) : start(start_), fileSize(fileSize_), memSize(memSize_) {}
+   // std::string map;
+   // long flags; .... add protection flags, etc.
 };
 
 class Process : public ps_prochandle {
@@ -150,7 +161,7 @@ protected:
     Elf::Object::sptr execImage;
     Elf::Object::sptr vdsoImage;
     std::string abiPrefix;
-    const PathReplacementList &pathReplacements;
+    PstackOptions options;
 
 public:
     Elf::Addr sysent; // for AT_SYSINFO
@@ -165,7 +176,7 @@ public:
     // Find the the object (and its load address) and segment containing a given address
     std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *> findSegment(Elf::Addr addr) const;
     Dwarf::Info::sptr getDwarf(Elf::Object::sptr);
-    Process(Elf::Object::sptr exec, Reader::sptr memory, const PathReplacementList &prl, Dwarf::ImageCache &cache);
+    Process(Elf::Object::sptr exec, Reader::sptr memory, const PstackOptions &prl, Dwarf::ImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
     virtual void findLWPs() = 0;
@@ -189,6 +200,8 @@ public:
     virtual ~Process();
     virtual void load(const PstackOptions &);
     virtual pid_t getPID() const = 0;
+    virtual std::vector<AddressRange> addressSpace() const = 0;
+    static std::shared_ptr<Process> load(Elf::Object::sptr exe, std::string id, const PstackOptions &options, Dwarf::ImageCache &cache);
 };
 
 template <typename T> int
@@ -217,7 +230,7 @@ class LiveProcess : public Process {
     pid_t pid;
     friend class LiveReader;
 public:
-    LiveProcess(Elf::Object::sptr &, pid_t, const PathReplacementList &, Dwarf::ImageCache &);
+    LiveProcess(Elf::Object::sptr &, pid_t, const PstackOptions &, Dwarf::ImageCache &);
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
     virtual void stop(pid_t) override;
     virtual void resume(pid_t) override;
@@ -228,6 +241,7 @@ public:
     virtual pid_t getPID() const override;
 protected:
     bool loadSharedObjectsFromFileNote() override;
+    std::vector<AddressRange> addressSpace() const override;
 };
 
 class CoreProcess;
@@ -246,7 +260,7 @@ class CoreProcess : public Process {
     Elf::Object::sptr coreImage;
     friend class CoreReader;
 public:
-    CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core, const PathReplacementList &, Dwarf::ImageCache &);
+    CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core, const PstackOptions &, Dwarf::ImageCache &);
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
     virtual void stop(lwpid_t) override;
     virtual void resume(lwpid_t) override;
@@ -257,6 +271,7 @@ public:
     virtual pid_t getPID() const override;
 protected:
     bool loadSharedObjectsFromFileNote() override;
+    std::vector<AddressRange> addressSpace() const override;
 };
 
 // RAII to stop a process.
