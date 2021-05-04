@@ -356,7 +356,7 @@ PythonPrinter<PyV>::print(Elf::Addr remoteAddr) const {
             ssize_t fullSize;
             if (itemsize != 0) {
                 // object is a variable length object:
-                if (baseObj.ob_size > 65536) {
+                if (abs(baseObj.ob_size) > 65536) {
                     os << "(skip massive object " << baseObj.ob_size << ")";
                     break;
                 }
