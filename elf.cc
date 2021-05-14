@@ -427,32 +427,24 @@ Object::getLinkedSection(const Section &from) const
 }
 
 /*
- * Locate a named symbol in an ELF image.
- * Passing "includeDebug" will search "symtab" as well as "dynsym", and will
- * also look in .gnu_debugdata compressed section if present.
+ * Locate a named symbol in an ELF image - this uses the dynamic symbol table
+ * which provides hash-accellerated access. (via either .hash or .gnu_hash
+ * section)
  */
-
 VersionedSymbol
 Object::findDynamicSymbol(const std::string &name)
 {
     Sym sym;
-    // We assume there's a hash table covering .dynsym - either .hash or
-    // .gnu.hash.
-    // Observation shows you get either .gnu.hash or .hash, but
-    // not both. If we do, we only use .gnu.hash
-    //
-    Half idx = 0;
-    if (gnu_hash)
-        idx = gnu_hash->findSymbol(sym, name);
-    if (idx == 0 && hash)
-        idx = hash->findSymbol(sym, name);
 
-    // We found a symbol in our hash table. Find its version if we can.
+    Half idx = gnu_hash ? gnu_hash->findSymbol(sym, name)
+             : hash ?  hash->findSymbol(sym, name)
+             : 0;
+
     if (idx == 0)
         return VersionedSymbol();
 
+    // We found a symbol in our hash table. Find its version if we can.
     return VersionedSymbol(sym, name, commonSections->gnu_version, idx);
-
 }
 
 // XXX: if we're doing name lookups on symbols, consider caching them all in a
