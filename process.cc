@@ -743,7 +743,7 @@ Process::findRDebugAddr()
     if (interpBase && execImage->getInterpreter() != "") {
         try {
             addElfObject(imageCache.getImageForName(execImage->getInterpreter()), interpBase);
-            return findSymbol("_r_debug", false,
+            return resolveSymbol("_r_debug", false,
                   [this](const Elf::Addr, const Elf::Object::sptr &o) {
                       auto name = stringify(*o->io);
                       return execImage->getInterpreter() == name;
@@ -775,16 +775,15 @@ Process::findSegment(Elf::Addr addr) const
 }
 
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
-Process::findSymbolDetail(const char *name, bool includeDebug,
+Process::resolveSymbolDetail(const char *name, bool includeDebug,
         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
 {
     for (auto &loaded : objects) {
         if (!match(loaded.first, loaded.second))
            continue;
         auto sym = loaded.second->findDynamicSymbol(name);
-        if (sym) {
+        if (sym)
            return std::make_tuple(loaded.second, loaded.first, sym.symbol.st_value + loaded.first);
-        }
         if (includeDebug) {
            auto sym = loaded.second->findDebugSymbol(name);
            if (sym)
@@ -795,10 +794,10 @@ Process::findSymbolDetail(const char *name, bool includeDebug,
 }
 
 Elf::Addr
-Process::findSymbol(const char *name, bool includeDebug,
+Process::resolveSymbol(const char *name, bool includeDebug,
         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
 {
-    auto info = findSymbolDetail(name, includeDebug, match);
+    auto info = resolveSymbolDetail(name, includeDebug, match);
     return std::get<2>(info);
 
 }

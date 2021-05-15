@@ -102,49 +102,41 @@ static uint32_t gnu_hash(const char *s) {
     return h;
 }
 
-uint32_t
-GnuHash::findSymbol(Sym &sym, const char *name) const {
-    auto h1 = gnu_hash(name);
-    auto h2 = h1 >> header.bloom_shift;
+std::pair<uint32_t, Sym>
+GnuHash::findSymbol(const char *name) const {
+    auto symhash = gnu_hash(name);
 
-    auto N = (h1/ELF_BITS) % header.bloom_size;
-    auto B1 = h1 % ELF_BITS;
-    auto B2 = h2 % ELF_BITS;
-    auto W = hash->readObj<Elf::Off>(bloomoff(N));
+    auto bloomword = hash->readObj<Elf::Off>(bloomoff((symhash/ELF_BITS) % header.bloom_size));
 
-    // If either bit is not set in the bloom filter, we're done.
-    if ((W & (Elf::Off(1) << B1)) == 0) {
+    Elf::Off mask = Elf::Off(1) << symhash % ELF_BITS |
+                    Elf::Off(1) << (symhash >> header.bloom_shift) % ELF_BITS;
+
+    if ((bloomword & mask) != mask) {
        if (verbose >= 2)
-          *debug << "failed to find '" << name << "' using GNU hash: bloom filter 1\n";
-       return false;
-    }
-    if ((W & (Elf::Off(1) << B2)) == 0) {
-        if (verbose >= 2)
-            *debug << "failed to find '" << name << "' using GNU hash: bloom filter 2\n";
-        return false;
+          *debug << "failed to find '" << name << "' bloom filter missed\n";
+       return std::make_pair(0, Sym());
     }
 
-    auto idx = hash->readObj<uint32_t>(bucketoff(h1 % header.nbuckets));
+    auto idx = hash->readObj<uint32_t>(bucketoff(symhash % header.nbuckets));
     if (idx < header.symoffset) {
         if (verbose >= 2)
             *debug << "failed to find '" << name << "' bad index in hash table\n";
-        return 0;
+        return std::make_pair(0, Sym());
     }
     for (;;) {
-        sym = syms->readObj<Sym>(idx * sizeof (Sym));
-        auto symhash = hash->readObj<uint32_t>(chainoff(idx - header.symoffset));
-        if ((symhash | 1)  == (h1 | 1)) {
+        auto sym = syms->readObj<Sym>(idx * sizeof (Sym));
+        auto chainhash = hash->readObj<uint32_t>(chainoff(idx - header.symoffset));
+        if ((chainhash | 1)  == (symhash | 1)) {
            if (strings->readString(sym.st_name) == name) {
               if (verbose >= 2)
                  *debug << "found '" << name << "' using GNU hash\n";
-              return idx;
+              return std::make_pair(idx, sym);
            }
         }
-        if (symhash & 1) {
+        if (chainhash & 1) {
            if (verbose >= 2)
                *debug << "failed to find '" << name << "' hit end of hash chain\n";
-           return false;
-
+           return std::make_pair(0, Sym());
         }
         ++idx;
     }
@@ -217,12 +209,6 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
             hash = make_unique<SymHash>(commonSections->hash.io, syms.io, strings.io);
     }
 
-    if (commonSections->dynamic) {
-        ReaderArray<Dyn> content(*commonSections->dynamic.io);
-        for (auto dyn : content)
-           dynamic[dyn.d_tag].push_back(dyn);
-    }
-
     if (commonSections->gnu_hash) {
         auto &syms = getLinkedSection(commonSections->gnu_hash);
         auto &strings = getLinkedSection(syms);
@@ -230,12 +216,20 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
             gnu_hash = make_unique<GnuHash>(commonSections->gnu_hash.io, syms.io, strings.io);
     }
 
-    if (verbose >= 3)
-       *debug << "parsing version info for " << *io << std::endl;
+    /*
+     * Load dynamic entries
+     */
+    if (commonSections->dynamic) {
+        ReaderArray<Dyn> content(*commonSections->dynamic.io);
+        for (auto dyn : content)
+           dynamic[dyn.d_tag].push_back(dyn);
+    }
 
     /*
      * Get symbol versioning definitions
      */
+    if (verbose >= 3)
+       *debug << "parsing version info for " << *io << std::endl;
     if (commonSections->gnu_version_r) {
        auto &strings = getLinkedSection(commonSections->gnu_version_r);
        auto &verneednum = dynamic[DT_VERNEEDNUM];
@@ -358,31 +352,25 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
         }
         return false;
     };
-    if (findSym(commonSections->debugSymbols)) {
-       return true;
-    }
-    if (findSym(commonSections->dynamicSymbols)) {
-       return true;
-    }
+    if (findSym(commonSections->debugSymbols))
+        return true;
+    if (findSym(commonSections->dynamicSymbols))
+        return true;
     // .gnu_debugdata is a separate LZMA-compressed ELF image with just
     // a symbol table.
-    //
-    if (debugData == nullptr) {
+    if (debugData == nullptr && commonSections->gnu_debugdata) {
 #ifdef WITH_LZMA
-        if (commonSections->gnu_debugdata)
-            debugData = make_shared<Object>(imageCache,
-                    make_shared<const LzmaReader>(commonSections->gnu_debugdata.io),
-                    true);
+        auto reader = make_shared<const LzmaReader>(commonSections->gnu_debugdata.io);
+        debugData = make_shared<Object>(imageCache, reader, true);
 #else
         static bool warned = false;
         if (!warned) {
             std::clog << "warning: no compiled support for LZMA - "
-                  "can't decode debug data in " << *io << "\n";
+                "can't decode debug data in " << *io << "\n";
             warned = true;
         }
 #endif
     }
-
     if (debugData && debugData->findSymbolByAddress(addr, type, sym, name))
        return true;
     return haveExactZeroSizeMatch;
@@ -435,10 +423,11 @@ VersionedSymbol
 Object::findDynamicSymbol(const std::string &name)
 {
     Sym sym;
+    uint32_t idx;
 
-    Half idx = gnu_hash ? gnu_hash->findSymbol(sym, name)
-             : hash ?  hash->findSymbol(sym, name)
-             : 0;
+    std::tie(idx, sym) = gnu_hash ? gnu_hash->findSymbol(name)
+             : hash ? hash->findSymbol(name)
+             : std::make_pair(uint32_t(0), Sym());
 
     if (idx == 0)
         return VersionedSymbol();
@@ -562,19 +551,17 @@ SymHash::SymHash(Reader::csptr hash_,
     chains = buckets + nbucket;
 }
 
-uint32_t
-SymHash::findSymbol(Sym &sym, const string &name)
+std::pair<uint32_t, Sym>
+SymHash::findSymbol(const string &name)
 {
     uint32_t bucket = elf_hash(name) % nbucket;
     for (Word i = buckets[bucket]; i != STN_UNDEF; i = chains[i]) {
         auto candidate = syms->readObj<Sym>(i * sizeof (Sym));
         auto candidateName = strings->readString(candidate.st_name);
-        if (candidateName == name) {
-            sym = candidate;
-            return i;
-        }
+        if (candidateName == name)
+            return std::make_pair(i, candidate);
     }
-    return 0;
+    return std::make_pair(0, Sym());
 }
 
 /*

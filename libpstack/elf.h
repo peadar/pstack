@@ -137,7 +137,7 @@ class SymHash {
     const Word *buckets;
 public:
     SymHash(Reader::csptr hash_, Reader::csptr syms_, Reader::csptr strings_);
-    uint32_t findSymbol(Sym &sym, const std::string &name); // fills sym, and returns index.
+    std::pair<uint32_t, Sym> findSymbol(const std::string &name); // fills sym, and returns index.
 };
 
 /*
@@ -163,9 +163,9 @@ class GnuHash {
 public:
     GnuHash(const Reader::csptr &hash_, const Reader::csptr &syms_, const Reader::csptr &strings_) :
         hash(hash_), syms(syms_), strings(strings_), header(hash->readObj<Header>(0)) { }
-    uint32_t findSymbol(Sym &sym, const char *) const;
-    uint32_t findSymbol(Sym &sym, const std::string &name) const {
-       return findSymbol(sym, name.c_str());
+    std::pair<uint32_t, Sym> findSymbol(const char *) const;
+    std::pair<uint32_t, Sym> findSymbol(const std::string &name) const {
+       return findSymbol(name.c_str());
     }
 };
 

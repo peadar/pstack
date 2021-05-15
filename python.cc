@@ -75,8 +75,8 @@ getInterpHead<3>(const Process &proc) {
     Elf::Addr libpythonAddr;
     Elf::Addr _PyRuntime;
 
-    std::tie(libpython, libpythonAddr, _PyRuntime) = proc.findSymbolDetail("_PyRuntime", false);
-        
+    std::tie(libpython, libpythonAddr, _PyRuntime) = proc.resolveSymbolDetail("_PyRuntime", false);
+
     Elf::Addr interpHead = _PyRuntime + sizeof(int) * 2  + sizeof(void *)*2;
 
     if (libpython == nullptr) {
@@ -87,7 +87,7 @@ getInterpHead<3>(const Process &proc) {
 
     if (verbose)
        *debug << "python3 library is " << *libpython->io << std::endl;
-    
+
     return std::make_tuple(libpython, libpythonAddr, interpHead);
 }
 
@@ -96,7 +96,7 @@ getInterpHead(const Process &proc) {
     try {
         Elf::Object::sptr libpython;
         Elf::Addr libpythonAddr;
-        Elf::Addr interpHeadp = proc.findSymbol("Py_interp_headp", false,
+        Elf::Addr interpHeadp = proc.resolveSymbol("Py_interp_headp", false,
                 [&](Elf::Addr loadAddr, const Elf::Object::sptr &o) mutable {
                     libpython = o;
                     libpythonAddr = loadAddr;
@@ -143,7 +143,7 @@ pthreadTidOffset(const Process &proc, size_t *offsetp)
     static enum { notDone, notFound, found } status;
     if (status == notDone) {
         try {
-            auto addr = proc.findSymbol("_thread_db_pthread_tid", true);
+            auto addr = proc.resolveSymbol("_thread_db_pthread_tid", true);
             uint32_t desc[3];
             proc.io->readObj(addr, &desc[0], 3);
             offset = desc[2];

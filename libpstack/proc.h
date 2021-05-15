@@ -190,13 +190,15 @@ public:
 
 
     // find address of named symbol in the process.
-    Elf::Addr findSymbol(const char *symbolName, bool includeDebug,
+    Elf::Addr resolveSymbol(const char *symbolName, bool includeDebug,
           std::function<bool(Elf::Addr, const Elf::Object::sptr &)> matcher = [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
 
     // find symbol data of named symbol in the process.
-    // like findSymbol, but include the library and that library's load address.
-    std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr> findSymbolDetail(const char *name, bool includeDebug,
-        std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match = [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
+    // like resolveSymbol, but return the library and that library's load address as well as the address in the process.
+    std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+    resolveSymbolDetail(const char *name, bool includeDebug,
+                        std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match =
+                           [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
     virtual ~Process();
     virtual void load(const PstackOptions &);
     virtual pid_t getPID() const = 0;
