@@ -173,6 +173,7 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     : io(sectionReader(*obj, ".debug_info", ".zdebug_info"))
     , elf(obj)
     , debugStrings(sectionReader(*obj, ".debug_str", ".zdebug_str"))
+    , debugLineStrings(sectionReader(*obj, ".debug_line_str", ".zdebug_line_str"))
     , abbrev(sectionReader(*obj, ".debug_abbrev", ".zdebug_abbrev"))
     , lineshdr(sectionReader(*obj, ".debug_line", ".zdebug_line"))
     , strOffsets(sectionReader(*obj, ".debug_str_offsets", ".zdebug_str_offsets"))
@@ -704,6 +705,9 @@ Attribute::operator std::string() const
         case DW_FORM_strp:
             return dwarf->debugStrings->readString(value().addr);
 
+        case DW_FORM_line_strp:
+            return dwarf->debugLineStrings->readString(value().addr);
+
         case DW_FORM_string:
             return dieref.unit->io->readString(value().addr);
 
@@ -739,6 +743,7 @@ RawDIE::readValue(DWARFReader &r, const FormEntry &forment, Value &value, Unit *
     }
 
     case DW_FORM_strp:
+    case DW_FORM_line_strp:
         value.addr = r.getint(unit->version <= 2 ? 4 : unit->dwarfLen);
         break;
 

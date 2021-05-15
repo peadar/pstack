@@ -458,6 +458,7 @@ public:
     std::unique_ptr<CFI> debugFrame;
     std::unique_ptr<CFI> ehFrame;
     Reader::csptr debugStrings;
+    Reader::csptr debugLineStrings;
     Reader::csptr abbrev;
     Reader::csptr lineshdr;
     Info::sptr getAltDwarf() const;
