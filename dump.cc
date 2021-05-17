@@ -224,7 +224,7 @@ std::ostream &operator << (std::ostream &os, const JSON<Dwarf::FileEntry> &jobj)
     auto &fe = jobj.object;
     return JObject(os)
         .field("name", fe.name)
-        .field("dir", fe.directory)
+        .field("dir", fe.dirindex)
         .field("lastmod", fe.lastMod);
 }
 

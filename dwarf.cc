@@ -509,22 +509,92 @@ Attribute::operator uintmax_t() const
 }
 
 LineState::LineState(LineInfo *li)
-    : addr { 0 }
-    , file { &li->files[1] }
+    : file{ &li->files[1] }
+    , addr { 0 }
     , line { 1 }
     , column { 0 }
-    , isa { 0 }
     , is_stmt { li->default_is_stmt }
     , basic_block { false }
     , end_sequence { false }
     , prologue_end { false }
     , epilogue_begin { false }
+    , isa { 0 }
+    , discriminator{ 0 }
 {}
 
 static void
 dwarfStateAddRow(LineInfo *li, const LineState &state)
 {
     li->matrix.push_back(state);
+}
+
+void
+DWARFReader::readForm(const Unit *unit, Form form)
+{
+    switch (form) {
+        case DW_FORM_string:
+        case DW_FORM_line_strp:
+        case DW_FORM_strp:
+            readFormString(unit, form);
+            break;
+        default:
+            abort();
+    }
+}
+
+std::string
+DWARFReader::readFormString(const Unit *unit, Form form)
+{
+    switch (form) {
+        case DW_FORM_string:
+            return getstring();
+        default:
+            abort();
+        case DW_FORM_line_strp: {
+            auto off = getuint(unit->dwarfLen);
+            return unit->dwarf->debugLineStrings->readString(off);
+        }
+        case DW_FORM_strp: {
+            auto off = getuint(unit->dwarfLen);
+            return unit->dwarf->debugStrings->readString(off);
+        }
+    }
+}
+
+uintmax_t
+DWARFReader::readFormUnsigned(const Unit *, Form form)
+{
+    switch (form) {
+        case DW_FORM_udata:
+            return getuleb128();
+        default:
+            abort();
+    }
+}
+
+intmax_t
+DWARFReader::readFormSigned(const Unit *, Form form)
+{
+    switch (form) {
+        default:
+            abort();
+    }
+}
+
+
+using EntryFormats = std::vector<std::pair<DW_LNCT, Form>>;
+
+EntryFormats
+readEntryFormats(DWARFReader &r) {
+    EntryFormats rv;
+    auto format_count = r.getu8();
+    std::vector<std::pair<DW_LNCT, Form>> entry_formats;
+    for (int i = 0; i < format_count; ++i) {
+        DW_LNCT typeCode = DW_LNCT(r.getuleb128());
+        auto formCode = Form(r.getuleb128());
+        rv.emplace_back(typeCode, formCode);
+    }
+    return rv;
 }
 
 void
@@ -535,8 +605,17 @@ LineInfo::build(DWARFReader &r, const Unit *unit)
     Elf::Off end = r.getOffset() + total_length;
 
     uint16_t version = r.getu16();
-    (void)version;
-    Elf::Off header_length = r.getuint(version > 2 ? dwarfLen: 4);
+    unsigned char address_size;
+    unsigned char segment_selector_size;
+    if (version >= 5) {
+        address_size = r.getu8();
+        segment_selector_size = r.getu8();
+    } else {
+        address_size = ELF_BYTES;
+        segment_selector_size = ELF_BYTES;
+    }
+
+    Elf::Off header_length = r.getuint(version > 2 ? dwarfLen : 4);
     Elf::Off expectedEnd = header_length + r.getOffset();
     int min_insn_length = r.getu8();
 
@@ -552,24 +631,71 @@ LineInfo::build(DWARFReader &r, const Unit *unit)
     for (size_t i = 1; i < opcode_base; ++i)
         opcode_lengths[i] = r.getu8();
 
-    directories.emplace_back(".");
-    int count;
-    for (count = 0;; count++) {
-        const auto &s = r.getstring();
-        if (s == "")
-            break;
-        directories.push_back(s);
-    }
-
-    files.emplace_back("unknown", "unknown", 0U, 0U); // index 0 is special
-    for (count = 1;; count++) {
-        char c;
-        r.io->readObj(r.getOffset(), &c);
-        if (c == 0) {
-            r.getu8(); // skip terminator.
-            break;
+    int directories_count;
+    if (version >= 5) {
+        EntryFormats directoryFormat = readEntryFormats(r);
+        directories_count = r.getuleb128();
+        while( directories_count-- ) {
+            std::string path;
+            for (auto &ent : directoryFormat) {
+                switch (ent.first) {
+                    case DW_LNCT_path: {
+                        path = r.readFormString(unit, ent.second);
+                        break;
+                    }
+                    default:{
+                        r.readForm(unit, ent.second);
+                        *debug << "unexpected LNCT " << ent.first << " in directory table" << std::endl;
+                        break;
+                    }
+                }
+            }
+            if (path == "") {
+                *debug << "no path in in directory table entry" << std::endl;
+            } else {
+                directories.emplace_back(path);
+            }
         }
-        files.emplace_back(r, this);
+        EntryFormats fileFormat = readEntryFormats(r);
+        uintmax_t filecount = r.getuleb128();
+        while (filecount--) {
+            FileEntry entry;
+            for (auto &ent : fileFormat) {
+                switch (ent.first) {
+                    case DW_LNCT_path:
+                        entry.name = r.readFormString(unit, ent.second);
+                        break;
+                    case DW_LNCT_directory_index:
+                        entry.dirindex = r.readFormUnsigned(unit, ent.second);
+                        break;
+                    default:
+                        r.readForm(unit, ent.second);
+                        break;
+                }
+            }
+            files.push_back(entry);
+        }
+
+    } else {
+        directories.emplace_back(".");
+        int count;
+        for (count = 0;; count++) {
+            const auto &s = r.getstring();
+            if (s == "")
+                break;
+            directories.push_back(s);
+        }
+
+        files.emplace_back("unknown", 0U, 0U, 0U); // index 0 is special
+        for (int count = 1;; count++) {
+            char c;
+            r.io->readObj(r.getOffset(), &c);
+            if (c == 0) {
+                r.getu8(); // skip terminator.
+                break;
+            }
+            files.emplace_back(r);
+        }
     }
 
     auto diff = expectedEnd - r.getOffset();
@@ -607,7 +733,7 @@ LineInfo::build(DWARFReader &r, const Unit *unit)
                 state.addr = r.getuint(unit->addrlen);
                 break;
             case DW_LNE_set_discriminator:
-                r.getuleb128(); // XXX: what's this?
+                state.discriminator = r.getuleb128();
                 break;
             default:
                 r.skip(len - 1);
@@ -669,17 +795,17 @@ LineInfo::build(DWARFReader &r, const Unit *unit)
     }
 }
 
-FileEntry::FileEntry(string name_, string dir_, unsigned lastMod_, unsigned length_)
+FileEntry::FileEntry(string name_, unsigned dirindex_, unsigned lastMod_, unsigned length_)
     : name(std::move(name_))
-    , directory(std::move(dir_))
+    , dirindex(dirindex_)
     , lastMod(lastMod_)
     , length(length_)
 {
 }
 
-FileEntry::FileEntry(DWARFReader &r, LineInfo *info)
+FileEntry::FileEntry(DWARFReader &r)
     : name(r.getstring())
-    , directory(info->directories[r.getuleb128()])
+    , dirindex(r.getuleb128())
     , lastMod(r.getuleb128())
     , length(r.getuleb128())
 {
@@ -1056,21 +1182,21 @@ CFI::decodeAddress(DWARFReader &f, int encoding) const
 }
 
 Elf::Off
-DWARFReader::getlength(size_t *addrLen)
+DWARFReader::getlength(size_t *dwarflen)
 {
     size_t length = getu32();
     if (length >= 0xfffffff0) {
         switch (length) {
             case 0xffffffff:
-                if (addrLen != nullptr)
-                    *addrLen = 8;
+                if (dwarflen != nullptr)
+                    *dwarflen = 8;
                 return getuint(8);
             default:
                 return 0;
         }
     } else {
-        if (addrLen != nullptr)
-            *addrLen = 4;
+        if (dwarflen != nullptr)
+            *dwarflen = 4;
         return length;
     }
 }
@@ -1153,7 +1279,8 @@ sourceFromAddrInUnit(const Unit::sptr &unit, Elf::Addr addr,
                 continue;
             auto next = i+1;
             if (i->addr <= addr && next->addr > addr) {
-                info.emplace_back(verbose ? i->file->directory + "/" + i->file->name : i->file->name, i->line);
+                auto &dirname = lines->directories[i->file->dirindex];
+                info.emplace_back(verbose ? dirname + "/" + i->file->name : i->file->name, i->line);
                 return true;
             }
         }

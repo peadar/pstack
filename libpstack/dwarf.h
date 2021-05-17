@@ -239,30 +239,31 @@ enum FIType {
 };
 
 class FileEntry {
-    FileEntry() = delete;
-    // copy-constructable.
 public:
+    FileEntry() = default;
+    FileEntry(const FileEntry &) = default;
     std::string name;
-    std::string directory;
+    unsigned dirindex;
     unsigned lastMod;
     unsigned length;
-    FileEntry(std::string name_, std::string dir_, unsigned lastMod_, unsigned length_);
-    FileEntry(DWARFReader &r, LineInfo *info);
+    FileEntry(std::string name_, unsigned dirindex, unsigned lastMod_, unsigned length_);
+    FileEntry(DWARFReader &r);
 };
 
 class LineState {
     LineState() = delete;
 public:
+    FileEntry *file;
     uintmax_t addr;
-    const FileEntry *file;
     unsigned line;
     unsigned column;
-    unsigned isa;
     bool is_stmt:1;
     bool basic_block:1;
     bool end_sequence:1;
     bool prologue_end:1;
     bool epilogue_begin:1;
+    unsigned isa;
+    unsigned discriminator;
     LineState(LineInfo *);
 };
 
@@ -540,6 +541,14 @@ enum CFAInstruction {
     DW_CFA_max = 0xff
 };
 
+enum DW_LNCT {
+#define DW_LNCT(name, value) name = value,
+#include "libpstack/dwarf/line_ct.h"
+#undef DW_LNCT
+    DW_LNCT_max = 0xffff
+};
+
+
 /*
  * A DWARF Reader is a wrapper for a reader that keeps a current position in the
  * underlying reader, and provides operations to read values in DWARF standard dwarf
@@ -557,8 +566,9 @@ public:
         : off(off_)
         , end(end_ == std::numeric_limits<size_t>::max() ? io_->size() : end_)
         , io(std::move(io_))
-        , addrLen(ELF_BITS / 8) {
-    }
+        , addrLen(ELF_BITS / 8)
+        {
+        }
 
     uint32_t getu32() {
         unsigned char q[4];
@@ -627,6 +637,11 @@ public:
         return result;
     }
 
+    std::string readFormString(const Unit *, Form f);
+    void readForm(const Unit *, Form f);
+    uintmax_t readFormUnsigned(const Unit *, Form f);
+    intmax_t readFormSigned(const Unit *, Form f);
+
     std::string getstring() {
         std::string s = io->readString(off);
         off += s.size() + 1;
@@ -641,7 +656,7 @@ public:
     bool empty() const {
        return off == end;
     }
-    Elf::Off getlength(size_t *);
+    Elf::Off getlength(size_t *dwarfLen); // sets "dwarfLen"
     void skip(Elf::Off amount) { off += amount; }
 };
 

@@ -587,7 +587,8 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
        if (lineinfo) {
           os << " at " << src.first << ":" << src.second;
           auto &fileEnt = lineinfo->files[intmax_t(i->attribute(Dwarf::DW_AT_call_file))];
-          const auto &name = verbose ? fileEnt.directory + "/" + fileEnt.name : fileEnt.name;
+          auto &dirname = lineinfo->directories[fileEnt.dirindex];
+          const auto &name = verbose ? dirname + "/" + fileEnt.name : fileEnt.name;
           src = std::make_pair( name, intmax_t(i->attribute(Dwarf::DW_AT_call_line)));
           os << "\n";
        }
