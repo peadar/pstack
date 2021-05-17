@@ -223,6 +223,7 @@ public:
     explicit operator bool() const { return valid() && value().flag; }
     explicit operator DIE() const;
     explicit operator const Block &() const { return *value().block; }
+    explicit operator Ranges () const;
     AttrName name() const;
 };
 
@@ -469,7 +470,6 @@ public:
     Units getUnits() const;
     DIE offsetToDIE(Elf::Off) const;
     bool hasRanges() const { return bool(rangesh); }
-    Ranges rangesAt(Elf::Off) const;
     bool hasARanges() const;
     Unit::sptr lookupUnit(Elf::Addr addr) const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
@@ -487,7 +487,9 @@ private:
     ImageCache &imageCache;
     mutable Reader::csptr pubnamesh;
     mutable Reader::csptr arangesh;
+public:
     mutable Reader::csptr rangesh;
+private:
     mutable ARanges aranges; // maps starting address to length + unit offset.
     bool haveLines;
     bool haveARanges;
@@ -548,6 +550,12 @@ enum DW_LNCT {
     DW_LNCT_max = 0xffff
 };
 
+enum DW_RLE {
+#define DW_RLE(name, value) name = value,
+#include "libpstack/dwarf/rle.h"
+   DW_RLE_LAST
+#undef DW_RLE
+};
 
 /*
  * A DWARF Reader is a wrapper for a reader that keeps a current position in the

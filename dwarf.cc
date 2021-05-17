@@ -356,7 +356,7 @@ Info::lookupUnit(Elf::Addr addr) const {
                 aranges.ranges[uintmax_t(highpc)] = std::make_pair(uintmax_t(highpc) - uintmax_t(lowpc), u->offset);
             }
             if (ranges.valid()) {
-                auto rs = rangesAt(uintmax_t(ranges));
+                auto rs = Ranges(ranges);
                 for (auto r : rs) {
                     aranges.ranges[r.second] = std::make_pair(r.first, u->offset);
                 }
@@ -508,6 +508,92 @@ Attribute::operator uintmax_t() const
     }
 }
 
+Attribute::operator Ranges() const
+{
+    Ranges ranges;
+    if (dieref.unit->version < 5) {
+        // DWARF4 units use dwarf_ranges
+        DWARFReader reader(dieref.unit->dwarf->rangesh, value().addr);
+        for (;;) {
+            auto start = reader.getuint(sizeof (Elf::Addr));
+            auto end = reader.getuint(sizeof (Elf::Addr));
+            if (start == 0 && end == 0)
+                break;
+            ranges.emplace_back(std::make_pair(start, end));
+        }
+    } else {
+        // DWARF5 units use dwarf_rnglists.
+        Elf::Off offset = value().addr;
+
+        // Offset by rnglists_base in the root DIE.
+        auto root = dieref.unit->root();
+        auto attr = root.attribute(DW_AT_rnglists_base);
+        if (attr.valid())
+            offset += uintmax_t(attr);
+
+        auto rnglists = sectionReader(*dieref.unit->dwarf->elf,
+                                    ".debug_rnglists", ".zdebug_rnglists", nullptr);
+        auto addrs = sectionReader(*dieref.unit->dwarf->elf,
+                                    ".debug_addr", ".zdebug_addr", nullptr);
+        DWARFReader r(rnglists, offset);
+
+        uintmax_t base = 0, baseidx = 0;
+        for (bool done = false; !done;) {
+            auto entryType = DW_RLE(r.getu8());
+            switch (entryType) {
+                case DW_RLE_end_of_list:
+                    done = true;
+                    break;
+
+                case DW_RLE_base_addressx: {
+                    auto baseidx = r.getuleb128();
+                    abort();
+                    break;
+                }
+
+                case DW_RLE_startx_endx: {
+                    auto startx = r.getuleb128();
+                    auto endx = r.getuleb128();
+                    abort();
+                    break;
+                }
+
+                case DW_RLE_startx_length: {
+                    auto starti = r.getuleb128();
+                    auto len = r.getuleb128();
+                    abort();
+                    break;
+                }
+
+                case DW_RLE_offset_pair: {
+                    auto offstart = r.getuleb128();
+                    auto offend = r.getuleb128();
+                    ranges.emplace_back(offstart + base, offend + base);
+                    break;
+                }
+
+                case DW_RLE_base_address:
+                    base = r.getuint(dieref.unit->addrlen);
+                    break;
+
+                case DW_RLE_start_end: {
+                    auto start = r.getuint(dieref.unit->addrlen);
+                    auto end = r.getuint(dieref.unit->addrlen);
+                    ranges.emplace_back(start, end);
+                    break;
+                }
+                case DW_RLE_start_length: {
+                    auto start = r.getuint(dieref.unit->addrlen);
+                    auto len = r.getuleb128();
+                    ranges.emplace_back(start, start + len);
+                    break;
+                }
+            }
+        }
+    }
+    return ranges;
+}
+
 LineState::LineState(LineInfo *li)
     : file{ &li->files[1] }
     , addr { 0 }
@@ -567,6 +653,12 @@ DWARFReader::readFormUnsigned(const Unit *, Form form)
     switch (form) {
         case DW_FORM_udata:
             return getuleb128();
+        case DW_FORM_data1:
+            return getu8();
+        case DW_FORM_data2:
+            return getu16();
+        case DW_FORM_data4:
+            return getu32();
         default:
             abort();
     }
@@ -1259,10 +1351,9 @@ CFI::CFI(Info *info, Elf::Addr addr, Reader::csptr io_, enum FIType type_)
 const FDE *
 CFI::findFDE(Elf::Addr addr) const
 {
-    for (const auto &fde : fdeList) {
+    for (const auto &fde : fdeList)
         if (fde.iloc <= addr && fde.iloc + fde.irange > addr)
             return &fde;
-    }
     return nullptr;
 }
 
@@ -1295,26 +1386,10 @@ Info::sourceFromAddr(uintmax_t addr) const
     std::list<Unit::sptr> units;
     if (!haveLines)
         return info;
-
     const auto &unit = lookupUnit(addr);
-    if (unit) {
+    if (unit)
         sourceFromAddrInUnit(unit, Elf::Addr(addr), info);
-    }
     return info;
-}
-
-Ranges
-Info::rangesAt(Elf::Off offset) const {
-    Ranges ranges;
-    DWARFReader reader(rangesh, offset);
-    for (;;) {
-        auto start = reader.getuint(sizeof (Elf::Addr));
-        auto end = reader.getuint(sizeof (Elf::Addr));
-        if (start == 0 && end == 0)
-            break;
-        ranges.emplace_back(std::make_pair(start, end));
-    }
-    return ranges;
 }
 
 CallFrame::CallFrame()
@@ -1717,7 +1792,7 @@ DIE::containsAddress(Elf::Addr addr) const
         auto ranges = attribute(DW_AT_ranges, true);
         if (ranges.valid()) {
             rc = ContainsAddr::NO;
-            for (auto &range : unit->dwarf->rangesAt(uintmax_t(ranges))) {
+            for (auto &range : Ranges(ranges)) {
                 if (range.first + base <= addr && addr <= range.second + base ) {
                     rc = ContainsAddr::YES;
                     break;

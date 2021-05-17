@@ -408,6 +408,7 @@ operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
     case DW_FORM_GNU_strp_alt:
     case DW_FORM_string:
     case DW_FORM_strp:
+    case DW_FORM_line_strp:
     case DW_FORM_strx:
     case DW_FORM_strx1:
     case DW_FORM_strx2:
