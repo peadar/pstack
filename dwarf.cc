@@ -997,7 +997,9 @@ RawDIE::readValue(DWARFReader &r, const FormEntry &forment, Value &value, Unit *
         value.udata = r.getuleb128();
         break;
 
+    // offsets in various sections...
     case DW_FORM_strx:
+    case DW_FORM_loclistx:
     case DW_FORM_rnglistx:
     case DW_FORM_addrx:
     case DW_FORM_ref_udata:
