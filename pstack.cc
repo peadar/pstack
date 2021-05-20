@@ -121,7 +121,7 @@ emain(int argc, char **argv)
 #endif
     bool coreOnExit = false;
 
-    while ((c = getopt(argc, argv, "F:b:d:CD:hjmsVvag:ptz:")) != -1) {
+    while ((c = getopt(argc, argv, "F:b:d:CD:hjmsVvag:pltz:")) != -1) {
         switch (c) {
         case 'F': g_openPrefix = optarg;
                   break;
@@ -168,6 +168,13 @@ emain(int argc, char **argv)
         case 'p':
 #if defined(WITH_PYTHON)
             python = true;
+#else
+            std::clog << "no python support compiled in" << std::endl;
+#endif
+            break;
+        case 'l':
+#if defined(WITH_PYTHON)
+            options.flags.set(PstackOptions::dolocals);
 #else
             std::clog << "no python support compiled in" << std::endl;
 #endif
@@ -246,6 +253,7 @@ usage(const char *name)
         "\t[-b<n>]                      batch mode: repeat every 'n' seconds\n"
 #ifdef WITH_PYTHON
         "\t[-p]                         print python backtrace if available\n"
+        "\t[-l]                         show python locals if available"
 #endif
         "\t[<pid>|<core>|<executable>]* list cores and pids to examine. An executable\n"
         "\t                             will override use of in-core or in-process information\n"

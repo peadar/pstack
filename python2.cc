@@ -1,6 +1,7 @@
 #include <python2.7/Python.h>
 #include <python2.7/frameobject.h>
 #include <python2.7/longintrepr.h>
+#include <python2.7/methodobject.h>
 #include "libpstack/python.h"
 template<> std::set<const PythonTypePrinter<2> *> PythonTypePrinter<2>::all = std::set<const PythonTypePrinter<2> *>();
 template<>
@@ -95,6 +96,7 @@ class IntPrint : public PythonTypePrinter<2> {
     bool dupdetect() const override { return false; }
 
 };
+static IntPrint intPrinter;
 
 template <typename T, int pyv>
 ssize_t
@@ -107,8 +109,10 @@ pyObjtype(const T *o) {
    return o->ob_type;
 }
 
-
-static IntPrint intPrinter;
+template <>
+int getKwonlyArgCount<2>(const PyObject *pyCode) {
+    return 0;
+}
 
 #include "python.tcc"
 

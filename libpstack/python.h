@@ -15,6 +15,14 @@ struct PyInterpInfo {
     int versionHex;
 };
 
+// See PyCodeObject.co_flags in <code.h>
+struct ArgFlags {
+    unsigned int         :  2; // Don't care
+    unsigned int varargs :  1; // If var args are used
+    unsigned int kwargs  :  1; // If kwargs are used
+    unsigned int         : 14; // Don't care
+};
+
 template <int PyV> struct PythonPrinter;
 
 struct _object;
@@ -40,6 +48,8 @@ template <int V, typename T> T readPyObj(const Reader &r, off_t offset) {
 }
 
 template <int V> std::string readString(const Reader &r, const Elf::Addr addr);
+template <int V> void printArguments(const PythonPrinter<V> *, const _object *, Elf::Addr addr);
+template <int V> int getKwonlyArgCount(const _object *);
 
 template <int V>
 class PythonTypePrinter {

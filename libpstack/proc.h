@@ -115,6 +115,7 @@ struct PstackOptions {
    enum Flags {
        nosrc,
        doargs,
+       dolocals,
        nothreaddb,
        maxopt // leave this last
    };
