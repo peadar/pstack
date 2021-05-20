@@ -67,14 +67,28 @@ if (Python3_Development_FOUND OR Python2_Development_FOUND)
 endif()
 
 if (PYTHON3 AND Python3_Development_FOUND)
-   message(STATUS  "Python3_INCLUDE_DIRS are ${Python3_INCLUDE_DIRS}")
-   set(pysrc ${pysrc} python3.cc)
-   add_definitions("-DWITH_PYTHON3")
-   set_source_files_properties(python3.cc PROPERTIES COMPILE_FLAGS -I${Python3_INCLUDE_DIRS})
    if ("${PYTHON3_SOURCE}" STREQUAL "") # not set
-      message(FATAL_ERROR "Path to CPython source code needed for Python 3 support\nSpecify with -DPYTHON3_SOURCE=<path>")
-   else()
+      message(STATUS "Python 3 source not specified. Checking /usr/src/debug/Python-3.* as default")
+
+      file(GLOB PYTHON3_SOURCE_GLOB "/usr/src/debug/Python-3.*")
+
+      if ("${PYTHON3_SOURCE_GLOB}" STREQUAL "") # glob was empty
+         message(STATUS "Python 3 source not found")
+      else()
+         message(STATUS "Python3 source is \"${PYTHON3_SOURCE_GLOB}\"")
+         set(PYTHON3_SOURCE "${PYTHON3_SOURCE_GLOB}")
+      endif()
+   endif()
+
+
+   if (NOT "${PYTHON3_SOURCE}" STREQUAL "") # src found in some way
+      message(STATUS  "Python3_INCLUDE_DIRS are ${Python3_INCLUDE_DIRS}")
+      add_definitions("-DWITH_PYTHON3")
+      set(pysrc ${pysrc} python3.cc)
+      set_source_files_properties(python3.cc PROPERTIES COMPILE_FLAGS -I${Python3_INCLUDE_DIRS})
       set_property(SOURCE python3.cc APPEND PROPERTY COMPILE_OPTIONS "-I${PYTHON3_SOURCE}")
+   else()
+      message(FATAL_ERROR "Path to CPython source code needed for Python 3 support\nSpecify with -DPYTHON3_SOURCE=<path>")
    endif()
 endif()
 
