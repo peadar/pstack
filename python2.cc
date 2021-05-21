@@ -110,7 +110,7 @@ pyObjtype(const T *o) {
 }
 
 template <>
-int getKwonlyArgCount<2>(const PyObject *pyCode) {
+int getKwonlyArgCount<2>(const PyObject *) {
     return 0;
 }
 

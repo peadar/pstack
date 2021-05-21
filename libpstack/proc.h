@@ -121,6 +121,7 @@ struct PstackOptions {
    };
    std::bitset<maxopt> flags;
    std::vector<std::pair<std::string, std::string>> pathReplacements;
+   int maxdepth;
 };
 
 /*

@@ -135,8 +135,14 @@ template <int PyV> class LongPrinter : public PythonTypePrinter<PyV> {
 template <int PyV> class TuplePrinter : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr remoteAddr) const override {
         auto tuple = reinterpret_cast<const PyTupleObject *>(pyo);
-        pc->os << "( \n";
         auto size = std::min(((PyVarObject *)tuple)->ob_size, Py_ssize_t(100));
+
+        if (size == 0) {
+            pc->os << "()";
+            return 0;
+        }
+
+        pc->os << "( \n";
         PyObject *objects[size];
         pc->proc.io->readObj(remoteAddr + offsetof(PyTupleObject, ob_item), &objects[0], size);
         pc->depth++;

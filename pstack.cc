@@ -114,6 +114,7 @@ emain(int argc, char **argv)
     Dwarf::ImageCache imageCache;
     double sleepTime = 0.0;
     PstackOptions options;
+    options.maxdepth = 10000;
 
 #if defined(WITH_PYTHON)
     bool python = false;
@@ -121,7 +122,7 @@ emain(int argc, char **argv)
 #endif
     bool coreOnExit = false;
 
-    while ((c = getopt(argc, argv, "F:b:d:CD:hjmsVvag:pltz:")) != -1) {
+    while ((c = getopt(argc, argv, "F:b:d:CD:hjmsVvag:pltz:r:")) != -1) {
         switch (c) {
         case 'F': g_openPrefix = optarg;
                   break;
@@ -189,6 +190,9 @@ emain(int argc, char **argv)
         case 'C':
             coreOnExit = true;
             break;
+        case 'r':
+            options.maxdepth = strtod(optarg, nullptr);
+            break;
         default:
             return usage(argv[0]);
         }
@@ -253,7 +257,8 @@ usage(const char *name)
         "\t[-b<n>]                      batch mode: repeat every 'n' seconds\n"
 #ifdef WITH_PYTHON
         "\t[-p]                         print python backtrace if available\n"
-        "\t[-l]                         show python locals if available"
+        "\t[-l]                         show python locals if available\n"
+        "\t[-r<n>]                      the max recursion depth for printing\n"
 #endif
         "\t[<pid>|<core>|<executable>]* list cores and pids to examine. An executable\n"
         "\t                             will override use of in-core or in-process information\n"

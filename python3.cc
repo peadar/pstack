@@ -63,6 +63,11 @@ class DictPrinter : public PythonTypePrinter<3> {
             return 0;
         }
 
+        if (pc->depth > pc->options.maxdepth) {
+            pc->os << "{ ... }";
+            return 0;
+        }
+
         const PyDictKeysObject keys = readPyObj<3, PyDictKeysObject>(*pc->proc.io, Elf::Addr(dict->ma_keys));
         const size_t indexSize = DK_IXSIZE(&keys);
         const Elf::Addr keyEntries = Elf::Addr(dict->ma_keys) + offsetof(PyDictKeysObject, dk_indices) + (keys.dk_size * indexSize);
