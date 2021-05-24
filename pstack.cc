@@ -86,8 +86,11 @@ template<int V> void doPy(Process &proc, std::ostream &o, const PstackOptions &o
     printer.printInterpreters(showModules);
 }
 
-void pystack(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules) {
+bool pystack(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules) {
     PyInterpInfo info = getPyInterpInfo(proc);
+
+    if (info.libpython == nullptr) // not a python process or python interpreter not found
+        return false;
 
     if (info.versionHex < V2HEX(3, 0)) { // Python 2.x
 #ifdef WITH_PYTHON2
@@ -102,6 +105,8 @@ void pystack(Process &proc, std::ostream &o, const PstackOptions &options, bool 
         throw (Exception() << "no support for discovered python 3 interpreter");
 #endif
     }
+
+    return true;
 }
 #endif
 
@@ -207,8 +212,8 @@ emain(int argc, char **argv)
                 proc.load(options);
                 while (!interrupted) {
 #if defined(WITH_PYTHON)
-                    if (python) {
-                        pystack(proc, std::cout, options, pythonModules);
+                    if (python && pystack(proc, std::cout, options, pythonModules)) {
+                        return;
                     }
                     else
 #endif
