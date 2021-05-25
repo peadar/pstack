@@ -94,4 +94,9 @@ struct PythonPrinter {
 bool pthreadTidOffset(const Process &proc, size_t *offsetp);
 PyInterpInfo getPyInterpInfo(const Process &proc);
 template <int PyV, typename T> ssize_t pyRefcnt(const T *t);
+
+template <int V>
+std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+getInterpHead(const Process &);
+
 #endif

@@ -127,6 +127,34 @@ int getKwonlyArgCount<3>(const PyObject *pyCode) {
     return code->co_kwonlyargcount;
 }
 
+// this comes from python internals that requires us to include C++-incompatible
+// headers (stdatomic.h, for example). It's in its own (C) translation unit.
+extern "C" size_t pyInterpOffset();
+
+template <>
+std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+getInterpHead<3>(const Process &proc) {
+    Elf::Object::sptr libpython;
+    Elf::Addr libpythonAddr;
+    Elf::Addr _PyRuntime;
+
+    std::tie(libpython, libpythonAddr, _PyRuntime) = proc.resolveSymbolDetail("_PyRuntime", false);
+
+    Elf::Addr interpHead = _PyRuntime + pyInterpOffset();
+
+    if (libpython == nullptr) {
+        if (verbose)
+            std::clog << "Python 3 interpreter not found" << std::endl;
+        throw Exception() << "No libpython3 found";
+    }
+
+    if (verbose)
+       *debug << "python3 library is " << *libpython->io << std::endl;
+
+    return std::make_tuple(libpython, libpythonAddr, interpHead);
+}
+
+
 #include "python.tcc"
 
 template struct PythonPrinter<3>;

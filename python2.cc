@@ -114,6 +114,31 @@ int getKwonlyArgCount<2>(const PyObject *) {
     return 0;
 }
 
+template <>
+std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+getInterpHead<2>(const Process &proc) {
+    for (auto &o : proc.objects) {
+        std::string module = stringify(*o.second->io);
+        if (module.find("python") == std::string::npos)
+           continue;
+        auto image = o.second;
+        auto &syms = image->commonSections->debugSymbols;
+        for (auto sym : syms) {
+            if (sym.name.substr(0, 11) != "interp_head")
+                continue;
+            auto libpython = o.second;
+            auto libpythonAddr = o.first;
+            auto interpHead = libpythonAddr + sym.symbol.st_value;
+            if (verbose)
+                *debug << "python2 library is " << *libpython->io << std::endl;
+            return std::make_tuple(libpython, libpythonAddr, interpHead);
+        }
+    }
+
+    throw Exception() << "No libpython2 found";
+}
+
+
 #include "python.tcc"
 
 template struct PythonPrinter<2>;
