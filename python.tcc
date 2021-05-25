@@ -97,7 +97,7 @@ template<int PyV> class ListPrinter : public PythonTypePrinter<PyV> {
           pc->os << ",\n";
         }
         pc->depth--;
-        pc->os << pc->prefix() << "]\n";
+        pc->os << pc->prefix() << "]";
         return 0;
     }
     const char *type() const override { return "PyList_Type"; }
@@ -135,8 +135,14 @@ template <int PyV> class LongPrinter : public PythonTypePrinter<PyV> {
 template <int PyV> class TuplePrinter : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr remoteAddr) const override {
         auto tuple = reinterpret_cast<const PyTupleObject *>(pyo);
-        pc->os << "( \n";
         auto size = std::min(((PyVarObject *)tuple)->ob_size, Py_ssize_t(100));
+
+        if (size == 0) {
+            pc->os << "()";
+            return 0;
+        }
+
+        pc->os << "( \n";
         PyObject *objects[size];
         pc->proc.io->readObj(remoteAddr + offsetof(PyTupleObject, ob_item), &objects[0], size);
         pc->depth++;
@@ -191,9 +197,16 @@ template <int PyV> class FramePrinter : public PythonTypePrinter<PyV> {
             auto lineNo = getLine<PyV>(*pc->proc.io, &code, pfo);
             auto func = readString<PyV>(*pc->proc.io, Elf::Addr(code.co_name));
             auto file = readString<PyV>(*pc->proc.io, Elf::Addr(code.co_filename));
-            pc->os << pc->prefix() << func << " in " << file << ":" << lineNo << "\n";
 
+            pc->os << pc->prefix() << func;
+            
             if (pc->options.flags[PstackOptions::doargs]) {
+                printArguments<PyV>(pc, pyo, remoteAddr);
+            }
+
+            pc->os << " in " << file << ":" << lineNo << std::endl;
+
+            if (pc->options.flags[PstackOptions::dolocals]) {
 
                 Elf::Addr flocals = remoteAddr + offsetof(PyFrameObject, f_localsplus);
 
@@ -211,7 +224,7 @@ template <int PyV> class FramePrinter : public PythonTypePrinter<PyV> {
             }
         }
 
-        if (pc->options.flags[PstackOptions::doargs] && pfo->f_locals != 0) {
+        if (pc->options.flags[PstackOptions::dolocals] && pfo->f_locals != 0) {
             pc->depth++;
             pc->os << pc->prefix() << "locals: " << std::endl;
             pc->print(Elf::Addr(pfo->f_locals));
@@ -223,6 +236,7 @@ template <int PyV> class FramePrinter : public PythonTypePrinter<PyV> {
     const char *type() const override { return "PyFrame_Type"; }
     bool dupdetect() const override { return true; }
 };
+
 
 template <int PyV>
 const char *
@@ -427,4 +441,80 @@ PythonPrinter<PyV>::printInterp(Elf::Addr ptr, bool showModules)
        print(state.modules);
     }
     return state.next;
+}
+
+template <int PyV>
+void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr remoteAddr) {
+    const PyFrameObject* pfo = (PyFrameObject *)pyo;
+
+    const PyCodeObject &code = readPyObj<3, PyCodeObject>(*pc->proc.io, Elf::Addr(pfo->f_code));
+
+    ArgFlags flags = *(ArgFlags*)&code.co_flags;
+    int argCount = code.co_argcount;
+    int kwonlyArgCount = getKwonlyArgCount<PyV>((PyObject*)&code);
+    int totalArgCount = argCount + kwonlyArgCount + flags.varargs + flags.kwargs;
+
+    Elf::Addr varnamesAddr = Elf::Addr(code.co_varnames) + offsetof(PyTupleObject, ob_item);
+    Elf::Addr localsAddr = remoteAddr + offsetof(PyFrameObject, f_localsplus);
+
+    pc->os << "(";
+
+    PyObject *args[argCount];
+    pc->proc.io->readObj(localsAddr, args, argCount);
+
+    // Positional Arguments
+    for (int i = 0; i < argCount; i++) {
+        pc->print(Elf::Addr(args[i]));
+        if (i < totalArgCount - 1) pc->os << ", ";
+    }
+
+    // *args if present
+    if (flags.varargs) {
+        PyObject *varargName = readPyObj<PyV, PyObject *>(*pc->proc.io, varnamesAddr + (argCount + kwonlyArgCount) * sizeof(PyObject *));
+        pc->print(Elf::Addr(varargName));
+        pc->os << "=(";
+        
+        // Varargs tuple pointer is always after all the positional arguments and keyword-only arguments
+        const Elf::Addr tupleAddr = localsAddr + (argCount + kwonlyArgCount) * sizeof(PyObject *);
+        const PyTupleObject* tuplePtr = readPyObj<PyV, PyTupleObject*>(*pc->proc.io, tupleAddr);
+        const PyTupleObject varargs = readPyObj<PyV, PyTupleObject>(*pc->proc.io, Elf::Addr(tuplePtr));
+
+        auto varargCount = ((PyVarObject *)&varargs)->ob_size;
+
+        PyObject *objects[varargCount];
+        pc->proc.io->readObj(Elf::Addr(tuplePtr) + offsetof(PyTupleObject, ob_item), objects, varargCount);
+
+        for (int i = 0; i < varargCount; i++) {
+            pc->print(Elf::Addr(objects[i]));
+            if (i < varargCount - 1) pc->os << ", ";
+        }
+
+        pc->os << ")";
+        if (kwonlyArgCount > 0 || flags.kwargs) pc->os << ", ";
+    }
+
+    // keyword-only arguments
+    if (kwonlyArgCount > 0) {
+        PyObject *kwonlyArgNames[kwonlyArgCount];
+        PyObject *kwonlyArgs[kwonlyArgCount];
+        pc->proc.io->readObj(varnamesAddr + argCount * sizeof(PyObject *), kwonlyArgNames, kwonlyArgCount);
+        pc->proc.io->readObj(localsAddr + argCount * sizeof(PyObject *), kwonlyArgs, kwonlyArgCount);
+
+        for (int i = 0; i < kwonlyArgCount; i++) {
+            pc->os << readString<PyV>(*pc->proc.io, Elf::Addr(kwonlyArgNames[i])) << "=";
+            pc->print(Elf::Addr(kwonlyArgs[i]));
+            if (i < kwonlyArgCount - 1) pc->os << ", ";
+        }
+
+        if (flags.kwargs) pc->os << ", ";
+    }
+
+    // **kwargs if present
+    if (flags.kwargs) {
+        PyObject *kwargsVarname = readPyObj<PyV, PyObject *>(*pc->proc.io, varnamesAddr + sizeof(PyObject *) * (argCount + kwonlyArgCount + flags.varargs));
+        PyObject *kwargs = readPyObj<PyV, PyObject *>(*pc->proc.io, localsAddr + sizeof(PyObject *) * (argCount + kwonlyArgCount + flags.varargs));
+        pc->os << readString<PyV>(*pc->proc.io, Elf::Addr(kwargsVarname)) << "=";
+        pc->print(Elf::Addr(kwargs));
+    }
+    pc->os << ")";
 }

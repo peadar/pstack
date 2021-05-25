@@ -86,8 +86,22 @@ template<int V> void doPy(Process &proc, std::ostream &o, const PstackOptions &o
     printer.printInterpreters(showModules);
 }
 
-void pystack(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules) {
+/**
+ * @brief Given a process, tries to print the Python strack trace of it.
+ * If the process wasn't a Python process, returns false.
+ * True on successful printing of Python stack trace
+ * 
+ * @param proc          The process
+ * @param o             The stream to which to print the otutput
+ * @param options       Options
+ * @param showModules   Whether to show modules
+ * @return              boolean of whether the process was a Python process or not
+ */
+bool pystack(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules) {
     PyInterpInfo info = getPyInterpInfo(proc);
+
+    if (info.libpython == nullptr) // not a python process or python interpreter not found
+        return false;
 
     if (info.versionHex < V2HEX(3, 0)) { // Python 2.x
 #ifdef WITH_PYTHON2
@@ -102,6 +116,8 @@ void pystack(Process &proc, std::ostream &o, const PstackOptions &options, bool 
         throw (Exception() << "no support for discovered python 3 interpreter");
 #endif
     }
+
+    return true;
 }
 #endif
 
@@ -114,14 +130,16 @@ emain(int argc, char **argv)
     Dwarf::ImageCache imageCache;
     double sleepTime = 0.0;
     PstackOptions options;
+    options.maxdepth = 10000;
 
 #if defined(WITH_PYTHON)
     bool python = false;
     bool pythonModules = false;
 #endif
     bool coreOnExit = false;
+    bool printAllStacks = false;
 
-    while ((c = getopt(argc, argv, "F:b:d:CD:hjmsVvag:ptz:")) != -1) {
+    while ((c = getopt(argc, argv, "F:b:d:CD:hjmsVvag:pltz:r:A")) != -1) {
         switch (c) {
         case 'F': g_openPrefix = optarg;
                   break;
@@ -172,6 +190,16 @@ emain(int argc, char **argv)
             std::clog << "no python support compiled in" << std::endl;
 #endif
             break;
+        case 'l':
+#if defined(WITH_PYTHON)
+            options.flags.set(PstackOptions::dolocals);
+#else
+            std::clog << "no python support compiled in" << std::endl;
+#endif
+            break;
+        case 'A':
+            printAllStacks = true;
+            break;
         case 't':
             options.flags.set(PstackOptions::nothreaddb);
             break;
@@ -181,6 +209,9 @@ emain(int argc, char **argv)
             return 0;
         case 'C':
             coreOnExit = true;
+            break;
+        case 'r':
+            options.maxdepth = strtod(optarg, nullptr);
             break;
         default:
             return usage(argv[0]);
@@ -196,10 +227,13 @@ emain(int argc, char **argv)
                 proc.load(options);
                 while (!interrupted) {
 #if defined(WITH_PYTHON)
-                    if (python) {
-                        pystack(proc, std::cout, options, pythonModules);
+                    if (python || printAllStacks) {
+                        bool isPythonProcess = pystack(proc, std::cout, options, pythonModules);
+                        if (python && !isPythonProcess) 
+                            throw Exception() << "Couldn't find a Python interpreter"; // error if -p but not python process
                     }
-                    else
+
+                    if (!python)
 #endif
                     {
                         pstack(proc, std::cout, options);
@@ -245,7 +279,10 @@ usage(const char *name)
         "\t[-t]                         don't try to use the thread_db library\n"
         "\t[-b<n>]                      batch mode: repeat every 'n' seconds\n"
 #ifdef WITH_PYTHON
-        "\t[-p]                         print python backtrace if available\n"
+        "\t[-A]                         print all stack traces\n"
+        "\t[-p]                         print python backtrace\n"
+        "\t[-l]                         show python locals if available\n"
+        "\t[-r<n>]                      the max recursion depth for printing\n"
 #endif
         "\t[<pid>|<core>|<executable>]* list cores and pids to examine. An executable\n"
         "\t                             will override use of in-core or in-process information\n"

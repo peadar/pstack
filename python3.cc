@@ -5,6 +5,7 @@
 #include <longintrepr.h>
 #include <longintrepr.h>
 #include <unicodeobject.h>
+#include <methodobject.h>
 #include "libpstack/python.h"
 
 #define DK_SIZE(dk) ((dk)->dk_size)
@@ -57,8 +58,15 @@ int64_t readIndex(const Reader &r, const Elf::Addr addr, size_t indexSize) {
 class DictPrinter : public PythonTypePrinter<3> {
     Elf::Addr print(const PythonPrinter<3> *pc, const PyObject *object, const PyTypeObject *, Elf::Addr) const override {
         PyDictObject *dict = (PyDictObject *)object;
-        if (dict->ma_used == 0)
+        if (dict->ma_used == 0) {
+            pc->os << "{}";
             return 0;
+        }
+
+        if (pc->depth > pc->options.maxdepth) {
+            pc->os << "{ ... }";
+            return 0;
+        }
 
         const PyDictKeysObject keys = readPyObj<3, PyDictKeysObject>(*pc->proc.io, Elf::Addr(dict->ma_keys));
         const size_t indexSize = DK_IXSIZE(&keys);
@@ -101,6 +109,7 @@ class BoolPrinter : public PythonTypePrinter<3> {
     const char *type() const override { return "PyBool_Type"; }
     bool dupdetect() const override { return false; }
 };
+static BoolPrinter boolPrinter;
 
 template <typename T, int pyv>  ssize_t
 pyRefcnt(const T *o) {
@@ -112,8 +121,11 @@ pyObjtype(const T *o) {
    return o->ob_base.ob_type;
 }
 
-
-static BoolPrinter boolPrinter;
+template <>
+int getKwonlyArgCount<3>(const PyObject *pyCode) {
+    const PyCodeObject* code = (PyCodeObject *)pyCode;
+    return code->co_kwonlyargcount;
+}
 
 #include "python.tcc"
 

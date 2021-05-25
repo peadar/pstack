@@ -115,11 +115,13 @@ struct PstackOptions {
    enum Flags {
        nosrc,
        doargs,
+       dolocals,
        nothreaddb,
        maxopt // leave this last
    };
    std::bitset<maxopt> flags;
    std::vector<std::pair<std::string, std::string>> pathReplacements;
+   int maxdepth;
 };
 
 /*

@@ -19,6 +19,9 @@ getPyInterpInfo(const Process &proc) {
     
     std::tie(libpython, libpythonAddr, interpreterHead) = getInterpHead(proc);
 
+    if (libpython == nullptr)
+        return PyInterpInfo {nullptr, 0, 0, "", 0};
+
     std::string filename = libpython->io->filename();
 
     auto index = filename.find("python");
@@ -128,7 +131,10 @@ getInterpHead(const Process &proc) {
             std::clog << "Python 3 interpreter not found" << std::endl;
     }
 
-    throw Exception() << "Couldn't find a Python interpreter";
+    if (verbose)
+        std::clog << "Couldn't find a python interpreter" << std::endl;
+
+    return std::make_tuple(nullptr, 0, 0);
 }
 
 // libpthread includes offsets for fields in various structures. We can use

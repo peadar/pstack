@@ -87,6 +87,8 @@ MemReader::describe(std::ostream &os) const
 string
 Reader::readString(Off offset) const
 {
+    if (offset == 0)
+        return "(null)";
     string res;
     for (Off s = size(); offset < s; ++offset) {
         char c;
