@@ -19,8 +19,6 @@
 #include <sys/ucontext.h>
 #include <signal.h>
 
-static size_t gMaxFrames = 1024; /* max number of frames to read */
-
 Process::Process(Elf::Object::sptr exec, Reader::sptr memory,
                   const PstackOptions &options, Dwarf::ImageCache &cache)
     : entry(0)
@@ -802,7 +800,7 @@ Process::~Process()
 }
 
 void
-ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
+ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
 {
     stack.clear();
     try {
@@ -814,7 +812,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
         startFrame->setCoreRegs(regs);
 
         Dwarf::StackFrame *nextFrame;
-        for (size_t frameCount = 0; frameCount < gMaxFrames; frameCount++,
+        for (size_t frameCount = 0; frameCount < maxFrames; frameCount++,
               prevFrame = curFrame, curFrame = nextFrame) {
             if (curFrame == 0)
                break;

@@ -27,14 +27,15 @@ volatile bool interrupted = false;
 
 int usage(const char *);
 std::ostream &
-pstack(Process &proc, std::ostream &os, const PstackOptions &options)
+pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFrames)
 {
     // get its back trace.
     std::list<ThreadStack> threadStacks;
     std::set<pid_t> tracedLwps;
     {
         StopProcess here(&proc);
-        proc.listThreads([&proc, &threadStacks, &tracedLwps] (const td_thrhandle_t *thr) {
+        proc.listThreads([&options, &proc, &threadStacks, &tracedLwps, maxFrames] (
+                           const td_thrhandle_t *thr) {
 
             Elf::CoreRegisters regs;
             td_err_e the;
@@ -46,7 +47,7 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
             if (the == TD_OK) {
                 threadStacks.push_back(ThreadStack());
                 td_thr_get_info(thr, &threadStacks.back().info);
-                threadStacks.back().unwind(proc, regs);
+                threadStacks.back().unwind(proc, regs, maxFrames);
                 tracedLwps.insert(threadStacks.back().info.ti_lid);
             }
             });
@@ -57,7 +58,7 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options)
                 threadStacks.back().info.ti_lid = lwp.first;
                 Elf::CoreRegisters regs;
                 proc.getRegs(lwp.first,  &regs);
-                threadStacks.back().unwind(proc, regs);
+                threadStacks.back().unwind(proc, regs, maxFrames);
             }
         }
     }
@@ -125,6 +126,7 @@ int
 emain(int argc, char **argv)
 {
     int i, c;
+    int maxFrames = 1024;
     std::string execFile;
     Elf::Object::sptr exec;
     Dwarf::ImageCache imageCache;
@@ -192,6 +194,9 @@ emain(int argc, char **argv)
             std::clog << "no python support compiled in" << std::endl;
 #endif
             break;
+        case 'M':
+            maxFrames = strtoul(optarg, 0, 0);
+            break;
         case 'p':
 #if defined(WITH_PYTHON)
             python = true;
@@ -245,7 +250,7 @@ emain(int argc, char **argv)
                     if (!python)
 #endif
                     {
-                        pstack(proc, std::cout, options);
+                        pstack(proc, std::cout, options, maxFrames);
                     }
                     if (sleepTime != 0.0) {
                         usleep(sleepTime * 1000000);
@@ -287,6 +292,7 @@ usage(const char *name)
         "\t[-n]                         don't try to find external debug images\n"
         "\t[-t]                         don't try to use the thread_db library\n"
         "\t[-b<n>]                      batch mode: repeat every 'n' seconds\n"
+        "\t[-M<frames>]                 max number of frames (default 1024)\n"
 #ifdef WITH_PYTHON
         "\t[-A]                         print all stack traces\n"
         "\t[-p]                         print python backtrace\n"

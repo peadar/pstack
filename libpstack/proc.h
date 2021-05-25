@@ -107,7 +107,7 @@ struct ThreadStack {
         for (auto i = stack.begin(); i != stack.end(); ++i)
             delete *i;
     }
-    void unwind(Process &, Elf::CoreRegisters &regs);
+    void unwind(Process &, Elf::CoreRegisters &regs, unsigned maxFrames);
 };
 
 
