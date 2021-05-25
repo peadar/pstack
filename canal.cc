@@ -160,7 +160,6 @@ mainExcept(int argc, char *argv[])
     int rate = 1;
 
     std::vector<std::pair<Elf::Off, Elf::Off>> searchaddrs;
-    std::vector<std::pair<std::string, std::string>> pathReplacements;
     char *strbuf = 0;
     char *findstr = 0;
     size_t findstrlen = 0;

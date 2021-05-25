@@ -12,9 +12,8 @@
 #include <string>
 #include <string.h>
 #include <unordered_map>
+#include <sys/fcntl.h>
 
-
-extern std::string g_openPrefix;
 std::string dirname(const std::string &);
 std::string basename(const std::string &);
 
@@ -317,5 +316,6 @@ template <typename T> T ReaderArray<T>::iterator::operator *() {
    return t;
 }
 
-
+extern std::vector<std::pair<std::string, std::string>> pathReplacements;
+extern int openfile(const std::string &filename, int mode = O_RDONLY, int umask = 0777);
 #endif // LIBPSTACK_UTIL_H

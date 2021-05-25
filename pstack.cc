@@ -141,8 +141,17 @@ emain(int argc, char **argv)
 
     while ((c = getopt(argc, argv, "F:b:d:CD:hjmsVvag:pltz:r:A")) != -1) {
         switch (c) {
-        case 'F': g_openPrefix = optarg;
-                  break;
+        case 'F': {
+            const char *sep = strchr(optarg, ':');
+            if (sep == 0) {
+                usage(argv[0]);
+                goto done;
+            }
+            pathReplacements.push_back(std::make_pair(
+                                std::string(optarg, sep - optarg),
+                                std::string(sep + 1)));
+            break;
+        }
         case 'g':
             Elf::globalDebugDirectories.add(optarg);
             break;

@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <iostream>
 
+std::vector<std::pair<std::string,std::string>> pathReplacements;
+
 using std::string;
 Reader::Off
 FileReader::size() const
@@ -18,9 +20,9 @@ FileReader::size() const
 }
 
 static int
-openFileDirect(const string &name_)
+openFileDirect(const string &name_, int mode, int mask)
 {
-    auto fd = open(name_.c_str(), O_RDONLY);
+    auto fd = open(name_.c_str(), mode, mask);
     if (verbose > 2) {
        if (fd != -1)
           *debug << "opened " << name_ << ", fd=" << fd << std::endl;
@@ -30,16 +32,18 @@ openFileDirect(const string &name_)
     return fd;
 }
 
-static int
-openfile(const string &name)
+int
+openfile(const string &name, int mode, int mask)
 {
-    int fd;
-    if (g_openPrefix != "") {
-       int fd = openFileDirect(g_openPrefix + name);
-       if (fd != -1)
-          return fd;
+    int fd = -1;
+    for (auto &r : pathReplacements) {
+       if (name.compare(0, r.first.size(), r.first) == 0) {
+          fd = openFileDirect(r.second + std::string(name, r.first.size()), mode, mask);
+          if (fd != -1)
+             return fd;
+       }
     }
-    fd = openFileDirect(name);
+    fd = openFileDirect(name, mode, mask);
     if (fd != -1)
        return fd;
     throw (Exception() << "cannot open file '" << name << "': " << strerror(errno));

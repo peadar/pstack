@@ -3,8 +3,6 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-std::string g_openPrefix;
-
 std::string
 dirname(const std::string &in)
 {

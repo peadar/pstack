@@ -696,16 +696,6 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
         std::string path = io->readString(Elf::Off(map.l_name));
         if (path == "")
             continue;
-
-        std::string startPath = path;
-        for (auto &it : options.pathReplacements) {
-            size_t found = path.find(it.first);
-            if (found != std::string::npos)
-                path.replace(found, it.first.size(), it.second);
-        }
-        if (verbose > 0 && path != startPath)
-            *debug << "replaced " << startPath << " with " << path << std::endl;
-
         try {
             addElfObject(imageCache.getImageForName(path), Elf::Addr(map.l_addr));
         }
