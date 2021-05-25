@@ -246,7 +246,7 @@ MmapReader::MmapReader(const string &name_)
    base = mmap(0, len, PROT_READ, MAP_PRIVATE, fd, 0);
    close(fd);
    if (base == MAP_FAILED)
-      throw (Exception() << "mmap failed" << strerror(errno));
+      throw (Exception() << "mmap failed: " << strerror(errno));
 }
 
 string
