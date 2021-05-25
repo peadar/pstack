@@ -1759,12 +1759,13 @@ DIE::nextSibling(const DIE &parent) const {
 ContainsAddr
 DIE::containsAddress(Elf::Addr addr) const
 {
-    Elf::Addr start, end;
     auto low = attribute(DW_AT_low_pc, true);
     auto high = attribute(DW_AT_high_pc, true);
 
-    ContainsAddr rc = ContainsAddr::UNKNOWN;
     if (low.valid() && high.valid()) {
+        // Simple case - the DIE has a low and high address. Just see if the
+        // addr is in that range
+        Elf::Addr start, end;
         switch (low.form()) {
             case DW_FORM_addr:
                 start = uintmax_t(low);
@@ -1788,21 +1789,21 @@ DIE::containsAddress(Elf::Addr addr) const
             default:
                 abort();
         }
-        rc = start <= addr && end > addr ? ContainsAddr::YES : ContainsAddr::NO;
-    } else if (unit->dwarf->hasRanges()) {
-        Elf::Addr base = low.valid() ? uintmax_t(low) : 0;
-        auto ranges = attribute(DW_AT_ranges, true);
-        if (ranges.valid()) {
-            rc = ContainsAddr::NO;
-            for (auto &range : Ranges(ranges)) {
-                if (range.first + base <= addr && addr <= range.second + base ) {
-                    rc = ContainsAddr::YES;
-                    break;
-                }
-            }
-        }
+        return start <= addr && end > addr ? ContainsAddr::YES : ContainsAddr::NO;
     }
-    return rc;
+
+    // We may have .debug_ranges or .debug_rnglists - see if there's a
+    // DW_AT_ranges attr.
+    Elf::Addr base = low.valid() ? uintmax_t(low) : 0;
+    auto ranges = attribute(DW_AT_ranges, true);
+    if (ranges.valid()) {
+        // Iterate over the ranges, and see if the address lies inside.
+        for (auto &range : Ranges(ranges))
+            if (range.first + base <= addr && addr <= range.second + base )
+                return ContainsAddr::YES;
+        return ContainsAddr::NO;
+    }
+    return ContainsAddr::UNKNOWN;
 }
 
 Attribute
@@ -1845,15 +1846,12 @@ ImageCache::getDwarf(Elf::Object::sptr object)
         dwarfHits++;
         return it->second;
     }
-
     auto dwarf = make_shared<Info>(object, *this);
     dwarfCache[object] = dwarf;
     return dwarf;
 }
 
-ImageCache::ImageCache() : dwarfHits(0), dwarfLookups(0)
-{
-}
+ImageCache::ImageCache() : dwarfHits(0), dwarfLookups(0) { }
 
 ImageCache::~ImageCache() {
     if (verbose >= 2)
