@@ -45,6 +45,10 @@ getPyInterpInfo(const Process &proc) {
 
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
 getInterpHead(const Process &proc) {
+    // As a local python2 hack, we have a global variable pointing at interp_head
+    // We can use that to avoid needing any debug info for the interpreter.
+    // (Python3 does not require this hack, because _PyRuntime is exported
+    // in the dynamic symbols.)
     try {
         Elf::Object::sptr libpython;
         Elf::Addr libpythonAddr;
@@ -66,19 +70,22 @@ getInterpHead(const Process &proc) {
             std::clog << "Py_interp_headp symbol not found. Trying fallback" << std::endl;
     }
 
+#ifdef WITH_PYTHON2
     try {
         return getInterpHead<2>(proc);
     } catch (...) {
         if (verbose)
             std::clog << "Python 2 interpreter not found" << std::endl;
     }
-
+#endif
+#ifdef WITH_PYTHON3
     try {
         return getInterpHead<3>(proc);
     } catch (...) {
         if (verbose)
             std::clog << "Python 3 interpreter not found" << std::endl;
     }
+#endif
 
     if (verbose)
         std::clog << "Couldn't find a python interpreter" << std::endl;
