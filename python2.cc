@@ -46,8 +46,18 @@ static ClassPrinter classPrinter;
 class DictPrinter : public PythonTypePrinter<2> {
     Elf::Addr print(const PythonPrinter<2> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         PyDictObject *pdo = (PyDictObject *)pyo;
-        if (pdo->ma_used == 0)
+        if (pdo->ma_used == 0) {
+            pc->os << "{}";
             return 0;
+        }
+        
+        if (pc->depth > pc->options.maxdepth) {
+            pc->os << "{ ... }";
+            return 0;
+        }
+
+        pc->os << "{\n";
+        pc->depth++;
         for (Py_ssize_t i = 0; i < pdo->ma_mask ; ++i) {
             PyDictEntry pde = readPyObj<2, PyDictEntry>(*pc->proc.io, Elf::Addr(pdo->ma_table + i));
             if (pde.me_value == nullptr)
@@ -55,11 +65,13 @@ class DictPrinter : public PythonTypePrinter<2> {
             if (pde.me_key != nullptr) {
                 pc->os << pc->prefix();
                 pc->print(Elf::Addr(pde.me_key));
-                pc->os << ": ";
+                pc->os << " : ";
                 pc->print(Elf::Addr(pde.me_value));
                 pc->os << "\n";
             }
         }
+        pc->depth--;
+        pc->os << pc->prefix() << "}";
         return 0;
     }
     const char *type() const override { return "PyDict_Type"; }
