@@ -447,7 +447,7 @@ template <int PyV>
 void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr remoteAddr) {
     const PyFrameObject* pfo = (PyFrameObject *)pyo;
 
-    const PyCodeObject &code = readPyObj<3, PyCodeObject>(*pc->proc.io, Elf::Addr(pfo->f_code));
+    const PyCodeObject &code = readPyObj<PyV, PyCodeObject>(*pc->proc.io, Elf::Addr(pfo->f_code));
 
     ArgFlags flags = *(ArgFlags*)&code.co_flags;
     int argCount = code.co_argcount;
