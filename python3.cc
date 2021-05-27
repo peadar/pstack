@@ -43,6 +43,8 @@ template <> std::string readString<3>(const Reader &r, const Elf::Addr addr) {
     }
 }
 
+namespace {
+
 // Reads indexSize bytes at address as a signed int
 int64_t readIndex(const Reader &r, const Elf::Addr addr, size_t indexSize) {
     char buf[8];
@@ -110,6 +112,8 @@ class BoolPrinter : public PythonTypePrinter<3> {
     bool dupdetect() const override { return false; }
 };
 static BoolPrinter boolPrinter;
+
+}
 
 template <typename T, int pyv>  ssize_t
 pyRefcnt(const T *o) {
