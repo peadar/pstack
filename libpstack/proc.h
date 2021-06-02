@@ -283,10 +283,16 @@ struct StopProcess {
     Process *proc;
 public:
     StopProcess(Process *proc_) : proc(proc_) { proc->stopProcess(); }
-    ~StopProcess() { proc->resumeProcess(); }
+    void clear() {
+        if (proc) {
+            proc->resumeProcess();
+            proc = nullptr;
+        }
+    }
+    ~StopProcess() { clear(); }
 };
 
-// RAII to stop a process.
+// RAII to stop a thread.
 struct StopLWP {
     Process *proc;
     lwpid_t lwp;
