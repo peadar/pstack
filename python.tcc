@@ -248,9 +248,12 @@ PythonPrinter<PyV>::prefix() const
         "                                           "
         "                                           "
         "                                           "
+        "                                           "
         "                                           ";
 
-    return spaces + sizeof spaces - 1 - depth * 4;
+    constexpr size_t spacecount = sizeof spaces - 1;
+
+    return spaces + spacecount - (depth * 4) % spacecount;
 }
 
 template<int PyV>
