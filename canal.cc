@@ -370,7 +370,7 @@ mainExcept(int argc, char *argv[])
                             for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
                                 if (p >= range->first && p < range->second && (p % 4 == 0)) {
                                     IOFlagSave _(cout);
-                                    cout << "0x" << hex << loc << "\n";
+                                    cout << "0x" << hex << loc << dec << "\n";
                                 }
                             }
                         } else {

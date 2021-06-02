@@ -126,7 +126,7 @@ Process::processAUXV(const Reader &auxio)
                     vdsoImage = elf;
                     if (verbose >= 2) {
                         *debug << "auxv: VDSO " << *elf->io
-                           << " loaded at " << std::hex << hdr << "\n";
+                           << " loaded at " << std::hex << hdr << std::dec << "\n";
                     }
 
                 }
@@ -595,7 +595,7 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
     os << "#"
         << std::left << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
         << std::right << "0x" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0')
-        << frame->rawIP();
+        << frame->rawIP() << std::dec;
 
     if (verbose > 0)
         os << "/" << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa;
@@ -642,7 +642,7 @@ Process::addElfObject(Elf::Object::sptr obj, Elf::Addr load)
     if (verbose >= 2) {
         IOFlagSave _(*debug);
         *debug << "object " << *obj->io << " loaded at address "
-           << std::hex << load << std::endl;
+           << std::hex << load << std::dec << std::endl;
     }
 }
 

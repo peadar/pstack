@@ -200,7 +200,7 @@ dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
             break;
 
         default:
-            throw (Exception() << "unknown CFA op " << std::hex << int(op));
+            throw (Exception() << "unknown CFA op " << std::hex << int(op)) << std::dec;
     }
 }
 
@@ -543,7 +543,7 @@ std::ostream &operator << (std::ostream &os, const JSON<Elf::NoteDesc> &note)
                 std::ostringstream os;
                 ReaderArray<uint8_t> content(*data);
                 for (auto c : content)
-                    os << std::hex << std::setw(2) << std::setfill('0') << int(c);
+                    os << std::hex << std::setw(2) << std::setfill('0') << int(c) << std::dec;
                 writer.field("buildid", os.str());
                 break;
             }

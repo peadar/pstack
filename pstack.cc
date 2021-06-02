@@ -32,8 +32,8 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFra
     // get its back trace.
     std::list<ThreadStack> threadStacks;
     std::set<pid_t> tracedLwps;
+    StopProcess here(&proc);
     {
-        StopProcess here(&proc);
         proc.listThreads([&options, &proc, &threadStacks, &tracedLwps, maxFrames] (
                            const td_thrhandle_t *thr) {
 
@@ -63,10 +63,6 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFra
         }
     }
 
-    /*
-     * resume at this point - maybe a bit optimistic if a shared library gets
-     * unloaded while we print stuff out, but worth the risk, normally.
-     */
     if (doJson) {
         os << json(threadStacks, &proc);
     } else {
@@ -81,6 +77,7 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFra
 
 #ifdef WITH_PYTHON
 template<int V> void doPy(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules, const PyInterpInfo &info) {
+    StopProcess here(&proc);
     PythonPrinter<V> printer(proc, o, options, info);
     if (!printer.interpFound())
         throw Exception() << "no python interpreter found";

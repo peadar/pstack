@@ -176,6 +176,8 @@ LiveProcess::stop(lwpid_t pid)
     pid_t waitedpid = waitpid(pid, &status, pid == this->pid ? 0 : __WCLONE);
     if (waitedpid == -1)
         *debug << "failed to stop LWP " << pid << ": wait failed: " << strerror(errno) << "\n";
+    else if (verbose >= 1)
+        *debug << "suspend LWP " << pid << std::endl;
 }
 
 std::vector<AddressRange>

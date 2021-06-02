@@ -472,7 +472,7 @@ Object::getDebug() const
             dir << "/";
             for (i = 1; i < size_t(io->size()); ++i)
                 dir << std::setw(2) << int(data[i]);
-            dir << ".debug";
+            dir << ".debug" << std::dec;
             debugObject = imageCache.getDebugImage(dir.str());
             break;
         }
@@ -510,7 +510,7 @@ Object::getDebug() const
            << *debugObject->io << " loaded for object "
            << *this->io << " at different offset: diff is "
            << std::hex << diff
-           << ", assuming " << *this->io << " is prelinked" << std::endl;
+           << ", assuming " << *this->io << " is prelinked" << std::dec << std::endl;
 
         // looks like the exe has been prelinked - adjust the debug info too.
         for (auto &sect : debugObject->sectionHeaders)
