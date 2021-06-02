@@ -32,7 +32,7 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFra
     // get its back trace.
     std::list<ThreadStack> threadStacks;
     std::set<pid_t> tracedLwps;
-    StopProcess here(&proc);
+    StopProcess processSuspender(&proc);
     {
         proc.listThreads([&options, &proc, &threadStacks, &tracedLwps, maxFrames] (
                            const td_thrhandle_t *thr) {
@@ -62,6 +62,12 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFra
             }
         }
     }
+
+    // if we don't need to print arguments to functions, we now have the full
+    // backtrace and don't need to read anything more from the process.
+    // Everything else is just parsing debug data, so we can resume now.
+    if (!options.flags[PstackOptions::doargs])
+       processSuspender.clear();
 
     if (doJson) {
         os << json(threadStacks, &proc);
