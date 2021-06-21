@@ -281,6 +281,16 @@ public:
     void build(DWARFReader &, const Unit *);
 };
 
+struct MacroVisitor;
+struct Macros {
+    Reader::csptr reader;
+    uint16_t version;
+    int dwarflen;
+    int debug_line_offset;
+    std::map<uint8_t, std::vector<uint8_t>> opcodes;
+    Macros(const Info *info, intmax_t offset);
+    bool visit(const Info *, MacroVisitor *) const;
+};
 
 class Unit : public std::enable_shared_from_this<Unit> {
     Unit() = delete;
@@ -292,6 +302,7 @@ class Unit : public std::enable_shared_from_this<Unit> {
     AllEntries allEntries;
     std::shared_ptr<RawDIE> decodeEntry(const DIE &parent, Elf::Off offset);
     UnitType unitType;
+    mutable std::unique_ptr<Macros> macros;
 public:
     void purge(); // Remove all RawDIEs from allEntries, potentially freeing memory.
     bool isRoot(const DIE &die) { return die.getOffset() == topDIEOffset; }
@@ -316,6 +327,7 @@ public:
     Unit(const Info *, DWARFReader &);
     std::string name();
     const LineInfo *getLines();
+    const Macros *getMacros();
     ~Unit();
 };
 
@@ -474,6 +486,7 @@ public:
     Unit::sptr lookupUnit(Elf::Addr addr) const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
     mutable Reader::csptr strOffsets;
+    LineInfo *linesAt(intmax_t) const;
 
 private:
     void decodeARangeSet(DWARFReader &) const;
@@ -489,11 +502,13 @@ private:
     mutable Reader::csptr arangesh;
 public:
     mutable Reader::csptr rangesh;
+    mutable Reader::csptr macrosh;
 private:
     mutable ARanges aranges; // maps starting address to length + unit offset.
     bool haveLines;
     bool haveARanges;
     mutable bool unitRangesCached = false;
+    mutable std::unique_ptr<Macros> macros;
 };
 
 /*
@@ -645,8 +660,8 @@ public:
         return result;
     }
 
-    std::string readFormString(const Unit *, Form f);
-    void readForm(const Unit *, Form f);
+    std::string readFormString(const Info *, const Unit *, Form f);
+    void readForm(const Info *, const Unit *, Form f);
     uintmax_t readFormUnsigned(const Unit *, Form f);
     intmax_t readFormSigned(const Unit *, Form f);
 
@@ -668,11 +683,17 @@ public:
     void skip(Elf::Off amount) { off += amount; }
 };
 
+struct MacroVisitor {
+   virtual bool define(int, const std::string &) { return true; }
+   virtual bool undef(int, const std::string &) { return true; }
+   virtual bool startFile(int, const std::string &, const FileEntry &) { return true; }
+   virtual bool endFile() { return true; }
+};
+
 std::string typeName(const DIE &);
 
 DIE
 findEntryForAddr(Elf::Addr address, Tag, const DIE &start);
-
 
 inline
 UnitIterator UnitIterator::operator ++() {
@@ -695,6 +716,8 @@ bool UnitIterator::atend() const {
 inline
 UnitIterator::UnitIterator(const Info *info_, Elf::Off offset)
     : info(info_), currentUnit(info->getUnit(offset)) {}
+
+
 
 #define DWARF_OP(op, value, args) op = value,
 enum ExpressionOp {
@@ -719,6 +742,7 @@ enum ExpressionOp {
 #define DW_EH_PE_aligned        0x50
 }
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Info> &);
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Macros> &);
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::UnitType> &);
 
 #endif

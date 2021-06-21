@@ -182,6 +182,7 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     , pubnamesh(sectionReader(*obj, ".debug_pubnames", ".zdebug_pubnames"))
     , arangesh(sectionReader(*obj, ".debug_aranges", ".zdebug_aranges"))
     , rangesh(sectionReader(*obj, ".debug_ranges", ".zdebug_ranges"))
+    , macrosh(sectionReader(*obj, ".debug_macro", ".zdebug_macro"))
     , haveLines(bool(lineshdr))
     , haveARanges(bool(arangesh))
 {
@@ -201,6 +202,158 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     };
     ehFrame = f(".eh_frame", nullptr, FI_EH_FRAME);
     debugFrame = f(".debug_frame", ".zdebug_frame", FI_DEBUG_FRAME);
+}
+
+const Macros *
+Unit::getMacros()
+{
+    if (macros == nullptr) {
+        if (dwarf->macrosh == nullptr) {
+            return nullptr;
+        }
+        Attribute a = root().attribute(DW_AT_GNU_macros);
+        if (!a.valid()) {
+            a = root().attribute(DW_AT_macros);
+            if (!a.valid()) {
+                return nullptr;
+            }
+        }
+        macros = std::make_unique<Macros>(dwarf, intmax_t(a));
+    }
+    return macros.get();
+}
+
+enum DWARF_MACRO_CODE {
+#define DWARF_MACRO(name, value) name = value,
+#include "libpstack/dwarf/macro.h"
+      DW_MACRO_invalid
+#undef DWARF_MACRO
+};
+
+Macros::Macros(const Info *dwarf, intmax_t offset)
+    : debug_line_offset(-1)
+{
+    if (dwarf->macrosh == nullptr)
+        return;
+    DWARFReader dr(dwarf->macrosh, offset);
+
+    version = dr.getu16();
+
+    auto flags = dr.getu8();
+    auto offset_size_flag = flags & (1<<0);
+    dwarflen = offset_size_flag ? 8 : 4;
+
+    auto debug_line_offset_flag = flags & (1<<1);
+    auto opcode_operands_table_flag = flags & (1<<2);
+
+    if (debug_line_offset_flag)
+        debug_line_offset = dr.getuint(dwarflen);
+
+    if (opcode_operands_table_flag) {
+        uint8_t opcode_operand_table_count = dr.getu8();
+        for (uint8_t i = 0; i < opcode_operand_table_count; ++i) {
+            uint8_t opcode = dr.getu8();
+            auto &table = opcodes[opcode];
+            auto opcount = dr.getuleb128();
+            for (uint8_t j = 0; j < opcount; ++j)
+                table.emplace_back(dr.getu8());
+        }
+    }
+    reader = std::make_shared<OffsetReader>(dwarf->macrosh, dr.getOffset());
+}
+
+bool
+Macros::visit(const Info *dwarf, MacroVisitor *visitor) const
+{
+    auto lineinfo = debug_line_offset != -1 ? dwarf->linesAt( debug_line_offset ) : nullptr;
+    DWARFReader dr(reader);
+    for (bool done=false; !done; ) {
+        auto code = dr.getu8();
+        if (verbose > 1)
+            *debug << dr.getOffset() - 1 << ": "; // adjust to get offset of code
+        switch(code) {
+            case DW_MACRO_start_file: {
+                auto line = dr.getuleb128();
+                auto file = dr.getuleb128();
+                if (verbose > 1)
+                    *debug << "DW_MACRO_start_file( " << lineinfo->files[file].name << " from line " << line << " )\n";
+                auto &fileinfo = lineinfo->files[file];
+                if (!visitor->startFile(line, lineinfo->directories[fileinfo.dirindex], fileinfo))
+                    return false;
+                break;
+            }
+
+            case DW_MACRO_import: {
+                auto offset = dr.getuint(dwarflen);
+                if (verbose > 1)
+                    *debug << "DW_MACRO_import( " << offset << " )\n";
+                Macros nest(dwarf, offset);
+                if (!nest.visit(dwarf, visitor))
+                    return false;
+
+                break;
+            }
+
+            case DW_MACRO_define_strp: {
+                auto line = dr.getuleb128();
+                auto contentOffset = dr.getuint(dwarflen);
+                auto str = dwarf->debugStrings->readString( contentOffset );
+                if (verbose > 1)
+                    *debug << "DW_MACRO_define_strp( " << line << ", " << str << " )\n";
+                if (!visitor->define(line, str))
+                    return false;
+                break;
+            }
+
+            case DW_MACRO_define: {
+                auto line = dr.getuleb128();
+                auto str = dr.getstring();
+                if (verbose > 1)
+                    *debug << "DW_MACRO_define( " << line << ", " << str << " )\n";
+                if (!visitor->define(line, str))
+                    return false;
+                break;
+            }
+
+            case DW_MACRO_undef_strp: {
+                auto line = dr.getuleb128();
+                auto contentOffset = dr.getuint(dwarflen);
+                auto str = dwarf->debugStrings->readString( contentOffset );
+                if (verbose > 1)
+                    *debug << "DW_MACRO_undef_strp( " << line << ", '" << str << "' )\n";
+                if (!visitor->undef(line, str))
+                    return false;
+                break;
+            }
+
+            case DW_MACRO_undef: {
+                auto line = dr.getuleb128();
+                auto str = dr.getstring();
+                if (verbose > 1)
+                    *debug << "DW_MACRO_undef( " << line << ", '" << str << "' )\n";
+                if (!visitor->undef(line, str))
+                    return false;
+                break;
+            }
+
+            case DW_MACRO_end_file:
+                if (verbose > 1)
+                    *debug << "DW_MACRO_end_file()\n";
+                if (!visitor->endFile())
+                    return false;
+                break;
+
+            case 0:
+                if (verbose > 1)
+                    *debug << "(end of macros)\n";
+                done = true;
+                break;
+            default:
+                // os << "macro entry: " << int(code) << "(" << macro_entry_name(code) << ")\n";
+                break;
+        }
+    }
+    return true;
 }
 
 const std::list<PubnameUnit> &
@@ -537,7 +690,7 @@ Attribute::operator Ranges() const
                                     ".debug_addr", ".zdebug_addr", nullptr);
         DWARFReader r(rnglists, offset);
 
-        uintmax_t base = 0, baseidx = 0;
+        uintmax_t base = 0;
         for (bool done = false; !done;) {
             auto entryType = DW_RLE(r.getu8());
             switch (entryType) {
@@ -588,6 +741,8 @@ Attribute::operator Ranges() const
                     ranges.emplace_back(start, start + len);
                     break;
                 }
+                default:
+                    abort();
             }
         }
     }
@@ -615,13 +770,13 @@ dwarfStateAddRow(LineInfo *li, const LineState &state)
 }
 
 void
-DWARFReader::readForm(const Unit *unit, Form form)
+DWARFReader::readForm(const Info *info, const Unit *unit, Form form)
 {
     switch (form) {
         case DW_FORM_string:
         case DW_FORM_line_strp:
         case DW_FORM_strp:
-            readFormString(unit, form);
+            readFormString(info, unit, form);
             break;
         default:
             abort();
@@ -629,7 +784,7 @@ DWARFReader::readForm(const Unit *unit, Form form)
 }
 
 std::string
-DWARFReader::readFormString(const Unit *unit, Form form)
+DWARFReader::readFormString(const Info *dwarf, const Unit *unit, Form form)
 {
     switch (form) {
         case DW_FORM_string:
@@ -638,11 +793,11 @@ DWARFReader::readFormString(const Unit *unit, Form form)
             abort();
         case DW_FORM_line_strp: {
             auto off = getuint(unit->dwarfLen);
-            return unit->dwarf->debugLineStrings->readString(off);
+            return dwarf->debugLineStrings->readString(off);
         }
         case DW_FORM_strp: {
             auto off = getuint(unit->dwarfLen);
-            return unit->dwarf->debugStrings->readString(off);
+            return dwarf->debugStrings->readString(off);
         }
     }
 }
@@ -698,13 +853,14 @@ LineInfo::build(DWARFReader &r, const Unit *unit)
 
     uint16_t version = r.getu16();
     unsigned char address_size;
-    unsigned char segment_selector_size;
+
     if (version >= 5) {
         address_size = r.getu8();
-        segment_selector_size = r.getu8();
+        // We have no interest in segment selector sizes, so just discard them
+        /* segment_selector_size = */ r.getu8();
     } else {
         address_size = ELF_BYTES;
-        segment_selector_size = ELF_BYTES;
+        /* segment_selector_size = */ ELF_BYTES;
     }
 
     Elf::Off header_length = r.getuint(version > 2 ? dwarfLen : 4);
@@ -732,18 +888,18 @@ LineInfo::build(DWARFReader &r, const Unit *unit)
             for (auto &ent : directoryFormat) {
                 switch (ent.first) {
                     case DW_LNCT_path: {
-                        path = r.readFormString(unit, ent.second);
+                        path = r.readFormString(unit->dwarf, unit, ent.second);
                         break;
                     }
                     default:{
-                        r.readForm(unit, ent.second);
+                        r.readForm(unit->dwarf, unit, ent.second);
                         *debug << "unexpected LNCT " << ent.first << " in directory table" << std::endl;
                         break;
                     }
                 }
             }
             if (path == "") {
-                *debug << "no path in in directory table entry" << std::endl;
+                *debug << "no path in directory table entry" << std::endl;
             } else {
                 directories.emplace_back(path);
             }
@@ -755,19 +911,18 @@ LineInfo::build(DWARFReader &r, const Unit *unit)
             for (auto &ent : fileFormat) {
                 switch (ent.first) {
                     case DW_LNCT_path:
-                        entry.name = r.readFormString(unit, ent.second);
+                        entry.name = r.readFormString(unit->dwarf, unit, ent.second);
                         break;
                     case DW_LNCT_directory_index:
                         entry.dirindex = r.readFormUnsigned(unit, ent.second);
                         break;
                     default:
-                        r.readForm(unit, ent.second);
+                        r.readForm(unit->dwarf, unit, ent.second);
                         break;
                 }
             }
             files.push_back(entry);
         }
-
     } else {
         directories.emplace_back(".");
         int count;
@@ -822,7 +977,7 @@ LineInfo::build(DWARFReader &r, const Unit *unit)
                 state = LineState(this);
                 break;
             case DW_LNE_set_address:
-                state.addr = r.getuint(unit->addrlen);
+                state.addr = r.getuint(address_size);
                 break;
             case DW_LNE_set_discriminator:
                 state.discriminator = r.getuleb128();
@@ -1117,6 +1272,15 @@ RawDIE::~RawDIE()
     }
 }
 
+LineInfo *
+Info::linesAt(intmax_t offset) const
+{
+    DWARFReader r2(lineshdr, offset);
+    auto lines = new LineInfo();
+    lines->build(r2, nullptr);
+    return lines;
+}
+
 const LineInfo *
 Unit::getLines()
 {
@@ -1134,10 +1298,8 @@ Unit::getLines()
     if (!attr.valid())
         return nullptr;
 
-    auto stmts = intmax_t(attr);
-    DWARFReader r2(dwarf->lineshdr, stmts);
-    lines.reset(new LineInfo());
-    lines->build(r2, this);
+    lines.reset(dwarf->linesAt(intmax_t(attr)));
+
     return lines.get();
 }
 

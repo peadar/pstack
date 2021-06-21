@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <typeinfo>
 #include <map>
+#include <iomanip>
 
 /*
  * General purpose way of printing out JSON objects.
@@ -167,19 +168,74 @@ operator << (std::ostream &os, const JSON<Container, Context> &container) {
     return os;
 }
 
+struct Escape {
+    std::string value;
+    Escape(std::string value_) : value(value_) { }
+};
+
+struct JSONEncodingError : public std::exception {
+   std::string msg;
+   const char *what() { return msg.c_str(); }
+   JSONEncodingError(std::string &&rhs) : msg(std::move(rhs)) {}
+};
+
+inline std::ostream & operator << (std::ostream &o, const Escape &escape)
+{
+    auto flags(o.flags());
+    for (auto i = escape.value.begin(); i != escape.value.end();) {
+        int c;
+        switch (c = (unsigned char)*i++) {
+            case '\b': o << "\\b"; break;
+            case '\f': o << "\\f"; break;
+            case '\n': o << "\\n"; break;
+            case '"': o << "\\\""; break;
+            case '\\': o << "\\\\"; break;
+            case '\r': o << "\\r"; break;
+            case '\t': o << "\\t"; break;
+            default:
+                if (unsigned(c) < 32) {
+                    o << "\\u" << std::hex << unsigned(c);
+                } else if (c & 0x80) {
+                    // multibyte UTF-8: build up the unicode codepoint.
+                    unsigned long v = c;
+                    int count = 0;
+                    for (int mask = 0x80; mask & v; mask >>= 1) {
+                        if (mask == 0)
+                            throw JSONEncodingError("malformed UTF-8 string");
+                        count++;
+                        v &= ~mask;
+                    }
+                    while (--count) {
+                        c = (unsigned char)*i++;
+                        if ((c & 0xc0) != 0x80)
+                            throw JSONEncodingError("illegal character in multibyte sequence");
+                        v = (v << 6) | (c & 0x3f);
+                    }
+                    o << "\\u" << std::hex << std::setfill('0') << std::setw(4) << v;
+                } else {
+                    o << (char)c;
+                }
+                break;
+        }
+    }
+    o.flags(flags);
+    return o;
+}
+
+
 /*
  * Print a JSON string (std::string, char *, etc)
  */
 template <typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<std::string, C> &json) {
-   return os << "\"" << json.object << "\"";
+   return os << "\"" << Escape(json.object) << "\"";
 }
 
 template <typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<const char *, C> &json) {
-   return os << "\"" << json.object << "\"";
+   return os << "\"" << Escape(json.object) << "\"";
 }
 
 /*

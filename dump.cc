@@ -288,6 +288,10 @@ std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Unit::sptr> &unit
         .field("dietree", unit.object->root());
     if (unit.object->getLines() != nullptr)
         fmt.field("linenumbers", *unit.object->getLines());
+
+    auto macros = unit.object->getMacros();
+    if (macros)
+        fmt.field("macros", *macros);
     unit.object->purge();
     return fmt;
 }
@@ -491,6 +495,34 @@ operator << (std::ostream &os, const JSON<Dwarf::CFI> &info)
     return JObject(os)
         .field("cielist", ciesByString, &info.object)
         .field("fdelist", info.object.fdeList, &info.object);
+}
+
+const char *macro_entry_name(uint8_t code)
+{
+#define DWARF_MACRO(name, value) case value: return #name;
+   switch (code) {
+#include "libpstack/dwarf/macro.h"
+      default: return "invalid value";
+#undef DWARF_MACRO
+   }
+}
+
+enum DWARF_MACRO_CODE {
+#define DWARF_MACRO(name, value) name = value,
+#include "libpstack/dwarf/macro.h"
+      DW_MACRO_invalid
+#undef DWARF_MACRO
+};
+
+
+std::ostream &
+operator << (std::ostream &os, const JSON<Dwarf::Macros> &mi)
+{
+    return JObject(os)
+        .field("version", mi.object.version)
+        .field("debug_line_offset", mi.object.debug_line_offset)
+        .field("opcodes", mi.object.opcodes);
+    // XXX: use a visitor to generate details?
 }
 
 std::ostream &

@@ -99,6 +99,8 @@ if (Python2_Development_FOUND)
    set_source_files_properties(python2.cc PROPERTIES COMPILE_FLAGS -I${Python2_INCLUDE_DIRS})
 endif()
 
+add_definitions("-g3")
+
 add_library(dwelf ${LIBTYPE} dump.cc dwarf.cc elf.cc reader.cc util.cc
    ${inflatesrc} ${lzmasrc})
 add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc

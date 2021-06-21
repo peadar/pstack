@@ -160,12 +160,14 @@ emain(int argc, char **argv)
         case 'g':
             Elf::globalDebugDirectories.add(optarg);
             break;
+
         case 'D': {
             auto dumpobj = std::make_shared<Elf::Object>(imageCache, loadFile(optarg));
             auto di = std::make_shared<Dwarf::Info>(dumpobj, imageCache);
             std::cout << json(*di);
             goto done;
         }
+
         case 'z':
         case 'd': {
             /* Undocumented option to dump image contents */
