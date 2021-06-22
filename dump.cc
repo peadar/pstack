@@ -497,24 +497,6 @@ operator << (std::ostream &os, const JSON<Dwarf::CFI> &info)
         .field("fdelist", info.object.fdeList, &info.object);
 }
 
-const char *macro_entry_name(uint8_t code)
-{
-#define DWARF_MACRO(name, value) case value: return #name;
-   switch (code) {
-#include "libpstack/dwarf/macro.h"
-      default: return "invalid value";
-#undef DWARF_MACRO
-   }
-}
-
-enum DWARF_MACRO_CODE {
-#define DWARF_MACRO(name, value) name = value,
-#include "libpstack/dwarf/macro.h"
-      DW_MACRO_invalid
-#undef DWARF_MACRO
-};
-
-
 std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::Macros> &mi)
 {
