@@ -675,7 +675,8 @@ Attribute::operator uintmax_t() const
     case DW_FORM_data2:
     case DW_FORM_data4:
     case DW_FORM_data8:
-     case DW_FORM_udata:
+    case DW_FORM_udata:
+    case DW_FORM_implicit_const:
         return value().udata;
     case DW_FORM_addr:
     case DW_FORM_sec_offset:
@@ -723,21 +724,21 @@ Attribute::operator Ranges() const
                     break;
 
                 case DW_RLE_base_addressx: {
-                    auto baseidx = r.getuleb128();
+                    /* auto baseidx = */ r.getuleb128();
                     abort();
                     break;
                 }
 
                 case DW_RLE_startx_endx: {
-                    auto startx = r.getuleb128();
-                    auto endx = r.getuleb128();
+                    /* auto startx = */ r.getuleb128();
+                    /* auto endx = */ r.getuleb128();
                     abort();
                     break;
                 }
 
                 case DW_RLE_startx_length: {
-                    auto starti = r.getuleb128();
-                    auto len = r.getuleb128();
+                    /* auto starti = */ r.getuleb128();
+                    /* auto len = */ r.getuleb128();
                     abort();
                     break;
                 }

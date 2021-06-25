@@ -64,42 +64,102 @@ StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *sta
        auto base = function.attribute(DW_AT_frame_base);
        if (base.valid()) {
            stack->push(stack->eval(p, base, this, elfReloc) + offset);
+           stack->isReg = false;
            return;
        }
    }
    stack->push(0);
 }
 
+enum DW_LLE : uint8_t {
+#define DW_LLE_VAL(name, value) name = value,
+#include "libpstack/dwarf/lle.h"
+   DW_LLE_invalid
+#undef DW_LLE_VAL
+};
+
+std::ostream &
+operator <<( std::ostream &os, DW_LLE lle) {
+#define DW_LLE_VAL(name, value) case name: return os << #name;
+   switch (lle) {
+#include "libpstack/dwarf/lle.h"
+      default: return os << "(unknown LLE " << uint8_t(lle) << ")";
+   }
+#undef DW_LLE_VAL
+};
+
+
+/*
+ * Evaluate an expression specified by an exprloc, or as inferred by a location list
+ */
 Elf::Addr
 ExpressionStack::eval(const Process &proc, const Attribute &attr,
                       const StackFrame *frame, Elf::Addr reloc)
 {
-    const Info *dwarf = attr.die().getUnit()->dwarf;
-    switch (attr.form()) {
-        case DW_FORM_sec_offset: {
-            auto &sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
-            auto objIp = frame->scopeIP() - reloc;
-            // convert this object-relative addr to a unit-relative one
-            const auto &unitEntry = attr.die().getUnit()->root();
-            Attribute unitLow = unitEntry.attribute(DW_AT_low_pc);
-            Elf::Addr unitIp = objIp - uintmax_t(unitLow);
+    Unit::sptr unit = attr.die().getUnit();
+    const Info *dwarf = unit->dwarf;
+    auto ip = frame->scopeIP();
 
-            DWARFReader r(sec.io, uintmax_t(attr));
-            for (;;) {
-                Elf::Addr start = r.getint(sizeof start);
-                Elf::Addr end = r.getint(sizeof end);
-                if (start == 0 && end == 0)
-                    return 0;
-                auto len = r.getuint(2);
-                if (unitIp >= start && unitIp < end) {
-                    DWARFReader exr(r.io, r.getOffset(), r.getOffset() + Elf::Word(len));
-                    return eval(proc, exr, frame, frame->elfReloc);
+    const auto &unitEntry = unit->root();
+    Attribute unitLow = unitEntry.attribute(DW_AT_low_pc);
+
+    // default base address is relocation of the object + base of unit.
+    uint64_t base = reloc + uintmax_t(unitLow);
+
+    switch (attr.form()) {
+        case DW_FORM_sec_offset:
+            if (unit->version >= 5) {
+                // For dwarf 5, this will be a debug_loclists entry.
+                auto &sec = dwarf->elf->getSection(".debug_loclists", SHT_PROGBITS);
+                DWARFReader r(sec.io, uintmax_t(attr));
+                for (;;) {
+                    auto lle = DW_LLE(r.getu8());
+                    switch (lle) {
+                        case DW_LLE_end_of_list:
+                            return 0; // failed to find a loclist for the given IP.
+
+                        case DW_LLE_offset_pair:
+                        {
+                            auto start = r.getuleb128();
+                            auto end = r.getuleb128();
+                            auto len = r.getuleb128();
+                            if (base + start <= ip && ip < base + end) {
+                               DWARFReader exr(r.io, r.getOffset(), r.getOffset() + len);
+                               return eval(proc, exr, frame, frame->elfReloc);
+                            }
+                            r.skip(len);
+                            break;
+                        }
+
+                        case DW_LLE_base_addressx:
+                            base = r.getuleb128();
+                            break;
+
+                        default:
+                            abort(); // can implement it when we see it.
+                    }
                 }
-                r.skip(len);
+            } else {
+                // For dwarf 4, this will be a debug_loc entry.
+                auto &sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
+                // convert this object-relative addr to a unit-relative one
+
+                DWARFReader r(sec.io, uintmax_t(attr));
+                for (;;) {
+                    Elf::Addr start = r.getint(sizeof start);
+                    Elf::Addr end = r.getint(sizeof end);
+                    if (start == 0 && end == 0)
+                        return 0;
+                    auto len = r.getuint(2);
+                    if (ip >= base + start && ip < base + end) {
+                        DWARFReader exr(r.io, r.getOffset(), r.getOffset() + Elf::Word(len));
+                        return eval(proc, exr, frame, frame->elfReloc);
+                    }
+                    r.skip(len);
+                }
             }
             abort();
 
-        }
         case DW_FORM_block1:
         case DW_FORM_block:
         case DW_FORM_exprloc: {
