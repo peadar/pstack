@@ -68,8 +68,14 @@ struct Field {
 /*
  * A printer for JSON integral types - just serialize directly from C type.
  */
+template <typename C>
+typename std::ostream &
+operator << (std::ostream &os, const JSON<unsigned char, C>&json) {
+   return os << int(json.object);
+}
+
 template <typename T, typename C>
-typename std::enable_if<std::is_integral<T>::value, std::ostream>::type &
+typename std::enable_if<std::is_integral<T>::value && !std::is_same<T, unsigned char>::value, std::ostream>::type &
 operator << (std::ostream &os, const JSON<T, C>&json) { return os << json.object; }
 
 /*
@@ -90,11 +96,11 @@ operator << (std::ostream &os, const JSON<char[N], C> &json)
 
 template <typename T, size_t N, typename C>
 std::ostream &
-operator << (std::ostream &os, const JSON<T[N], C> &json)
+operator << (std::ostream &os, const JSON<T[N], C> &j)
 {
     os << "[";
     for (size_t i = 0; i < N; ++i) {
-        os << (i ? ",\n" : "") << json.object[i];
+        os << (i ? ",\n" : "") << json(j.object[i], j.context);
     }
     return os << "]";
 }

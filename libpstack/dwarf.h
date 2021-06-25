@@ -329,6 +329,7 @@ public:
     const LineInfo *getLines();
     const Macros *getMacros();
     ~Unit();
+    unsigned char id[8]; // Unit ID for DWO.
 };
 
 class UnitIterator {
@@ -486,7 +487,7 @@ public:
     Unit::sptr lookupUnit(Elf::Addr addr) const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
     mutable Reader::csptr strOffsets;
-    LineInfo *linesAt(intmax_t) const;
+    LineInfo *linesAt(intmax_t, const Unit *) const;
 
 private:
     void decodeARangeSet(DWARFReader &) const;
@@ -593,6 +594,10 @@ public:
         {
         }
 
+    void getBytes(size_t size, unsigned char *to) {
+       io->readObj(off, to, size);
+       off += size;
+    }
     uint32_t getu32() {
         unsigned char q[4];
         io->readObj(off, q, 4);

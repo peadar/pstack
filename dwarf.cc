@@ -143,6 +143,14 @@ sectionReader(Elf::Object &obj, const char *name, const char *compressedName,
             *secp = &raw;
         return raw.io;
     }
+    std::string dwoname = std::string(name) + ".dwo";
+    const auto &dwo = obj.getSection(dwoname, SHT_PROGBITS);
+
+    if (dwo) {
+        if (secp)
+            *secp = &dwo;
+        return dwo.io;
+    }
 
     if (compressedName != nullptr) {
         const auto &zraw = obj.getSection(compressedName, SHT_PROGBITS);
@@ -265,7 +273,7 @@ Macros::Macros(const Info *dwarf, intmax_t offset)
 bool
 Macros::visit(const Info *dwarf, MacroVisitor *visitor) const
 {
-    auto lineinfo = debug_line_offset != -1 ? dwarf->linesAt( debug_line_offset ) : nullptr;
+    auto lineinfo = debug_line_offset != -1 ? dwarf->linesAt(debug_line_offset, nullptr) : nullptr;
     DWARFReader dr(reader);
     for (bool done=false; !done; ) {
         auto code = dr.getu8();
@@ -534,6 +542,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
     , length(r.getlength(&dwarfLen))
     , end(r.getOffset() + length)
     , version(r.getu16())
+    , id{}
 {
     if (version <= 2) // DWARF Version 2 uses the architecture's address size.
        dwarfLen = ELF_BYTES;
@@ -541,8 +550,23 @@ Unit::Unit(const Info *di, DWARFReader &r)
     Elf::Off abbrevOffset;
     if (version >= 5) {
         unitType = UnitType(r.getu8());
-        r.addrLen = addrlen = r.getu8();
-        abbrevOffset = r.getuint(dwarfLen);
+        switch (unitType) {
+        case DW_UT_compile:
+        case DW_UT_type:
+        case DW_UT_partial:
+        case DW_UT_skeleton:
+            r.addrLen = addrlen = r.getu8();
+            abbrevOffset = r.getuint(dwarfLen);
+            break;
+        case DW_UT_split_compile:
+        case DW_UT_split_type:
+            r.addrLen = addrlen = r.getu8();
+            abbrevOffset = r.getuint(dwarfLen);
+            r.getBytes(sizeof id, id);
+            break;
+        default:
+            abort();
+        }
     } else {
         abbrevOffset = r.getuint(version <= 2 ? 4 : dwarfLen);
         r.addrLen = addrlen = r.getu8();
@@ -1273,11 +1297,11 @@ RawDIE::~RawDIE()
 }
 
 LineInfo *
-Info::linesAt(intmax_t offset) const
+Info::linesAt(intmax_t offset, const Unit *unit) const
 {
     DWARFReader r2(lineshdr, offset);
     auto lines = new LineInfo();
-    lines->build(r2, nullptr);
+    lines->build(r2, unit);
     return lines;
 }
 
@@ -1298,7 +1322,7 @@ Unit::getLines()
     if (!attr.valid())
         return nullptr;
 
-    lines.reset(dwarf->linesAt(intmax_t(attr)));
+    lines.reset(dwarf->linesAt(intmax_t(attr), this));
 
     return lines.get();
 }
