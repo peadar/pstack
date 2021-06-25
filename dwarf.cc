@@ -376,36 +376,16 @@ Info::pubnames() const
     return pubnameUnits;
 }
 
-static size_t UNITCACHE_SIZE=1024;
-
 Unit::sptr
-UnitsCache::get(const Info *info, Elf::Off offset)
+Info::getUnit(Elf::Off offset) const
 {
-    auto &ent = byOffset[offset];
-    if (ent != nullptr) {
-        auto idx = std::find(LRU.begin(), LRU.end(), ent);
-        assert(idx != LRU.end());
-        LRU.erase(idx);
-    } else {
-        DWARFReader r(info->io, offset);
-        ent = make_shared<Unit>(info, r);
+    auto &ent = units[offset];
+    if (ent == nullptr) {
+        DWARFReader r(io, offset);
+        ent = make_shared<Unit>(this, r);
         if (verbose >= 3)
             *debug << "create unit " << ent->name() << "@" << offset
-                      << " in " << *info->io << "\n";
-    }
-    LRU.push_front(ent);
-    if (LRU.size() > UNITCACHE_SIZE) {
-        auto old = LRU.back();
-        // There might still be active DIEs in this unit, but we can purge its
-        // RawDIEs to potentially free them
-        old->purge();
-        LRU.pop_back();
-        // don't erase from the map - we hold on to the offsets so we can quickly
-        // determine which unit contains a particular DIE.
-        byOffset[old->offset] = 0;
-        if (verbose > 3)
-            *debug << "evicted unit " << old->name() << "@" << old->offset
-                      << " in " << *info->io << "\n";
+                      << " in " << *io << "\n";
     }
     return ent;
 }
@@ -413,43 +393,58 @@ UnitsCache::get(const Info *info, Elf::Off offset)
 DIE
 Info::offsetToDIE(Elf::Off offset) const
 {
-    // find the appropriate unit for a die with that offset.
-    auto it = std::lower_bound(
-            units.byOffset.begin(),
-            units.byOffset.end(),
-            offset,
-            [] (const std::pair<Elf::Off, std::shared_ptr<Unit>> &u, Elf::Off offset)
+    // We have the offset of the DIE that we want, and the offsets of some
+    // subset of units as the keys of 'units'. We can only find the start of a
+    // unit if (a) it's the first unit, (b) we find the end of the one before
+    // it, or (c) we get a reference from somewhere else in the debug info.
+    // (eg, from aranges). So, without a hit in the aranges data, to find the
+    // Unit that contains "offset", we need to find the last unit that has an
+    // offset <= the required DIE offset, and walk forward until we find the
+    // first unit that has an end > the DIE offset (they can be the same unit)
 
-                { return u.first < offset; });
+    auto it = std::upper_bound( units.begin(), units.end(), offset,
+            [] (Elf::Off offset, const std::pair<Elf::Off, std::shared_ptr<Unit>> &u)
+                { return offset < u.first; });
+
+    // "it" is the first unit with an offset > our DIE offset. Our required
+    // Unit is before this in the sequence.
     Elf::Off uOffset;
-    if (it == units.byOffset.begin() || it == units.byOffset.end()) {
-        uOffset = 0;
-    } else {
+
+    if (it != units.begin()) {
+        // Theres already at least one unit that has an offset < the desired DIE
+        // offset. The highest one is at it - 1. Start searching forward from there.
         --it;
         uOffset = it->first;
+    } else {
+        // There are either no units, or the first unit has an offset higher
+        // than our required DIE offset - start at offset 0.
+        uOffset = 0;
     }
-    UnitIterator start(this, uOffset);
-    UnitIterator end;
-    for (int i = 1; start != end; ++start, ++i) {
+
+    int i;
+    for (UnitIterator start(this, uOffset), end; start != end; ++start, ++i) {
         const auto &u = *start;
-        if (u->offset <= offset && u->end > offset) {
-            DIE entry = u->offsetToDIE(offset);
-            if (entry) {
-                if (verbose > 2)
-                    *debug << "search for DIE at " << offset
-                              << " started at " << uOffset
-                              << " and took " << i << " iterations\n";
-                return entry;
+        if (u->end > offset) {
+            // this is the first unit that ends after our required offset -
+            // we're done looking
+            if (u->offset <= offset) {
+                // the unit starts at or before our required offset - the DIE
+                // should be in here.
+                DIE entry = u->offsetToDIE(DIE(), offset);
+                if (entry) {
+                    if (verbose > 1)
+                        *debug << "search for DIE at " << offset
+                                  << " in " << *io
+                                  << " started at " << uOffset
+                                  << ", found at " << u->offset
+                                  << " and took " << i << " iterations\n";
+                    return entry;
+                }
             }
+            break;
         }
     }
     throw Exception() << "DIE not found";
-}
-
-Unit::sptr
-Info::getUnit(Elf::Off offset) const
-{
-    return units.get(this, offset);
 }
 
 Units
@@ -532,7 +527,6 @@ Info::lookupUnit(Elf::Addr addr) const {
     if (it != aranges.ranges.end() && it->first - it->second.first <= addr)
         return getUnit(it->second.second);
     return nullptr;
-
 }
 
 Info::~Info() = default;
@@ -561,7 +555,6 @@ Unit::Unit(const Info *di, DWARFReader &r)
 {
     if (version <= 2) // DWARF Version 2 uses the architecture's address size.
        dwarfLen = ELF_BYTES;
-
     if (version >= 5) {
         unitType = UnitType(r.getu8());
         switch (unitType) {
@@ -586,10 +579,12 @@ Unit::Unit(const Info *di, DWARFReader &r)
         r.addrLen = addrlen = r.getu8();
     }
     topDIEOffset = r.getOffset();
+    // we now have enough info to parse the abbreviations and the DIE tree.
 }
 
 /*
- * Convert an offset to a DIE.
+ * Convert an offset to a raw DIE.
+ * Offsets are relative to the start of the DWARF info section, *not* the unit.
  * If the parent is not known, it can be null
  * If we later need to find the parent, it may require scanning the entire
  * DIE tree to do so if we don't know parent's offset when requested.
@@ -605,6 +600,12 @@ Unit::offsetToRawDIE(const DIE &parent, Elf::Off offset) {
     return rawptr;
 }
 
+/*
+ * Convert an offset in the dwarf info to a DIE.
+ * If the parent is not known, it can be null
+ * If we later need to find the parent, it may require scanning the entire
+ * DIE tree to do so if we don't know parent's offset when requested.
+ */
 DIE
 Unit::offsetToDIE(const DIE &parent, Elf::Off offset) {
     if (abbreviations.empty())
@@ -612,11 +613,8 @@ Unit::offsetToDIE(const DIE &parent, Elf::Off offset) {
     return DIE(shared_from_this(), offset, offsetToRawDIE(parent, offset));
 }
 
-DIE
-Unit::offsetToDIE(Elf::Off offset) {
-    if (abbreviations.empty())
-        load();
-    return DIE(shared_from_this(), offset, offsetToRawDIE(DIE(), offset));
+DIE Unit::root() {
+   return offsetToDIE(DIE(), topDIEOffset);
 }
 
 string
@@ -1392,6 +1390,10 @@ Unit::purge()
         AllEntries destroy;
         std::swap(allEntries, destroy);
     }
+    {
+        Abbreviations destroy;
+        std::swap(abbreviations, destroy);
+    }
     auto end = stats.currentDIEs;
     if (verbose >= 3)
         *debug << "purging " << name() << " in " << *dwarf->elf->io
@@ -1899,7 +1901,7 @@ Attribute::operator DIE() const
 
     // Try this unit first (if we're dealing with the same Info)
     if (dwarf == dieref.unit->dwarf && dieref.unit->offset <= off && dieref.unit->end > off) {
-        const auto otherEntry = dieref.unit->offsetToDIE(off);
+        const auto otherEntry = dieref.unit->offsetToDIE(DIE(), off);
         if (otherEntry)
             return otherEntry;
     }

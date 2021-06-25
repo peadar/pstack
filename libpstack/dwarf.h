@@ -297,7 +297,8 @@ class Unit : public std::enable_shared_from_this<Unit> {
     Unit(const Unit &) = delete;
     Elf::Off abbrevOffset;
     std::unique_ptr<LineInfo> lines;
-    std::unordered_map<size_t, Abbreviation> abbreviations;
+    using Abbreviations = std::unordered_map<size_t, Abbreviation>;
+    Abbreviations abbreviations;
     
     Elf::Off topDIEOffset;
     using AllEntries = std::unordered_map<Elf::Off, std::shared_ptr<RawDIE>>;
@@ -313,12 +314,9 @@ public:
     typedef std::shared_ptr<Unit> sptr;
     typedef std::shared_ptr<const Unit> csptr;
     const Abbreviation *findAbbreviation(size_t) const;
-    DIE root() {
-       if (abbreviations.empty())
-          load();
-       return offsetToDIE(topDIEOffset);
-    }
-    DIE offsetToDIE(Elf::Off offset);
+
+    DIE root();
+
     DIE offsetToDIE(const DIE &parent, Elf::Off offset);
     std::shared_ptr<RawDIE> offsetToRawDIE(const DIE &parent, Elf::Off offset);
     const Info *dwarf;
@@ -371,13 +369,6 @@ struct Units {
     UnitIterator begin() const;
     UnitIterator end() const { return iterator(); }
     Units(const std::shared_ptr<const Info> &info_) : info(info_) {}
-};
-
-struct UnitsCache {
-    std::map<Elf::Off, Unit::sptr> byOffset;
-    std::list<Unit::sptr> LRU;
-    Unit::sptr get(const Info *, Elf::Off);
-    Unit::sptr unitForDIE(const Info *, Elf::Off offset);
 };
 
 struct FDE {
@@ -464,6 +455,7 @@ struct ARanges {
 };
 
 class ImageCache;
+
 /*
  * Info represents all the interesting bits of the DWARF data.
  * It's primary function is to provide access to the DIE tree.
@@ -474,7 +466,7 @@ public:
     ~Info();
     typedef std::shared_ptr<Info> sptr;
     typedef std::shared_ptr<const Info> csptr;
-    Reader::csptr io; // XXX: io is public because "block" Attributes need to read from it.
+    Reader::csptr io; // dwarf_info reader.
     std::map<Elf::Addr, CallFrame> callFrameForAddr;
     Elf::Object::sptr elf;
     std::unique_ptr<CFI> debugFrame;
@@ -502,7 +494,7 @@ private:
     mutable std::list<PubnameUnit> pubnameUnits;
     // These are mutable so we can lazy-eval them when getters are called, and
     // maintain logical constness.
-    mutable UnitsCache units;
+    mutable std::map<Elf::Off, Unit::sptr> units;
     mutable Info::sptr altDwarf;
     mutable bool altImageLoaded;
     ImageCache &imageCache;

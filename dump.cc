@@ -595,6 +595,13 @@ std::ostream &operator << (std::ostream &os, const JSON<ProgramHeaderName> &ph)
     return os << '"' << ph->type << '"';
 }
 
+std::ostream &operator<< (std::ostream &os, const JSON<Elf::SymbolVersioning> &vi)
+{
+   return JObject(os)
+      // .field("versions", vi.object.versions) // XXX: map keyed by int, doesn't translate to JSON
+      .field("files", vi.object.files)
+      ;
+}
 /*
  * Debug output of an ELF32 object.
  */
@@ -637,6 +644,7 @@ std::ostream &operator<< (std::ostream &os, const JSON<Elf::Object> &elf)
         .field("sections", elf->sectionHeaders, &elf.object)
         .field("segments", mappedSegments, &elf.object)
         .field("notes", elf->notes)
+        .field("versioninfo", *elf.object.symbolVersions())
         ;
 
     if (elf->getInterpreter() != "")

@@ -292,8 +292,8 @@ mainExcept(int argc, char *argv[])
     for (auto &loaded : process->objects) {
         size_t count = 0;
 
-        auto findSymbols = [&count, verbose, showsyms, &store, &patterns, &loaded]( auto &table ) {
-           for (const auto &sym : table) {
+        auto findSymbols = [&count, verbose, showsyms, &store, &patterns, &loaded]( auto table ) {
+           for (const auto &sym : *table) {
                for (auto &pattern : patterns) {
                    if (globmatch(pattern, sym.name)) {
                        store.add(ListedSymbol(sym.symbol, loaded.first,
@@ -306,8 +306,8 @@ mainExcept(int argc, char *argv[])
            }
         };
 
-        findSymbols( loaded.second->commonSections->dynamicSymbols );
-        findSymbols( loaded.second->commonSections->debugSymbols );
+        findSymbols( loaded.second->dynamicSymbols() );
+        findSymbols( loaded.second->debugSymbols() );
 
         if (verbose)
             *debug << "found " << count << " symbols in " << *loaded.second->io << endl;

@@ -370,7 +370,7 @@ ExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *fra
                 {
                   auto unit = frame->function.getUnit();
                   auto off = r.getuint(4);
-                  auto die = unit->offsetToDIE(off + unit->offset);
+                  auto die = unit->offsetToDIE(DIE(), off + unit->offset);
                   std::clog << die << "\n";
                   auto attr = die.attribute(DW_AT_type);
                   if (attr) {

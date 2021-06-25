@@ -136,8 +136,8 @@ getInterpHead<2>(const Process &proc) {
         if (module.find("python") == std::string::npos)
            continue;
         auto image = o.second;
-        auto &syms = image->commonSections->debugSymbols;
-        for (auto sym : syms) {
+        auto syms = image->debugSymbols();
+        for (auto sym : *syms) {
             if (sym.name.substr(0, 11) != "interp_head")
                 continue;
             auto libpython = o.second;

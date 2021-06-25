@@ -179,7 +179,7 @@ struct Section {
     operator bool() const { return shdr.sh_type != SHT_NULL; }
     Section(const Reader::csptr &image, Off off);
     Section() { shdr.sh_type = SHT_NULL; }
-    Section(const Section &) = default;
+    Section(const Section &) = delete;
 };
 
 class Notes {
@@ -242,6 +242,10 @@ struct SymbolSection {
     bool linearSearch(const std::string &name, Sym &) const;
 };
 
+struct SymbolVersioning {
+    std::map<int, std::string> versions;
+    std::map<std::string, std::vector<int>> files;
+};
 
 class Object : public std::enable_shared_from_this<Object> {
 public:
@@ -261,28 +265,7 @@ public:
     // Get a section by name. If type is not SHT_NULL, the type of the section
     // must match the passed type.
     const Section &getSection(const std::string &name, Word type) const;
-
-    struct CommonSections {
-
-       const Section &dynamic;
-       const Section &dynsym;
-       const Section &gnu_debugdata;
-       const Section &gnu_hash;
-       const Section &gnu_version;
-       const Section &gnu_version_d;
-       const Section &gnu_version_r;
-       const Section &hash;
-       const Section &symtab;
-
-       const SymbolSection<NamedSymbol> debugSymbols;
-       const SymbolSection<VersionedSymbol> dynamicSymbols;
-
-       CommonSections(Object *);
-    };
-
     std::map<int, std::vector<Dyn>> dynamic;
-
-    std::unique_ptr<CommonSections> commonSections;
 
     // Accessing segments.
     const ProgramHeaders &getSegments(Word type) const;
@@ -304,21 +287,35 @@ public:
 
     // find text version from versioned symbol.
     std::string symbolVersion(const VersionedSymbol &) const;
+    SymbolSection<NamedSymbol> *debugSymbols();
+    SymbolSection<VersionedSymbol> * dynamicSymbols();
+    const SymbolVersioning *symbolVersions() const;
+    const Section *gnu_version;
 private:
-    std::map<int, std::string> symbolVersions;
+    mutable std::unique_ptr<SymbolVersioning> symbolVersions_;
     // Elf header, section headers, program headers.
     mutable Object::sptr debugData;
     Ehdr elfHeader;
     ImageCache &imageCache;
     SectionHeaders sectionHeaders;
-    std::map<std::string, Section *> namedSection;
+    std::map<std::string, size_t> namedSection;
     std::map<Word, ProgramHeaders> programHeaders;
+
+    std::unique_ptr<SymbolSection<NamedSymbol>> debugSymbols_;
+
+    std::unique_ptr<SymbolSection<VersionedSymbol>> dynamicSymbols_;
+
+    template<typename Symtype>
+    SymbolSection<Symtype> *getSymtab(std::unique_ptr<SymbolSection<Symtype>> &table, const char *name, int type);
 
     mutable bool debugLoaded; // We've at least attempted to load debugObject: don't try again
     mutable Object::sptr debugObject; // debug object as per .gnu_debuglink/other.
 
-    std::unique_ptr<SymHash> hash; // Symbol hash table.
-    std::unique_ptr<GnuHash> gnu_hash; // Enhanced GNU symbol hash table.
+    std::unique_ptr<SymHash> hash_; // Symbol hash table.
+    SymHash *hash();
+    std::unique_ptr<GnuHash> gnu_hash_; // Enhanced GNU symbol hash table.
+    GnuHash *gnu_hash();
+
     Object *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
     friend std::ostream &::operator<< (std::ostream &, const JSON<Elf::Object> &);
     struct CachedSymbol {
