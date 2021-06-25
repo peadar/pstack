@@ -432,13 +432,15 @@ Info::offsetToDIE(Elf::Off offset) const
     UnitIterator end;
     for (int i = 1; start != end; ++start, ++i) {
         const auto &u = *start;
-        DIE entry = u->offsetToDIE(offset);
-        if (entry) {
-            if (verbose > 2)
-                *debug << "search for DIE at " << offset
-                          << " started at " << uOffset
-                          << " and took " << i << " iterations\n";
-            return entry;
+        if (u->offset <= offset && u->end > offset) {
+            DIE entry = u->offsetToDIE(offset);
+            if (entry) {
+                if (verbose > 2)
+                    *debug << "search for DIE at " << offset
+                              << " started at " << uOffset
+                              << " and took " << i << " iterations\n";
+                return entry;
+            }
         }
     }
     throw Exception() << "DIE not found";
@@ -535,8 +537,21 @@ Info::lookupUnit(Elf::Addr addr) const {
 
 Info::~Info() = default;
 
+void
+Unit::load()
+{
+    DWARFReader abbR(dwarf->abbrev, abbrevOffset);
+    uintmax_t code;
+
+    while ((code = abbR.getuleb128()) != 0)
+        abbreviations.emplace(std::piecewise_construct,
+                std::forward_as_tuple(code),
+                std::forward_as_tuple(abbR));
+}
+
 Unit::Unit(const Info *di, DWARFReader &r)
-    : dwarf(di)
+    : abbrevOffset{ 0 }
+    , dwarf(di)
     , io(r.io)
     , offset(r.getOffset())
     , length(r.getlength(&dwarfLen))
@@ -547,7 +562,6 @@ Unit::Unit(const Info *di, DWARFReader &r)
     if (version <= 2) // DWARF Version 2 uses the architecture's address size.
        dwarfLen = ELF_BYTES;
 
-    Elf::Off abbrevOffset;
     if (version >= 5) {
         unitType = UnitType(r.getu8());
         switch (unitType) {
@@ -571,15 +585,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
         abbrevOffset = r.getuint(version <= 2 ? 4 : dwarfLen);
         r.addrLen = addrlen = r.getu8();
     }
-
-    DWARFReader abbR(di->abbrev, abbrevOffset);
-    uintmax_t code;
-    while ((code = abbR.getuleb128()) != 0)
-        abbreviations.emplace(std::piecewise_construct,
-                std::forward_as_tuple(code),
-                std::forward_as_tuple(abbR));
     topDIEOffset = r.getOffset();
-    r.setOffset(end);
 }
 
 /*
@@ -601,11 +607,15 @@ Unit::offsetToRawDIE(const DIE &parent, Elf::Off offset) {
 
 DIE
 Unit::offsetToDIE(const DIE &parent, Elf::Off offset) {
+    if (abbreviations.empty())
+        load();
     return DIE(shared_from_this(), offset, offsetToRawDIE(parent, offset));
 }
 
 DIE
 Unit::offsetToDIE(Elf::Off offset) {
+    if (abbreviations.empty())
+        load();
     return DIE(shared_from_this(), offset, offsetToRawDIE(DIE(), offset));
 }
 

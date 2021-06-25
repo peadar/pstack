@@ -295,14 +295,17 @@ struct Macros {
 class Unit : public std::enable_shared_from_this<Unit> {
     Unit() = delete;
     Unit(const Unit &) = delete;
+    Elf::Off abbrevOffset;
     std::unique_ptr<LineInfo> lines;
     std::unordered_map<size_t, Abbreviation> abbreviations;
+    
     Elf::Off topDIEOffset;
     using AllEntries = std::unordered_map<Elf::Off, std::shared_ptr<RawDIE>>;
     AllEntries allEntries;
     std::shared_ptr<RawDIE> decodeEntry(const DIE &parent, Elf::Off offset);
     UnitType unitType;
     mutable std::unique_ptr<Macros> macros;
+    void load();
 public:
     void purge(); // Remove all RawDIEs from allEntries, potentially freeing memory.
     bool isRoot(const DIE &die) { return die.getOffset() == topDIEOffset; }
@@ -310,7 +313,11 @@ public:
     typedef std::shared_ptr<Unit> sptr;
     typedef std::shared_ptr<const Unit> csptr;
     const Abbreviation *findAbbreviation(size_t) const;
-    DIE root() { return offsetToDIE(topDIEOffset); }
+    DIE root() {
+       if (abbreviations.empty())
+          load();
+       return offsetToDIE(topDIEOffset);
+    }
     DIE offsetToDIE(Elf::Off offset);
     DIE offsetToDIE(const DIE &parent, Elf::Off offset);
     std::shared_ptr<RawDIE> offsetToRawDIE(const DIE &parent, Elf::Off offset);

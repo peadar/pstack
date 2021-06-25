@@ -132,7 +132,7 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr,
                         }
 
                         case DW_LLE_base_address:
-                            base = r.getuint(unit->addrlen);
+                            base = reloc + r.getuint(unit->addrlen);
                             break;
 
                         case DW_LLE_base_addressx:
