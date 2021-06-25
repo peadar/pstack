@@ -131,9 +131,18 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr,
                             break;
                         }
 
-                        case DW_LLE_base_addressx:
-                            base = r.getuleb128();
+                        case DW_LLE_base_address:
+                            base = r.getuint(unit->addrlen);
                             break;
+
+                        case DW_LLE_base_addressx:
+                            {
+                            auto idx = r.getuleb128();
+                            auto &addrsec = dwarf->elf->getSection(".debug_addr", SHT_PROGBITS);
+                            addrsec.io->readObj(idx * unit->addrlen, &base);
+                            }
+                            break;
+
 
                         default:
                             abort(); // can implement it when we see it.
