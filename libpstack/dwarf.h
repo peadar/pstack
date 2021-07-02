@@ -201,7 +201,11 @@ public:
     DIEChildren children() const { return DIEChildren(*this); }
 };
 
-using Ranges = std::vector<std::pair<uintmax_t, uintmax_t>>;
+class Ranges : public std::vector<std::pair<uintmax_t, uintmax_t>> {
+public:
+   bool isNew { true };
+};
+
 class Attribute {
     DIE dieref;
     const FormEntry *formp; /* From abbrev table attached to type */
@@ -223,7 +227,7 @@ public:
     explicit operator bool() const { return valid() && value().flag; }
     explicit operator DIE() const;
     explicit operator const Block &() const { return *value().block; }
-    explicit operator Ranges () const;
+    explicit operator const Ranges &() const;
     AttrName name() const;
 };
 
@@ -308,6 +312,7 @@ class Unit : public std::enable_shared_from_this<Unit> {
     mutable std::unique_ptr<Macros> macros;
     void load();
 public:
+    std::map<Elf::Addr, Ranges> ranges;
     void purge(); // Remove all RawDIEs from allEntries, potentially freeing memory.
     bool isRoot(const DIE &die) { return die.getOffset() == topDIEOffset; }
     size_t entryCount() const { return allEntries.size(); }

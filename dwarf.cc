@@ -421,7 +421,7 @@ Info::offsetToDIE(Elf::Off offset) const
         uOffset = 0;
     }
 
-    int i;
+    int i = 0;
     for (UnitIterator start(this, uOffset), end; start != end; ++start, ++i) {
         const auto &u = *start;
         if (u->end > offset) {
@@ -694,9 +694,17 @@ Attribute::operator uintmax_t() const
     }
 }
 
-Attribute::operator Ranges() const
+Attribute::operator const Ranges&() const
 {
-    Ranges ranges;
+    auto val = value().addr;
+
+    Ranges &ranges = dieref.unit->ranges[val];
+
+    if (!ranges.isNew)
+        return ranges;
+
+    ranges.isNew = false;
+
     if (dieref.unit->version < 5) {
         // DWARF4 units use dwarf_ranges
         DWARFReader reader(dieref.unit->dwarf->rangesh, value().addr);
