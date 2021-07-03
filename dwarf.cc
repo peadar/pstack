@@ -25,32 +25,6 @@ using std::make_unique;
 using std::make_shared;
 using std::string;
 
-namespace {
-
-struct Stats {
-    int totalDIEs;
-    int maxDIEs;
-    int currentDIEs;
-    Stats() : totalDIEs{}, maxDIEs{}, currentDIEs{} {}
-    ~Stats() {
-        if (verbose > 2)
-            *debug << "DIEs: current=" << currentDIEs << ", total=" << totalDIEs
-                << ", max=" << maxDIEs << std::endl;
-    }
-    void addone() {
-        totalDIEs++;
-        currentDIEs++;
-        if (currentDIEs > maxDIEs)
-            maxDIEs = currentDIEs;
-    }
-    void delone() {
-        currentDIEs--;
-    }
-};
-
-Stats stats;
-}
-
 namespace Dwarf {
 class RawDIE {
     RawDIE() = delete;
@@ -183,16 +157,11 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     , debugStrings(sectionReader(*obj, ".debug_str", ".zdebug_str"))
     , debugLineStrings(sectionReader(*obj, ".debug_line_str", ".zdebug_line_str"))
     , abbrev(sectionReader(*obj, ".debug_abbrev", ".zdebug_abbrev"))
-    , lineshdr(sectionReader(*obj, ".debug_line", ".zdebug_line"))
+    , rangesh(sectionReader(*obj, ".debug_ranges", ".zdebug_ranges"))
     , strOffsets(sectionReader(*obj, ".debug_str_offsets", ".zdebug_str_offsets"))
     , altImageLoaded(false)
     , imageCache(cache_)
     , pubnamesh(sectionReader(*obj, ".debug_pubnames", ".zdebug_pubnames"))
-    , arangesh(sectionReader(*obj, ".debug_aranges", ".zdebug_aranges"))
-    , rangesh(sectionReader(*obj, ".debug_ranges", ".zdebug_ranges"))
-    , macrosh(sectionReader(*obj, ".debug_macro", ".zdebug_macro"))
-    , haveLines(bool(lineshdr))
-    , haveARanges(bool(arangesh))
 {
     auto f = [this, &obj](const char *name, const char *zname, FIType ftype) {
         const Elf::Section *sec;
@@ -216,9 +185,6 @@ const Macros *
 Unit::getMacros()
 {
     if (macros == nullptr) {
-        if (dwarf->macrosh == nullptr) {
-            return nullptr;
-        }
         Attribute a = root().attribute(DW_AT_GNU_macros);
         if (!a.valid()) {
             a = root().attribute(DW_AT_macros);
@@ -241,10 +207,10 @@ enum DWARF_MACRO_CODE {
 Macros::Macros(const Info *dwarf, intmax_t offset)
     : debug_line_offset(-1)
 {
-    if (dwarf->macrosh == nullptr)
+    auto macrosh = sectionReader(*dwarf->elf, ".debug_macro", ".zdebug_macro");
+    if (!macrosh)
         return;
-    DWARFReader dr(dwarf->macrosh, offset);
-
+    DWARFReader dr(macrosh, offset);
     version = dr.getu16();
 
     auto flags = dr.getu8();
@@ -267,7 +233,7 @@ Macros::Macros(const Info *dwarf, intmax_t offset)
                 table.emplace_back(dr.getu8());
         }
     }
-    reader = std::make_shared<OffsetReader>(dwarf->macrosh, dr.getOffset());
+    reader = std::make_shared<OffsetReader>(macrosh, dr.getOffset());
 }
 
 bool
@@ -480,24 +446,23 @@ Info::decodeARangeSet(DWARFReader &r) const {
     while (r.getOffset() < next) {
         Elf::Addr start = r.getuint(addrlen);
         Elf::Addr length = r.getuint(addrlen);
-        aranges.ranges[start + length] = std::make_pair(length, debugInfoOffset);
+        (*aranges)[start + length] = std::make_pair(length, debugInfoOffset);
     }
-}
-
-bool Info::hasARanges() const {
-    return haveARanges;
 }
 
 Unit::sptr
 Info::lookupUnit(Elf::Addr addr) const {
-    if (arangesh) {
-        DWARFReader r(arangesh);
-        while (!r.empty())
-            decodeARangeSet(r);
-        arangesh = nullptr;
+    if (aranges == nullptr) {
+        aranges.reset(new ARanges());
+        auto arangesh = sectionReader(*elf, ".debug_aranges", ".zdebug_aranges");
+        if (arangesh != nullptr) {
+            DWARFReader r(arangesh);
+            while (!r.empty())
+                decodeARangeSet(r);
+        }
     }
-    auto it = aranges.ranges.upper_bound(addr);
-    if (it != aranges.ranges.end() && it->first - it->second.first <= addr)
+    auto it = aranges->upper_bound(addr);
+    if (it != aranges->end() && it->first - it->second.first <= addr)
         return getUnit(it->second.second);
 
     if (!unitRangesCached) {
@@ -511,20 +476,20 @@ Info::lookupUnit(Elf::Addr addr) const {
             auto highpc = root.attribute(DW_AT_high_pc);
             auto ranges = root.attribute(DW_AT_ranges);
             if (lowpc.valid() && highpc.valid()) {
-                aranges.ranges[uintmax_t(highpc)] = std::make_pair(uintmax_t(highpc) - uintmax_t(lowpc), u->offset);
+                (*aranges)[uintmax_t(highpc)] = std::make_pair(uintmax_t(highpc) - uintmax_t(lowpc), u->offset);
             }
             if (ranges.valid()) {
                 auto rs = Ranges(ranges);
                 for (auto r : rs) {
-                    aranges.ranges[r.second] = std::make_pair(r.first, u->offset);
+                    (*aranges)[r.second] = std::make_pair(r.first, u->offset);
                 }
             }
         }
     }
 
     // Try again now we've added all the unit ranges.
-    it = aranges.ranges.upper_bound(addr);
-    if (it != aranges.ranges.end() && it->first - it->second.first <= addr)
+    it = aranges->upper_bound(addr);
+    if (it != aranges->end() && it->first - it->second.first <= addr)
         return getUnit(it->second.second);
     return nullptr;
 }
@@ -698,7 +663,7 @@ Attribute::operator const Ranges&() const
 {
     auto val = value().addr;
 
-    Ranges &ranges = dieref.unit->ranges[val];
+    Ranges &ranges = dieref.unit->rangesForOffset[val];
 
     if (!ranges.isNew)
         return ranges;
@@ -1295,7 +1260,6 @@ RawDIE::readValue(DWARFReader &r, const FormEntry &forment, Value &value, Unit *
 
 RawDIE::~RawDIE()
 {
-    stats.delone();
     int i = 0;
     for (auto &forment : type->forms) {
         switch (forment.form) {
@@ -1316,9 +1280,12 @@ RawDIE::~RawDIE()
 LineInfo *
 Info::linesAt(intmax_t offset, const Unit *unit) const
 {
-    DWARFReader r2(lineshdr, offset);
     auto lines = new LineInfo();
-    lines->build(r2, unit);
+    auto lineshdr = sectionReader(*elf, ".debug_line", ".zdebug_line");
+    if (lineshdr) {
+        DWARFReader r(lineshdr, offset);
+        lines->build(r, unit);
+    }
     return lines;
 }
 
@@ -1327,9 +1294,6 @@ Unit::getLines()
 {
     if (lines != nullptr)
         return lines.get();
-
-    if (dwarf->lineshdr == nullptr)
-        return nullptr;
 
     const auto &r = root();
     if (r.tag() != DW_TAG_partial_unit && r.tag() != DW_TAG_compile_unit)
@@ -1340,7 +1304,6 @@ Unit::getLines()
         return nullptr;
 
     lines.reset(dwarf->linesAt(intmax_t(attr), this));
-
     return lines.get();
 }
 
@@ -1365,7 +1328,6 @@ RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, Elf::Off parent_)
         nextSibling = r.getOffset(); // we have no children, so next DIE is next sib
         firstChild = 0; // no children.
     }
-    stats.addone();
 }
 
 const Abbreviation *
@@ -1393,20 +1355,10 @@ Unit::decodeEntry(const DIE &parent, Elf::Off offset)
 void
 Unit::purge()
 {
-    auto start = stats.currentDIEs;
-    {
-        AllEntries destroy;
-        std::swap(allEntries, destroy);
-    }
-    {
-        Abbreviations destroy;
-        std::swap(abbreviations, destroy);
-    }
-    auto end = stats.currentDIEs;
-    if (verbose >= 3)
-        *debug << "purging " << name() << " in " << *dwarf->elf->io
-                  << " freed " << start - end << " DIEs (total now "
-                  << stats.currentDIEs << ")" << std::endl;
+    allEntries = AllEntries();
+    abbreviations = Abbreviations();
+    rangesForOffset = decltype(rangesForOffset)();
+    macros.reset(nullptr);
 }
 
 string
@@ -1592,9 +1544,7 @@ std::vector<std::pair<std::string, int>>
 Info::sourceFromAddr(uintmax_t addr) const
 {
     std::vector<std::pair<string, int>> info;
-    std::list<Unit::sptr> units;
-    if (!haveLines)
-        return info;
+
     const auto &unit = lookupUnit(addr);
     if (unit)
         sourceFromAddrInUnit(unit, Elf::Addr(addr), info);

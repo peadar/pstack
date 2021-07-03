@@ -361,9 +361,10 @@ std::ostream &
 operator << (std::ostream &os, const ProcPtr &pp) {
     using namespace Dwarf;
     DIE base;
-    for (base = DIE(pp.type.attribute(DW_AT_type)); base && base.tag() == DW_TAG_const_type;) {
-        base = DIE(base.attribute(DW_AT_type));
-    }
+    for (base = DIE(pp.type.attribute(DW_AT_type)); 
+        base && base.tag() == DW_TAG_const_type;
+        base = DIE(base.attribute(DW_AT_type))) 
+        ;
 
     if (base && base.name() == "char") {
        std::string s = pp.proc.io->readString(pp.addr);

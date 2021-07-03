@@ -177,12 +177,14 @@ enum class ContainsAddr { YES, NO, UNKNOWN };
 class DIE {
     std::shared_ptr<Unit> unit;
     Elf::Off offset;
-public:
     std::shared_ptr<RawDIE> raw;
+
+public:
     friend class DIEIter;
     friend class Attribute;
     friend class DIEAttributes;
     friend class RawDIE;
+    friend class Unit;
     ContainsAddr containsAddress(Elf::Addr addr) const;
     Elf::Off getParentOffset() const;
     Elf::Off getOffset() const { return offset; }
@@ -206,6 +208,8 @@ public:
    bool isNew { true };
 };
 
+using ARanges = std::map<Elf::Addr, std::pair<Elf::Addr, Elf::Off>>;
+
 class Attribute {
     DIE dieref;
     const FormEntry *formp; /* From abbrev table attached to type */
@@ -216,7 +220,7 @@ public:
     const Value &value() const;
     Form form() const { return formp->form; }
     Attribute(const DIE &dieref_, const FormEntry *formp_)
-       : dieref(dieref_), formp(formp_) {}
+       : dieref{dieref_}, formp{formp_} {}
     Attribute() : formp(nullptr) {}
     ~Attribute() { }
 
@@ -301,45 +305,53 @@ class Unit : public std::enable_shared_from_this<Unit> {
     Unit(const Unit &) = delete;
     Elf::Off abbrevOffset;
     std::unique_ptr<LineInfo> lines;
+
     using Abbreviations = std::unordered_map<size_t, Abbreviation>;
     Abbreviations abbreviations;
-    
+
     Elf::Off topDIEOffset;
+
     using AllEntries = std::unordered_map<Elf::Off, std::shared_ptr<RawDIE>>;
     AllEntries allEntries;
+
     std::shared_ptr<RawDIE> decodeEntry(const DIE &parent, Elf::Off offset);
     UnitType unitType;
     mutable std::unique_ptr<Macros> macros;
     void load();
 public:
-    std::map<Elf::Addr, Ranges> ranges;
-    void purge(); // Remove all RawDIEs from allEntries, potentially freeing memory.
-    bool isRoot(const DIE &die) { return die.getOffset() == topDIEOffset; }
-    size_t entryCount() const { return allEntries.size(); }
-    typedef std::shared_ptr<Unit> sptr;
-    typedef std::shared_ptr<const Unit> csptr;
-    const Abbreviation *findAbbreviation(size_t) const;
 
-    DIE root();
+    using sptr = std::shared_ptr<Unit>;
+    using csptr = std::shared_ptr<const Unit>;
+    using RangesForOffset = std::map<Elf::Addr, Ranges>;
 
-    DIE offsetToDIE(const DIE &parent, Elf::Off offset);
-    std::shared_ptr<RawDIE> offsetToRawDIE(const DIE &parent, Elf::Off offset);
-    const Info *dwarf;
-    Reader::csptr io;
+    const Info *dwarf; // back pointer to DWARF info
+    Reader::csptr io; // reader for our part of .debug_info, offset by "offset".
 
     // header fields
-    Elf::Off offset;
+    Elf::Off offset; // offset into debug_info
     uint32_t length;
     Elf::Off end; // a.k.a. start of next unit.
     uint16_t version;
+
     size_t dwarfLen;
     uint8_t addrlen;
+    unsigned char id[8]; // Unit ID for DWO.
+
+    RangesForOffset rangesForOffset;
+
     Unit(const Info *, DWARFReader &);
+    ~Unit();
+    void purge(); // Remove all RawDIEs from allEntries, potentially freeing memory.
+    bool isRoot(const DIE &die) { return die.getOffset() == topDIEOffset; }
+    size_t entryCount() const { return allEntries.size(); }
+    const Abbreviation *findAbbreviation(size_t) const;
+    DIE root();
+    DIE offsetToDIE(const DIE &parent, Elf::Off offset);
+    std::shared_ptr<RawDIE> offsetToRawDIE(const DIE &parent, Elf::Off offset);
+
     std::string name();
     const LineInfo *getLines();
     const Macros *getMacros();
-    ~Unit();
-    unsigned char id[8]; // Unit ID for DWO.
 };
 
 class UnitIterator {
@@ -455,22 +467,29 @@ struct CFI {
     intmax_t decodeAddress(DWARFReader &, int encoding) const;
 };
 
-struct ARanges {
-    std::map<Elf::Addr, std::pair<Elf::Addr, Elf::Off>> ranges;
-};
-
 class ImageCache;
-
 /*
  * Info represents all the interesting bits of the DWARF data.
  * It's primary function is to provide access to the DIE tree.
  */
 class Info : public std::enable_shared_from_this<Info> {
 public:
+    using sptr = std::shared_ptr<Info>;
+    using csptr = std::shared_ptr<const Info>;
+
     Info(Elf::Object::sptr, ImageCache &);
     ~Info();
-    typedef std::shared_ptr<Info> sptr;
-    typedef std::shared_ptr<const Info> csptr;
+
+    Info::sptr getAltDwarf() const;
+    const ARanges &getARanges() const;
+    const std::list<PubnameUnit> &pubnames() const;
+    Unit::sptr getUnit(Elf::Off offset) const;
+    Units getUnits() const;
+    DIE offsetToDIE(Elf::Off) const;
+    Unit::sptr lookupUnit(Elf::Addr addr) const;
+    std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
+    LineInfo *linesAt(intmax_t, const Unit *) const;
+
     Reader::csptr io; // dwarf_info reader.
     std::map<Elf::Addr, CallFrame> callFrameForAddr;
     Elf::Object::sptr elf;
@@ -479,41 +498,25 @@ public:
     Reader::csptr debugStrings;
     Reader::csptr debugLineStrings;
     Reader::csptr abbrev;
-    Reader::csptr lineshdr;
-    Info::sptr getAltDwarf() const;
-    const ARanges &getARanges() const;
-    const std::list<PubnameUnit> &pubnames() const;
-    Unit::sptr getUnit(Elf::Off offset) const;
-    Units getUnits() const;
-    DIE offsetToDIE(Elf::Off) const;
-    bool hasRanges() const { return bool(rangesh); }
-    bool hasARanges() const;
-    Unit::sptr lookupUnit(Elf::Addr addr) const;
-    std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
-    mutable Reader::csptr strOffsets;
-    LineInfo *linesAt(intmax_t, const Unit *) const;
+    Reader::csptr rangesh;
+    Reader::csptr strOffsets;
+
 
 private:
-    void decodeARangeSet(DWARFReader &) const;
-    std::string getAltImageName() const;
-    mutable std::list<PubnameUnit> pubnameUnits;
     // These are mutable so we can lazy-eval them when getters are called, and
     // maintain logical constness.
+    mutable std::list<PubnameUnit> pubnameUnits;
     mutable std::map<Elf::Off, Unit::sptr> units;
     mutable Info::sptr altDwarf;
     mutable bool altImageLoaded;
     ImageCache &imageCache;
     mutable Reader::csptr pubnamesh;
-    mutable Reader::csptr arangesh;
-public:
-    mutable Reader::csptr rangesh;
-    mutable Reader::csptr macrosh;
-private:
-    mutable ARanges aranges; // maps starting address to length + unit offset.
-    bool haveLines;
-    bool haveARanges;
+    mutable std::unique_ptr<ARanges> aranges; // maps starting address to length + unit offset.
     mutable bool unitRangesCached = false;
     mutable std::unique_ptr<Macros> macros;
+    
+    void decodeARangeSet(DWARFReader &) const;
+    std::string getAltImageName() const;
 };
 
 /*
@@ -579,8 +582,8 @@ enum DW_RLE {
 
 /*
  * A DWARF Reader is a wrapper for a reader that keeps a current position in the
- * underlying reader, and provides operations to read values in DWARF standard dwarf
- * encodings from the underlying reader, advancing the offset as it does so.
+ * underlying reader, and provides operations to read values in DWARF standard
+ * encodings, advancing the offset as it does so.
  */
 class DWARFReader {
     Elf::Off off;
@@ -700,9 +703,7 @@ struct MacroVisitor {
 };
 
 std::string typeName(const DIE &);
-
-DIE
-findEntryForAddr(Elf::Addr address, Tag, const DIE &start);
+DIE findEntryForAddr(Elf::Addr address, Tag, const DIE &start);
 
 inline
 UnitIterator UnitIterator::operator ++() {
@@ -717,8 +718,8 @@ UnitIterator Units::begin() const {
     return info->io ? iterator(info.get(), 0) : iterator();
 }
 
-inline
-bool UnitIterator::atend() const {
+inline bool
+UnitIterator::atend() const {
     return currentUnit == nullptr;
 }
 
