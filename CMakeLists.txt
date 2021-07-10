@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12) # That's when we get FindPython{2,3}
+cmake_minimum_required(VERSION 3.7)
 project(pstack C CXX)
 enable_testing()
 

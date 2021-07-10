@@ -297,7 +297,7 @@ struct Macros {
     int debug_line_offset;
     std::map<uint8_t, std::vector<uint8_t>> opcodes;
     Macros(const Info *info, intmax_t offset);
-    bool visit(const Info *, MacroVisitor *) const;
+    bool visit(const Unit *, MacroVisitor *) const;
 };
 
 class Unit : public std::enable_shared_from_this<Unit> {

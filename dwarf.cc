@@ -237,9 +237,9 @@ Macros::Macros(const Info *dwarf, intmax_t offset)
 }
 
 bool
-Macros::visit(const Info *dwarf, MacroVisitor *visitor) const
+Macros::visit(const Unit *u, MacroVisitor *visitor) const
 {
-    auto lineinfo = debug_line_offset != -1 ? dwarf->linesAt(debug_line_offset, nullptr) : nullptr;
+    auto lineinfo = debug_line_offset != -1 ? u->dwarf->linesAt(debug_line_offset, u) : nullptr;
     DWARFReader dr(reader);
     for (bool done=false; !done; ) {
         auto code = dr.getu8();
@@ -261,8 +261,12 @@ Macros::visit(const Info *dwarf, MacroVisitor *visitor) const
                 auto offset = dr.getuint(dwarflen);
                 if (verbose > 1)
                     *debug << "DW_MACRO_import( " << offset << " )\n";
-                Macros nest(dwarf, offset);
-                if (!nest.visit(dwarf, visitor))
+
+                // XXX: "u" is likely not right here, but only makes a
+                // difference if the import unit uses unit-relative string
+                // offsets, which it can't, reliably. (see DW_MACRO_define_strp below)
+                Macros nest(u->dwarf, offset);
+                if (!nest.visit(u, visitor))
                     return false;
 
                 break;
@@ -271,7 +275,7 @@ Macros::visit(const Info *dwarf, MacroVisitor *visitor) const
             case DW_MACRO_define_strp: {
                 auto line = dr.getuleb128();
                 auto contentOffset = dr.getuint(dwarflen);
-                auto str = dwarf->debugStrings->readString( contentOffset );
+                auto str = u->dwarf->debugStrings->readString( contentOffset );
                 if (verbose > 1)
                     *debug << "DW_MACRO_define_strp( " << line << ", " << str << " )\n";
                 if (!visitor->define(line, str))
@@ -292,7 +296,7 @@ Macros::visit(const Info *dwarf, MacroVisitor *visitor) const
             case DW_MACRO_undef_strp: {
                 auto line = dr.getuleb128();
                 auto contentOffset = dr.getuint(dwarflen);
-                auto str = dwarf->debugStrings->readString( contentOffset );
+                auto str = u->dwarf->debugStrings->readString( contentOffset );
                 if (verbose > 1)
                     *debug << "DW_MACRO_undef_strp( " << line << ", '" << str << "' )\n";
                 if (!visitor->undef(line, str))

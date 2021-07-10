@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.7)
 project(pstack-tests C CXX)
 
 # Force debug build for tests. Many of the tests are looking at debug info that
