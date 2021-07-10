@@ -143,6 +143,17 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr,
                             }
                             break;
 
+                        case DW_LLE_start_length: {
+                            auto start = r.getuint(unit->addrlen);
+                            auto end = start + r.getuleb128();
+                            auto len = r.getuleb128();
+                            if (base + start <= ip && ip < base + end) {
+                               DWARFReader exr(r.io, r.getOffset(), r.getOffset() + len);
+                               return eval(proc, exr, frame, frame->elfReloc);
+                            }
+                            r.skip(len);
+                            break;
+                        }
 
                         default:
                             abort(); // can implement it when we see it.
