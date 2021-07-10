@@ -71,6 +71,9 @@ if (PYTHON3 AND Python3_Development_FOUND)
       message(STATUS "Python 3 source not specified. Checking /usr/src/debug/Python-3.* as default")
 
       file(GLOB PYTHON3_SOURCE_GLOB "/usr/src/debug/Python-3.*")
+      if ("${PYTHON3_SOURCE_GLOB}" STREQUAL "") # glob was empty
+         file(GLOB PYTHON3_SOURCE_GLOB "/usr/src/debug/python3*")
+      endif()
 
       if ("${PYTHON3_SOURCE_GLOB}" STREQUAL "") # glob was empty
          message(STATUS "Python 3 source not found")
