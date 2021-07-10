@@ -11,13 +11,13 @@ This is one implementation. There are others.
 ## Disclaimer
 This works for my purposes, and the DWARF parsing library is at least
 somewhat useful outside the pstack implementation, but the documentation
-is weak. [https://github.com/aristanetworks/ctypegen](ctypegen) is a
+is weak. [ctypegen](https://github.com/aristanetworks/ctypegen) is a
 good example of a "third party" package that uses libdwelf from here.
 
 ## Manpage
 
 There's a manual page, and you can see a text rendering of it
-[a href="./pstack.1.txt"](here)
+[here](./pstack.1.txt)
 
 ## Cheatsheet and Features
 
