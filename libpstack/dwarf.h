@@ -325,7 +325,6 @@ public:
     using RangesForOffset = std::map<Elf::Addr, Ranges>;
 
     const Info *dwarf; // back pointer to DWARF info
-    Reader::csptr io; // reader for our part of .debug_info, offset by "offset".
 
     // header fields
     Elf::Off offset; // offset into debug_info

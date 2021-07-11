@@ -515,7 +515,6 @@ Unit::load()
 Unit::Unit(const Info *di, DWARFReader &r)
     : abbrevOffset{ 0 }
     , dwarf(di)
-    , io(r.io)
     , offset(r.getOffset())
     , length(r.getlength(&dwarfLen))
     , end(r.getOffset() + length)
@@ -1092,7 +1091,7 @@ Attribute::operator std::string() const
             return dwarf->debugLineStrings->readString(value().addr);
 
         case DW_FORM_string:
-            return dieref.unit->io->readString(value().addr);
+            return dieref.unit->dwarf->io->readString(value().addr);
 
         case DW_FORM_strx1:
         case DW_FORM_strx2:
@@ -1344,7 +1343,7 @@ Unit::findAbbreviation(size_t code) const
 std::shared_ptr<RawDIE>
 Unit::decodeEntry(const DIE &parent, Elf::Off offset)
 {
-    DWARFReader r(io, offset);
+    DWARFReader r(dwarf->io, offset);
     size_t abbrev = r.getuleb128();
     if (abbrev == 0) {
         // If we get to the terminator, then we now know the parent's nextSibling:
