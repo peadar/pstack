@@ -392,6 +392,7 @@ ExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *fra
                 // FALLTHROUGH
 
             default:
+                abort();
                 std::clog << "error evaluating DWARF OP " << op << " (" << int(op) << ")\n";
                 return -1;
         }

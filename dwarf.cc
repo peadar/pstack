@@ -159,8 +159,8 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     , abbrev(sectionReader(*obj, ".debug_abbrev", ".zdebug_abbrev"))
     , rangesh(sectionReader(*obj, ".debug_ranges", ".zdebug_ranges"))
     , strOffsets(sectionReader(*obj, ".debug_str_offsets", ".zdebug_str_offsets"))
-    , altImageLoaded(false)
     , imageCache(cache_)
+    , altImageLoaded(false)
     , pubnamesh(sectionReader(*obj, ".debug_pubnames", ".zdebug_pubnames"))
 {
     auto f = [this, &obj](const char *name, const char *zname, FIType ftype) {
@@ -674,7 +674,7 @@ Attribute::operator const Ranges&() const
     ranges.isNew = false;
 
     if (dieref.unit->version < 5) {
-        // DWARF4 units use dwarf_ranges
+        // DWARF4 units use debug_ranges
         DWARFReader reader(dieref.unit->dwarf->rangesh, value().addr);
         for (;;) {
             auto start = reader.getuint(sizeof (Elf::Addr));
@@ -684,7 +684,7 @@ Attribute::operator const Ranges&() const
             ranges.emplace_back(std::make_pair(start, end));
         }
     } else {
-        // DWARF5 units use dwarf_rnglists.
+        // DWARF5 units use debug_rnglists.
         Elf::Off offset = value().addr;
 
         // Offset by rnglists_base in the root DIE.
