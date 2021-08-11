@@ -1359,7 +1359,6 @@ void
 Unit::purge()
 {
     allEntries = AllEntries();
-    abbreviations = Abbreviations();
     rangesForOffset = decltype(rangesForOffset)();
     macros.reset(nullptr);
 }
