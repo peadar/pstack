@@ -271,7 +271,7 @@ emain(int argc, char **argv)
                 doStack(*process);
             }
         } catch (const std::exception &e) {
-            std::cerr << "failed to process " << argv[i] << ": " << e.what() << "\n";
+            std::cerr << "trace of " << argv[i] << " failed: " << e.what() << "\n";
         }
     }
 done:

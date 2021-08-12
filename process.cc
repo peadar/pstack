@@ -946,9 +946,11 @@ std::shared_ptr<Process> Process::load(Elf::Object::sptr exec, std::string id, c
     pid_t pid;
     std::istringstream(id) >> pid;
     std::shared_ptr<Process> proc;
-    if (pid != 0 && kill(pid, 0) == 0) {
-       *debug << "attaching to live process" << std::endl;
-       proc = std::make_shared<LiveProcess>(exec, pid, options, imageCache);
+    if (pid != 0) {
+       if (kill(pid, 0) == 0)
+          proc = std::make_shared<LiveProcess>(exec, pid, options, imageCache);
+       else
+          throw Exception() << "process " << pid << ": " << strerror(errno);
     } else {
        // don't use imagecache for cores. We don't want to mmap them (they can
        // be enormous, esp. from a leaky process), use loadFile and a caching
