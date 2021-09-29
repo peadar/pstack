@@ -342,13 +342,18 @@ public:
 
 struct MacroVisitor;
 // Summary of the macro section associated with a particular unit.
-struct Macros {
-    Reader::csptr reader;
-    uint16_t version;
+class Macros {
+    bool visit5(Unit &, MacroVisitor *) const;
+    bool visit4(Unit &, MacroVisitor *) const;
+    void readD5(const Info &dwarf, intmax_t offset);
+    void readD4(const Info &dwarf, intmax_t offset);
     int dwarflen;
+    Reader::csptr io;
+public:
     int debug_line_offset;
+    uint16_t version;
     std::map<uint8_t, std::vector<uint8_t>> opcodes;
-    Macros(const Info *info, intmax_t offset);
+    Macros(const Info &info, intmax_t offset, int version);
     bool visit(Unit &, MacroVisitor *) const;
 };
 
@@ -594,6 +599,7 @@ private:
     mutable std::unique_ptr<ARanges> aranges; // maps starting address to length + unit offset.
     mutable bool unitRangesCached = false;
     mutable std::unique_ptr<Macros> macros;
+
 
     void decodeARangeSet(DWARFReader &) const;
     std::string getAltImageName() const;

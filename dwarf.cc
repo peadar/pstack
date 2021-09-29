@@ -184,23 +184,40 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
 const Macros *
 Unit::getMacros()
 {
-    if (macros == nullptr) {
-        Attribute a = root().attribute(DW_AT_GNU_macros);
-        if (!a.valid()) {
-            a = root().attribute(DW_AT_macros);
-            if (!a.valid()) {
-                return nullptr;
-            }
-        }
-        macros = std::make_unique<Macros>(dwarf, intmax_t(a));
+    const DIE &root_ = root();
+    if (macros != nullptr)
+        return macros.get();
+
+    Attribute a = root_.attribute(DW_AT_GNU_macros);
+    if (a.valid()) {
+        macros = std::make_unique<Macros>(*dwarf, intmax_t(a), 5);
+        return macros.get();
     }
-    return macros.get();
+
+    a = root_.attribute(DW_AT_macros);
+    if (a.valid()) {
+        macros = std::make_unique<Macros>(*dwarf, intmax_t(a), 5);
+        return macros.get();
+    }
+
+    a = root_.attribute(DW_AT_macro_info);
+    if (a.valid()) {
+        macros = std::make_unique<Macros>(*dwarf, intmax_t(a), 4);
+        return macros.get();
+    }
+    return nullptr;
 }
 
 enum DWARF_MACRO_CODE {
 #define DWARF_MACRO(name, value) name = value,
 #include "libpstack/dwarf/macro.h"
       DW_MACRO_invalid
+#undef DWARF_MACRO
+};
+
+enum DWARF_MACINFO_CODE {
+#define DWARF_MACINFO(name, value) name = value,
+#include "libpstack/dwarf/macinfo.h"
 #undef DWARF_MACRO
 };
 
@@ -217,10 +234,30 @@ macroName(DWARF_MACRO_CODE code) {
     }
 }
 
-Macros::Macros(const Info *dwarf, intmax_t offset)
+Macros::Macros(const Info &dwarf, intmax_t offset, int version)
     : debug_line_offset(-1)
+    , version(version)
 {
-    auto macrosh = sectionReader(*dwarf->elf, ".debug_macro", ".zdebug_macro");
+    if (version >= 5)
+        readD5(dwarf, offset);
+    else
+        readD4(dwarf, offset);
+}
+
+void
+Macros::readD4(const Info &dwarf, intmax_t offset)
+{
+    // Legacy dwarf macro information
+    auto macrosh = sectionReader(*dwarf.elf, ".debug_macinfo", ".zdebug_macinfo");
+    if (!macrosh)
+        return;
+    io = std::make_shared<OffsetReader>(macrosh, offset);
+}
+
+void
+Macros::readD5(const Info &dwarf, intmax_t offset)
+{
+    auto macrosh = sectionReader(*dwarf.elf, ".debug_macro", ".zdebug_macro");
     if (!macrosh)
         return;
     DWARFReader dr(macrosh, offset);
@@ -246,14 +283,67 @@ Macros::Macros(const Info *dwarf, intmax_t offset)
                 table.emplace_back(dr.getu8());
         }
     }
-    reader = std::make_shared<OffsetReader>(macrosh, dr.getOffset());
+    io = std::make_shared<OffsetReader>(macrosh, dr.getOffset());
 }
 
 bool
 Macros::visit(Unit &u, MacroVisitor *visitor) const
 {
+    if (version >= 5)
+        return visit5(u, visitor);
+    else
+        return visit4(u, visitor);
+}
+
+bool
+Macros::visit4(Unit &u, MacroVisitor *visitor) const
+{
+    auto lineinfo = u.getLines();
+    DWARFReader dr(io);
+    for (bool done = false; !done; ) {
+        auto code = DWARF_MACINFO_CODE(dr.getu8());
+        switch (code) {
+            case DW_MACINFO_define: {
+                auto line = dr.getuleb128();
+                auto text = dr.getstring();
+                visitor->define(line, text);
+                break;
+            }
+            case DW_MACINFO_eol: {
+                done = true;
+                break;
+            }
+            case DW_MACINFO_undef: {
+                auto line = dr.getuleb128();
+                auto text = dr.getstring();
+                visitor->undef(line, text);
+                break;
+            }
+            case DW_MACINFO_start_file: {
+                auto line = dr.getuleb128();
+                auto file = dr.getuleb128();
+                auto &fileinfo = lineinfo->files[file];
+                if (!visitor->startFile(line, lineinfo->directories[fileinfo.dirindex], fileinfo))
+                    return false;
+                break;
+            }
+            case DW_MACINFO_end_file: {
+                if (!visitor->endFile())
+                    return 0;
+                break;
+            }
+            case DW_MACINFO_vendor_ext:
+                break;
+        }
+    }
+    return true;
+}
+
+bool
+Macros::visit5(Unit &u, MacroVisitor *visitor) const
+{
     auto lineinfo = debug_line_offset != -1 ? u.dwarf->linesAt(debug_line_offset, u) : nullptr;
-    DWARFReader dr(reader);
+    DWARFReader dr(io);
     for (bool done=false; !done; ) {
         auto code = DWARF_MACRO_CODE(dr.getu8());
         if (verbose > 1)
@@ -278,7 +368,7 @@ Macros::visit(Unit &u, MacroVisitor *visitor) const
                 // XXX: "u" is likely not right here, but only makes a
                 // difference if the import unit uses unit-relative string
                 // offsets, which it can't, reliably. (see DW_MACRO_define_strp below)
-                Macros nest(u.dwarf, offset);
+                Macros nest(*u.dwarf, offset, 5);
                 if (!nest.visit(u, visitor))
                     return false;
 
