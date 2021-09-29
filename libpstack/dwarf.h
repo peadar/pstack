@@ -337,7 +337,7 @@ public:
     std::vector<std::string> directories;
     std::vector<FileEntry> files;
     std::vector<LineState> matrix;
-    void build(DWARFReader &, const Unit *);
+    void build(DWARFReader &, Unit *);
 };
 
 struct MacroVisitor;
@@ -349,7 +349,7 @@ struct Macros {
     int debug_line_offset;
     std::map<uint8_t, std::vector<uint8_t>> opcodes;
     Macros(const Info *info, intmax_t offset);
-    bool visit(const Unit *, MacroVisitor *) const;
+    bool visit(Unit *, MacroVisitor *) const;
 };
 
 // A (partial-) compilation unit.
@@ -563,7 +563,7 @@ public:
     // Will use debug_aranges where possible.
     Unit::sptr lookupUnit(Elf::Addr addr) const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
-    LineInfo *linesAt(intmax_t, const Unit *) const;
+    LineInfo *linesAt(intmax_t, Unit *) const;
 
     const Reader::csptr io; // dwarf_info reader.
     const Elf::Object::sptr elf;
@@ -578,6 +578,8 @@ public:
     const Reader::csptr abbrev;
     const Reader::csptr rangesh;
     const Reader::csptr strOffsets;
+
+    std::string strx(Unit &unit, size_t idx) const;
 
 private:
     ImageCache &imageCache;
@@ -751,10 +753,10 @@ public:
         return result;
     }
 
-    std::string readFormString(const Info *, const Unit *, Form f);
-    void readForm(const Info *, const Unit *, Form f);
-    uintmax_t readFormUnsigned(const Unit *, Form f);
-    intmax_t readFormSigned(const Unit *, Form f);
+    std::string readFormString(const Info *, Unit *, Form f);
+    void readForm(const Info *, Unit *, Form f);
+    uintmax_t readFormUnsigned(Unit *, Form f);
+    intmax_t readFormSigned(Unit *, Form f);
 
     std::string getstring() {
         std::string s = io->readString(off);
