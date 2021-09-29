@@ -85,7 +85,7 @@ if (PYTHON3 AND Python3_Development_FOUND)
 
 
    if (NOT "${PYTHON3_SOURCE}" STREQUAL "") # src found in some way
-      set(pyinc "-I${PYTHON3_SOURCE} -I${PYTHON3_SOURCE}/Include -I${Python3_INCLUDE_DIRS}")
+      set(pyinc "-I${Python3_INCLUDE_DIRS} -I${PYTHON3_SOURCE} -I${PYTHON3_SOURCE}/Include")
       message(STATUS  "Python3_INCLUDE_DIRS are ${pyinc}")
       add_definitions("-DWITH_PYTHON3")
       set(pysrc ${pysrc} python3.cc pythonc.c)
