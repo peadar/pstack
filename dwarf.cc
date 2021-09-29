@@ -184,17 +184,28 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
 const Macros *
 Unit::getMacros()
 {
-    if (macros == nullptr) {
-        Attribute a = root().attribute(DW_AT_GNU_macros);
-        if (!a.valid()) {
-            a = root().attribute(DW_AT_macros);
-            if (!a.valid()) {
-                return nullptr;
-            }
-        }
-        macros = std::make_unique<Macros>(dwarf, intmax_t(a));
+    const DIE &root_ = root();
+    if (macros != nullptr)
+        return macros.get();
+
+    Attribute a = root_.attribute(DW_AT_GNU_macros);
+    if (a.valid()) {
+        macros = std::make_unique<Macros>(*dwarf, intmax_t(a), 5);
+        return macros.get();
     }
-    return macros.get();
+
+    a = root_.attribute(DW_AT_macros);
+    if (a.valid()) {
+        macros = std::make_unique<Macros>(*dwarf, intmax_t(a), 5);
+        return macros.get();
+    }
+
+    a = root_.attribute(DW_AT_macro_info);
+    if (a.valid()) {
+        macros = std::make_unique<Macros>(*dwarf, intmax_t(a), 4);
+        return macros.get();
+    }
+    return nullptr;
 }
 
 enum DWARF_MACRO_CODE {
@@ -204,10 +215,49 @@ enum DWARF_MACRO_CODE {
 #undef DWARF_MACRO
 };
 
-Macros::Macros(const Info *dwarf, intmax_t offset)
+enum DWARF_MACINFO_CODE {
+#define DWARF_MACINFO(name, value) name = value,
+#include "libpstack/dwarf/macinfo.h"
+#undef DWARF_MACRO
+};
+
+std::string
+macroName(DWARF_MACRO_CODE code) {
+#define DWARF_MACRO(name, value) case name : return #name;
+    switch (code) {
+#include "libpstack/dwarf/macro.h"
+#undef DWARF_MACRO
+        default:
+          std::ostringstream os;
+          os << "unknown macro code" << int(code);
+          return os.str();
+    }
+}
+
+Macros::Macros(const Info &dwarf, intmax_t offset, int version)
     : debug_line_offset(-1)
+    , version(version)
 {
-    auto macrosh = sectionReader(*dwarf->elf, ".debug_macro", ".zdebug_macro");
+    if (version >= 5)
+        readD5(dwarf, offset);
+    else
+        readD4(dwarf, offset);
+}
+
+void
+Macros::readD4(const Info &dwarf, intmax_t offset)
+{
+    // Legacy dwarf macro information
+    auto macrosh = sectionReader(*dwarf.elf, ".debug_macinfo", ".zdebug_macinfo");
+    if (!macrosh)
+        return;
+    io = std::make_shared<OffsetReader>(macrosh, offset);
+}
+
+void
+Macros::readD5(const Info &dwarf, intmax_t offset)
+{
+    auto macrosh = sectionReader(*dwarf.elf, ".debug_macro", ".zdebug_macro");
     if (!macrosh)
         return;
     DWARFReader dr(macrosh, offset);
@@ -233,16 +283,69 @@ Macros::Macros(const Info *dwarf, intmax_t offset)
                 table.emplace_back(dr.getu8());
         }
     }
-    reader = std::make_shared<OffsetReader>(macrosh, dr.getOffset());
+    io = std::make_shared<OffsetReader>(macrosh, dr.getOffset());
 }
 
 bool
-Macros::visit(const Unit *u, MacroVisitor *visitor) const
+Macros::visit(Unit &u, MacroVisitor *visitor) const
 {
-    auto lineinfo = debug_line_offset != -1 ? u->dwarf->linesAt(debug_line_offset, u) : nullptr;
-    DWARFReader dr(reader);
+    if (version >= 5)
+        return visit5(u, visitor);
+    else
+        return visit4(u, visitor);
+}
+
+bool
+Macros::visit4(Unit &u, MacroVisitor *visitor) const
+{
+    auto lineinfo = u.getLines();
+    DWARFReader dr(io);
+    for (bool done = false; !done; ) {
+        auto code = DWARF_MACINFO_CODE(dr.getu8());
+        switch (code) {
+            case DW_MACINFO_define: {
+                auto line = dr.getuleb128();
+                auto text = dr.getstring();
+                visitor->define(line, text);
+                break;
+            }
+            case DW_MACINFO_eol: {
+                done = true;
+                break;
+            }
+            case DW_MACINFO_undef: {
+                auto line = dr.getuleb128();
+                auto text = dr.getstring();
+                visitor->undef(line, text);
+                break;
+            }
+            case DW_MACINFO_start_file: {
+                auto line = dr.getuleb128();
+                auto file = dr.getuleb128();
+                auto &fileinfo = lineinfo->files[file];
+                if (!visitor->startFile(line, lineinfo->directories[fileinfo.dirindex], fileinfo))
+                    return false;
+                break;
+            }
+            case DW_MACINFO_end_file: {
+                if (!visitor->endFile())
+                    return 0;
+                break;
+            }
+            case DW_MACINFO_vendor_ext:
+                break;
+        }
+    }
+    return true;
+}
+
+bool
+Macros::visit5(Unit &u, MacroVisitor *visitor) const
+{
+    auto lineinfo = debug_line_offset != -1 ? u.dwarf->linesAt(debug_line_offset, u) : nullptr;
+    DWARFReader dr(io);
     for (bool done=false; !done; ) {
-        auto code = dr.getu8();
+        auto code = DWARF_MACRO_CODE(dr.getu8());
         if (verbose > 1)
             *debug << dr.getOffset() - 1 << ": "; // adjust to get offset of code
         switch(code) {
@@ -265,17 +368,17 @@ Macros::visit(const Unit *u, MacroVisitor *visitor) const
                 // XXX: "u" is likely not right here, but only makes a
                 // difference if the import unit uses unit-relative string
                 // offsets, which it can't, reliably. (see DW_MACRO_define_strp below)
-                Macros nest(u->dwarf, offset);
+                Macros nest(*u.dwarf, offset, 5);
                 if (!nest.visit(u, visitor))
                     return false;
 
                 break;
             }
 
+            case DW_MACRO_define_strx:
             case DW_MACRO_define_strp: {
                 auto line = dr.getuleb128();
-                auto contentOffset = dr.getuint(dwarflen);
-                auto str = u->dwarf->debugStrings->readString( contentOffset );
+                auto str = dr.readFormString(*u.dwarf, u, code == DW_MACRO_define_strx ? DW_FORM_strx : DW_FORM_strp);
                 if (verbose > 1)
                     *debug << "DW_MACRO_define_strp( " << line << ", " << str << " )\n";
                 if (!visitor->define(line, str))
@@ -293,10 +396,10 @@ Macros::visit(const Unit *u, MacroVisitor *visitor) const
                 break;
             }
 
+            case DW_MACRO_undef_strx:
             case DW_MACRO_undef_strp: {
                 auto line = dr.getuleb128();
-                auto contentOffset = dr.getuint(dwarflen);
-                auto str = u->dwarf->debugStrings->readString( contentOffset );
+                auto str = dr.readFormString(*u.dwarf, u, code == DW_MACRO_undef_strx ? DW_FORM_strx : DW_FORM_strp);
                 if (verbose > 1)
                     *debug << "DW_MACRO_undef_strp( " << line << ", '" << str << "' )\n";
                 if (!visitor->undef(line, str))
@@ -321,13 +424,14 @@ Macros::visit(const Unit *u, MacroVisitor *visitor) const
                     return false;
                 break;
 
-            case 0:
+            case DW_MACRO_eol:
                 if (verbose > 1)
                     *debug << "(end of macros)\n";
                 done = true;
                 break;
+
             default:
-                // os << "macro entry: " << int(code) << "(" << macro_entry_name(code) << ")\n";
+                *debug << "unhandled macro entry: " << int(code) << "(" << macroName(code) << ")\n";
                 break;
         }
     }
@@ -496,6 +600,19 @@ Info::lookupUnit(Elf::Addr addr) const {
     if (it != aranges->end() && it->first - it->second.first <= addr)
         return getUnit(it->second.second);
     return nullptr;
+}
+
+
+std::string
+Info::strx(Unit &unit, size_t idx) const {
+    if (!strOffsets)
+        throw Exception() << "no string offsets table, but have strx form";
+    // Get the root die, and the string offset base.
+    auto root = unit.root();
+    auto base = intmax_t(root.attribute(DW_AT_str_offsets_base));
+    auto len = unit.dwarfLen;
+    DWARFReader r(strOffsets, base + len * idx);
+    return debugStrings->readString(r.getuint(len));
 }
 
 Info::~Info() = default;
@@ -779,7 +896,7 @@ dwarfStateAddRow(LineInfo *li, const LineState &state)
 }
 
 void
-DWARFReader::readForm(const Info *info, const Unit *unit, Form form)
+DWARFReader::readForm(const Info &info, Unit &unit, Form form)
 {
     switch (form) {
         case DW_FORM_string:
@@ -787,13 +904,17 @@ DWARFReader::readForm(const Info *info, const Unit *unit, Form form)
         case DW_FORM_strp:
             readFormString(info, unit, form);
             break;
+        case DW_FORM_data16:
+            skip(16); // line info uses this for LNCT_MD5
+            return;
+
         default:
             abort();
     }
 }
 
 std::string
-DWARFReader::readFormString(const Info *dwarf, const Unit *unit, Form form)
+DWARFReader::readFormString(const Info &dwarf, Unit &unit, Form form)
 {
     switch (form) {
         case DW_FORM_string:
@@ -801,18 +922,23 @@ DWARFReader::readFormString(const Info *dwarf, const Unit *unit, Form form)
         default:
             abort();
         case DW_FORM_line_strp: {
-            auto off = getuint(unit->dwarfLen);
-            return dwarf->debugLineStrings->readString(off);
+            auto off = getuint(unit.dwarfLen);
+            return dwarf.debugLineStrings->readString(off);
         }
         case DW_FORM_strp: {
-            auto off = getuint(unit->dwarfLen);
-            return dwarf->debugStrings->readString(off);
+            auto off = getuint(unit.dwarfLen);
+            return dwarf.debugStrings->readString(off);
+        }
+        case DW_FORM_strx: {
+            size_t off = getuleb128();
+            return dwarf.strx(unit, off);
+
         }
     }
 }
 
 uintmax_t
-DWARFReader::readFormUnsigned(const Unit *, Form form)
+DWARFReader::readFormUnsigned(Unit &, Form form)
 {
     switch (form) {
         case DW_FORM_udata:
@@ -829,7 +955,7 @@ DWARFReader::readFormUnsigned(const Unit *, Form form)
 }
 
 intmax_t
-DWARFReader::readFormSigned(const Unit *, Form form)
+DWARFReader::readFormSigned(Unit &, Form form)
 {
     switch (form) {
         default:
@@ -854,7 +980,7 @@ readEntryFormats(DWARFReader &r) {
 }
 
 void
-LineInfo::build(DWARFReader &r, const Unit *unit)
+LineInfo::build(DWARFReader &r, Unit &unit)
 {
     size_t dwarfLen;
     uint32_t total_length = r.getlength(&dwarfLen);
@@ -897,11 +1023,11 @@ LineInfo::build(DWARFReader &r, const Unit *unit)
             for (auto &ent : directoryFormat) {
                 switch (ent.first) {
                     case DW_LNCT_path: {
-                        path = r.readFormString(unit->dwarf, unit, ent.second);
+                        path = r.readFormString(*unit.dwarf, unit, ent.second);
                         break;
                     }
                     default:{
-                        r.readForm(unit->dwarf, unit, ent.second);
+                        r.readForm(*unit.dwarf, unit, ent.second);
                         *debug << "unexpected LNCT " << ent.first << " in directory table" << std::endl;
                         break;
                     }
@@ -920,13 +1046,13 @@ LineInfo::build(DWARFReader &r, const Unit *unit)
             for (auto &ent : fileFormat) {
                 switch (ent.first) {
                     case DW_LNCT_path:
-                        entry.name = r.readFormString(unit->dwarf, unit, ent.second);
+                        entry.name = r.readFormString(*unit.dwarf, unit, ent.second);
                         break;
                     case DW_LNCT_directory_index:
                         entry.dirindex = r.readFormUnsigned(unit, ent.second);
                         break;
                     default:
-                        r.readForm(unit->dwarf, unit, ent.second);
+                        r.readForm(*unit.dwarf, unit, ent.second);
                         break;
                 }
             }
@@ -1098,15 +1224,7 @@ Attribute::operator std::string() const
         case DW_FORM_strx3:
         case DW_FORM_strx4:
         case DW_FORM_strx: {
-            if (!dwarf->strOffsets)
-                throw Exception() << "no string offsets table, but have strx form";
-            // Get the root die, and the string offset base.
-            auto root = die().unit->root();
-            auto base = intmax_t(root.attribute(DW_AT_str_offsets_base));
-            auto idx = value().addr;
-            auto len = die().unit->dwarfLen;
-            DWARFReader r(dwarf->strOffsets, base + len * idx);
-            return dwarf->debugStrings->readString(r.getuint(len));
+            return dwarf->strx(*dieref.unit, value().addr);
         }
 
         default:
@@ -1281,7 +1399,7 @@ RawDIE::~RawDIE()
 }
 
 LineInfo *
-Info::linesAt(intmax_t offset, const Unit *unit) const
+Info::linesAt(intmax_t offset, Unit &unit) const
 {
     auto lines = new LineInfo();
     auto lineshdr = sectionReader(*elf, ".debug_line", ".zdebug_line");
@@ -1306,7 +1424,7 @@ Unit::getLines()
     if (!attr.valid())
         return nullptr;
 
-    lines.reset(dwarf->linesAt(intmax_t(attr), this));
+    lines.reset(dwarf->linesAt(intmax_t(attr), *this));
     return lines.get();
 }
 

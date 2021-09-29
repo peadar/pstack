@@ -337,19 +337,24 @@ public:
     std::vector<std::string> directories;
     std::vector<FileEntry> files;
     std::vector<LineState> matrix;
-    void build(DWARFReader &, const Unit *);
+    void build(DWARFReader &, Unit &);
 };
 
 struct MacroVisitor;
 // Summary of the macro section associated with a particular unit.
-struct Macros {
-    Reader::csptr reader;
-    uint16_t version;
+class Macros {
+    bool visit5(Unit &, MacroVisitor *) const;
+    bool visit4(Unit &, MacroVisitor *) const;
+    void readD5(const Info &dwarf, intmax_t offset);
+    void readD4(const Info &dwarf, intmax_t offset);
     int dwarflen;
+    Reader::csptr io;
+public:
     int debug_line_offset;
+    uint16_t version;
     std::map<uint8_t, std::vector<uint8_t>> opcodes;
-    Macros(const Info *info, intmax_t offset);
-    bool visit(const Unit *, MacroVisitor *) const;
+    Macros(const Info &info, intmax_t offset, int version);
+    bool visit(Unit &, MacroVisitor *) const;
 };
 
 // A (partial-) compilation unit.
@@ -563,7 +568,7 @@ public:
     // Will use debug_aranges where possible.
     Unit::sptr lookupUnit(Elf::Addr addr) const;
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
-    LineInfo *linesAt(intmax_t, const Unit *) const;
+    LineInfo *linesAt(intmax_t, Unit &) const;
 
     const Reader::csptr io; // dwarf_info reader.
     const Elf::Object::sptr elf;
@@ -579,6 +584,8 @@ public:
     const Reader::csptr rangesh;
     const Reader::csptr strOffsets;
 
+    std::string strx(Unit &unit, size_t idx) const;
+
 private:
     ImageCache &imageCache;
 
@@ -592,6 +599,7 @@ private:
     mutable std::unique_ptr<ARanges> aranges; // maps starting address to length + unit offset.
     mutable bool unitRangesCached = false;
     mutable std::unique_ptr<Macros> macros;
+
 
     void decodeARangeSet(DWARFReader &) const;
     std::string getAltImageName() const;
@@ -751,10 +759,10 @@ public:
         return result;
     }
 
-    std::string readFormString(const Info *, const Unit *, Form f);
-    void readForm(const Info *, const Unit *, Form f);
-    uintmax_t readFormUnsigned(const Unit *, Form f);
-    intmax_t readFormSigned(const Unit *, Form f);
+    std::string readFormString(const Info &, Unit &, Form f);
+    void readForm(const Info &, Unit &, Form f);
+    uintmax_t readFormUnsigned(Unit &, Form f);
+    intmax_t readFormSigned(Unit &, Form f);
 
     std::string getstring() {
         std::string s = io->readString(off);
