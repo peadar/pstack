@@ -261,7 +261,8 @@ Macros::readD5(const Info &dwarf, intmax_t offset)
     if (!macrosh)
         return;
     DWARFReader dr(macrosh, offset);
-    version = dr.getu16();
+    // this may report v4, even though .debug_macro did not exist in DWARF 4`
+    auto macrosVersion = dr.getu16();
 
     auto flags = dr.getu8();
     auto offset_size_flag = flags & (1<<0);
