@@ -250,9 +250,9 @@ Macros::Macros(const Info *dwarf, intmax_t offset)
 }
 
 bool
-Macros::visit(Unit *u, MacroVisitor *visitor) const
+Macros::visit(Unit &u, MacroVisitor *visitor) const
 {
-    auto lineinfo = debug_line_offset != -1 ? u->dwarf->linesAt(debug_line_offset, u) : nullptr;
+    auto lineinfo = debug_line_offset != -1 ? u.dwarf->linesAt(debug_line_offset, u) : nullptr;
     DWARFReader dr(reader);
     for (bool done=false; !done; ) {
         auto code = DWARF_MACRO_CODE(dr.getu8());
@@ -278,7 +278,7 @@ Macros::visit(Unit *u, MacroVisitor *visitor) const
                 // XXX: "u" is likely not right here, but only makes a
                 // difference if the import unit uses unit-relative string
                 // offsets, which it can't, reliably. (see DW_MACRO_define_strp below)
-                Macros nest(u->dwarf, offset);
+                Macros nest(u.dwarf, offset);
                 if (!nest.visit(u, visitor))
                     return false;
 
@@ -288,7 +288,7 @@ Macros::visit(Unit *u, MacroVisitor *visitor) const
             case DW_MACRO_define_strx:
             case DW_MACRO_define_strp: {
                 auto line = dr.getuleb128();
-                auto str = dr.readFormString(u->dwarf, u, code == DW_MACRO_define_strx ? DW_FORM_strx : DW_FORM_strp);
+                auto str = dr.readFormString(*u.dwarf, u, code == DW_MACRO_define_strx ? DW_FORM_strx : DW_FORM_strp);
                 if (verbose > 1)
                     *debug << "DW_MACRO_define_strp( " << line << ", " << str << " )\n";
                 if (!visitor->define(line, str))
@@ -309,7 +309,7 @@ Macros::visit(Unit *u, MacroVisitor *visitor) const
             case DW_MACRO_undef_strx:
             case DW_MACRO_undef_strp: {
                 auto line = dr.getuleb128();
-                auto str = dr.readFormString(u->dwarf, u, code == DW_MACRO_undef_strx ? DW_FORM_strx : DW_FORM_strp);
+                auto str = dr.readFormString(*u.dwarf, u, code == DW_MACRO_undef_strx ? DW_FORM_strx : DW_FORM_strp);
                 if (verbose > 1)
                     *debug << "DW_MACRO_undef_strp( " << line << ", '" << str << "' )\n";
                 if (!visitor->undef(line, str))
@@ -806,7 +806,7 @@ dwarfStateAddRow(LineInfo *li, const LineState &state)
 }
 
 void
-DWARFReader::readForm(const Info *info, Unit *unit, Form form)
+DWARFReader::readForm(const Info &info, Unit &unit, Form form)
 {
     switch (form) {
         case DW_FORM_string:
@@ -824,7 +824,7 @@ DWARFReader::readForm(const Info *info, Unit *unit, Form form)
 }
 
 std::string
-DWARFReader::readFormString(const Info *dwarf, Unit *unit, Form form)
+DWARFReader::readFormString(const Info &dwarf, Unit &unit, Form form)
 {
     switch (form) {
         case DW_FORM_string:
@@ -832,23 +832,23 @@ DWARFReader::readFormString(const Info *dwarf, Unit *unit, Form form)
         default:
             abort();
         case DW_FORM_line_strp: {
-            auto off = getuint(unit->dwarfLen);
-            return dwarf->debugLineStrings->readString(off);
+            auto off = getuint(unit.dwarfLen);
+            return dwarf.debugLineStrings->readString(off);
         }
         case DW_FORM_strp: {
-            auto off = getuint(unit->dwarfLen);
-            return dwarf->debugStrings->readString(off);
+            auto off = getuint(unit.dwarfLen);
+            return dwarf.debugStrings->readString(off);
         }
         case DW_FORM_strx: {
             size_t off = getuleb128();
-            return dwarf->strx(*unit, off);
+            return dwarf.strx(unit, off);
 
         }
     }
 }
 
 uintmax_t
-DWARFReader::readFormUnsigned(Unit *, Form form)
+DWARFReader::readFormUnsigned(Unit &, Form form)
 {
     switch (form) {
         case DW_FORM_udata:
@@ -865,7 +865,7 @@ DWARFReader::readFormUnsigned(Unit *, Form form)
 }
 
 intmax_t
-DWARFReader::readFormSigned(Unit *, Form form)
+DWARFReader::readFormSigned(Unit &, Form form)
 {
     switch (form) {
         default:
@@ -890,7 +890,7 @@ readEntryFormats(DWARFReader &r) {
 }
 
 void
-LineInfo::build(DWARFReader &r, Unit *unit)
+LineInfo::build(DWARFReader &r, Unit &unit)
 {
     size_t dwarfLen;
     uint32_t total_length = r.getlength(&dwarfLen);
@@ -933,11 +933,11 @@ LineInfo::build(DWARFReader &r, Unit *unit)
             for (auto &ent : directoryFormat) {
                 switch (ent.first) {
                     case DW_LNCT_path: {
-                        path = r.readFormString(unit->dwarf, unit, ent.second);
+                        path = r.readFormString(*unit.dwarf, unit, ent.second);
                         break;
                     }
                     default:{
-                        r.readForm(unit->dwarf, unit, ent.second);
+                        r.readForm(*unit.dwarf, unit, ent.second);
                         *debug << "unexpected LNCT " << ent.first << " in directory table" << std::endl;
                         break;
                     }
@@ -956,13 +956,13 @@ LineInfo::build(DWARFReader &r, Unit *unit)
             for (auto &ent : fileFormat) {
                 switch (ent.first) {
                     case DW_LNCT_path:
-                        entry.name = r.readFormString(unit->dwarf, unit, ent.second);
+                        entry.name = r.readFormString(*unit.dwarf, unit, ent.second);
                         break;
                     case DW_LNCT_directory_index:
                         entry.dirindex = r.readFormUnsigned(unit, ent.second);
                         break;
                     default:
-                        r.readForm(unit->dwarf, unit, ent.second);
+                        r.readForm(*unit.dwarf, unit, ent.second);
                         break;
                 }
             }
@@ -1309,7 +1309,7 @@ RawDIE::~RawDIE()
 }
 
 LineInfo *
-Info::linesAt(intmax_t offset, Unit *unit) const
+Info::linesAt(intmax_t offset, Unit &unit) const
 {
     auto lines = new LineInfo();
     auto lineshdr = sectionReader(*elf, ".debug_line", ".zdebug_line");
@@ -1334,7 +1334,7 @@ Unit::getLines()
     if (!attr.valid())
         return nullptr;
 
-    lines.reset(dwarf->linesAt(intmax_t(attr), this));
+    lines.reset(dwarf->linesAt(intmax_t(attr), *this));
     return lines.get();
 }
 
