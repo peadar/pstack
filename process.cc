@@ -236,7 +236,7 @@ struct PrintableFrame {
         Elf::Addr objIp = frame->scopeIP() - frame->elfReloc;
         Dwarf::Unit::sptr u = frame->dwarf->lookupUnit(objIp);
         if (u) {
-            Dwarf::DIE function = Dwarf::findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram, u->root());
+            Dwarf::DIE function = u->root().findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram);
             if (function) {
                 frame->function = function;
                 std::ostringstream sos;
@@ -246,11 +246,11 @@ struct PrintableFrame {
                 if (lowpc.valid())
                     functionOffset = objIp - uintmax_t(lowpc);
                 while (function) {
-                   auto inl = Dwarf::findEntryForAddr(objIp, Dwarf::DW_TAG_inlined_subroutine, function);
+                   auto inl = function.findEntryForAddr(objIp, Dwarf::DW_TAG_inlined_subroutine);
                    if (!inl)
                       break;
                    inlined.push_back(inl);
-                   function = inl;
+                   function = std::move(inl);
                 }
             }
         }

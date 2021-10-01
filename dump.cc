@@ -516,10 +516,10 @@ operator << (std::ostream &os, const JSON<Dwarf::Info> &di)
     writer.field("units", di->getUnits())
         .field("pubnameUnits", di->pubnames())
         ; // XXX .field("aranges", di->getARanges());
-    if (di->debugFrame)
-        writer.field("debugframe", *di->debugFrame);
-    if (di->ehFrame)
-        writer.field("ehFrame", *di->ehFrame);
+    if (di->getDebugFrame())
+        writer.field("debugframe", *di->getDebugFrame());
+    if (di->getEhFrame())
+        writer.field("ehFrame", *di->getEhFrame());
     return writer;
 }
 

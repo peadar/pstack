@@ -184,7 +184,7 @@ ExpressionStack::eval(const Process &proc, const Attribute &attr,
         case DW_FORM_block:
         case DW_FORM_exprloc: {
             const auto &block = Block(attr);
-            DWARFReader r(dwarf->io, block.offset, block.offset + block.length);
+            DWARFReader r(dwarf->debugInfo, block.offset, block.offset + block.length);
             return eval(proc, r, frame, reloc);
         }
         default:
@@ -441,7 +441,7 @@ StackFrame::unwind(Process &p)
     // Try and find DWARF data with debug frame information, or an eh_frame section.
     dwarf = p.getDwarf(elf);
     if (dwarf) {
-        auto frames = { dwarf->ehFrame.get(), dwarf->debugFrame.get() };
+        auto frames = { dwarf->getEhFrame(), dwarf->getDebugFrame() };
         for (auto f : frames) {
             if (f != nullptr) {
                 fde = f->findFDE(objaddr);

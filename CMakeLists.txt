@@ -104,8 +104,24 @@ endif()
 
 add_definitions("-g3")
 
-add_library(dwelf ${LIBTYPE} dump.cc dwarf.cc elf.cc reader.cc util.cc
-   ${inflatesrc} ${lzmasrc})
+add_library(dwelf ${LIBTYPE}
+         dump.cc
+         dwarf_cache.cc
+         dwarf_die.cc
+         dwarf_frame.cc
+         dwarf_info.cc
+         dwarf_lines.cc
+         dwarf_macros.cc
+         dwarf_pubnames.cc
+         dwarf_reader.cc
+         dwarf_unit.cc
+         elf.cc
+         reader.cc
+         util.cc
+         ${inflatesrc}
+         ${lzmasrc}
+         )
+
 add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc
    dwarfproc.cc procdump.cc ${stubsrc})
 

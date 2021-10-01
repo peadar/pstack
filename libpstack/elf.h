@@ -285,6 +285,11 @@ public:
     // https://sourceware.org/gdb/current/onlinedocs/gdb/MiniDebugInfo.html
     Elf::Addr endVA() const;
 
+    // Helper to create a reader for a specific section in an object, that may have
+    // an alternatively named, compressed, counterpart.
+    Reader::csptr sectionReader(const char *name, const char *compressedName,
+                                const Elf::Section **secp = nullptr);
+
     // find text version from versioned symbol.
     std::string symbolVersion(const VersionedSymbol &) const;
     SymbolSection<NamedSymbol> *debugSymbols();

@@ -562,6 +562,52 @@ Object::getDebug() const
     return debugObject.get();
 }
 
+Reader::csptr
+Object::sectionReader(const char *name, const char *compressedName, const Elf::Section **secp)
+{
+    const auto &raw = getSection(name, SHT_PROGBITS);
+    if (secp != nullptr)
+        *secp = nullptr;
+    if (raw) {
+        if (secp)
+            *secp = &raw;
+        return raw.io;
+    }
+    std::string dwoname = std::string(name) + ".dwo";
+    const auto &dwo = getSection(dwoname, SHT_PROGBITS);
+
+    if (dwo) {
+        if (secp)
+            *secp = &dwo;
+        return dwo.io;
+    }
+
+    if (compressedName != nullptr) {
+        const auto &zraw = getSection(compressedName, SHT_PROGBITS);
+        if (zraw) {
+#ifdef WITH_ZLIB
+            unsigned char sig[12];
+            zraw.io->readObj(0, sig, sizeof sig);
+            if (memcmp((const char *)sig, "ZLIB", 4) != 0)
+                return Reader::csptr();
+            uint64_t sz = 0;
+            for (size_t i = 4; i < 12; ++i) {
+                sz <<= 8;
+                sz |= sig[i];
+            }
+            if (secp)
+                *secp = &zraw;
+            return make_shared<InflateReader>(sz, OffsetReader(zraw.io, sizeof sig, sz));
+#else
+            std::clog << "warning: no zlib support to process compressed debug info in "
+                << *io << std::endl;
+#endif
+        }
+    }
+    return Reader::csptr();
+}
+
+
 template <typename Symtype> bool
 SymbolSection<Symtype>::linearSearch(const string &name, Sym &sym) const
 {

@@ -1,12 +1,16 @@
 # pstack
 
-Hello! This is (an implementation of) pstack, a program that will print the
-stack trace of each thread in a running program, or from a core file.
+**A from-scratch implementation of pstack using DWARF debugging and unwind
+information.  Works for C/C++, Go, Rust, and Python**
+
+The pstack command can traditionally print a backtrace of each thread
+in a running program, and sometimes from a core file.
 
 This version of pstack uses its own self contained ELF and DWARF parsing
-library called libdwelf to parse the DWARF debug information entries,
-and the unwind information to get a stack trace.
-This is one implementation. There are others.
+library, `libdwelf` to parse the DWARF debug and unwind information,
+to get a stack trace. The functionality is well tested for C++, and is
+minimally tested for Go and Rust binaries.  It also supports getting
+python language backtraces for cpython.
 
 ## Disclaimer
 This works for my purposes, and the DWARF parsing library is at least
@@ -44,7 +48,8 @@ thread: 0, lwp: 532040, type: 0
 
 bash-5.1$
 ```
-Also, pstack can get traces from core files as easily as it can from running programs - you can see examples later.
+Also, pstack can get traces from core files as easily as it can from
+running programs - you can see examples later.
 
 
 ### Argument printing

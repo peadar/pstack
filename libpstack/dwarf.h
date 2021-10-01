@@ -202,40 +202,82 @@ enum class ContainsAddr { YES, NO, UNKNOWN };
 // temporary unless the API consumer keeps hold of them.
 
 class DIE {
-    Elf::Off offset;
-    std::shared_ptr<RawDIE> raw;
+
     friend DIEIter;
     friend Attribute;
-    friend Unit;
     friend DIEAttributes;
+    friend Unit;
 
-public:
+    Elf::Off offset;
+    std::shared_ptr<RawDIE> raw;
     std::shared_ptr<Unit> unit;
 
-    ContainsAddr containsAddress(Elf::Addr addr) const;
-    Elf::Off getParentOffset() const;
-    Elf::Off getOffset() const { return offset; }
-    const std::shared_ptr<Unit> & getUnit() const { return unit; }
+    // Decode the raw DIE Content at the given offset within the .debug_info
+    // section for a particular unit.
+    static std::shared_ptr<RawDIE> decode(Unit *unit, const DIE &parent, Elf::Off offset);
+
+    // construct a DIE from its RawDIE, unit, and offset.
     DIE(const std::shared_ptr<Unit> &unit, size_t offset_, const std::shared_ptr<RawDIE> &raw)
         : offset(offset_)
         , raw(raw)
         , unit(unit)
         {}
+
+public:
+
+    // Indicate if the passed DIE contains code covering the passed address.
+    // The result can be yes, no, or unknown.
+    ContainsAddr containsAddress(Elf::Addr addr) const;
+
+    // Return the offset (relative to the .debug_info section) of the parent DIE.
+    Elf::Off getParentOffset() const;
+
+    // Return the offset (relative to the .debug_info section) of this DIE
+    Elf::Off getOffset() const { return offset; }
+
+    const std::shared_ptr<Unit> &getUnit() const { return unit; }
+
+    // Construct a "null" DIE.
     DIE()
         : offset(0)
         , raw(nullptr)
         , unit(nullptr)
         {}
+
+    // The null die is false in a boolean context.
     operator bool() const { return raw != nullptr; }
+
+    // Get the named attribute from thie DIE.
     Attribute attribute(AttrName name, bool local = false) const;
-    inline std::string name() const;
+
+    std::string name() const;
     DIEAttributes attributes() const { return DIEAttributes(*this); }
+
+    // Get the DIE's type tag.
     Tag tag() const;
+
+    // Indicate if this DIE has any children.
     bool hasChildren() const;
-    DIE hasNextSibling() const;
+
+    // Return the first child of this DIE.
     DIE firstChild() const;
+
+    // Return the next sibling of this DIE.
     DIE nextSibling(const DIE &parent) const;
+
+    // Get an iterator for all the children of this DIE.
     DIEChildren children() const { return DIEChildren(*this); }
+
+    // Find the DIE covering a particular code address. If "skipInitial" is
+    // false, then this DIE itself is not considered, only its decendents.  The
+    // highest DIE in the tree is returned, so for inlined functions, etc, you
+    // can repeat calls to findEntryForAddr with skipInitial true to find a
+    // more nested DIE also covering the same address.
+    DIE findEntryForAddr(Elf::Addr address, Tag, bool skipInitial = true);
+
+    // Get a human-readable name for a type die - ascends through namespaces
+    // that contain this DIE, walks through pointers and references, etc.
+    std::string typeName(const DIE &);
 };
 
 // Ranges represents a sequence of addresses. The main use is to check if a text
@@ -252,15 +294,13 @@ public:
 // address, so we may augment this with our own manual scan of each unit.
 using ARanges = std::map<Elf::Addr, std::pair<Elf::Addr, Elf::Off>>;
 
-
-// An attribute within a DIE. A value that you can convert to one of a numbe
-// of abstract types. The "form" provides information about the type.
-// We just sotre the DIE and the form entry for the attribute. The underlying
-// data is retained in the raw DIE.
+// An attribute within a DIE. A value that you can convert to one of a number
+// of abstract types. The "form" provides information about the type.  We just
+// sotre the DIE and the form entry for the attribute. The underlying data is
+// retained in the raw DIE.
 class Attribute {
     DIE dieref;
     const FormEntry *formp; /* From abbrev table attached to type */
-
     Value &value();
 public:
     const DIE &die() const { return dieref; }
@@ -281,13 +321,6 @@ public:
     explicit operator const Ranges &() const;
     AttrName name() const;
 };
-
-std::string
-DIE::name() const
-{
-    auto attr = attribute(DW_AT_name);
-    return attr.valid() ? std::string(attr) : "";
-}
 
 // .eh_frame and .debug_frame have subtly different internals, but are almost
 // identical For when we need to discriminate, this is what we use.
@@ -361,24 +394,30 @@ public:
 class Unit : public std::enable_shared_from_this<Unit> {
 
     using Abbreviations = std::unordered_map<size_t, Abbreviation>;
+
+    // We store DIEs as their "raw" counterparts - when used by the API, we
+    // return a DIE to wrap them. The DIE wrapper includes a reference to the
+    // unit, the DIE's offset.
+    //
+    // Offsets here are relative to the debug_info section, rather than
+    // the unit - this makes the offsets unique within the Info.
     using AllEntries = std::unordered_map<Elf::Off, std::shared_ptr<RawDIE>>;
 
     Unit() = delete;
     Unit(const Unit &) = delete;
 
     std::shared_ptr<RawDIE> offsetToRawDIE(const DIE &parent, Elf::Off offset);
-    std::shared_ptr<RawDIE> decodeEntry(const DIE &parent, Elf::Off offset);
+    // Used to ensure abbreviations and other potentially expensive data is
+    // parsed. Internals will call this to undo a "purge()"
     void load();
-    const Abbreviation *findAbbreviation(size_t) const;
 
     Abbreviations abbreviations;
     AllEntries allEntries;
-    Elf::Off topDIEOffset;
+    Elf::Off rootOffset;
     Elf::Off abbrevOffset;
     std::unique_ptr<LineInfo> lines;
+    std::unique_ptr<Macros> macros;
     UnitType unitType;
-    mutable std::unique_ptr<Macros> macros;
-    friend RawDIE;
 
 public:
 
@@ -407,7 +446,7 @@ public:
     void purge(); // Remove all RawDIEs from allEntries, potentially freeing memory.
 
     // Is a given DIE the root for this unit?
-    bool isRoot(const DIE &die) { return die.getOffset() == topDIEOffset; }
+    bool isRoot(const DIE &die) { return die.getOffset() == rootOffset; }
 
     DIE root(); // Get the root DIE for this unit
 
@@ -420,6 +459,9 @@ public:
     // Get line- and macro- information for this unit.
     const LineInfo *getLines();
     const Macros *getMacros();
+
+    bool sourceFromAddr(Elf::Addr addr, std::vector<std::pair<std::string, int>> &info);
+    const Abbreviation *findAbbreviation(size_t) const;
 };
 
 class UnitIterator {
@@ -530,7 +572,7 @@ struct CFI {
     FIType type;
     std::map<Elf::Addr, CIE> cies;
     std::list<FDE> fdeList;
-    CFI(Info *, Elf::Addr addr, Reader::csptr io, FIType);
+    CFI(const Info *, Elf::Addr addr, Reader::csptr io, FIType);
     CFI() = delete;
     CFI(const CFI &) = delete;
     Elf::Addr decodeCIEFDEHdr(DWARFReader &, FIType, Elf::Off *cieOff); // cieOFF set to -1 if this is CIE, set to offset of associated CIE for an FDE
@@ -542,9 +584,9 @@ struct CFI {
 class ImageCache;
 
 /*
- * Info represents all the interesting bits of the DWARF data.
- * It's primary function is to provide access to the compilation units, from
- * which you can access individual DIE trees, macro info, etc.
+ * Info represents all the interesting bits of the DWARF data.  Once
+ * constructed, you can access DWARF compilation units, CFI information, macro
+ * data, source information from here.
  */
 class Info : public std::enable_shared_from_this<Info> {
 public:
@@ -554,14 +596,19 @@ public:
     Info(Elf::Object::sptr, ImageCache &);
     ~Info();
 
+    // Get a reference the the "alt" DWARF image, as pointed to by
+    // ".gnu_debugaltlink"
     Info::sptr getAltDwarf() const;
-    const ARanges &getARanges() const;
+
     const std::list<PubnameUnit> &pubnames() const;
 
-    Unit::sptr getUnit(Elf::Off offset) const; // get a unit, given an offset.
-    Units getUnits() const; // get an iterator for all units.
+    // get a unit, given an offset.
+    Unit::sptr getUnit(Elf::Off offset) const;
 
-    // given a debug_info-relative offset, find the associated DIE.
+    // Iterate over all units in the ELF object.
+    Units getUnits() const;
+
+    // Given a debug_info-relative offset, find the associated DIE.
     DIE offsetToDIE(Elf::Off) const;
 
     // Find the unit covering a given (object-relative) text address.
@@ -570,36 +617,47 @@ public:
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
     LineInfo *linesAt(intmax_t, Unit &) const;
 
-    const Reader::csptr io; // dwarf_info reader.
+    // The ELF object this DWARF data is associated with
     const Elf::Object::sptr elf;
 
+    // Cached call frames for specific return addresses.
     std::map<Elf::Addr, CallFrame> callFrameForAddr;
-    std::unique_ptr<CFI> debugFrame;
-    std::unique_ptr<CFI> ehFrame;
+
+    // Get decoded call frame information from .debug_frame section
+    CFI *getDebugFrame() const;
+
+    // Get decoded call frame information from .eh_frame section
+    CFI *getEhFrame() const;
 
     // direct access to various DWARF sections.
+    const Reader::csptr debugInfo;
     const Reader::csptr debugStrings;
     const Reader::csptr debugLineStrings;
-    const Reader::csptr abbrev;
-    const Reader::csptr rangesh;
-    const Reader::csptr strOffsets;
+    const Reader::csptr debugRanges;
+    const Reader::csptr debugStrOffsets;
 
+    // For _strx forms, indirect through debugStrOffsets to get a string for a
+    // specific index.
     std::string strx(Unit &unit, size_t idx) const;
 
 private:
     ImageCache &imageCache;
+    std::unique_ptr<CFI> decodeCFI(const char *name, const char *zname, FIType ftype) const;
 
     // These are mutable so we can lazy-eval them when getters are called, and
     // maintain logical constness.
-    mutable std::list<PubnameUnit> pubnameUnits;
+    mutable std::unique_ptr<std::list<PubnameUnit>> pubnameUnits { nullptr };
     mutable std::map<Elf::Off, Unit::sptr> units;
     mutable Info::sptr altDwarf;
-    mutable bool altImageLoaded;
-    mutable Reader::csptr pubnamesh;
     mutable std::unique_ptr<ARanges> aranges; // maps starting address to length + unit offset.
-    mutable bool unitRangesCached = false;
     mutable std::unique_ptr<Macros> macros;
+    mutable std::unique_ptr<CFI> debugFrame;
+    mutable std::unique_ptr<CFI> ehFrame;
 
+    mutable bool altImageLoaded { false };
+    mutable bool unitRangesCached { false };
+    mutable bool debugFrameLoaded { false };
+    mutable bool ehFrameLoaded = { false };
 
     void decodeARangeSet(DWARFReader &) const;
     std::string getAltImageName() const;
@@ -607,7 +665,7 @@ private:
 
 /*
  * A Dwarf Image Cache is an (Elf) ImageCache, but caches Dwarf::Info for the
- * Objects also.
+ * Objects also. (see elf.h:ImageCache)
  */
 class ImageCache : public Elf::ImageCache {
     int dwarfHits;
@@ -789,12 +847,9 @@ struct MacroVisitor {
    virtual bool endFile() { return true; }
 };
 
-std::string typeName(const DIE &);
-DIE findEntryForAddr(Elf::Addr address, Tag, const DIE &start);
-
 inline
 UnitIterator UnitIterator::operator ++() {
-    currentUnit = currentUnit->end == info->io->size()
+    currentUnit = currentUnit->end == info->debugInfo->size()
         ? nullptr
         : info->getUnit( currentUnit->end );
     return *this;
@@ -802,7 +857,7 @@ UnitIterator UnitIterator::operator ++() {
 
 inline
 UnitIterator Units::begin() const {
-    return info->io ? iterator(info.get(), 0) : iterator();
+    return info->debugInfo ? iterator(info.get(), 0) : iterator();
 }
 
 inline bool
