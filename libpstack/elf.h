@@ -71,7 +71,6 @@ namespace Elf {
 class Object;
 class ImageCache;
 template <typename SymbolType> struct SymbolSection;
-class NoteIter;
 class NoteDesc;
 };
 
@@ -185,61 +184,53 @@ struct Section {
 class Notes {
    Object *object;
 public:
-   NoteIter begin() const;
-   NoteIter end() const;
+   class iterator;
+   iterator begin() const;
+   iterator end() const;
    Notes(Object *object_) : object(object_) {}
    typedef NoteDesc value_type;
-   typedef NoteIter iterator;
 };
 
-struct NamedSymbol {
-   const Sym symbol;
-   const std::string name;
-   operator bool () const { return symbol.st_shndx != SHN_UNDEF || name != ""; }
-   NamedSymbol() : symbol{0, 0, 0, 0, 0, SHN_UNDEF}, name("") { }
-   NamedSymbol(const Sym &symbol_, const std::string &name_) : symbol{symbol_}, name{name_} { }
-   NamedSymbol(const Sym &symbol_, const Reader::csptr &strings) : symbol{symbol_}, name{strings->readString(symbol.st_name)} { }
-};
+const Sym &undef();
 
-struct VersionedSymbol : public NamedSymbol {
+// A potentially versioned symbol.  Debug symbols are not versioned, but those
+// in the .dynamic section are - In GNU ELF, there's an adjunct tables,
+// gnu_version, that has an entry for each symbol in .dynamic, which contains
+// an index into the version table. This is essentially an augmentation of the
+// Elf{32_64}_Sym - store it alongside here for ease of use.
+struct VersionedSymbol : public Sym {
    int versionIdx;
-   VersionedSymbol() : NamedSymbol(), versionIdx(-1) {}
-   VersionedSymbol(const Sym &sym_, const std::string &name_, const Section &versionInfo, size_t idx);
-   VersionedSymbol(const Sym &sym_, const Reader::csptr &strings, const Section &versionInfo, size_t idx)
-       : VersionedSymbol(sym_, strings->readString(sym_.st_name), versionInfo, idx) {}
+   VersionedSymbol() : Sym(undef()), versionIdx(-1) {}
+   VersionedSymbol(const Sym &sym_, const Section &versionInfo, size_t idx);
    bool isHidden() const { return versionIdx != -1 && ((versionIdx & 0x8000) != 0 || versionIdx == 0); }
    bool isVersioned() const { return (versionIdx & 0x7fff) > 1; }
 };
 
 /*
- * See SymbolSection below - provides an iterator for the symbols in a section.
- */
-template <typename SymbolType>
-struct SymbolIterator {
-    const SymbolSection<SymbolType> *sec;
-    size_t idx;
-    SymbolIterator(const SymbolSection<SymbolType> *sec_, size_t idx_) : sec(sec_), idx(idx_) {}
-    bool operator != (const SymbolIterator &rhs) { return rhs.idx != idx; }
-    SymbolIterator &operator++ () { ++idx; return *this; }
-    SymbolType operator *();
-};
-
-/*
- * A symbol section represents a symbol table - this requires two sections, the
- * set of Sym objects, and the section that contains the strings to name
+ * A symbol section represents a symbol table - this requires two ELF sections,
+ * the set of Sym objects, and the section that contains the strings to name
  * those symbols
  */
 template <typename SymbolType>
 struct SymbolSection {
+    struct iterator {
+        const SymbolSection<SymbolType> *sec;
+        size_t idx;
+        iterator(const SymbolSection<SymbolType> *sec_, size_t idx_) : sec(sec_), idx(idx_) {}
+        bool operator != (const iterator &rhs) { return rhs.idx != idx; }
+        iterator &operator++ () { ++idx; return *this; }
+        SymbolType operator *();
+    };
     Object *elf;
     Reader::csptr symbols;
     Reader::csptr strings;
-    SymbolIterator<SymbolType> begin() const { return SymbolIterator<SymbolType>(this, 0); }
-    SymbolIterator<SymbolType> end() const { return SymbolIterator<SymbolType>(this, symbols ? symbols->size() / sizeof(Sym) : 0); }
+    iterator begin() const { return iterator(this, 0); }
+    iterator end() const { return iterator(this, symbols ? symbols->size() / sizeof(Sym) : 0); }
     SymbolSection(Object *elf_, Reader::csptr symbols_, Reader::csptr strings_)
        : elf(elf_), symbols(symbols_), strings(strings_)
     {}
     bool linearSearch(const std::string &name, Sym &) const;
+    std::string name(const Sym &sym) const { return strings->readString(sym.st_name); }
 };
 
 struct SymbolVersioning {
@@ -247,6 +238,7 @@ struct SymbolVersioning {
     std::map<std::string, std::vector<int>> files;
 };
 
+// An ELF object - a shared lib, executable, or object file
 class Object : public std::enable_shared_from_this<Object> {
 public:
     typedef std::shared_ptr<Object> sptr;
@@ -272,7 +264,7 @@ public:
 
     bool findSymbolByAddress(Addr addr, int type, Sym &, std::string &);
     VersionedSymbol findDynamicSymbol(const std::string &name);
-    NamedSymbol findDebugSymbol(const std::string &name);
+    Sym findDebugSymbol(const std::string &name);
 
     Reader::csptr io;
 
@@ -292,7 +284,7 @@ public:
 
     // find text version from versioned symbol.
     std::string symbolVersion(const VersionedSymbol &) const;
-    SymbolSection<NamedSymbol> *debugSymbols();
+    SymbolSection<Sym> *debugSymbols();
     SymbolSection<VersionedSymbol> * dynamicSymbols();
     const SymbolVersioning *symbolVersions() const;
     const Section *gnu_version;
@@ -306,7 +298,7 @@ private:
     std::map<std::string, size_t> namedSection;
     std::map<Word, ProgramHeaders> programHeaders;
 
-    std::unique_ptr<SymbolSection<NamedSymbol>> debugSymbols_;
+    std::unique_ptr<SymbolSection<Sym>> debugSymbols_;
 
     std::unique_ptr<SymbolSection<VersionedSymbol>> dynamicSymbols_;
 
@@ -331,14 +323,13 @@ private:
     std::map<std::string, CachedSymbol> cachedSymbols;
     mutable const Phdr *lastSegmentForAddress; // cache of last segment returned for a specific address.
 };
+
 // These are the architecture specific types representing the NT_PRSTATUS registers.
 #if defined(__PPC)
 typedef struct pt_regs CoreRegisters;
 #else
 typedef struct user_regs_struct CoreRegisters;
 #endif
-
-
 /*
  * Describes a note. Notes have a name, a type, and some associated data.
  */
@@ -366,65 +357,24 @@ public:
    }
 };
 
-/*
- * Iterator over all notes in an image.
- */
-class NoteIter {
+class Notes::iterator {
     Object *object;
     const Object::ProgramHeaders &phdrs;
     Object::ProgramHeaders::const_iterator phdrsi;
     Off offset;
     Note curNote;
     Reader::csptr io;
-
-    void readNote() {
-        io->readObj(offset, &curNote);
-    }
-
-    void startSection() {
-        offset = 0;
-        io = std::make_shared<OffsetReader>(object->io,
-              Off(phdrsi->p_offset),
-              Off(phdrsi->p_filesz));
-    }
-
-    NoteIter(Object *object_, bool begin)
-        : object(object_)
-        , phdrs(object_->getSegments(PT_NOTE))
-        , offset(0)
-    {
-        phdrsi = begin ? phdrs.begin() : phdrs.end();
-        if (phdrsi != phdrs.end()) {
-            startSection();
-            readNote();
-        }
-    }
-    friend class Notes;
+    void readNote() { io->readObj(offset, &curNote); }
+    void startSection();
 public:
-    bool operator == (const NoteIter &rhs) const {
+    iterator(Object *object_, bool begin);
+    bool operator == (const iterator &rhs) const {
         return &phdrs == &rhs.phdrs && phdrsi == rhs.phdrsi && offset == rhs.offset;
     }
-    bool operator != (const NoteIter &rhs) const {
+    bool operator != (const iterator &rhs) const {
         return !(*this == rhs);
     }
-    NoteIter &operator++() {
-        auto newOff = offset;
-        newOff += sizeof curNote + curNote.n_namesz;
-        newOff = roundup2(newOff, 4);
-        newOff += curNote.n_descsz;
-        newOff = roundup2(newOff, 4);
-        if (newOff >= phdrsi->p_filesz) {
-            if (++phdrsi == phdrs.end()) {
-                offset = 0;
-                return *this;
-            }
-            startSection();
-        } else {
-            offset = newOff;
-        }
-        readNote();
-        return *this;
-    }
+    iterator &operator++();
     NoteDesc operator *() {
         return NoteDesc(curNote, std::make_shared<const OffsetReader>(io, offset));
     }

@@ -295,11 +295,12 @@ mainExcept(int argc, char *argv[])
         auto findSymbols = [&count, verbose, showsyms, &store, &patterns, &loaded]( auto table ) {
            for (const auto &sym : *table) {
                for (auto &pattern : patterns) {
-                   if (globmatch(pattern, sym.name)) {
-                       store.add(ListedSymbol(sym.symbol, loaded.first,
-                                sym.name, stringify(*loaded.second->io)));
+                   auto name = table->name(sym);
+                   if (globmatch(pattern, name)) {
+                       store.add(ListedSymbol(sym, loaded.first,
+                                name, stringify(*loaded.second->io)));
                        if (verbose > 1 || showsyms)
-                          std::cout << sym.name << "\n";
+                          std::cout << name << "\n";
                        count++;
                    }
                }

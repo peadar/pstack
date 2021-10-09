@@ -3,38 +3,37 @@
 
 namespace Dwarf {
 
-class RawDIE {
-    RawDIE() = delete;
-    RawDIE(const RawDIE &) = delete;
-    static void readValue(DWARFReader &, const FormEntry &form, Value &value, Unit *);
+class DIE::Raw {
+    Raw() = delete;
+    Raw(const Raw &) = delete;
     const Abbreviation *type;
-    std::vector<Value> values;
+    std::vector<DIE::Attribute::Value> values;
     Elf::Off parent; // 0 implies we do not yet know the parent's offset.
     Elf::Off firstChild;
     Elf::Off nextSibling;
 public:
-    RawDIE(Unit *, DWARFReader &, size_t, Elf::Off parent);
-    ~RawDIE();
-    friend class Attribute;
+    Raw(Unit *, DWARFReader &, size_t, Elf::Off parent);
+    ~Raw();
+    // Mostly, Raw DIEs are hidden from everything. DIE needs access though
     friend class DIE;
-    friend class DIEAttributes;
-    friend class DIEIter;
-    static std::shared_ptr<RawDIE> decode(Unit *unit, const DIE &parent, Elf::Off offset);
+    static std::shared_ptr<Raw> decode(Unit *unit, const DIE &parent, Elf::Off offset);
 };
 
 DIE
-DIE::firstChild() const {
+DIE::firstChild() const
+{
     return unit->offsetToDIE(*this, raw->firstChild);
 }
 
 DIE
-DIE::nextSibling(const DIE &parent) const {
+DIE::nextSibling(const DIE &parent) const
+{
 
     if (raw->nextSibling == 0) {
         // Need to work out what the next sibling is, and we don't have DW_AT_sibling
         // Run through all our children. decodeEntries will update the
         // parent's (our) nextSibling.
-        std::shared_ptr<RawDIE> last = nullptr;
+        std::shared_ptr<Raw> last = nullptr;
         for (auto &it : children())
             last = it.raw;
         if (last)
@@ -93,7 +92,7 @@ DIE::containsAddress(Elf::Addr addr) const
     return ContainsAddr::UNKNOWN;
 }
 
-Attribute
+DIE::Attribute
 DIE::attribute(AttrName name, bool local) const
 {
     auto loc = raw->type->attrName2Idx.find(name);
@@ -110,7 +109,7 @@ DIE::attribute(AttrName name, bool local) const
     // don't dereference declarations, or any types that provide dereference aliases.
     if (!local && name != DW_AT_declaration && derefs.find(name) == derefs.end()) {
         for (auto alt : derefs) {
-            auto ao = DIE(attribute(alt));
+            const auto &ao = DIE(attribute(alt));
             if (ao && ao.raw != raw)
                 return ao.attribute(name);
         }
@@ -125,16 +124,16 @@ DIE::name() const
     return attr.valid() ? std::string(attr) : "";
 }
 
-RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, Elf::Off parent_)
+DIE::Raw::Raw(Unit *unit, DWARFReader &r, size_t abbrev, Elf::Off parent_)
     : type(unit->findAbbreviation(abbrev))
-    , values(type->forms.size())
     , parent(parent_)
     , firstChild(0)
     , nextSibling(0)
 {
     size_t i = 0;
+    values.reserve(type->forms.size());
     for (auto &form : type->forms) {
-        readValue(r, form, values[i], unit);
+        values.emplace_back(r, form, values[i], unit);
         if (int(i) == type->nextSibIdx)
             nextSibling = values[i].sdata + unit->offset;
         ++i;
@@ -148,8 +147,7 @@ RawDIE::RawDIE(Unit *unit, DWARFReader &r, size_t abbrev, Elf::Off parent_)
     }
 }
 
-void
-RawDIE::readValue(DWARFReader &r, const FormEntry &forment, Value &value, Unit *unit)
+DIE::Attribute::Value::Value(DWARFReader &r, const FormEntry &forment, DIE::Attribute::Value &value, Unit *unit)
 {
     switch (forment.form) {
 
@@ -295,7 +293,7 @@ RawDIE::readValue(DWARFReader &r, const FormEntry &forment, Value &value, Unit *
     }
 }
 
-RawDIE::~RawDIE()
+DIE::Raw::~Raw()
 {
     int i = 0;
     for (auto &forment : type->forms) {
@@ -338,7 +336,7 @@ DIE::getParentOffset() const
     return raw->parent;
 }
 
-std::shared_ptr<RawDIE>
+std::shared_ptr<DIE::Raw>
 DIE::decode(Unit *unit, const DIE &parent, Elf::Off offset)
 {
     DWARFReader r(unit->dwarf->debugInfo, offset);
@@ -350,10 +348,10 @@ DIE::decode(Unit *unit, const DIE &parent, Elf::Off offset)
             parent.raw->nextSibling = r.getOffset();
         return nullptr;
     }
-    return std::make_shared<RawDIE>(unit, r, abbrev, parent.getOffset());
+    return std::make_shared<DIE::Raw>(unit, r, abbrev, parent.getOffset());
 }
 
-DIEIter &DIEIter::operator++() {
+DIE::Children::const_iterator &DIE::Children::const_iterator::operator++() {
     currentDIE = currentDIE.nextSibling(parent);
     // if we loaded the child by a direct refrence into the middle of the
     // unit, (and hence didn't know the parent at the time), take the
@@ -363,7 +361,7 @@ DIEIter &DIEIter::operator++() {
     return *this;
 }
 
-DIEIter::DIEIter(const DIE &first, const DIE & parent_)
+DIE::Children::const_iterator::const_iterator(const DIE &first, const DIE & parent_)
     : parent(parent_)
     , currentDIE(first)
 {
@@ -374,17 +372,17 @@ DIEIter::DIEIter(const DIE &first, const DIE & parent_)
 }
 
 AttrName
-Attribute::name() const
+DIE::Attribute::name() const
 {
-    size_t off = formp - &dieref.raw->type->forms[0];
-    for (auto ent : dieref.raw->type->attrName2Idx) {
+    size_t off = formp - &die.raw->type->forms[0];
+    for (auto ent : die.raw->type->attrName2Idx) {
         if (ent.second == off)
             return ent.first;
     }
     return DW_AT_none;
 }
 
-Attribute::operator intmax_t() const
+DIE::Attribute::operator intmax_t() const
 {
     if (!valid())
         return 0;
@@ -404,7 +402,7 @@ Attribute::operator intmax_t() const
     }
 }
 
-Attribute::operator uintmax_t() const
+DIE::Attribute::operator uintmax_t() const
 {
     if (!valid())
         return 0;
@@ -424,20 +422,20 @@ Attribute::operator uintmax_t() const
     }
 }
 
-Attribute::operator const Ranges&() const
+DIE::Attribute::operator const Ranges&() const
 {
     auto val = value().addr;
 
-    Ranges &ranges = dieref.unit->rangesForOffset[val];
+    Ranges &ranges = die.unit->rangesForOffset[val];
 
     if (!ranges.isNew)
         return ranges;
 
     ranges.isNew = false;
 
-    if (dieref.unit->version < 5) {
+    if (die.unit->version < 5) {
         // DWARF4 units use debug_ranges
-        DWARFReader reader(dieref.unit->dwarf->debugRanges, value().addr);
+        DWARFReader reader(die.unit->dwarf->debugRanges, value().addr);
         for (;;) {
             auto start = reader.getuint(sizeof (Elf::Addr));
             auto end = reader.getuint(sizeof (Elf::Addr));
@@ -450,14 +448,14 @@ Attribute::operator const Ranges&() const
         Elf::Off offset = value().addr;
 
         // Offset by rnglists_base in the root DIE.
-        auto root = dieref.unit->root();
+        auto root = die.unit->root();
         auto attr = root.attribute(DW_AT_rnglists_base);
         if (attr.valid())
             offset += uintmax_t(attr);
 
-        auto rnglists = dieref.unit->dwarf->elf->sectionReader(
+        auto rnglists = die.unit->dwarf->elf->sectionReader(
                                     ".debug_rnglists", ".zdebug_rnglists", nullptr);
-        auto addrs = dieref.unit->dwarf->elf->sectionReader(
+        auto addrs = die.unit->dwarf->elf->sectionReader(
                                     ".debug_addr", ".zdebug_addr", nullptr);
         DWARFReader r(rnglists, offset);
 
@@ -497,17 +495,17 @@ Attribute::operator const Ranges&() const
                 }
 
                 case DW_RLE_base_address:
-                    base = r.getuint(dieref.unit->addrlen);
+                    base = r.getuint(die.unit->addrlen);
                     break;
 
                 case DW_RLE_start_end: {
-                    auto start = r.getuint(dieref.unit->addrlen);
-                    auto end = r.getuint(dieref.unit->addrlen);
+                    auto start = r.getuint(die.unit->addrlen);
+                    auto end = r.getuint(die.unit->addrlen);
                     ranges.emplace_back(start, end);
                     break;
                 }
                 case DW_RLE_start_length: {
-                    auto start = r.getuint(dieref.unit->addrlen);
+                    auto start = r.getuint(die.unit->addrlen);
                     auto len = r.getuleb128();
                     ranges.emplace_back(start, start + len);
                     break;
@@ -520,11 +518,11 @@ Attribute::operator const Ranges&() const
     return ranges;
 }
 
-Attribute::operator std::string() const
+DIE::Attribute::operator std::string() const
 {
     if (!valid())
         return "";
-    const Info *dwarf = dieref.unit->dwarf;
+    const Info *dwarf = die.unit->dwarf;
     assert(dwarf != nullptr);
     switch (formp->form) {
 
@@ -544,26 +542,26 @@ Attribute::operator std::string() const
             return dwarf->debugLineStrings->readString(value().addr);
 
         case DW_FORM_string:
-            return dieref.unit->dwarf->debugInfo->readString(value().addr);
+            return die.unit->dwarf->debugInfo->readString(value().addr);
 
         case DW_FORM_strx1:
         case DW_FORM_strx2:
         case DW_FORM_strx3:
         case DW_FORM_strx4:
         case DW_FORM_strx:
-            return dwarf->strx(*dieref.unit, value().addr);
+            return dwarf->strx(*die.unit, value().addr);
 
         default:
             abort();
     }
 }
 
-Attribute::operator DIE() const
+DIE::Attribute::operator DIE() const
 {
     if (!valid())
         return DIE();
 
-    const Info *dwarf = dieref.unit->dwarf;
+    const Info *dwarf = die.unit->dwarf;
     Elf::Off off;
     switch (formp->form) {
         case DW_FORM_ref_addr:
@@ -574,7 +572,7 @@ Attribute::operator DIE() const
         case DW_FORM_ref2:
         case DW_FORM_ref4:
         case DW_FORM_ref8:
-            off = value().addr + dieref.unit->offset;
+            off = value().addr + die.unit->offset;
             break;
         case DW_FORM_GNU_ref_alt: {
             dwarf = dwarf->getAltDwarf().get();
@@ -589,8 +587,8 @@ Attribute::operator DIE() const
     }
 
     // Try this unit first (if we're dealing with the same Info)
-    if (dwarf == dieref.unit->dwarf && dieref.unit->offset <= off && dieref.unit->end > off) {
-        const auto otherEntry = dieref.unit->offsetToDIE(DIE(), off);
+    if (dwarf == die.unit->dwarf && die.unit->offset <= off && die.unit->end > off) {
+        const auto otherEntry = die.unit->offsetToDIE(DIE(), off);
         if (otherEntry)
             return otherEntry;
     }
@@ -620,35 +618,35 @@ DIE::findEntryForAddr(Elf::Addr address, Tag t, bool skipStart)
     return DIE();
 }
 
-DIEIter
-DIEChildren::begin() const {
+DIE::Children::const_iterator
+DIE::Children::begin() const {
     return const_iterator(parent.firstChild(), parent);
 }
 
-DIEIter
-DIEChildren::end() const {
+DIE::Children::const_iterator
+DIE::Children::end() const {
     return const_iterator(DIE(), parent);
 }
 
-std::pair<AttrName, Attribute>
-DIEAttributes::const_iterator::operator *() const {
+std::pair<AttrName, DIE::Attribute>
+DIE::Attributes::const_iterator::operator *() const {
     return std::make_pair(
             rawIter->first,
             Attribute(die, &die.raw->type->forms[rawIter->second]));
 }
 
-DIEAttributes::const_iterator
-DIEAttributes::begin() const {
+DIE::Attributes::const_iterator
+DIE::Attributes::begin() const {
     return const_iterator(die, die.raw->type->attrName2Idx.begin());
 }
 
-DIEAttributes::const_iterator
-DIEAttributes::end() const {
+DIE::Attributes::const_iterator
+DIE::Attributes::end() const {
     return const_iterator(die, die.raw->type->attrName2Idx.end());
 }
 
-const Value &Attribute::value() const {
-    return dieref.raw->values.at(formp - &dieref.raw->type->forms[0]);
+const DIE::Attribute::Value &DIE::Attribute::value() const {
+    return die.raw->values.at(formp - &die.raw->type->forms[0]);
 }
 
 Tag DIE::tag() const {

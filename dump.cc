@@ -388,7 +388,7 @@ operator << (std::ostream &os, const JSON<EntryReference> &jer)
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<Dwarf::Attribute> &o)
+operator << (std::ostream &os, const JSON<Dwarf::DIE::Attribute> &o)
 {
     using namespace Dwarf;
     auto &attr = o.object;

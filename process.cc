@@ -772,12 +772,12 @@ Process::resolveSymbolDetail(const char *name, bool includeDebug,
         if (!match(loaded.first, loaded.second))
            continue;
         auto sym = loaded.second->findDynamicSymbol(name);
-        if (sym)
-           return std::make_tuple(loaded.second, loaded.first, sym.symbol.st_value + loaded.first);
+        if (sym.st_shndx != SHN_UNDEF)
+           return std::make_tuple(loaded.second, loaded.first, sym.st_value + loaded.first);
         if (includeDebug) {
            auto sym = loaded.second->findDebugSymbol(name);
-           if (sym)
-              return std::make_tuple(loaded.second, loaded.first, sym.symbol.st_value + loaded.first);
+           if (sym.st_shndx != SHN_UNDEF)
+              return std::make_tuple(loaded.second, loaded.first, sym.st_value + loaded.first);
         }
     }
     throw (Exception() << "symbol " << name << " not found");

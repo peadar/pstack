@@ -28,8 +28,8 @@ public:
 
     ExpressionStack(): isReg(false) {}
     Elf::Addr poptop() { Elf::Addr tos = top(); pop(); return tos; }
-    Elf::Addr eval(const Process &, Dwarf::DWARFReader &r, const StackFrame*, Elf::Addr);
-    Elf::Addr eval(const Process &, const Dwarf::Attribute &, const StackFrame*, Elf::Addr);
+    Elf::Addr eval(const Process &, DWARFReader &r, const StackFrame*, Elf::Addr);
+    Elf::Addr eval(const Process &, const DIE::Attribute &, const StackFrame*, Elf::Addr);
 };
 
 // this works for i386 and x86_64 - might need to change for other archs.
@@ -232,7 +232,6 @@ std::string procname(pid_t pid, const std::string &);
 struct LiveThreadList;
 class LiveProcess : public Process {
     pid_t pid;
-    friend class LiveReader;
 public:
     LiveProcess(Elf::Object::sptr &, pid_t, const PstackOptions &, Dwarf::ImageCache &);
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
@@ -261,9 +260,8 @@ public:
 };
 
 class CoreProcess : public Process {
-    Elf::Object::sptr coreImage;
-    friend class CoreReader;
 public:
+    Elf::Object::sptr coreImage;
     CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core, const PstackOptions &, Dwarf::ImageCache &);
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
     virtual void stop(lwpid_t) override;

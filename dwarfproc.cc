@@ -93,15 +93,15 @@ operator <<( std::ostream &os, DW_LLE lle) {
  * Evaluate an expression specified by an exprloc, or as inferred by a location list
  */
 Elf::Addr
-ExpressionStack::eval(const Process &proc, const Attribute &attr,
+ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                       const StackFrame *frame, Elf::Addr reloc)
 {
-    Unit::sptr unit = attr.die().getUnit();
+    Unit::sptr unit = attr.die.getUnit();
     const Info *dwarf = unit->dwarf;
     auto ip = frame->scopeIP();
 
     const auto &unitEntry = unit->root();
-    Attribute unitLow = unitEntry.attribute(DW_AT_low_pc);
+    auto unitLow = unitEntry.attribute(DW_AT_low_pc);
 
     // default base address is relocation of the object + base of unit.
     uint64_t base = reloc + uintmax_t(unitLow);

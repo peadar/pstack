@@ -121,7 +121,7 @@ Info::offsetToDIE(Elf::Off offset) const
     }
 
     int i = 0;
-    for (UnitIterator start(this, uOffset), end; start != end; ++start, ++i) {
+    for (Units::iterator start(this, uOffset), end; start != end; ++start, ++i) {
         const auto &u = *start;
         if (u->end > offset) {
             // this is the first unit that ends after our required offset -
@@ -146,7 +146,7 @@ Info::offsetToDIE(Elf::Off offset) const
     throw Exception() << "DIE not found";
 }
 
-Units
+Info::Units
 Info::getUnits() const
 {
     return Units(shared_from_this());

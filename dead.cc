@@ -34,7 +34,8 @@ static size_t
 readFromHdr(const Elf::Object &obj, const Elf::Phdr *hdr, Elf::Off addr,
             char *ptr, Elf::Off size, Elf::Off *toClear)
 {
-    Elf::Off rv, off = addr - hdr->p_vaddr; // offset in header of our ptr.
+    Elf::Off rv;
+    Elf::Off off = addr - hdr->p_vaddr; // offset in header of our ptr.
     if (off < hdr->p_filesz) {
         // some of the data is in the file: read min of what we need and // that.
         Elf::Off fileSize = std::min(hdr->p_filesz - off, size);
@@ -162,7 +163,7 @@ CoreProcess::findLWPs()
 std::vector<AddressRange>
 CoreProcess::addressSpace() const {
     std::vector<AddressRange> rv;
-    for (auto &hdr : coreImage->getSegments(PT_LOAD))
+    for (const auto &hdr : coreImage->getSegments(PT_LOAD))
         rv.emplace_back(hdr.p_vaddr, hdr.p_filesz, hdr.p_memsz);
     return rv;
 }
@@ -187,8 +188,7 @@ CoreProcess::loadSharedObjectsFromFileNote()
     for (auto note : coreImage->notes) {
         if (note.name() == "CORE" && note.type() == NT_FILE) {
             auto data = note.data();
-            FileNoteHeader header;
-            data->readObj(0, &header);
+            auto header = data->readObj<FileNoteHeader>(0);
             Elf::Off stroff = 0;
             auto entries = std::make_shared<OffsetReader>(data, sizeof header, header.count * sizeof (FileEntry));
             auto fileNames = std::make_shared<OffsetReader>(data, sizeof header + header.count * sizeof (FileEntry));

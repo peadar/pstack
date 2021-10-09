@@ -138,11 +138,11 @@ getInterpHead<2>(const Process &proc) {
         auto image = o.second;
         auto syms = image->debugSymbols();
         for (auto sym : *syms) {
-            if (sym.name.substr(0, 11) != "interp_head")
+            if (syms->name(sym).substr(0, 11) != "interp_head")
                 continue;
             auto libpython = o.second;
             auto libpythonAddr = o.first;
-            auto interpHead = libpythonAddr + sym.symbol.st_value;
+            auto interpHead = libpythonAddr + sym.st_value;
             if (verbose)
                 *debug << "python2 library is " << *libpython->io << std::endl;
             return std::make_tuple(libpython, libpythonAddr, interpHead);

@@ -133,7 +133,7 @@ target_link_libraries(${PSTACK_BIN} dwelf procman)
 target_link_libraries(canal dwelf procman)
 
 if (TIDY)
-set (CLANG_TIDY "clang-tidy;-checks=*,-*readability-braces-around-statements,-fuchsia*,-hicpp-braces-around-statements")
+set (CLANG_TIDY "clang-tidy;-checks=*,-*readability-braces-around-statements,-fuchsia*,-hicpp-braces-around-statements,-*llvmlibc*")
 set_target_properties(canal PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
 set_target_properties(${PSTACK_BIN} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
 set_target_properties(dwelf PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")

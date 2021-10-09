@@ -278,7 +278,7 @@ OffsetReader::OffsetReader(Reader::csptr upstream_, Off offset_, Off length_)
 }
 
 size_t
-OffsetReader:: read(Off off, size_t count, char *ptr) const {
+OffsetReader::read(Off off, size_t count, char *ptr) const {
     if (off > length)
        throw Exception() << "read past end of object " << *this;
     if (off + Off(count) > length)

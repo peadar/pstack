@@ -25,6 +25,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
     , version(r.getu16())
     , id{}
 {
+    allEntries.max_load_factor(0.5);
     if (version <= 2) // DWARF Version 2 uses the architecture's address size.
        dwarfLen = ELF_BYTES;
     if (version >= 5) {
@@ -62,13 +63,17 @@ Unit::Unit(const Info *di, DWARFReader &r)
  * DIE tree to do so if we don't know parent's offset when requested.
  */
 
-std::shared_ptr<RawDIE>
+std::shared_ptr<DIE::Raw>
 Unit::offsetToRawDIE(const DIE &parent, Elf::Off offset) {
     if (offset == 0 || offset < this->offset || offset >= this->end)
         return nullptr;
+
     auto &rawptr = allEntries[offset];
-    if (rawptr == nullptr)
+    if (rawptr == nullptr) {
         rawptr = DIE::decode(this, parent, offset);
+        // this may still be null, and occupy space in the hash table, but
+        // it's harmless, and cheaper than removing the entry.
+    }
     return rawptr;
 }
 
@@ -89,7 +94,7 @@ DIE Unit::root() {
    return offsetToDIE(DIE(), rootOffset);
 }
 
-   std::string
+std::string
 Unit::name()
 {
     return root().name();
@@ -98,28 +103,17 @@ Unit::name()
 const Macros *
 Unit::getMacros()
 {
-    const DIE &root_ = root();
-    if (macros != nullptr)
-        return macros.get();
-
-    Attribute a = root_.attribute(DW_AT_GNU_macros);
-    if (a.valid()) {
-        macros = std::make_unique<Macros>(*dwarf, intmax_t(a), 5);
-        return macros.get();
+    if (macros == nullptr) {
+       const DIE &root_ = root();
+       for (auto i : { DW_AT_GNU_macros, DW_AT_macros, DW_AT_macro_info }) {
+          auto a = root_.attribute(i);
+          if (a.valid()) {
+              macros = std::make_unique<Macros>(*dwarf, intmax_t(a), i == DW_AT_macro_info ? 4 : 5);
+              return macros.get();
+          }
+       }
     }
-
-    a = root_.attribute(DW_AT_macros);
-    if (a.valid()) {
-        macros = std::make_unique<Macros>(*dwarf, intmax_t(a), 5);
-        return macros.get();
-    }
-
-    a = root_.attribute(DW_AT_macro_info);
-    if (a.valid()) {
-        macros = std::make_unique<Macros>(*dwarf, intmax_t(a), 4);
-        return macros.get();
-    }
-    return nullptr;
+    return macros.get();
 }
 
 bool

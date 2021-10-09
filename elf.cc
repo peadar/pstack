@@ -38,16 +38,55 @@ GlobalDebugDirectories::add(const string &str)
    dirs.push_back(str);
 }
 
-NoteIter
+Notes::iterator
 Notes::begin() const
 {
-   return NoteIter(object, true);
+   return iterator(object, true);
 }
 
-NoteIter
+Notes::iterator
 Notes::end() const
 {
-   return NoteIter(object, false);
+   return iterator(object, false);
+}
+
+Notes::iterator::iterator(Object *object_, bool begin)
+    : object(object_)
+    , phdrs(object_->getSegments(PT_NOTE))
+    , offset(0)
+{
+    phdrsi = begin ? phdrs.begin() : phdrs.end();
+    if (phdrsi != phdrs.end()) {
+        startSection();
+        readNote();
+    }
+}
+
+void Notes::iterator::startSection() {
+    offset = 0;
+    io = std::make_shared<OffsetReader>(object->io,
+          Off(phdrsi->p_offset),
+          Off(phdrsi->p_filesz));
+}
+
+Notes::iterator &Notes::iterator::operator++()
+{
+     auto newOff = offset;
+     newOff += sizeof curNote + curNote.n_namesz;
+     newOff = roundup2(newOff, 4);
+     newOff += curNote.n_descsz;
+     newOff = roundup2(newOff, 4);
+     if (newOff >= phdrsi->p_filesz) {
+         if (++phdrsi == phdrs.end()) {
+             offset = 0;
+             return *this;
+         }
+         startSection();
+     } else {
+         offset = newOff;
+     }
+     readNote();
+     return *this;
 }
 
 string
@@ -59,21 +98,23 @@ NoteDesc::name() const
 Reader::csptr
 NoteDesc::data() const
 {
-   return make_shared<OffsetReader>(io, sizeof note + roundup2(note.n_namesz, 4), note.n_descsz);
+   return make_shared<OffsetReader>(io, sizeof note + roundup2(note.n_namesz, 4),
+                                    note.n_descsz);
 }
 
 template <>
-NamedSymbol
-SymbolIterator<NamedSymbol>::operator *()
+Sym
+SymbolSection<Sym>::iterator::operator *()
 {
-    return NamedSymbol(sec->symbols->readObj<Sym>(idx * sizeof(Sym)), sec->strings);
+    return sec->symbols->readObj<Sym>(idx * sizeof(Sym));
 }
 
 template <>
 VersionedSymbol
-SymbolIterator<VersionedSymbol>::operator *()
+SymbolSection<VersionedSymbol>::iterator::operator *()
 {
-    return VersionedSymbol(sec->symbols->readObj<Sym>(idx * sizeof(Sym)), sec->strings, *sec->elf->gnu_version, idx);
+    return VersionedSymbol(sec->symbols->readObj<Sym>(idx * sizeof(Sym)),
+                           *sec->elf->gnu_version, idx);
 }
 
 Elf::Addr
@@ -115,14 +156,14 @@ GnuHash::findSymbol(const char *name) const {
     if ((bloomword & mask) != mask) {
        if (verbose >= 2)
           *debug << "failed to find '" << name << "' bloom filter missed\n";
-       return std::make_pair(0, Sym());
+       return std::make_pair(0, undef());
     }
 
     auto idx = hash->readObj<uint32_t>(bucketoff(symhash % header.nbuckets));
     if (idx < header.symoffset) {
         if (verbose >= 2)
             *debug << "failed to find '" << name << "' bad index in hash table\n";
-        return std::make_pair(0, Sym());
+        return std::make_pair(0, undef());
     }
     for (;;) {
         auto sym = syms->readObj<Sym>(idx * sizeof (Sym));
@@ -137,7 +178,7 @@ GnuHash::findSymbol(const char *name) const {
         if (chainhash & 1) {
            if (verbose >= 2)
                *debug << "failed to find '" << name << "' hit end of hash chain\n";
-           return std::make_pair(0, Sym());
+           return std::make_pair(0, undef());
         }
         ++idx;
     }
@@ -174,7 +215,7 @@ Object::hash()
     return hash_.get();
 }
 
-SymbolSection<NamedSymbol> *Object::debugSymbols() {
+SymbolSection<Sym> *Object::debugSymbols() {
     return getSymtab(debugSymbols_, ".symtab", SHT_SYMTAB);
 }
 
@@ -360,8 +401,7 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
     bool haveExactZeroSizeMatch = false;
 
     auto findSym = [type, addr, this, &sym, &name, &haveExactZeroSizeMatch ](auto &table) {
-        for (const auto &syminfo : table) {
-            auto &candidate = syminfo.symbol;
+        for (const auto &candidate : table) {
             if (candidate.st_shndx >= sectionHeaders.size())
                 continue;
             if (type != STT_NOTYPE && ELF_ST_TYPE(candidate.st_info) != type)
@@ -371,7 +411,7 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
             if (candidate.st_size + candidate.st_value <= addr) {
                 if (candidate.st_size == 0 && candidate.st_value == addr) {
                     sym = candidate;
-                    name = syminfo.name;
+                    name = table.name(candidate);
                     haveExactZeroSizeMatch = true;
                 }
                 continue;
@@ -380,7 +420,7 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
             if ((sec.shdr.sh_flags & SHF_ALLOC) == 0)
                 continue;
             sym = candidate;
-            name = syminfo.name;
+            name = table.name(candidate);
             return true;
         }
         return false;
@@ -466,19 +506,19 @@ Object::findDynamicSymbol(const std::string &name)
 
     std::tie(idx, sym) = gnu_hash() ? gnu_hash()->findSymbol(name)
              : hash() ? hash()->findSymbol(name)
-             : std::make_pair(uint32_t(0), Sym());
+             : std::make_pair(uint32_t(0), undef());
 
     if (idx == 0)
         return VersionedSymbol();
 
     // We found a symbol in our hash table. Find its version if we can.
-    return VersionedSymbol(sym, name, *gnu_version, idx);
+    return VersionedSymbol(sym, *gnu_version, idx);
 }
 
 // XXX: if we're doing name lookups on symbols, consider caching them all in a
 // hash table, rather than doing linear scans for each symbol we haven't
 // looked-up yet.
-NamedSymbol
+Sym
 Object::findDebugSymbol(const string &name)
 {
     auto &syment = cachedSymbols[name];
@@ -486,7 +526,7 @@ Object::findDebugSymbol(const string &name)
         auto found = debugSymbols()->linearSearch(name, syment.sym);
         syment.disposition = found ? CachedSymbol::SYM_FOUND : CachedSymbol::SYM_NOTFOUND;
     }
-    return syment.disposition == CachedSymbol::SYM_FOUND ? NamedSymbol(syment.sym, name) : NamedSymbol();
+    return syment.disposition == CachedSymbol::SYM_FOUND ? syment.sym : undef();
 }
 
 Object::~Object() = default;
@@ -609,11 +649,11 @@ Object::sectionReader(const char *name, const char *compressedName, const Elf::S
 
 
 template <typename Symtype> bool
-SymbolSection<Symtype>::linearSearch(const string &name, Sym &sym) const
+SymbolSection<Symtype>::linearSearch(const string &desiredName, Sym &sym) const
 {
     for (const auto &info : *this) {
-        if (name == info.name) {
-            sym = info.symbol;
+        if (desiredName == name(info)) {
+            sym = info;
             return true;
         }
     }
@@ -646,7 +686,7 @@ SymHash::findSymbol(const string &name)
         if (candidateName == name)
             return std::make_pair(i, candidate);
     }
-    return std::make_pair(0, Sym());
+    return std::make_pair(0, undef());
 }
 
 /*
@@ -759,9 +799,24 @@ ImageCache::flush(Object::sptr o)
    }
 }
 
-VersionedSymbol::VersionedSymbol(const Sym &sym_, const std::string &name_, const Section &versionInfo, size_t idx)
-    : NamedSymbol(sym_, name_)
+VersionedSymbol::VersionedSymbol(const Sym &sym_, const Section &versionInfo, size_t idx)
+    : Sym(sym_)
     , versionIdx(versionInfo ? versionInfo.io->readObj<Half>(idx * sizeof (Half)) : -1)
 { }
+
+namespace {
+struct Undef {
+    Sym undefSym;
+    Undef() {
+        memset(&undefSym, 0, sizeof undefSym);
+        undefSym.st_shndx = SHN_UNDEF;
+    }
+};
+static Undef theUndef;
+}
+
+const Sym &undef() {
+    return theUndef.undefSym;
+}
 
 }

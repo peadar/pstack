@@ -199,10 +199,9 @@ template <int PyV> class FramePrinter : public PythonTypePrinter<PyV> {
             auto file = readString<PyV>(*pc->proc.io, Elf::Addr(code.co_filename));
 
             pc->os << pc->prefix() << func;
-            
-            if (pc->options.flags[PstackOptions::doargs]) {
+
+            if (pc->options.flags[PstackOptions::doargs])
                 printArguments<PyV>(pc, pyo, remoteAddr);
-            }
 
             pc->os << " in " << file << ":" << lineNo << std::endl;
 
@@ -312,9 +311,9 @@ PythonPrinter<PyV>::PythonPrinter(Process &proc_, std::ostream &os_, const Pstac
         if (ps->type() == nullptr)
             continue; // heapPrinter is used specially.
         auto sym = libpython->findDynamicSymbol(ps->type());
-        if (!sym)
+        if (sym.st_shndx == SHN_UNDEF)
             throw Exception() << "failed to find python symbol " << ps->type();
-        printers[(const _typeobject *)(libpythonAddr + sym.symbol.st_value)] = ps;
+        printers[(const _typeobject *)(libpythonAddr + sym.st_value)] = ps;
     }
 }
 

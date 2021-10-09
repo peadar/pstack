@@ -17,19 +17,12 @@ namespace Dwarf {
 
 enum HasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
 
-class Attribute;
-class DIE;
-class DIEIter;
 class DWARFReader;
-class ExpressionStack;
 class Info;
 class LineInfo;
-class RawDIE;
 class Unit;
 struct CFI;
 struct CIE;
-
-typedef std::vector<size_t> Entries;
 
 #define DWARF_TAG(a,b) a = b,
 enum Tag {
@@ -71,6 +64,7 @@ namespace std {
       size_t operator() (Dwarf::AttrName name) const { return size_t(name); }
    };
 }
+
 namespace Dwarf {
 #undef DWARF_ATTR
 
@@ -139,91 +133,92 @@ struct Block {
    Elf::Off length;
 };
 
-// A generic value.
-union Value {
-    uintmax_t addr;
-    uintmax_t signature;
-    uintmax_t udata;
-    intmax_t sdata;
-    Block *block;
-    bool flag;
-};
-
-// Iterable object for children of a DIE - as returned by DIE::children
-class DIEChildren {
-    const DIE &parent;
-public:
-    DIEChildren(const DIE &parent_) : parent(parent_) {}
-    DIEIter begin() const;
-    DIEIter end() const;
-    using const_iterator = DIEIter;
-    using value_type = DIE;
-};
-
-// A collection of attributes for a DIE, as returned by DIE::attributes
-class DIEAttributes {
-    const DIE &die;
-public:
-    using value_type = std::pair<AttrName, Attribute>;
-    using mapped_type = Attribute;
-    using key_type = AttrName;
-    struct const_iterator {
-        const DIE &die;
-        Abbreviation::AttrNameMap::const_iterator rawIter;
-        std::pair<AttrName, Attribute> operator *() const;
-        const_iterator &operator++() {
-            ++rawIter;
-            return *this;
-        }
-        const_iterator(const DIE &die_, Abbreviation::AttrNameMap::const_iterator rawIter_) : 
-            die(die_), rawIter(rawIter_) {}
-        bool operator == (const const_iterator &rhs) const {
-            return rawIter == rhs.rawIter;
-        }
-        bool operator != (const const_iterator &rhs) const {
-            return rawIter != rhs.rawIter;
-        }
-    };
-    const_iterator begin() const;
-    const_iterator end() const;
-    DIEAttributes(const DIE &die) : die(die) {}
-};
-
 enum class ContainsAddr { YES, NO, UNKNOWN };
 
 // An abstract "DIE" -
 // A die exists in a tree within a unit. A die can be the rooot of a unit's tree, or
 // a child, and may have children itself. "DIE" allows us access to this information.
 //
-// The abstract "DIE" wraps a "RawDIE" which is the raw data stored for that DIE
+// The abstract "DIE" wraps a "DIE::Raw" which is the raw data stored for that DIE
 // in the debug_info section. The DIE augments it with references to its parent,
 // unit, etc. (We are pasimonious with what we store with the raw DIE, as there can be
 // a lot of them. "DIE" objects are not stored within the library, so are mostly
 // temporary unless the API consumer keeps hold of them.
-
 class DIE {
 
-    friend DIEIter;
-    friend Attribute;
-    friend DIEAttributes;
+    // DIEs are only constructed by units: hide constructors from everyone else.
     friend Unit;
 
     Elf::Off offset;
-    std::shared_ptr<RawDIE> raw;
+    class Raw;
+
+    std::shared_ptr<Raw> raw;
     std::shared_ptr<Unit> unit;
 
-    // Decode the raw DIE Content at the given offset within the .debug_info
-    // section for a particular unit.
-    static std::shared_ptr<RawDIE> decode(Unit *unit, const DIE &parent, Elf::Off offset);
-
-    // construct a DIE from its RawDIE, unit, and offset.
-    DIE(const std::shared_ptr<Unit> &unit, size_t offset_, const std::shared_ptr<RawDIE> &raw)
+    // construct a DIE from its "Raw" DIE, unit, and offset.
+    DIE(const std::shared_ptr<Unit> &unit, size_t offset_, const std::shared_ptr<Raw> &raw)
         : offset(offset_)
         , raw(raw)
         , unit(unit)
         {}
 
+    // Decode the raw DIE Content at the given offset within the .debug_info
+    // section for a particular unit.
+    static std::shared_ptr<Raw> decode(Unit *unit, const DIE &parent, Elf::Off offset);
+
+    // Return the first child of this DIE (used by iterator implementation)
+    DIE firstChild() const;
+
+    // Return the next sibling of this DIE (used by iterator implementation
+    DIE nextSibling(const DIE &parent) const;
+
+
 public:
+    // An attribute of a DIE.
+    class Attribute;
+
+    // A collection of attributes for a DIE, as returned by DIE::attributes
+    class Attributes {
+        const DIE &die;
+    public:
+        using value_type = std::pair<AttrName, Attribute>;
+        using mapped_type = Attribute;
+        using key_type = AttrName;
+        struct const_iterator {
+            const DIE &die;
+            Abbreviation::AttrNameMap::const_iterator rawIter;
+            std::pair<AttrName, Attribute> operator *() const;
+            const_iterator &operator++() {
+                ++rawIter;
+                return *this;
+            }
+            const_iterator(const DIE &die_, Abbreviation::AttrNameMap::const_iterator rawIter_) : 
+                die(die_), rawIter(rawIter_) {}
+            bool operator == (const const_iterator &rhs) const {
+                return rawIter == rhs.rawIter;
+            }
+            bool operator != (const const_iterator &rhs) const {
+                return rawIter != rhs.rawIter;
+            }
+        };
+        const_iterator begin() const;
+        const_iterator end() const;
+        Attributes(const DIE &die) : die(die) {}
+    };
+
+
+    // Iterable object for children of a DIE - as returned by children()
+    class Children {
+        const DIE &parent;
+    public:
+        class const_iterator;
+        Children(const DIE &parent_) : parent(parent_) {}
+        const_iterator begin() const;
+        const_iterator end() const;
+        using value_type = DIE;
+    };
+
+
 
     // Indicate if the passed DIE contains code covering the passed address.
     // The result can be yes, no, or unknown.
@@ -251,7 +246,7 @@ public:
     Attribute attribute(AttrName name, bool local = false) const;
 
     std::string name() const;
-    DIEAttributes attributes() const { return DIEAttributes(*this); }
+    Attributes attributes() const { return Attributes(*this); }
 
     // Get the DIE's type tag.
     Tag tag() const;
@@ -259,14 +254,8 @@ public:
     // Indicate if this DIE has any children.
     bool hasChildren() const;
 
-    // Return the first child of this DIE.
-    DIE firstChild() const;
-
-    // Return the next sibling of this DIE.
-    DIE nextSibling(const DIE &parent) const;
-
     // Get an iterator for all the children of this DIE.
-    DIEChildren children() const { return DIEChildren(*this); }
+    Children children() const { return Children(*this); }
 
     // Find the DIE covering a particular code address. If "skipInitial" is
     // false, then this DIE itself is not considered, only its decendents.  The
@@ -293,34 +282,6 @@ public:
 // miss on the aranges lookup does not mean there is no CU associated with the
 // address, so we may augment this with our own manual scan of each unit.
 using ARanges = std::map<Elf::Addr, std::pair<Elf::Addr, Elf::Off>>;
-
-// An attribute within a DIE. A value that you can convert to one of a number
-// of abstract types. The "form" provides information about the type.  We just
-// sotre the DIE and the form entry for the attribute. The underlying data is
-// retained in the raw DIE.
-class Attribute {
-    DIE dieref;
-    const FormEntry *formp; /* From abbrev table attached to type */
-    Value &value();
-public:
-    const DIE &die() const { return dieref; }
-    const Value &value() const;
-    Form form() const { return formp->form; }
-    Attribute(const DIE &dieref_, const FormEntry *formp_)
-       : dieref{dieref_}, formp{formp_} {}
-    Attribute() : formp(nullptr) {}
-    ~Attribute() { }
-
-    bool valid() const { return formp != nullptr; }
-    explicit operator std::string() const;
-    explicit operator intmax_t() const;
-    explicit operator uintmax_t() const;
-    explicit operator bool() const { return valid() && value().flag; }
-    explicit operator DIE() const;
-    explicit operator const Block &() const { return *value().block; }
-    explicit operator const Ranges &() const;
-    AttrName name() const;
-};
 
 // .eh_frame and .debug_frame have subtly different internals, but are almost
 // identical For when we need to discriminate, this is what we use.
@@ -401,12 +362,12 @@ class Unit : public std::enable_shared_from_this<Unit> {
     //
     // Offsets here are relative to the debug_info section, rather than
     // the unit - this makes the offsets unique within the Info.
-    using AllEntries = std::unordered_map<Elf::Off, std::shared_ptr<RawDIE>>;
+    using AllEntries = std::unordered_map<Elf::Off, std::shared_ptr<DIE::Raw>>;
 
     Unit() = delete;
     Unit(const Unit &) = delete;
 
-    std::shared_ptr<RawDIE> offsetToRawDIE(const DIE &parent, Elf::Off offset);
+    std::shared_ptr<DIE::Raw> offsetToRawDIE(const DIE &parent, Elf::Off offset);
     // Used to ensure abbreviations and other potentially expensive data is
     // parsed. Internals will call this to undo a "purge()"
     void load();
@@ -443,12 +404,13 @@ public:
     Unit(const Info *, DWARFReader &);
     ~Unit();
 
-    void purge(); // Remove all RawDIEs from allEntries, potentially freeing memory.
+    void purge(); // Remove all "raw" DIEs from allEntries, potentially freeing memory.
 
     // Is a given DIE the root for this unit?
     bool isRoot(const DIE &die) { return die.getOffset() == rootOffset; }
 
-    DIE root(); // Get the root DIE for this unit
+    // Get the root DIE for this unit
+    DIE root();
 
     // Given a (debug_info-relative) offset, return the DIE at that offset in this
     // unit. To convert from unit-relative offset, just subtract the unit's offset.
@@ -462,42 +424,6 @@ public:
 
     bool sourceFromAddr(Elf::Addr addr, std::vector<std::pair<std::string, int>> &info);
     const Abbreviation *findAbbreviation(size_t) const;
-};
-
-class UnitIterator {
-    const Info *info;
-    Unit::sptr currentUnit;
-    bool atend() const;
-public:
-    using iterator_category = std::forward_iterator_tag;
-    using value_type = Unit::sptr;
-    using difference_type = int;
-    using pointer = Unit::sptr *;
-    using reference = Unit::sptr &;
-    Unit::sptr operator *() { return currentUnit; }
-    UnitIterator operator ++();
-    bool operator == (const UnitIterator &rhs) const {
-        if (atend() || rhs.atend())
-            return atend() == rhs.atend();
-        return info == rhs.info && currentUnit->offset == rhs.currentUnit->offset;
-    }
-    bool operator != (const UnitIterator &rhs) const {
-        return !(*this == rhs);
-    }
-    UnitIterator(const Info *info_, Elf::Off offset);
-    UnitIterator() : info(nullptr), currentUnit(nullptr) {}
-};
-
-// Iterates over all units in an object. Existing units will be returned from the
-// cache, and new units will be decoded and added.
-struct Units {
-    using value_type = Unit::sptr;
-    using iterator = UnitIterator;
-    using const_iterator = UnitIterator;
-    const std::shared_ptr<const Info> info;
-    UnitIterator begin() const;
-    UnitIterator end() const { return iterator(); }
-    Units(const std::shared_ptr<const Info> &info_) : info(info_) {}
 };
 
 // A frame-descriptor-entry describes the details of how to unwind the stack
@@ -523,6 +449,8 @@ enum RegisterType {
     ARCH
 };
 
+// A regiser unwind indicates how to restore the state of a register in the
+// calling frame
 struct RegisterUnwind {
     enum RegisterType type;
     union {
@@ -534,6 +462,9 @@ struct RegisterUnwind {
     } u;
 };
 
+// A "CallFrame" represents the unwind information for a particular address -
+// it is the result of execting the location instructions in the FDE and CIE
+// to a specific address.
 struct CallFrame {
     std::map<int, RegisterUnwind> registers;
     int cfaReg;
@@ -542,6 +473,8 @@ struct CallFrame {
     // default copy constructor is valid.
 };
 
+// A CIE is a Common Information Entry, describing attributes of code and some
+// initial location instructions potentially shared by multiple FDEs
 struct CIE {
     const CFI *frameInfo;
     uint8_t version;
@@ -593,6 +526,40 @@ public:
     using sptr = std::shared_ptr<Info>;
     using csptr = std::shared_ptr<const Info>;
 
+    // Iterates over all units in an object. Existing units will be returned from the
+    // cache, and new units will be decoded and added.
+    struct Units {
+        class iterator {
+            const Info *info;
+            Unit::sptr currentUnit;
+            bool atend() const;
+        public:
+            using iterator_category = std::forward_iterator_tag;
+            using value_type = Unit::sptr;
+            using difference_type = int;
+            using pointer = Unit::sptr *;
+            using reference = Unit::sptr &;
+            Unit::sptr operator *() { return currentUnit; }
+            iterator operator ++();
+            bool operator == (const iterator &rhs) const {
+                if (atend() || rhs.atend())
+                    return atend() == rhs.atend();
+                return info == rhs.info && currentUnit->offset == rhs.currentUnit->offset;
+            }
+            bool operator != (const iterator &rhs) const {
+                return !(*this == rhs);
+            }
+            iterator(const Info *info_, Elf::Off offset);
+            iterator() : info(nullptr), currentUnit(nullptr) {}
+        };
+        using value_type = Unit::sptr;
+        using const_iterator = iterator;
+        const std::shared_ptr<const Info> info;
+        iterator begin() const;
+        iterator end() const { return iterator(); }
+        Units(const std::shared_ptr<const Info> &info_) : info(info_) {}
+    };
+
     Info(Elf::Object::sptr, ImageCache &);
     ~Info();
 
@@ -614,7 +581,12 @@ public:
     // Find the unit covering a given (object-relative) text address.
     // Will use debug_aranges where possible.
     Unit::sptr lookupUnit(Elf::Addr addr) const;
+
+    // Find the source associated with a specific address. Due to inlining and
+    // optimization, there may be more than one functions for the specific
+    // address.
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
+
     LineInfo *linesAt(intmax_t, Unit &) const;
 
     // The ELF object this DWARF data is associated with
@@ -679,19 +651,57 @@ public:
     ~ImageCache();
 };
 
-/* Iterator for direct children of a parent DIE, as returned by DIEChildren::begin() */
-class DIEIter {
+// An attribute within a DIE. A value that you can convert to one of a number
+// of abstract types. The "form" provides information about the type.  We just
+// sotre the DIE and the form entry for the attribute. The underlying data is
+// retained in the raw DIE.
+class DIE::Attribute {
+    friend class DIE::Raw;
+    // A generic value.
+    union Value {
+        Value(DWARFReader &, const FormEntry &form, Value &value, Unit *);
+        uintmax_t addr;
+        uintmax_t signature;
+        uintmax_t udata;
+        intmax_t sdata;
+        Block *block;
+        bool flag;
+    };
+public:
+    const Value &value() const;
+    Form form() const { return formp->form; }
+    Attribute(const DIE &dieref_, const FormEntry *formp_)
+       : die{dieref_}, formp{formp_} {}
+    Attribute() : die(), formp(nullptr) {}
+    ~Attribute() = default;
+
+    bool valid() const { return formp != nullptr; }
+    explicit operator std::string() const;
+    explicit operator intmax_t() const;
+    explicit operator uintmax_t() const;
+    explicit operator bool() const { return valid() && value().flag; }
+    explicit operator DIE() const;
+    explicit operator const Block &() const { return *value().block; }
+    explicit operator const Ranges &() const;
+    AttrName name() const;
+    const DIE die;
+
+private:
+    const FormEntry *formp; /* From abbrev table attached to type */
+    Value &value();
+};
+
+/* Iterator for direct children of a parent DIE, as returned by DIE::Children::begin() */
+class DIE::Children::const_iterator {
+    friend DIE::Children;
     const std::shared_ptr<const Unit> u;
     const DIE parent;
     DIE currentDIE;
-    DIEIter(const DIE &first, const DIE & parent_);
-    friend DIEChildren;
+    const_iterator(const DIE &first, const DIE & parent_);
 public:
     const DIE &operator *() const { return currentDIE; }
-
-    DIEIter &operator++();
-
-    bool operator == (const DIEIter &rhs) const {
+    const_iterator &operator++();
+    bool operator == (const const_iterator &rhs) const {
         if (!currentDIE)
             return !rhs.currentDIE;
         if (!rhs.currentDIE)
@@ -699,9 +709,7 @@ public:
         return currentDIE.unit == rhs.currentDIE.unit &&
             currentDIE.getOffset() == rhs.currentDIE.getOffset();
     }
-    bool operator != (const DIEIter &rhs) const {
-        return !(*this == rhs);
-    }
+    bool operator != (const const_iterator &rhs) const { return !(*this == rhs); }
 };
 
 enum CFAInstruction {
@@ -848,7 +856,7 @@ struct MacroVisitor {
 };
 
 inline
-UnitIterator UnitIterator::operator ++() {
+Info::Units::iterator Info::Units::iterator::operator ++() {
     currentUnit = currentUnit->end == info->debugInfo->size()
         ? nullptr
         : info->getUnit( currentUnit->end );
@@ -856,17 +864,17 @@ UnitIterator UnitIterator::operator ++() {
 }
 
 inline
-UnitIterator Units::begin() const {
+Info::Units::iterator Info::Units::begin() const {
     return info->debugInfo ? iterator(info.get(), 0) : iterator();
 }
 
 inline bool
-UnitIterator::atend() const {
+Info::Units::iterator::atend() const {
     return currentUnit == nullptr;
 }
 
 inline
-UnitIterator::UnitIterator(const Info *info_, Elf::Off offset)
+Info::Units::iterator::iterator(const Info *info_, Elf::Off offset)
     : info(info_), currentUnit(info->getUnit(offset)) {}
 
 #define DWARF_OP(op, value, args) op = value,
@@ -876,21 +884,14 @@ enum ExpressionOp {
 };
 #undef DWARF_OP
 
-#define DW_EH_PE_absptr 0x00
-#define DW_EH_PE_uleb128        0x01
-#define DW_EH_PE_udata2 0x02
-#define DW_EH_PE_udata4 0x03
-#define DW_EH_PE_udata8 0x04
-#define DW_EH_PE_sleb128        0x09
-#define DW_EH_PE_sdata2 0x0A
-#define DW_EH_PE_sdata4 0x0B
-#define DW_EH_PE_sdata8 0x0C
-#define DW_EH_PE_pcrel  0x10
-#define DW_EH_PE_textrel        0x20
-#define DW_EH_PE_datarel        0x30
-#define DW_EH_PE_funcrel        0x40
-#define DW_EH_PE_aligned        0x50
+#define DWARF_EH_PE(op, value) op = value,
+enum ExceptionHandlingEncoding {
+#include "libpstack/dwarf/ehpe.h"
+    DW_EH_PE_max
+};
+#undef DWARF_OP
 }
+
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Info> &);
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Macros> &);
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::UnitType> &);
