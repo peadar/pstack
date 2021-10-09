@@ -362,7 +362,7 @@ class Unit : public std::enable_shared_from_this<Unit> {
     //
     // Offsets here are relative to the debug_info section, rather than
     // the unit - this makes the offsets unique within the Info.
-    using AllEntries = std::unordered_map<Elf::Off, std::shared_ptr<DIE::Raw>>;
+    using AllEntries = std::map<Elf::Off, std::shared_ptr<DIE::Raw>>;
 
     Unit() = delete;
     Unit(const Unit &) = delete;
@@ -659,7 +659,7 @@ class DIE::Attribute {
     friend class DIE::Raw;
     // A generic value.
     union Value {
-        Value(DWARFReader &, const FormEntry &form, Value &value, Unit *);
+        Value(DWARFReader &, const FormEntry &form, Unit *);
         uintmax_t addr;
         uintmax_t signature;
         uintmax_t udata;

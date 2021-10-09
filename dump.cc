@@ -249,8 +249,7 @@ std::ostream &operator << (std::ostream &os, const JSON<Dwarf::LineInfo, C> &jo)
         .field("matrix", lines.matrix);
 }
 
-template <typename C>
-std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIE, C> &jo) {
+std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIE> &jo) {
     auto &entry = jo.object;
     JObject o(os);
 
@@ -369,22 +368,6 @@ operator << (std::ostream &os, const JSON<Dwarf::Block> &b)
     return JObject(os)
         .field("offset", b.object.offset)
         .field("length", b.object.length);
-}
-
-struct EntryReference {
-   const Dwarf::DIE die;
-   explicit EntryReference(const Dwarf::DIE &die) : die(die) {}
-};
-
-std::ostream &
-operator << (std::ostream &os, const JSON<EntryReference> &jer)
-{
-   const auto &e = jer.object.die;
-   return JObject(os)
-      .field("file", stringify(*e.getUnit()->dwarf->elf->io))
-      .field("name", e.name())
-      .field("offset", e.getOffset())
-      ;
 }
 
 std::ostream &

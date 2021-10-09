@@ -144,7 +144,7 @@ emain(int argc, char **argv)
     bool coreOnExit = false;
     bool printAllStacks = false;
 
-    while ((c = getopt(argc, argv, "F:b:d:CD:hjmsVvag:pltz:r:A")) != -1) {
+    while ((c = getopt(argc, argv, "F:b:d:CD:hjmnsVvag:pltz:r:A")) != -1) {
         switch (c) {
         case 'F': {
             const char *sep = strchr(optarg, ':');
@@ -218,6 +218,10 @@ emain(int argc, char **argv)
             break;
         case 'A':
             printAllStacks = true;
+            break;
+
+        case 'n':
+            Elf::noExtDebug = true;
             break;
         case 't':
             options.flags.set(PstackOptions::nothreaddb);

@@ -133,7 +133,7 @@ DIE::Raw::Raw(Unit *unit, DWARFReader &r, size_t abbrev, Elf::Off parent_)
     size_t i = 0;
     values.reserve(type->forms.size());
     for (auto &form : type->forms) {
-        values.emplace_back(r, form, values[i], unit);
+        values.emplace_back(r, form, unit);
         if (int(i) == type->nextSibIdx)
             nextSibling = values[i].sdata + unit->offset;
         ++i;
@@ -147,50 +147,50 @@ DIE::Raw::Raw(Unit *unit, DWARFReader &r, size_t abbrev, Elf::Off parent_)
     }
 }
 
-DIE::Attribute::Value::Value(DWARFReader &r, const FormEntry &forment, DIE::Attribute::Value &value, Unit *unit)
+DIE::Attribute::Value::Value(DWARFReader &r, const FormEntry &forment, Unit *unit)
 {
     switch (forment.form) {
 
     case DW_FORM_GNU_strp_alt: {
-        value.addr = r.getint(unit->dwarfLen);
+        addr = r.getint(unit->dwarfLen);
         break;
     }
 
     case DW_FORM_strp:
     case DW_FORM_line_strp:
-        value.addr = r.getint(unit->version <= 2 ? 4 : unit->dwarfLen);
+        addr = r.getint(unit->version <= 2 ? 4 : unit->dwarfLen);
         break;
 
     case DW_FORM_GNU_ref_alt:
-        value.addr = r.getuint(unit->dwarfLen);
+        addr = r.getuint(unit->dwarfLen);
         break;
 
     case DW_FORM_addr:
-        value.addr = r.getuint(unit->addrlen);
+        addr = r.getuint(unit->addrlen);
         break;
 
     case DW_FORM_data1:
-        value.udata = r.getu8();
+        udata = r.getu8();
         break;
 
     case DW_FORM_data2:
-        value.udata = r.getu16();
+        udata = r.getu16();
         break;
 
     case DW_FORM_data4:
-        value.udata = r.getu32();
+        udata = r.getu32();
         break;
 
     case DW_FORM_data8:
-        value.udata = r.getuint(8);
+        udata = r.getuint(8);
         break;
 
     case DW_FORM_sdata:
-        value.sdata = r.getsleb128();
+        sdata = r.getsleb128();
         break;
 
     case DW_FORM_udata:
-        value.udata = r.getuleb128();
+        udata = r.getuleb128();
         break;
 
     // offsets in various sections...
@@ -199,95 +199,95 @@ DIE::Attribute::Value::Value(DWARFReader &r, const FormEntry &forment, DIE::Attr
     case DW_FORM_rnglistx:
     case DW_FORM_addrx:
     case DW_FORM_ref_udata:
-        value.addr = r.getuleb128();
+        addr = r.getuleb128();
         break;
 
     case DW_FORM_strx1:
     case DW_FORM_addrx1:
     case DW_FORM_ref1:
-        value.addr = r.getu8();
+        addr = r.getu8();
         break;
 
     case DW_FORM_strx2:
     case DW_FORM_ref2:
-        value.addr = r.getu16();
+        addr = r.getu16();
         break;
 
     case DW_FORM_addrx3:
     case DW_FORM_strx3:
-        value.addr = r.getuint(3);
+        addr = r.getuint(3);
         break;
 
     case DW_FORM_strx4:
     case DW_FORM_addrx4:
     case DW_FORM_ref4:
-        value.addr = r.getu32();
+        addr = r.getu32();
         break;
 
     case DW_FORM_ref_addr:
-        value.addr = r.getuint(unit->dwarfLen);
+        addr = r.getuint(unit->dwarfLen);
         break;
 
     case DW_FORM_ref8:
-        value.addr = r.getuint(8);
+        addr = r.getuint(8);
         break;
 
     case DW_FORM_string:
-        value.addr = r.getOffset();
+        addr = r.getOffset();
         r.getstring();
         break;
 
     case DW_FORM_block1:
-        value.block = new Block();
-        value.block->length = r.getu8();
-        value.block->offset = r.getOffset();
-        r.skip(value.block->length);
+        block = new Block();
+        block->length = r.getu8();
+        block->offset = r.getOffset();
+        r.skip(block->length);
         break;
 
     case DW_FORM_block2:
-        value.block = new Block();
-        value.block->length = r.getu16();
-        value.block->offset = r.getOffset();
-        r.skip(value.block->length);
+        block = new Block();
+        block->length = r.getu16();
+        block->offset = r.getOffset();
+        r.skip(block->length);
         break;
 
     case DW_FORM_block4:
-        value.block = new Block();
-        value.block->length = r.getu32();
-        value.block->offset = r.getOffset();
-        r.skip(value.block->length);
+        block = new Block();
+        block->length = r.getu32();
+        block->offset = r.getOffset();
+        r.skip(block->length);
         break;
 
     case DW_FORM_exprloc:
     case DW_FORM_block:
-        value.block = new Block();
-        value.block->length = r.getuleb128();
-        value.block->offset = r.getOffset();
-        r.skip(value.block->length);
+        block = new Block();
+        block->length = r.getuleb128();
+        block->offset = r.getOffset();
+        r.skip(block->length);
         break;
 
     case DW_FORM_flag:
-        value.flag = r.getu8() != 0;
+        flag = r.getu8() != 0;
         break;
 
     case DW_FORM_flag_present:
-        value.flag = true;
+        flag = true;
         break;
 
     case DW_FORM_sec_offset:
-        value.addr = r.getint(unit->dwarfLen);
+        addr = r.getint(unit->dwarfLen);
         break;
 
     case DW_FORM_ref_sig8:
-        value.signature = r.getuint(8);
+        signature = r.getuint(8);
         break;
 
     case DW_FORM_implicit_const:
-        value.sdata = forment.value;
+        sdata = forment.value;
         break;
 
     default:
-        value.addr = 0;
+        addr = 0;
         abort();
         break;
     }

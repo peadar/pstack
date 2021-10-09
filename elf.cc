@@ -25,6 +25,8 @@ using std::make_unique;
 
 static uint32_t elf_hash(const string &text);
 
+bool noExtDebug;
+
 GlobalDebugDirectories globalDebugDirectories;
 GlobalDebugDirectories::GlobalDebugDirectories() throw()
 {
@@ -539,7 +541,7 @@ Object::~Object() = default;
 Object *
 Object::getDebug() const
 {
-    if (debugLoaded)
+    if (debugLoaded || noExtDebug)
         return debugObject.get();
     debugLoaded = true;
 

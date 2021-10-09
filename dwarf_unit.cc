@@ -25,7 +25,6 @@ Unit::Unit(const Info *di, DWARFReader &r)
     , version(r.getu16())
     , id{}
 {
-    allEntries.max_load_factor(0.5);
     if (version <= 2) // DWARF Version 2 uses the architecture's address size.
        dwarfLen = ELF_BYTES;
     if (version >= 5) {

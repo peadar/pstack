@@ -413,6 +413,8 @@ public:
     Object::sptr getDebugImage(const std::string &name);
 };
 
+extern bool noExtDebug; // if set, don't look for exernal ELF info, i.e., usinb debuglink, or buildid.
+
 } // Elf namespace
 
 #ifndef NT_FILE
