@@ -901,11 +901,11 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                     Elf::Addr sigContextAddr = 0;
                     auto objip = curFrame->rawIP() - reloc;
                     auto restoreSym = obj->findDebugSymbol("__restore");
-                    if (restoreSym && objip == restoreSym.symbol.st_value)
+                    if (restoreSym.st_shndx != SHN_UNDEF && objip == restoreSym.st_value)
                         sigContextAddr = curFrame->getReg(SPREG) + 4;
                     else {
                         auto restoreRtSym = obj->findDebugSymbol("__restore_rt");
-                        if (restoreRtSym && objip == restoreRtSym.symbol.st_value)
+                        if (restoreRtSym.st_shndx != SHN_UNDEF && objip == restoreRtSym.st_value)
                             sigContextAddr = p.io->readObj<Elf::Addr>(curFrame->getReg(SPREG) + 8) + 20;
                     }
                     if (sigContextAddr != 0) {
