@@ -34,7 +34,7 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFra
     std::set<pid_t> tracedLwps;
     StopProcess processSuspender(&proc);
     {
-        proc.listThreads([&options, &proc, &threadStacks, &tracedLwps, maxFrames] (
+        proc.listThreads([&proc, &threadStacks, &tracedLwps, maxFrames] (
                            const td_thrhandle_t *thr) {
 
             Elf::CoreRegisters regs;

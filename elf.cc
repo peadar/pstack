@@ -423,6 +423,7 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
             name = table.name(candidate);
             return true;
         }
+        sym.st_shndx = SHN_UNDEF;
         return false;
     };
     if (findSym(*debugSymbols()))
@@ -448,8 +449,12 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
 #endif
     }
     if (debugData && debugData->findSymbolByAddress(addr, type, sym, name))
-       return true;
-    return haveExactZeroSizeMatch;
+        return true;
+
+    if (haveExactZeroSizeMatch)
+        return true;
+    sym.st_shndx = SHN_UNDEF;
+    return false;
 }
 
 const Section &

@@ -214,59 +214,84 @@ struct PrintableFrame {
     int frameNumber;
     std::string dieName;
     std::string symName;
-    Elf::Sym symbol;
+    Elf::Sym symbol_;
     std::vector<std::pair<std::string, int>> source;
+    bool searchedSym = false;
     bool isSignalFrame;
     const PstackOptions &options;
     Elf::Addr functionOffset;
-    bool haveSym;
+    Elf::Addr objIp;
     Dwarf::StackFrame *frame;
     std::vector<Dwarf::DIE> inlined; // func + inlined.
-
-    PrintableFrame(Dwarf::StackFrame *frame, int frameNo, const PstackOptions &options)
-        : frameNumber(frameNo)
-        , isSignalFrame(frame->cie != nullptr && frame->cie->isSignalHandler)
-        , options(options)
-        , functionOffset(std::numeric_limits<Elf::Addr>::max())
-        , haveSym(false)
-        , frame(frame)
-    {
-        if (frame->elf == nullptr)
-            return;
-        Elf::Addr objIp = frame->scopeIP() - frame->elfReloc;
-        Dwarf::Unit::sptr u = frame->dwarf->lookupUnit(objIp);
-        if (u) {
-            Dwarf::DIE function = u->root().findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram);
-            if (function) {
-                frame->function = function;
-                std::ostringstream sos;
-                ::dieName(sos, function);
-                this->dieName = sos.str();
-                auto lowpc = function.attribute(Dwarf::DW_AT_low_pc);
-                if (lowpc.valid())
-                    functionOffset = objIp - uintmax_t(lowpc);
-                while (function) {
-                   auto inl = function.findEntryForAddr(objIp, Dwarf::DW_TAG_inlined_subroutine);
-                   if (!inl)
-                      break;
-                   inlined.push_back(inl);
-                   function = std::move(inl);
-                }
-            }
-        }
-
-        if (!options.flags[PstackOptions::nosrc])
-            source = frame->dwarf->sourceFromAddr(objIp);
-
-        haveSym = frame->elf->findSymbolByAddress(objIp, STT_FUNC, symbol, symName);
-        if (haveSym && functionOffset == std::numeric_limits<Elf::Addr>::max())
-            functionOffset = objIp - symbol.st_value;
-
-    }
+    const Elf::Sym &symbol();
+    PrintableFrame(Dwarf::StackFrame *frame, int frameNo, const PstackOptions &options);
     PrintableFrame(const PrintableFrame &) = delete;
     PrintableFrame() = delete;
 };
 
+const Elf::Sym &
+PrintableFrame::symbol() {
+    if (!searchedSym) {
+        frame->elf->findSymbolByAddress(objIp, STT_FUNC, symbol_, symName);
+        searchedSym = true;
+    }
+    return symbol_;
+}
+
+PrintableFrame::PrintableFrame(Dwarf::StackFrame *frame, int frameNo, const PstackOptions &options)
+    : frameNumber(frameNo)
+    , isSignalFrame(frame->cie != nullptr && frame->cie->isSignalHandler)
+    , options(options)
+    , functionOffset(std::numeric_limits<Elf::Addr>::max())
+    , frame(frame)
+{
+    symbol_.st_shndx = SHN_UNDEF;
+    if (frame->elf == nullptr)
+        return;
+    objIp = frame->scopeIP() - frame->elfReloc;
+    Dwarf::Unit::sptr u = frame->dwarf->lookupUnit(objIp);
+    if (u) {
+        Dwarf::DIE function = u->root().findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram);
+        if (function) {
+            frame->function = function;
+            std::ostringstream sos;
+            ::dieName(sos, function);
+            this->dieName = sos.str();
+            auto lowpc = function.attribute(Dwarf::DW_AT_low_pc);
+            if (lowpc.valid()) {
+               functionOffset = objIp - uintmax_t(lowpc);
+            } else {
+               auto rangesAt = function.attribute(Dwarf::DW_AT_ranges);
+               if (rangesAt.valid()) {
+                  auto ranges = Dwarf::Ranges(rangesAt);
+                  functionOffset = objIp - ranges[0].first;
+               } else {
+                  // no function start address - we'll try and find it
+                  // below in the ELF fallback code.
+               }
+            }
+            while (function) {
+               auto inl = function.findEntryForAddr(objIp, Dwarf::DW_TAG_inlined_subroutine);
+               if (!inl)
+                  break;
+               inlined.push_back(inl);
+               function = std::move(inl);
+            }
+        }
+    }
+    if (functionOffset == std::numeric_limits<Elf::Addr>::max()) {
+        // If we have not worked out the start of the function, then we
+        // either didn't find the DIE for the function, or it didn't have
+        // enough info to find the first address.
+        //
+        // Fall back to using the ELF symbol instead.
+        auto &sym = symbol();
+        if (sym.st_shndx != SHN_UNDEF)
+            functionOffset = objIp - symbol().st_value;
+    }
+    if (!options.flags[PstackOptions::nosrc])
+        source = frame->dwarf->sourceFromAddr(objIp);
+}
 
 std::ostream &
 operator << (std::ostream &os, const JSON<std::pair<std::string, int>> &jt)
@@ -277,7 +302,7 @@ operator << (std::ostream &os, const JSON<std::pair<std::string, int>> &jt)
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<std::pair<Elf::Sym *, std::string>> &js)
+operator << (std::ostream &os, const JSON<std::pair<const Elf::Sym *, std::string>> &js)
 {
     const auto &obj = js.object;
     return JObject(os)
@@ -310,8 +335,9 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
             .field("offset", pframe.functionOffset)
             .field("trampoline", pframe.isSignalFrame)
         ;
-    if (pframe.haveSym)
-        jo.field("symbol", std::make_pair(&pframe.symbol, pframe.symName));
+    const auto &sym = pframe.symbol();
+    if (sym.st_shndx != SHN_UNDEF)
+        jo.field("symbol", std::make_pair(&sym, pframe.symName));
     else
         jo.field("symbol", JsonNull());
 

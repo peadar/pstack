@@ -894,6 +894,6 @@ enum ExceptionHandlingEncoding {
 
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Info> &);
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Macros> &);
-std::ostream &operator << (std::ostream &os, const JSON<Dwarf::UnitType> &);
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::DIE> &);
 
 #endif
