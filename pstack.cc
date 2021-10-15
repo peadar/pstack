@@ -1,4 +1,5 @@
 #include "libpstack/dwarf.h"
+#include "libpstack/flags.h"
 #include "libpstack/proc.h"
 #include "libpstack/ps_callback.h"
 #if defined(WITH_PYTHON2) || defined(WITH_PYTHON3)
@@ -25,7 +26,6 @@ namespace {
 bool doJson = false;
 volatile bool interrupted = false;
 
-int usage(const char *);
 std::ostream &
 pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFrames)
 {
@@ -66,7 +66,7 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFra
     // if we don't need to print arguments to functions, we now have the full
     // backtrace and don't need to read anything more from the process.
     // Everything else is just parsing debug data, so we can resume now.
-    if (!options.flags[PstackOptions::doargs])
+    if (!options.doargs)
        processSuspender.clear();
 
     if (doJson) {
@@ -120,152 +120,188 @@ bool pystack(Process &proc, std::ostream &o, const PstackOptions &options, bool 
         throw (Exception() << "no support for discovered python 3 interpreter");
 #endif
     }
-
     return true;
 }
 #endif
 
 int
+usage(std::ostream &os, const char *name, const Flags &options)
+{
+     os <<
+"usage: " << name << " <[ exe ] <PID | core> >+\n"
+"\n"
+"print a stack trace of PID or core. If specified, assume image was created from\n"
+" execing `exe`, otherwise, the executable is inferred from the process or core\n"
+"\n"
+"available options:\n" << options <<  "\n";
+     return EX_USAGE;
+}
+
+int
 emain(int argc, char **argv)
 {
-    int i, c;
     int maxFrames = 1024;
-    std::string execFile;
     Elf::Object::sptr exec;
     Dwarf::ImageCache imageCache;
     double sleepTime = 0.0;
     PstackOptions options;
-    options.maxdepth = 10000;
 
 #if defined(WITH_PYTHON)
-    bool python = false;
+    bool doPython = false;
     bool pythonModules = false;
 #endif
-    bool coreOnExit = false;
     bool printAllStacks = false;
 
-    while ((c = getopt(argc, argv, "F:b:d:CD:hjmnsVvag:pltz:r:A")) != -1) {
-        switch (c) {
-        case 'F': {
-            const char *sep = strchr(optarg, ':');
-            if (sep == 0) {
-                usage(argv[0]);
-                goto done;
-            }
-            pathReplacements.push_back(std::make_pair(
-                                std::string(optarg, sep - optarg),
-                                std::string(sep + 1)));
-            break;
-        }
-        case 'g':
-            Elf::globalDebugDirectories.add(optarg);
-            break;
+    int exitCode = -1;
 
-        case 'D': {
-            auto dumpobj = std::make_shared<Elf::Object>(imageCache, loadFile(optarg));
-            auto di = std::make_shared<Dwarf::Info>(dumpobj, imageCache);
-            std::cout << json(*di);
-            goto done;
-        }
+    Flags flags;
+    flags
+    .add("replace-path",
+            'F',
+            "from:to",
+            "replace `from` with `to` in paths when finding shared libraries",
+            [&](const char *arg) {
+                auto sep = strchr(arg, ':');
+                if (sep == 0)
+                    usage(std::cerr, argv[0], flags);
+                pathReplacements.push_back(std::make_pair(
+                            std::string(arg, sep - arg), std::string(sep + 1))); })
 
-        case 'z':
-        case 'd': {
-            /* Undocumented option to dump image contents */
-            std::cout << json(Elf::Object(imageCache, loadFile(optarg)));
-            goto done;
-        }
-        case 'h':
-            usage(argv[0]);
-            goto done;
-        case 'a':
-            options.flags.set(PstackOptions::doargs);
-            break;
-        case 'j':
-            doJson = true;
-            break;
-        case 's':
-            options.flags.set(PstackOptions::nosrc);
-            break;
-        case 'v':
-            verbose++;
-            break;
-        case 'b':
-            sleepTime = strtod(optarg, nullptr);
-            break;
-        case 'm':
-#if defined(WITH_PYTHON)
-            pythonModules = true;
-#else
-            std::clog << "no python support compiled in" << std::endl;
+    .add("debug-dir",
+            'g',
+            "directory",
+            "extra location to find debug files for binaries and shared libraries",
+            [&](const char *arg) { Elf::globalDebugDirectories.push_back(arg); })
+
+    .add("constant",
+            'b',
+            "delay",
+            "repeat pstack, with `delay` seconds between each iteration (can be non-integer)",
+            Flags::set(sleepTime))
+
+    .add("elf-dump",
+            'd',
+            "ELF file",
+            "dump details of an ELF image in JSON and exit",
+            [&](const char *arg) {
+                std::cout << json(Elf::Object(imageCache, loadFile(arg)));
+                exitCode = 0; })
+
+    .add("dwarf-dump",
+            'D',
+            "ELF file",
+            "dump details of DWARF information in an ELF image in JSON and exit",
+            [&](const char *arg) {
+                auto dumpobj = std::make_shared<Elf::Object>(imageCache, loadFile(arg));
+                auto di = std::make_shared<Dwarf::Info>(dumpobj, imageCache);
+                std::cout << json(*di);
+                exitCode = 0; })
+
+    .add("depth",
+            'r',
+            "depth",
+            "max depth when printing python structures",
+            Flags::set(options.maxdepth))
+
+    .add("max-frames",
+            'M',
+            "max frames",
+            "maximum number of stack frames to print for a thread",
+            Flags::set(maxFrames))
+
+    .add("help",
+            'h',
+            "generate this help message",
+            [&]() { exitCode = usage(std::cout, argv[9], flags); })
+
+    .add("args",
+            'a',
+            "attempt to show the value of arguments to functions",
+            Flags::setf(options.doargs))
+
+    .add("json",
+            'j',
+            "use JSON output rather than plaintext",
+            Flags::setf(doJson))
+
+    .add("no-src",
+            's',
+            "don't include source info",
+            Flags::setf(options.nosrc))
+
+    .add("verbose",
+            'v',
+            "more debugging data. Can be repeated",
+            [&]() { ++verbose; })
+
+    .add("no-threaddb",
+            't',
+            "don't use the thread_db functions to enumerate pthreads (just uses LWPs)",
+            Flags::setf(options.nothreaddb))
+
+    .add("all",
+            'A',
+            "show both python and DWARF (C/C++/go/rust) stack traces",
+            Flags::setf(printAllStacks))
+
+    .add("no-ext-debug",
+            'n',
+            "don't load external debugging information when processing",
+            Flags::setf(Elf::noExtDebug))
+
+    .add("version",
+            'V',
+            "dump version and exit",
+            [&]() {
+               std::clog << STR(VERSION) << "\n";
+               exitCode = 0; })
+
+#ifdef WITH_PYTHON
+    .add("python-modules",
+            'm',
+            "print contents of all python modules when tracing",
+            Flags::setf(pythonModules))
+
+    .add("python",
+            'p',
+            "print python stack traces",
+            Flags::setf(doPython))
+
+    .add("locals",
+            'l',
+            "print local variables (just python for now)",
+            Flags::setf(options.dolocals))
 #endif
-            break;
-        case 'M':
-            maxFrames = strtoul(optarg, 0, 0);
-            break;
-        case 'p':
-#if defined(WITH_PYTHON)
-            python = true;
-#else
-            std::clog << "no python support compiled in" << std::endl;
-#endif
-            break;
-        case 'l':
-#if defined(WITH_PYTHON)
-            options.flags.set(PstackOptions::dolocals);
-#else
-            std::clog << "no python support compiled in" << std::endl;
-#endif
-            break;
-        case 'A':
-            printAllStacks = true;
-            break;
+    .parse(argc, argv);
 
-        case 'n':
-            Elf::noExtDebug = true;
-            break;
-        case 't':
-            options.flags.set(PstackOptions::nothreaddb);
-            break;
-
-        case 'V':
-            std::clog << STR(VERSION) << "\n";
-            return 0;
-        case 'C':
-            coreOnExit = true;
-            break;
-        case 'r':
-            options.maxdepth = strtod(optarg, nullptr);
-            break;
-        default:
-            return usage(argv[0]);
-        }
-    }
+    if (exitCode != -1)
+        return exitCode;
 
     if (optind == argc)
-        return usage(argv[0]);
+        return usage(std::cerr, argv[0], flags);
 
-    for (i = optind; i < argc; i++) {
+    for (int i = optind; i < argc; i++) {
         try {
             auto doStack = [=, &options] (Process &proc) {
                 proc.load(options);
                 while (!interrupted) {
 #if defined(WITH_PYTHON)
-                    if (python || printAllStacks) {
+                    if (doPython || printAllStacks) {
                         bool isPythonProcess = pystack(proc, std::cout, options, pythonModules);
-                        if (python && !isPythonProcess) 
+                        if (doPython && !isPythonProcess)
                             throw Exception() << "Couldn't find a Python interpreter"; // error if -p but not python process
                     }
 
-                    if (!python)
+                    if (!doPython)
 #endif
                     {
                         pstack(proc, std::cout, options, maxFrames);
                     }
-                    if (sleepTime != 0.0) {
+
+                    if (sleepTime != 0.0)
                         usleep(sleepTime * 1000000);
-                    } else {
+                    else
                         break;
-                    }
                 }
             };
             auto process = Process::load(exec, argv[i], options, imageCache);
@@ -278,43 +314,8 @@ emain(int argc, char **argv)
             std::cerr << "trace of " << argv[i] << " failed: " << e.what() << "\n";
         }
     }
-done:
-    if (coreOnExit)
-        abort();
     return 0;
 }
-
-int
-usage(const char *name)
-{
-    std::clog <<
-        "usage: " << name << "\n"
-        "\t[-<D|d> <elf object>]        dump details of ELF object (D => show DWARF info\n"
-        "or\n"
-        "\t[-h]                         show this message\n"
-        "or\n"
-        "\t[-v]                         include verbose information to stderr\n"
-        "\t[-V]                         dump git tag of source\n"
-        "\t[-s]                         don't include source-level details\n"
-        "\t[-g]                         add global debug directory\n"
-        "\t[-a]                         show arguments to functions where possible\n"
-        "\t[-n]                         don't try to find external debug images\n"
-        "\t[-t]                         don't try to use the thread_db library\n"
-        "\t[-b<n>]                      batch mode: repeat every 'n' seconds\n"
-        "\t[-M<frames>]                 max number of frames (default 1024)\n"
-#ifdef WITH_PYTHON
-        "\t[-A]                         print all stack traces\n"
-        "\t[-p]                         print python backtrace\n"
-        "\t[-l]                         show python locals if available\n"
-        "\t[-r<n>]                      the max recursion depth for printing\n"
-#endif
-        "\t[<pid>|<core>|<executable>]* list cores and pids to examine. An executable\n"
-        "\t                             will override use of in-core or in-process information\n"
-        "\t                             to predict location of the executable\n"
-        ;
-    return (EX_USAGE);
-}
-
 }
 
 int

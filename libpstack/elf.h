@@ -387,13 +387,8 @@ enum GNUNotes {
 /*
  * Places to look for debug images
  */
-class GlobalDebugDirectories {
-public:
-    std::vector<std::string> dirs;
-    void add(const std::string &);
-    GlobalDebugDirectories() throw();
-};
-extern GlobalDebugDirectories globalDebugDirectories;
+
+extern std::vector<std::string> globalDebugDirectories;
 
 /*
  * A cache of named files to ELF objects. Note no deduping is done for symbolic

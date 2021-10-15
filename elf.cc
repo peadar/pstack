@@ -27,17 +27,17 @@ static uint32_t elf_hash(const string &text);
 
 bool noExtDebug;
 
-GlobalDebugDirectories globalDebugDirectories;
-GlobalDebugDirectories::GlobalDebugDirectories() throw()
-{
-   add("/usr/lib/debug");
-   add("/usr/lib/debug/usr"); // Add as a hack for when linker loads from /lib, but package has /usr/lib
-}
+std::vector<string> globalDebugDirectories;
 
-void
-GlobalDebugDirectories::add(const string &str)
+namespace {
+bool setupGDD()
 {
-   dirs.push_back(str);
+   // Add as a hack for when linker loads from /lib, but package has /usr/lib
+   globalDebugDirectories.push_back("/usr/lib/debug");
+   globalDebugDirectories.push_back("/usr/lib/debug/usr");
+   return false;
+}
+bool _gdd_init = setupGDD();
 }
 
 Notes::iterator
@@ -779,12 +779,12 @@ ImageCache::getImageIfLoaded(const string &name)
 Object::sptr
 ImageCache::getDebugImage(const string &name) {
     // XXX: verify checksum.
-    for (const auto &dir : globalDebugDirectories.dirs) {
+    for (const auto &dir : globalDebugDirectories) {
         auto img = getImageIfLoaded(stringify(dir, "/", name));
         if (img)
             return img;
     }
-    for (const auto &dir : globalDebugDirectories.dirs) {
+    for (const auto &dir : globalDebugDirectories) {
         try {
            return getImageForName(stringify(dir, "/", name), true);
         }

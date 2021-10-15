@@ -55,7 +55,7 @@ Process::load(const PstackOptions &options)
     else
         loadSharedObjects(r_debug_addr);
 
-    if (!options.flags[PstackOptions::nothreaddb]) {
+    if (!options.nothreaddb) {
         td_err_e the;
         the = td_ta_new(this, &agent);
         if (the != TD_OK) {
@@ -232,7 +232,8 @@ struct PrintableFrame {
 const Elf::Sym &
 PrintableFrame::symbol() {
     if (!searchedSym) {
-        frame->elf->findSymbolByAddress(objIp, STT_FUNC, symbol_, symName);
+        if (frame->elf)
+            frame->elf->findSymbolByAddress(objIp, STT_FUNC, symbol_, symName);
         searchedSym = true;
     }
     return symbol_;
@@ -289,7 +290,7 @@ PrintableFrame::PrintableFrame(Dwarf::StackFrame *frame, int frameNo, const Psta
         if (sym.st_shndx != SHN_UNDEF)
             functionOffset = objIp - symbol().st_value;
     }
-    if (!options.flags[PstackOptions::nosrc])
+    if (!options.nosrc)
         source = frame->dwarf->sourceFromAddr(objIp);
 }
 
@@ -319,7 +320,7 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
 {
     auto &frame =jt.object;
     PstackOptions options;
-    options.flags[PstackOptions::doargs] = true;
+    options.doargs = true;
     PrintableFrame pframe(frame, 0, options);
 
     JObject jo(os);
@@ -525,7 +526,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
 std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
-    if (!ap.frame->function || !ap.options.flags[PstackOptions::doargs])
+    if (!ap.frame->function || !ap.options.doargs)
         return os;
     using namespace Dwarf;
     const char *sep = "";
