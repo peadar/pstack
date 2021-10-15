@@ -2,6 +2,9 @@
 #include <dlfcn.h>
 #include <string.h>
 #include <regex.h>
+#include "libpstack/global.h"
+#include "libpstack/proc.h"
+#include "libpstack/stringify.h"
 
 static
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>

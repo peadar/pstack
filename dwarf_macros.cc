@@ -1,4 +1,5 @@
 #include "libpstack/dwarf.h"
+#include "libpstack/global.h"
 
 namespace Dwarf {
 enum DWARF_MACRO_CODE {

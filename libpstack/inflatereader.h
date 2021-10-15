@@ -1,6 +1,6 @@
 #ifndef LIBPSTACK_INFLATEREADER_H
 #define LIBPSTACK_INFLATEREADER_H
-#include "libpstack/util.h"
+#include "libpstack/reader.h"
 
 // A Reader that zlib inflates the underlying downstream reader.
 // Currently requires knowing the resulting output size.

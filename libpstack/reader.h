@@ -1,79 +1,15 @@
-#ifndef LIBPSTACK_UTIL_H
-#define LIBPSTACK_UTIL_H
+#ifndef pstack_reader_h
+#define pstack_reader_h
 
-#include <exception>
-#include <cassert>
-#include <limits>
-#include <vector>
-#include <list>
+#include <stdint.h>
+#include <stdlib.h>
+#include <iostream>
 #include <memory>
-#include <sstream>
-#include <stdio.h>
-#include <string>
-#include <string.h>
 #include <unordered_map>
-#include <sys/fcntl.h>
-
-std::string dirname(const std::string &);
-std::string basename(const std::string &);
-
-class Exception : public std::exception {
-    mutable std::ostringstream str;
-    mutable std::string intermediate;
-public:
-    Exception() throw() {
-    }
-
-    Exception(const Exception &rhs) throw() {
-        str << rhs.str.str();
-    }
-
-    ~Exception() throw () {
-    }
-
-    const char *what() const throw() {
-        intermediate = str.str();
-        return intermediate.c_str();
-    }
-    std::ostream &getStream() const { return str; }
-    typedef void IsStreamable;
-};
-
-template <typename E, typename Object, typename Test = typename E::IsStreamable>
-inline const E &operator << (const E &stream, const Object &o) {
-    stream.getStream() << o;
-    return stream;
-}
-
-template <typename T> void stringifyImpl(std::ostringstream &os, const T&obj)
-{
-    os << obj;
-}
-
-template <typename T> std::string stringify(const T&obj)
-{
-    std::ostringstream os;
-    stringifyImpl(os, obj);
-    return os.str();
-}
-
-template <typename T, typename... More> void stringifyImpl(std::ostringstream &os, const T&obj, More... more)
-{
-    os << obj;
-    stringifyImpl(os, more...);
-}
-
-
-template <typename T, typename... More> std::string stringify(const T&obj, More... more)
-{
-    std::ostringstream stream;
-    stringifyImpl(stream, obj, more...);
-    return stream.str();
-}
-
-extern std::ostream *debug;
-
-extern int verbose;
+#include <limits>
+#include <list>
+#include <cassert>
+#include "libpstack/exception.h"
 
 // Reader provides the basic random-access IO to a range of bytes.  The most
 // basic reader is a FileReader, which allows you to access the content of a
@@ -261,27 +197,6 @@ public:
     std::string filename() const override { return upstream->filename(); }
 };
 
-std::string linkResolve(std::string name);
-
-template <typename T> T maybe(T val, T dflt) {
-    return val ?  val : dflt;
-}
-
-// Save iostream formatting so we can restore them later.
-class IOFlagSave {
-    std::ios &target;
-    std::ios saved;
-public:
-    IOFlagSave(std::ios &os)
-        : target(os)
-         , saved(0)
-    {
-        saved.copyfmt(target);
-    }
-    ~IOFlagSave() {
-        target.copyfmt(saved);
-    }
-};
 Reader::csptr loadFile(const std::string &path);
 
 // This allows a reader to provide an iterator over a sequence of objects of a
@@ -316,6 +231,4 @@ template <typename T> T ReaderArray<T>::iterator::operator *() {
    return t;
 }
 
-extern std::vector<std::pair<std::string, std::string>> pathReplacements;
-extern int openfile(const std::string &filename, int mode = O_RDONLY, int umask = 0777);
-#endif // LIBPSTACK_UTIL_H
+#endif

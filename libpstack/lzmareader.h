@@ -2,8 +2,9 @@
 #define LIBPSTACK_LZMAREADER_H
 
 #include <map>
+#include <vector>
 #include <lzma.h>
-#include "libpstack/util.h"
+#include "libpstack/reader.h"
 
 /*
  * Provides an LZMA-decoded view of downstream. LZMA API allows random-access

@@ -1,14 +1,12 @@
-#include "libpstack/util.h"
-
 #include <sys/stat.h>
 #include <sys/mman.h>
-
 #include <fcntl.h>
 #include <unistd.h>
-
 #include <cassert>
 #include <cstdint>
-#include <iostream>
+#include "libpstack/reader.h"
+#include "libpstack/fs.h"
+#include "libpstack/global.h"
 
 std::vector<std::pair<std::string,std::string>> pathReplacements;
 

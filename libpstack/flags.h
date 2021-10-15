@@ -1,4 +1,5 @@
 #include <getopt.h>
+#include <string>
 #include <iostream>
 #include <type_traits>
 #include <vector>
@@ -27,14 +28,10 @@ class Flags {
         const char *metavar;
         Cb callback;
     };
-
     std::map<char, Data> data; // per-flag data, indexed by short-form option.
-
-    // String for short-form options, calculated from longOptions and data.
-    std::string shortOptions;
+    std::string shortOptions; // String for short-form options, calculated from longOptions + data.
 
 public:
-
     /**
      * Add a flag to the set of parsed flags.
      * name: the long-form name
@@ -44,15 +41,7 @@ public:
      * help: descriptive text describing option
      * cb: callback invoked when the argument is encountered.
      */
-    Flags & add(const char *name, char flag, const char *metavar, const char *help, Cb cb) {
-        longOptions.push_back({name, metavar != nullptr, nullptr, int(flag)});
-        assert(data.find(flag) == data.end());
-        auto &datum = data[flag];
-        datum.helptext = help;
-        datum.metavar = metavar;
-        datum.callback = cb;
-        return *this;
-    }
+    Flags & add(const char *name, char flag, const char *metavar, const char *help, Cb cb);
 
     /**
      * Add a flag to the set of parsed flags - shorter helper for flags that
@@ -66,53 +55,25 @@ public:
      * indicate we have added all arguments, and don't intend to modify the
      * flags further.
      */
-    const Flags & done() {
-        shortOptions = "";
-        for (auto &opt : longOptions) {
-            shortOptions += char(opt.val);
-            if (opt.has_arg)
-                shortOptions += ':';
-        }
-        longOptions.push_back({0, false, nullptr, 0});
-        return *this;
-    }
+    const Flags & done();
 
     /**
      * Dump information about invocation to passed stream
      */
-    std::ostream & dump(std::ostream &os) const {
-        for (size_t i = 0; i < longOptions.size(); ++i) {
-            const auto &opt = longOptions[i];
-            if (opt.name == 0)
-                continue;
-            const auto &datum = data.at(opt.val);
-            os << "    [-" << char(opt.val) << "|--" << opt.name;
-            if (opt.has_arg)
-                os << " <" << datum.metavar << ">";
-            os << "]\n        " << datum.helptext << "\n";
-        }
-        return os;
-    }
+    std::ostream & dump(std::ostream &os) const;
+
 
     // Allow move- but not copy-construction.
     Flags(Flags &&rhs) = default;
     Flags(const Flags &rhs) = delete;
     Flags() = default;
 
-    // parse argc/argv, calling the correct callbacks.
-    const Flags & parse(int argc, char **argv) const {
-        int c, optidx;
-        while ((c = getopt_long(argc, argv, shortOptions.c_str(), &longOptions[0], &optidx)) != -1)
-            data.at(c).callback(optarg);
-        return *this;
-    }
+    // parse argc/argv, calling the correct callbacks. (non-const version will
+    // call "done" before calling const version)
+    const Flags & parse(int argc, char **argv) const;
+    const Flags & parse(int argc, char **argv);
 
-    const Flags & parse(int argc, char **argv) {
-        done();
-        const Flags &f = *this;
-        return f.parse(argc, argv);
-    }
-
+    // Helper to get a VCb to just set a bool to true/false.
     template <typename T> static VCb
     setf(T &val, T to=true) { return [&val, to] () { val = to; }; }
 
@@ -125,11 +86,15 @@ public:
     template <typename T> static typename std::enable_if<std::is_floating_point<T>::value, T>::type
     convert(const char *opt) { return strtod(opt, 0); }
 
+    // Helper to set a value from a string, using convert to convert from
+    // string to whatever type is required.
     template <typename T> static Cb
     set(T &val) { return [&val] (const char *opt) { val = convert<T>(opt); }; }
 
+    // Append to a container with push_back, with a converted value.
     template <typename T, typename C> static Cb
     append(C &val) { return [&val] (const char *opt) { val.push_back(convert<T>(opt)); }; }
 };
 
+// Stream a "Flags" to stdout - printing a formatted help text for the options.
 inline std::ostream & operator << (std::ostream &os, const Flags &opts) { return opts.dump(os); }

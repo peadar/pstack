@@ -119,6 +119,7 @@ add_library(dwelf ${LIBTYPE}
          dwarf_reader.cc
          dwarf_unit.cc
          elf.cc
+         flags.cc
          reader.cc
          util.cc
          ${inflatesrc}

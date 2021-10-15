@@ -1,6 +1,7 @@
 #ifndef libpstack_proc_h
 #define libpstack_proc_h
 #include <elf.h>
+#include <memory.h>
 extern "C" {
 // Some thread_db headers are not safe to include unwrapped in extern "C"
 #include <thread_db.h>

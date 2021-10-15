@@ -1,7 +1,7 @@
 #ifndef DWARF_H
 #define DWARF_H
 
-#include <libpstack/elf.h>
+#include "libpstack/elf.h"
 #include <limits>
 #include <list>
 #include <map>
@@ -26,35 +26,35 @@ struct CIE;
 
 #define DWARF_TAG(a,b) a = b,
 enum Tag {
-#include <libpstack/dwarf/tags.h>
+#include "libpstack/dwarf/tags.h"
     DW_TAG_none = 0x0
 };
 #undef DWARF_TAG
 
 #define DWARF_ATE(a,b) a = b,
 enum Encoding {
-#include <libpstack/dwarf/encodings.h>
+#include "libpstack/dwarf/encodings.h"
     DW_ATE_none = 0x0
 };
 #undef DWARF_ATE
 
 #define DWARF_UNIT_TYPE(a,b) a = b,
 enum UnitType {
-#include <libpstack/dwarf/unittype.h>
+#include "libpstack/dwarf/unittype.h"
     DW_UT_none
 };
 #undef DWARF_UNIT_TYPE
 
 #define DWARF_FORM(a,b) a = b,
 enum Form {
-#include <libpstack/dwarf/forms.h>
+#include "libpstack/dwarf/forms.h"
     DW_FORM_none = 0x0
 };
 #undef DWARF_FORM
 
 #define DWARF_ATTR(a,b) a = b,
 enum AttrName {
-#include <libpstack/dwarf/attr.h>
+#include "libpstack/dwarf/attr.h"
     DW_AT_none = 0x0
 };
 

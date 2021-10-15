@@ -3,6 +3,9 @@
 #include <python2.7/longintrepr.h>
 #include <python2.7/methodobject.h>
 #include "libpstack/python.h"
+#include "libpstack/stringify.h"
+#include "libpstack/global.h"
+
 template<> std::set<const PythonTypePrinter<2> *> PythonTypePrinter<2>::all = std::set<const PythonTypePrinter<2> *>();
 template<>
 char PythonTypePrinter<2>::pyBytesType[] = "PyString_Type";

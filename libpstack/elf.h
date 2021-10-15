@@ -44,8 +44,8 @@
 #include <memory>
 #include <limits>
 
-#include "libpstack/util.h"
 #include "libpstack/json.h"
+#include "libpstack/reader.h"
 
 #ifndef ELF_BITS
 #define ELF_BITS __WORDSIZE
@@ -115,7 +115,7 @@ Type(Vernaux);
 #define IS_ELF(a) true
 #endif
 
-static inline size_t
+inline size_t
 roundup2(size_t val, size_t align)
 {
     return val + (align - (val % align)) % align;

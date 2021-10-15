@@ -1,6 +1,7 @@
 // vim: expandtab:ts=4:sw=4
 
 #include "libpstack/dwarf.h"
+#include "libpstack/global.h"
 
 namespace Dwarf {
 Info::sptr

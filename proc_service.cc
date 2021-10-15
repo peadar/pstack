@@ -1,5 +1,7 @@
 #include "libpstack/proc.h"
 #include "libpstack/ps_callback.h"
+#include "libpstack/stringify.h"
+#include "libpstack/fs.h"
 
 #include <cstdarg>
 

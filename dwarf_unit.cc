@@ -1,6 +1,6 @@
 #include "libpstack/elf.h"
+#include "libpstack/global.h"
 #include "libpstack/dwarf.h"
-
 
 namespace Dwarf {
 

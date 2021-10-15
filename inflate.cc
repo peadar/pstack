@@ -1,5 +1,6 @@
 #include "libpstack/inflatereader.h"
-#include "libpstack/util.h"
+#include "libpstack/stringify.h"
+#include "libpstack/global.h"
 
 #include <zlib.h>
 

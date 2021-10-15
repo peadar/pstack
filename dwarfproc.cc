@@ -1,6 +1,7 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/elf.h"
 #include "libpstack/proc.h"
+#include "libpstack/global.h"
 
 #include <cassert>
 #include <limits>

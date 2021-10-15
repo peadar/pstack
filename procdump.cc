@@ -1,5 +1,4 @@
 #include "libpstack/ps_callback.h"
-#include "libpstack/procdump.h"
 
 extern "C" {
 #include <thread_db.h>

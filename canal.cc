@@ -20,6 +20,10 @@
 #include "libpstack/proc.h"
 #include "libpstack/elf.h"
 #include "libpstack/dwarf.h"
+#include "libpstack/stringify.h"
+#include "libpstack/global.h"
+#include "libpstack/fs.h"
+#include "libpstack/ioflag.h"
 #ifdef WITH_PYTHON
 #include "libpstack/python.h"
 #endif

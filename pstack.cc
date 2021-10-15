@@ -1,6 +1,8 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/flags.h"
+#include "libpstack/global.h"
 #include "libpstack/proc.h"
+#include "libpstack/fs.h"
 #include "libpstack/ps_callback.h"
 #if defined(WITH_PYTHON2) || defined(WITH_PYTHON3)
 #define WITH_PYTHON
@@ -33,33 +35,31 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFra
     std::list<ThreadStack> threadStacks;
     std::set<pid_t> tracedLwps;
     StopProcess processSuspender(&proc);
-    {
-        proc.listThreads([&proc, &threadStacks, &tracedLwps, maxFrames] (
-                           const td_thrhandle_t *thr) {
+    proc.listThreads([&proc, &threadStacks, &tracedLwps, maxFrames] (
+                       const td_thrhandle_t *thr) {
 
-            Elf::CoreRegisters regs;
-            td_err_e the;
+        Elf::CoreRegisters regs;
+        td_err_e the;
 #ifdef __linux__
-            the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
+        the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
 #else
-            the = td_thr_getgregs(thr, &regs);
+        the = td_thr_getgregs(thr, &regs);
 #endif
-            if (the == TD_OK) {
-                threadStacks.push_back(ThreadStack());
-                td_thr_get_info(thr, &threadStacks.back().info);
-                threadStacks.back().unwind(proc, regs, maxFrames);
-                tracedLwps.insert(threadStacks.back().info.ti_lid);
-            }
-            });
+        if (the == TD_OK) {
+            threadStacks.push_back(ThreadStack());
+            td_thr_get_info(thr, &threadStacks.back().info);
+            threadStacks.back().unwind(proc, regs, maxFrames);
+            tracedLwps.insert(threadStacks.back().info.ti_lid);
+        }
+    });
 
-        for (auto &lwp : proc.lwps) {
-            if (tracedLwps.find(lwp.first) == tracedLwps.end()) {
-                threadStacks.push_back(ThreadStack());
-                threadStacks.back().info.ti_lid = lwp.first;
-                Elf::CoreRegisters regs;
-                proc.getRegs(lwp.first,  &regs);
-                threadStacks.back().unwind(proc, regs, maxFrames);
-            }
+    for (auto &lwp : proc.lwps) {
+        if (tracedLwps.find(lwp.first) == tracedLwps.end()) {
+            threadStacks.push_back(ThreadStack());
+            threadStacks.back().info.ti_lid = lwp.first;
+            Elf::CoreRegisters regs;
+            proc.getRegs(lwp.first,  &regs);
+            threadStacks.back().unwind(proc, regs, maxFrames);
         }
     }
 
@@ -82,7 +82,8 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFra
 }
 
 #ifdef WITH_PYTHON
-template<int V> void doPy(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules, const PyInterpInfo &info) {
+template<int V> void doPy(Process &proc, std::ostream &o,
+      const PstackOptions &options, bool showModules, const PyInterpInfo &info) {
     StopProcess here(&proc);
     PythonPrinter<V> printer(proc, o, options, info);
     if (!printer.interpFound())
@@ -141,7 +142,6 @@ int
 emain(int argc, char **argv)
 {
     int maxFrames = 1024;
-    Elf::Object::sptr exec;
     Dwarf::ImageCache imageCache;
     double sleepTime = 0.0;
     PstackOptions options;
@@ -151,8 +151,7 @@ emain(int argc, char **argv)
     bool pythonModules = false;
 #endif
     bool printAllStacks = false;
-
-    int exitCode = -1;
+    int exitCode = -1; // used for options that exit immediately to signal exit.
 
     Flags flags;
     flags
@@ -280,6 +279,10 @@ emain(int argc, char **argv)
     if (optind == argc)
         return usage(std::cerr, argv[0], flags);
 
+    // any instance of a non-core ELF image will override default behaviour of
+    // discovering the executable
+    Elf::Object::sptr exec;
+
     for (int i = optind; i < argc; i++) {
         try {
             auto doStack = [=, &options] (Process &proc) {
@@ -288,8 +291,9 @@ emain(int argc, char **argv)
 #if defined(WITH_PYTHON)
                     if (doPython || printAllStacks) {
                         bool isPythonProcess = pystack(proc, std::cout, options, pythonModules);
+                        // error if -p but not python process
                         if (doPython && !isPythonProcess)
-                            throw Exception() << "Couldn't find a Python interpreter"; // error if -p but not python process
+                            throw Exception() << "Couldn't find a Python interpreter";
                     }
 
                     if (!doPython)
@@ -305,11 +309,10 @@ emain(int argc, char **argv)
                 }
             };
             auto process = Process::load(exec, argv[i], options, imageCache);
-            if (process == nullptr) {
+            if (process == nullptr)
                 exec = imageCache.getImageForName(argv[i]);
-            } else {
+            else
                 doStack(*process);
-            }
         } catch (const std::exception &e) {
             std::cerr << "trace of " << argv[i] << " failed: " << e.what() << "\n";
         }

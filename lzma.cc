@@ -1,7 +1,8 @@
 #include "libpstack/lzmareader.h"
-#include "libpstack/util.h"
+#include "libpstack/global.h"
 
 #include <lzma.h>
+#include <string.h>
 
 static auto allocator() {
    static lzma_allocator alloc {

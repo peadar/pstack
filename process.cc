@@ -5,6 +5,10 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/proc.h"
 #include "libpstack/ps_callback.h"
+#include "libpstack/global.h"
+#include "libpstack/stringify.h"
+#include "libpstack/ioflag.h"
+
 
 #include <link.h>
 #include <unistd.h>

@@ -1,4 +1,7 @@
 #include "libpstack/dwarf.h"
+#include "libpstack/global.h"
+#include "libpstack/stringify.h"
+#include "libpstack/fs.h"
 #include <set>
 
 namespace Dwarf {

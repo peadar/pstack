@@ -1,11 +1,13 @@
 #include "libpstack/elf.h"
+#include "libpstack/stringify.h"
+#include "libpstack/ioflag.h"
+#include "libpstack/fs.h"
 #ifdef WITH_ZLIB
 #include "libpstack/inflatereader.h"
 #endif
 #ifdef WITH_LZMA
 #include "libpstack/lzmareader.h"
 #endif
-#include "libpstack/util.h"
 
 #include <unistd.h>
 
