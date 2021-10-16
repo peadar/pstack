@@ -1,4 +1,5 @@
 #include "libpstack/dwarf.h"
+#include "libpstack/dwarf_reader.h"
 #include "libpstack/stringify.h"
 #include "libpstack/fs.h"
 #include "libpstack/global.h"

@@ -2,6 +2,7 @@
 #include "libpstack/elf.h"
 #include "libpstack/proc.h"
 #include "libpstack/global.h"
+#include "libpstack/dwarf_reader.h"
 
 #include <cassert>
 #include <limits>

@@ -1,5 +1,6 @@
 #include "libpstack/json.h"
 #include "libpstack/dwarf.h"
+#include "libpstack/dwarf_reader.h"
 
 #include <sys/procfs.h>
 
