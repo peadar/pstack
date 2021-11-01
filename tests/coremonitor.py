@@ -28,6 +28,15 @@ class CoreMonitor( object ):
       self.corefile = self.corefile.replace( "%t", "*" )
       print("expected core %s" % self.corefile)
 
+   def __enter__( self ):
+      return self
+
+   def __exit__( self, *args ):
+      c = self.core()
+      if c:
+         print("unlinking core %s" % self.corefile)
+         os.unlink(c)
+
    def core( self ):
       files = glob.glob( self.corefile )
       if files:
