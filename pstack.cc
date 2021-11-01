@@ -211,7 +211,7 @@ emain(int argc, char **argv)
     .add("help",
             'h',
             "generate this help message",
-            [&]() { exitCode = usage(std::cout, argv[9], flags); })
+            [&]() { exitCode = usage(std::cout, argv[0], flags); })
 
     .add("args",
             'a',
