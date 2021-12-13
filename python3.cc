@@ -7,6 +7,7 @@
 #include <unicodeobject.h>
 #include <methodobject.h>
 #include "libpstack/python.h"
+#include "libpstack/global.h"
 
 #define DK_SIZE(dk) ((dk)->dk_size)
 #define DK_IXSIZE(dk)                \
