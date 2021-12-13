@@ -52,8 +52,9 @@ Do not attempt to find external debug information. DWARF debug information
 and symbol tables may be contained in separate ELF objects, as referenced
 by either the .gnu_debuglink or inferred by the GNU "build ID" ELF note.
 .It Fl p
-Attempt to print the stack trace from any discovered python interpreters
-and threads. This feature is experimental, and only works with Python 2.7.
+Attempt to print the stack trace from any discovered python interpreters and
+threads. Works with Python 2 and 3 - support for python 3 may require
+recompilation after upgrading minor versions.
 .It Fl s
 Do not attempt to locate source code information (file and line number) for
 each frame. Finding the source locations may slow down stack tracing.
