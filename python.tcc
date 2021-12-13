@@ -25,7 +25,11 @@ getLine(const Reader &proc, const PyCodeObject *code, const PyFrameObject *frame
         if (addr > frame->f_lasti) {
             break;
         }
-        line += *p++;
+        if (PyV == 2)
+           line += *p;
+        else
+           line += (signed char)*p;
+        p++;
     }
     return line;
 }
