@@ -638,7 +638,7 @@ std::ostream &operator<< (std::ostream &os, const JSON<Elf::Object> &elf)
         .field("abi", brand < sizeof abiNames / sizeof abiNames[0]? abiNames[brand] : nullptr)
         .field("sections", elf->sectionHeaders, &elf.object)
         .field("segments", mappedSegments, &elf.object)
-        .field("notes", elf->notes)
+        .field("notes", elf->notes())
         .field("versioninfo", *elf.object.symbolVersions())
         ;
 

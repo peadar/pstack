@@ -54,7 +54,7 @@ Notes::end() const
    return iterator(object, false);
 }
 
-Notes::iterator::iterator(Object *object_, bool begin)
+Notes::iterator::iterator(const Object *object_, bool begin)
     : object(object_)
     , phdrs(object_->getSegments(PT_NOTE))
     , offset(0)
@@ -75,22 +75,22 @@ void Notes::iterator::startSection() {
 
 Notes::iterator &Notes::iterator::operator++()
 {
-     auto newOff = offset;
-     newOff += sizeof curNote + curNote.n_namesz;
-     newOff = roundup2(newOff, 4);
-     newOff += curNote.n_descsz;
-     newOff = roundup2(newOff, 4);
-     if (newOff >= phdrsi->p_filesz) {
-         if (++phdrsi == phdrs.end()) {
-             offset = 0;
-             return *this;
-         }
-         startSection();
-     } else {
-         offset = newOff;
-     }
-     readNote();
-     return *this;
+    auto newOff = offset;
+    newOff += sizeof curNote + curNote.n_namesz;
+    newOff = roundup2(newOff, 4);
+    newOff += curNote.n_descsz;
+    newOff = roundup2(newOff, 4);
+    if (newOff >= phdrsi->p_filesz) {
+        if (++phdrsi == phdrs.end()) {
+            offset = 0;
+            return *this;
+        }
+        startSection();
+    } else {
+        offset = newOff;
+    }
+    readNote();
+    return *this;
 }
 
 string
@@ -239,7 +239,6 @@ Object::getSymtab(std::unique_ptr<SymbolSection<Symtype>> &table, const char *na
 
 Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
     : io(std::move(io_))
-    , notes(this)
     , elfHeader(io->readObj<Ehdr>(0))
     , imageCache(cache)
     , sectionHeaders(elfHeader.e_shnum)
@@ -548,7 +547,7 @@ Object::getDebug() const
     debugLoaded = true;
 
     // Use the build ID to find debug data.
-    for (const auto &note : notes) {
+    for (const auto &note : notes()) {
         if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
             std::ostringstream dir;
             dir << ".build-id/";

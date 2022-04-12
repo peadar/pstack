@@ -182,12 +182,12 @@ struct Section {
 };
 
 class Notes {
-   Object *object;
+   const Object *object;
 public:
    class iterator;
    iterator begin() const;
    iterator end() const;
-   Notes(Object *object_) : object(object_) {}
+   Notes(const Object *object_) : object(object_) {}
    typedef NoteDesc value_type;
 };
 
@@ -272,7 +272,7 @@ public:
     std::string getInterpreter() const;
     const Ehdr &getHeader() const { return elfHeader; }
     const Phdr *getSegmentForAddress(Off) const;
-    Notes notes;
+    Notes notes() const { return Notes(this); }
     // symbol table data as extracted from .gnu.debugdata -
     // https://sourceware.org/gdb/current/onlinedocs/gdb/MiniDebugInfo.html
     Elf::Addr endVA() const;
@@ -358,7 +358,7 @@ public:
 };
 
 class Notes::iterator {
-    Object *object;
+    const Object *object;
     const Object::ProgramHeaders &phdrs;
     Object::ProgramHeaders::const_iterator phdrsi;
     Off offset;
@@ -367,7 +367,7 @@ class Notes::iterator {
     void readNote() { io->readObj(offset, &curNote); }
     void startSection();
 public:
-    iterator(Object *object_, bool begin);
+    iterator(const Object *object_, bool begin);
     bool operator == (const iterator &rhs) const {
         return &phdrs == &rhs.phdrs && phdrsi == rhs.phdrsi && offset == rhs.offset;
     }

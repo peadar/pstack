@@ -16,7 +16,7 @@ void
 CoreProcess::load(const PstackOptions &options)
 {
 #ifdef __linux__
-    for (auto note : coreImage->notes) {
+    for (auto note : coreImage->notes()) {
        if (note.name() == "CORE" && note.type() == NT_AUXV) {
            processAUXV(*note.data());
            break;
@@ -110,7 +110,7 @@ bool
 CoreProcess::getRegs(lwpid_t pid, Elf::CoreRegisters *reg)
 {
 #ifdef NT_PRSTATUS
-   for (auto note : coreImage->notes) {
+   for (auto note : coreImage->notes()) {
         if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
             const auto &prstatus = note.data()->readObj<prstatus_t>(0);
             if (prstatus.pr_pid == pid) {
@@ -146,7 +146,7 @@ pid_t
 CoreProcess::getPID() const
 {
     // Return the PID of the first task in the core.
-    for (auto note : coreImage->notes)
+    for (auto note : coreImage->notes())
         if (note.name() == "CORE" && note.type() == NT_PRSTATUS)
             return note.data()->readObj<prstatus_t>(0).pr_pid;
     return -1;
@@ -155,7 +155,7 @@ CoreProcess::getPID() const
 void
 CoreProcess::findLWPs()
 {
-    for (auto note : coreImage->notes) {
+    for (auto note : coreImage->notes()) {
         if (note.name() == "CORE" && note.type() == NT_PRSTATUS)
             (void)lwps[note.data()->readObj<prstatus_t>(0).pr_pid];
     }
@@ -186,7 +186,7 @@ CoreProcess::loadSharedObjectsFromFileNote()
     // If the core is truncated, and we have no access to the link map, we make
     // a guess at what shared libraries are mapped by looking in the NT_FILE
     // note if present.
-    for (auto note : coreImage->notes) {
+    for (auto note : coreImage->notes()) {
         if (note.name() == "CORE" && note.type() == NT_FILE) {
             auto data = note.data();
             auto header = data->readObj<FileNoteHeader>(0);
