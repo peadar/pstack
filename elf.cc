@@ -188,37 +188,6 @@ GnuHash::findSymbol(const char *name) const {
     }
 }
 
-
-GnuHash *
-Object::gnu_hash()
-{
-    if (gnu_hash_ == nullptr) {
-        auto &section { getSection( ".gnu.hash", SHT_GNU_HASH) };
-        if (section) {
-            auto &syms = getLinkedSection(section);
-            auto &strings = getLinkedSection(syms);
-            if (syms && strings)
-                gnu_hash_ = make_unique<GnuHash>(section.io, syms.io, strings.io);
-        }
-    }
-    return gnu_hash_.get();
-}
-
-SymHash *
-Object::hash()
-{
-    if (hash_ == nullptr ) {
-        auto &section {  getSection( ".hash", SHT_HASH ) };
-        if (section) {
-            auto &syms = getLinkedSection(section);
-            auto &strings = getLinkedSection(syms);
-            if (syms && strings)
-                hash_.reset( new SymHash(section.io, syms.io, strings.io) );
-        }
-    }
-    return hash_.get();
-}
-
 SymbolSection<Sym> *Object::debugSymbols() {
     return getSymtab(debugSymbols_, ".symtab", SHT_SYMTAB);
 }

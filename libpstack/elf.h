@@ -135,6 +135,7 @@ class SymHash {
     const Word *chains;
     const Word *buckets;
 public:
+    static const char *tablename() { return ".hash"; }
     SymHash(Reader::csptr hash_, Reader::csptr syms_, Reader::csptr strings_);
     std::pair<uint32_t, Sym> findSymbol(const std::string &name); // fills sym, and returns index.
 };
@@ -160,6 +161,7 @@ class GnuHash {
     uint32_t bucketoff(size_t idx) const { return bloomoff(header.bloom_size) + idx * 4; }
     uint32_t chainoff(size_t idx) const { return bucketoff(header.nbuckets) + idx * 4; }
 public:
+    static const char *tablename() { return ".gnu_hash"; }
     GnuHash(const Reader::csptr &hash_, const Reader::csptr &syms_, const Reader::csptr &strings_) :
         hash(hash_), syms(syms_), strings(strings_), header(hash->readObj<Header>(0)) { }
     std::pair<uint32_t, Sym> findSymbol(const char *) const;
@@ -308,10 +310,25 @@ private:
     mutable bool debugLoaded; // We've at least attempted to load debugObject: don't try again
     mutable Object::sptr debugObject; // debug object as per .gnu_debuglink/other.
 
+    // Section plumbing for hash and gnu_hash is the same, just with different
+    // types and section names, so share the code.
+    template <typename HashType> HashType *get_hash(std::unique_ptr<HashType> &ptr) {
+        if (ptr == nullptr) {
+            auto &section { getSection( HashType::tablename(), SHT_GNU_HASH) };
+            if (section) {
+                auto &syms = getLinkedSection(section);
+                auto &strings = getLinkedSection(syms);
+                if (syms && strings)
+                    ptr = std::make_unique<HashType>(section.io, syms.io, strings.io);
+            }
+        }
+        return ptr.get();
+    }
+
     std::unique_ptr<SymHash> hash_; // Symbol hash table.
-    SymHash *hash();
+    SymHash *hash() { return get_hash(hash_); }
     std::unique_ptr<GnuHash> gnu_hash_; // Enhanced GNU symbol hash table.
-    GnuHash *gnu_hash();
+    GnuHash *gnu_hash() { return get_hash(gnu_hash_); }
 
     Object *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
     friend std::ostream &::operator<< (std::ostream &, const JSON<Elf::Object> &);

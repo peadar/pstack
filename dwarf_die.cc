@@ -457,10 +457,9 @@ DIE::Attribute::operator const Ranges&() const
         if (attr.valid())
             offset += uintmax_t(attr);
 
-        auto rnglists = die.unit->dwarf->elf->sectionReader(
-                                    ".debug_rnglists", ".zdebug_rnglists", nullptr);
-        auto addrs = die.unit->dwarf->elf->sectionReader(
-                                    ".debug_addr", ".zdebug_addr", nullptr);
+        auto &elf = die.unit->dwarf->elf;
+        auto rnglists = elf->sectionReader(".debug_rnglists", ".zdebug_rnglists", nullptr);
+        auto addrs = elf->sectionReader(".debug_addr", ".zdebug_addr", nullptr);
         DWARFReader r(rnglists, offset);
 
         uintmax_t base = 0;
