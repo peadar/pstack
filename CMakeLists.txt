@@ -26,7 +26,7 @@ if (PYTHON3)
 endif()
 
 find_package(Git)
-if (GIT_FOUND)
+if (GIT_FOUND AND EXISTS ${CMAKE_SOURCE_DIR}/.git)
    execute_process(
       COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
       OUTPUT_VARIABLE GIT_TAG
@@ -35,7 +35,7 @@ if (GIT_FOUND)
    message(STATUS "Version from git tag: ${GIT_TAG}")
 else()
    set(GIT_TAG "unknown")
-   message(STATUS "No git/no version")
+   message(STATUS "git version information unavailable - defaulting to 'unknown'")
 endif()
 
 set(VERSION_TAG ${GIT_TAG} CACHE STRING "Version tag (defaults to git commit)")
