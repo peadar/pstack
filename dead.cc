@@ -7,7 +7,7 @@
 
 CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
         const PstackOptions &options, Dwarf::ImageCache &imageCache)
-    : Process(std::move(exec), std::make_shared<CoreReader>(this), options, imageCache)
+    : Process(std::move(exec), std::make_shared<CoreReader>(this, core), options, imageCache)
     , coreImage(std::move(core))
 {
 }
@@ -28,7 +28,7 @@ CoreProcess::load(const PstackOptions &options)
 
 void CoreReader::describe(std::ostream &os) const
 {
-    os << *p->coreImage->io;
+    os << *core->io;
 }
 
 static size_t
@@ -38,7 +38,7 @@ readFromHdr(const Elf::Object &obj, const Elf::Phdr *hdr, Elf::Off addr,
     Elf::Off rv;
     Elf::Off off = addr - hdr->p_vaddr; // offset in header of our ptr.
     if (off < hdr->p_filesz) {
-        // some of the data is in the file: read min of what we need and // that.
+        // some of the data is in the file: read min of what we need and that.
         Elf::Off fileSize = std::min(hdr->p_filesz - off, size);
         rv = obj.io->read(hdr->p_offset + off, fileSize, ptr);
         if (rv != fileSize)
@@ -64,24 +64,26 @@ CoreReader::read(Off remoteAddr, size_t size, char *ptr) const
 {
     Elf::Off start = remoteAddr;
     while (size != 0) {
-        auto obj = p->coreImage;
 
         Elf::Off zeroes = 0;
-        // Locate "remoteAddr" in the core file
-        auto hdr = obj->getSegmentForAddress(remoteAddr);
-        if (hdr != nullptr) {
-            // The start address appears in the core (or is defaulted from it)
-            size_t rc = readFromHdr(*obj, hdr, remoteAddr, ptr, size, &zeroes);
-            remoteAddr += rc;
-            ptr += rc;
-            size -= rc;
-            if (rc != 0 && zeroes == 0)
-                // we got some data from the header, and there's nothing to default
-                continue;
+        if (core) {
+           // Locate "remoteAddr" in the core file
+           const Elf::Phdr * hdr = core->getSegmentForAddress(remoteAddr);
+           if (hdr != nullptr) {
+               // The start address appears in the core (or is defaulted from it)
+               size_t rc = readFromHdr(*core, hdr, remoteAddr, ptr, size, &zeroes);
+               remoteAddr += rc;
+               ptr += rc;
+               size -= rc;
+               if (rc != 0 && zeroes == 0)
+                   // we got some data from the header, and there's nothing to default
+                   continue;
+           }
         }
-
         // Either no data in core, or it was incomplete to this point: search loaded objects.
         Elf::Off loadAddr;
+        const Elf::Phdr *hdr;
+        Elf::Object::sptr obj;
         std::tie(loadAddr, obj, hdr) = p->findSegment(remoteAddr);
         if (hdr != nullptr) {
             // header in an object - try reading from here.
@@ -104,7 +106,7 @@ CoreReader::read(Off remoteAddr, size_t size, char *ptr) const
     return remoteAddr - start;
 }
 
-CoreReader::CoreReader(CoreProcess *p_) : p(p_) { }
+CoreReader::CoreReader(Process *p_, Elf::Object::sptr core_) : p(p_), core(core_) { }
 
 bool
 CoreProcess::getRegs(lwpid_t pid, Elf::CoreRegisters *reg)

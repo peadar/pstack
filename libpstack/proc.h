@@ -246,11 +246,12 @@ protected:
 
 class CoreProcess;
 class CoreReader : public Reader {
-    CoreProcess *p;
+    Process *p;
+    Elf::Object::sptr core;
 protected:
     virtual size_t read(Off remoteAddr, size_t size, char *ptr) const override;
 public:
-    CoreReader (CoreProcess *);
+    CoreReader (Process *, Elf::Object::sptr);
     virtual void describe(std::ostream &os) const override;
     Off size() const override { return std::numeric_limits<Off>::max(); }
     std::string filename() const override { return "process memory"; }
