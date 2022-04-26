@@ -114,6 +114,8 @@ emain(int argc, char **argv)
     bool doPython = false;
     bool pythonModules = false;
 #endif
+    std::vector<std::string> btLogs;
+    std::string execName;
     bool printAllStacks = false;
     int exitCode = -1; // used for options that exit immediately to signal exit.
 
@@ -235,17 +237,31 @@ emain(int argc, char **argv)
             "print local variables (just python for now)",
             Flags::setf(options.dolocals))
 #endif
+    .add("from-log",
+            'L',
+            "log-file",
+            "print stack trace given log file including instruction pointers",
+            [&](const char *log) {
+               btLogs.push_back(log);
+            })
+    .add("executable",
+          'e',
+          "executable",
+          "executable to use by default", [&](const char *opt) { execName = opt; })
+
     .parse(argc, argv);
 
     if (exitCode != -1)
         return exitCode;
 
-    if (optind == argc)
+    if (optind == argc && btLogs.empty())
         return usage(std::cerr, argv[0], flags);
 
     // any instance of a non-core ELF image will override default behaviour of
     // discovering the executable
     Elf::Object::sptr exec;
+    if (execName != "")
+       exec = imageCache.getImageForName(execName);
 
 
     auto doStack = [=, &options] (Process &proc) {
@@ -269,6 +285,12 @@ emain(int argc, char **argv)
                 break;
         }
     };
+
+    if (!btLogs.empty()) {
+       LogProcess lp{exec, btLogs, options, imageCache};
+       doStack(lp);
+       return 0;
+    }
 
     for (int i = optind; i < argc; i++) {
         try {

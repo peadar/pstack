@@ -34,8 +34,11 @@ class CoreMonitor( object ):
    def __exit__( self, *args ):
       c = self.core()
       if c:
-         print("unlinking core %s" % self.corefile)
-         os.unlink(c)
+         if "PSTACK_TEST_KEEPCORE" not in os.environ:
+            print("unlinking core %s" % self.corefile)
+            os.unlink(c)
+         else:
+            print("keeping core %s" % self.corefile)
 
    def core( self ):
       files = glob.glob( self.corefile )

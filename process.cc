@@ -583,6 +583,7 @@ std::ostream &operator << (std::ostream &os, Dwarf::UnwindMechanism mech) {
       case Dwarf::UnwindMechanism::FRAMEPOINTER: return os << "frame pointer";
       case Dwarf::UnwindMechanism::BAD_IP_RECOVERY: return os << "popped faulting IP";
       case Dwarf::UnwindMechanism::TRAMPOLINE: return os << "signal trampoline";
+      case Dwarf::UnwindMechanism::LOGFILE: return os << "log file";
       case Dwarf::UnwindMechanism::INVALID: return os << "invalid";
    }
    abort();

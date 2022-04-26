@@ -126,7 +126,7 @@ add_library(dwelf ${LIBTYPE}
          ${lzmasrc}
          )
 
-add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc
+add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc logproc.cc
    dwarfproc.cc procdump.cc ${stubsrc})
 
 add_executable(canal canal.cc ${pysrc})

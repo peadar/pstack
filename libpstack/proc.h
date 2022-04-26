@@ -59,7 +59,9 @@ enum class UnwindMechanism {
    // state stored by the kernel on the stack.
    TRAMPOLINE,
 
-   // Invalid stack frame - not unwound/unwind failed.
+   // The stack frame was built up by scanning a log file.
+   LOGFILE,
+
    INVALID,
 };
 
@@ -295,4 +297,21 @@ public:
     StopLWP(Process *proc_, lwpid_t lwp_) : proc(proc_), lwp(lwp_) { proc->stop(lwp); }
     ~StopLWP() { proc->resume(lwp); }
 };
+class LogProcess : public Process {
+   const std::vector<std::string> &logs;
+   std::list<ThreadStack> stacks;
+public:
+   LogProcess(Elf::Object::sptr exec, const std::vector<std::string> &logs, const PstackOptions &, Dwarf::ImageCache &);
+   void load(const PstackOptions &);
+   bool getRegs(lwpid_t, Elf::CoreRegisters *);
+   void resume(pid_t);
+   void resumeProcess();
+   void stop(lwpid_t);
+   void stopProcess();
+   std::vector<AddressRange> addressSpace() const;
+   pid_t getPID() const;
+   bool loadSharedObjectsFromFileNote();
+   virtual std::list<ThreadStack> getStacks(const PstackOptions &, unsigned maxFrames);
+};
+
 #endif
