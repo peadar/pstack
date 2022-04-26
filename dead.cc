@@ -28,7 +28,10 @@ CoreProcess::load(const PstackOptions &options)
 
 void CoreReader::describe(std::ostream &os) const
 {
-    os << *core->io;
+    if (core)
+        os << *core->io;
+    else
+        os << "no backing core file";
 }
 
 static size_t
