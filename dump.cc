@@ -464,12 +464,12 @@ operator <<(std::ostream &os, const JSON<Dwarf::CIE, const Dwarf::CFI *> &dcie)
 std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::FDE, const Dwarf::CFI*> &dfi)
 {
-    Dwarf::DWARFReader r(dfi.context->io, dfi->instructions, dfi->end);
+    Dwarf::DWARFReader r(dfi.context->io, dfi.object.instructions, dfi.object.end);
     return JObject(os)
-        .field("cie", dfi->cieOff)
-        .field( "loc", dfi->iloc)
-        .field("range", dfi->irange)
-        .field("instructions", DumpCFAInsns(dfi->instructions, dfi->end), dfi.context);
+        .field("cie", dfi.object.cieOff)
+        .field( "loc", dfi.object.iloc)
+        .field("range", dfi.object.irange)
+        .field("instructions", DumpCFAInsns(dfi.object.instructions, dfi.object.end), dfi.context);
 }
 
 struct AddrStr {
@@ -507,13 +507,13 @@ std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::Info> &di)
 {
     JObject writer(os);
-    writer.field("units", di->getUnits())
-        .field("pubnameUnits", di->pubnames())
+    writer.field("units", di.object.getUnits())
+        .field("pubnameUnits", di.object.pubnames())
         ; // XXX .field("aranges", di->getARanges());
-    if (di->getDebugFrame())
-        writer.field("debugframe", *di->getDebugFrame());
-    if (di->getEhFrame())
-        writer.field("ehFrame", *di->getEhFrame());
+    if (di.object.getDebugFrame())
+        writer.field("debugframe", *di.object.getDebugFrame());
+    if (di.object.getEhFrame())
+        writer.field("ehFrame", *di.object.getEhFrame());
     return writer;
 }
 
@@ -521,14 +521,14 @@ std::ostream &operator << (std::ostream &os, const JSON<Elf::NoteDesc> &note)
 {
     JObject writer(os);
     writer
-        .field("name", note->name())
-        .field("type", note->type());
+        .field("name", note.object.name())
+        .field("type", note.object.type());
 
     // need to switch on type and name for notes.
-    auto data = note->data();
-    if (note->name() == "CORE") {
+    auto data = note.object.data();
+    if (note.object.name() == "CORE") {
         prstatus_t prstatus{};
-        switch (note->type()) {
+        switch (note.object.type()) {
             case NT_PRSTATUS:
                 data->readObj(0, &prstatus);
                 writer.field("prstatus", prstatus);
@@ -537,8 +537,8 @@ std::ostream &operator << (std::ostream &os, const JSON<Elf::NoteDesc> &note)
                 writer.field("auxv", ReaderArray<Elf::auxv_t>(*data));
                 break;
         }
-    } else if (note->name() == "GNU") {
-        switch (note->type()) {
+    } else if (note.object.name() == "GNU") {
+        switch (note.object.type()) {
             case NT_GNU_ABI_TAG: {
                 // https://refspecs.linuxfoundation.org/LSB_1.2.0/gLSB/noteabitag.html
                 uint32_t isExecutable;
@@ -584,10 +584,10 @@ std::ostream &operator << (std::ostream &os, const JSON<ProgramHeaderName> &ph)
         strpair(PT_GNU_RELRO)
 #undef strpair
     };
-    auto namei = names.find(ph->type);
+    auto namei = names.find(ph.object.type);
     if (namei != names.end())
         return os << json(namei->second);
-    return os << '"' << ph->type << '"';
+    return os << '"' << ph.object.type << '"';
 }
 
 std::ostream &operator<< (std::ostream &os, const JSON<Elf::SymbolVersioning> &vi)
@@ -626,24 +626,24 @@ std::ostream &operator<< (std::ostream &os, const JSON<Elf::Object> &elf)
         "OpenBSD"
     };
 
-    auto &ehdr = elf->getHeader();
+    auto &ehdr = elf.object.getHeader();
     auto brand = ehdr.e_ident[EI_OSABI];
 
-    Mapper<ProgramHeaderName, decltype(elf->programHeaders)::mapped_type,
-       std::map<Elf::Word, Elf::Object::ProgramHeaders>> mappedSegments(elf->programHeaders);
+    Mapper<ProgramHeaderName, decltype(elf.object.programHeaders)::mapped_type,
+       std::map<Elf::Word, Elf::Object::ProgramHeaders>> mappedSegments(elf.object.programHeaders);
     JObject writer(os);
     writer
         .field("type", typeNames[ehdr.e_type])
         .field("entry", ehdr.e_entry)
         .field("abi", brand < sizeof abiNames / sizeof abiNames[0]? abiNames[brand] : nullptr)
-        .field("sections", elf->sectionHeaders, &elf.object)
+        .field("sections", elf.object.sectionHeaders, &elf.object)
         .field("segments", mappedSegments, &elf.object)
-        .field("notes", elf->notes())
+        .field("notes", elf.object.notes())
         .field("versioninfo", *elf.object.symbolVersions())
         ;
 
-    if (elf->getInterpreter() != "")
-        writer.field("interpreter", elf->getInterpreter());
+    if (elf.object.getInterpreter() != "")
+        writer.field("interpreter", elf.object.getInterpreter());
     return writer;
 }
 
@@ -651,8 +651,8 @@ std::ostream &
 operator <<(std::ostream &os, const JSON<timeval> &tv)
 {
     return JObject(os)
-        .field("tv_sec", tv->tv_sec)
-        .field("tv_usec", tv->tv_usec);
+        .field("tv_sec", tv.object.tv_sec)
+        .field("tv_usec", tv.object.tv_usec);
 }
 
 std::ostream &
@@ -660,22 +660,22 @@ operator <<(std::ostream &os, const JSON<Elf::auxv_t> &a)
 {
     JObject writer(os);
 
-    switch (a->a_type) {
+    switch (a.object.a_type) {
 #define AUX_TYPE(name, value) case value: writer.field("a_type", #name); break;
 #include "libpstack/elf/aux.h"
-    default: writer.field("a_type", a->a_type); break;
+    default: writer.field("a_type", a.object.a_type); break;
 #undef AUX_TYPE
     }
-    return writer.field("a_val", a->a_un.a_val);
+    return writer.field("a_val", a.object.a_un.a_val);
 }
 
 std::ostream &
 operator <<(std::ostream &os, const JSON<Elf::Rela> &rela)
 {
    return JObject(os)
-      .field("r_offset", rela->r_offset)
-      .field("r_info-sym", ELF_R_SYM(rela->r_info))
-      .field("r_info-type", ELF_R_TYPE(rela->r_info));
+      .field("r_offset", rela.object.r_offset)
+      .field("r_info-sym", ELF_R_SYM(rela.object.r_info))
+      .field("r_info-type", ELF_R_TYPE(rela.object.r_info));
 }
 
 const struct sh_flag_names {
@@ -751,14 +751,14 @@ operator<< (std::ostream &os,
     auto &symStrings = obj.getLinkedSection(sec);
 
     return JObject(os)
-        .field("name", symStrings.io->readString(t->st_name))
-        .field("value", t->st_value)
-        .field("size",t->st_size)
-        .field("info", int(t->st_info))
-        .field("binding", bindingNames[t->st_info >> 4])
-        .field("type", typeNames[t->st_info & 0xf])
-        .field("other", int(t->st_other))
-        .field("shndx", t->st_shndx);
+        .field("name", symStrings.io->readString(t.object.st_name))
+        .field("value", t.object.st_value)
+        .field("size",t.object.st_size)
+        .field("info", int(t.object.st_info))
+        .field("binding", bindingNames[t.object.st_info >> 4])
+        .field("type", typeNames[t.object.st_info & 0xf])
+        .field("other", int(t.object.st_other))
+        .field("shndx", t.object.st_shndx);
 }
 
 static const char *
@@ -835,33 +835,34 @@ operator <<(std::ostream &os, const JSON<Elf::Section, const Elf::Object *> &jse
  * Debug output of an ELF32 program segment
  */
 std::ostream &
-operator<< (std::ostream &os, const JSON<Elf::Phdr, const Elf::Object *> &phdr)
+operator<< (std::ostream &os, const JSON<Elf::Phdr, const Elf::Object *> &jo)
 {
     JObject writer(os);
+    auto &phdr = jo.object;
 
     std::set<const char *>flags;
-    if (phdr->p_flags & PF_R)
+    if (phdr.p_flags & PF_R)
         flags.insert("PF_R");
 
-    if (phdr->p_flags & PF_W)
+    if (phdr.p_flags & PF_W)
         flags.insert("PF_W");
 
-    if (phdr->p_flags & PF_X)
+    if (phdr.p_flags & PF_X)
         flags.insert("PF_X");
 
-    writer.field("offset", phdr->p_offset)
-        .field("vaddr", phdr->p_vaddr)
-        .field("paddr", phdr->p_paddr)
-        .field("filesz", phdr->p_filesz)
-        .field("memsz", phdr->p_memsz)
-        .field("type", ProgramHeaderName(phdr->p_type))
+    writer.field("offset", phdr.p_offset)
+        .field("vaddr", phdr.p_vaddr)
+        .field("paddr", phdr.p_paddr)
+        .field("filesz", phdr.p_filesz)
+        .field("memsz", phdr.p_memsz)
+        .field("type", ProgramHeaderName(phdr.p_type))
         .field("flags", flags)
-        .field("alignment", phdr->p_align);
+        .field("alignment", phdr.p_align);
 
     Elf::Off strtab = 0;
-    switch (phdr->p_type) {
+    switch (phdr.p_type) {
         case PT_DYNAMIC: {
-            OffsetReader dynReader(phdr.context->io, phdr->p_offset, phdr->p_filesz);
+            OffsetReader dynReader(jo.context->io, phdr.p_offset, phdr.p_filesz);
             for (const auto & i : ReaderArray<Elf::Dyn>(dynReader)) {
                if (i.d_tag == DT_STRTAB) {
                   strtab = i.d_un.d_ptr;
@@ -869,7 +870,7 @@ operator<< (std::ostream &os, const JSON<Elf::Phdr, const Elf::Object *> &phdr)
                }
             }
             writer.field("dynamic",
-                  ReaderArray<Elf::Dyn>(dynReader), std::make_pair(phdr.context, strtab));
+                  ReaderArray<Elf::Dyn>(dynReader), std::make_pair(jo.context, strtab));
             break;
         }
     }
@@ -885,7 +886,7 @@ std::ostream &
 operator << (std::ostream &os, const JSON<DynTag> &tag)
 {
 #define DYN_TAG(name, value) case value: return os << json(#name);
-    switch (tag->tag) {
+    switch (tag.object.tag) {
 #include "libpstack/elf/dyntag.h"
     default: return os << json(int(tag.object.tag));
     }
@@ -896,18 +897,18 @@ std::ostream &
 operator<< (std::ostream &os, const JSON<Elf::Dyn, std::pair<const Elf::Object *, Elf::Off>> &d)
 {
     JObject o(os);
-    o.field("tag", DynTag(d->d_tag))
-     .field("word", d->d_un.d_val);
+    o.field("tag", DynTag(d.object.d_tag))
+     .field("word", d.object.d_un.d_val);
 
    auto stringSeg = d.context.first->getSegmentForAddress(d.context.second);
    Elf::Off strings = stringSeg->p_offset;
    strings += d.context.second - stringSeg->p_vaddr;
 
    auto printString = [&](const char *text) {
-         o.field(text, d.context.first->io->readString(strings + d->d_un.d_val));
+         o.field(text, d.context.first->io->readString(strings + d.object.d_un.d_val));
    };
 
-   switch (d->d_tag) {
+   switch (d.object.d_tag) {
       case DT_NEEDED: printString("lib"); break;
       case DT_RPATH: printString("rpath"); break;
       case DT_SONAME: printString("soname"); break;
@@ -932,27 +933,28 @@ std::ostream &
 operator <<(std::ostream &os, const JSON<elf_siginfo> &prinfo)
 {
     return JObject(os)
-        .field("si_signo", prinfo->si_signo)
-        .field("si_code", prinfo->si_code)
-        .field("si_errno", prinfo->si_errno);
+        .field("si_signo", prinfo.object.si_signo)
+        .field("si_code", prinfo.object.si_code)
+        .field("si_errno", prinfo.object.si_errno);
 }
 
 std::ostream &
-operator <<(std::ostream &os, const JSON<prstatus_t> &prstatus)
+operator <<(std::ostream &os, const JSON<prstatus_t> &jo)
 {
+    auto &prstatus = jo.object;
     return JObject(os)
-        .field("pr_info", prstatus->pr_info)
-        .field("pr_cursig", prstatus->pr_cursig)
-        .field("pr_sigpend", prstatus->pr_sigpend)
-        .field("pr_sighold", prstatus->pr_sighold)
-        .field("pr_pid", prstatus->pr_pid)
-        .field("pr_ppid", prstatus->pr_ppid)
-        .field("pr_pgrp", prstatus->pr_pgrp)
-        .field("pr_sid", prstatus->pr_sid)
-        .field("pr_utime", prstatus->pr_utime)
-        .field("pr_stime", prstatus->pr_stime)
-        .field("pr_cutime", prstatus->pr_cutime)
-        .field("pr_cstime", prstatus->pr_cstime)
-        .field("pr_reg", intptr_t(prstatus->pr_reg))
-        .field("pr_fpvalid", prstatus->pr_fpvalid);
+        .field("pr_info", prstatus.pr_info)
+        .field("pr_cursig", prstatus.pr_cursig)
+        .field("pr_sigpend", prstatus.pr_sigpend)
+        .field("pr_sighold", prstatus.pr_sighold)
+        .field("pr_pid", prstatus.pr_pid)
+        .field("pr_ppid", prstatus.pr_ppid)
+        .field("pr_pgrp", prstatus.pr_pgrp)
+        .field("pr_sid", prstatus.pr_sid)
+        .field("pr_utime", prstatus.pr_utime)
+        .field("pr_stime", prstatus.pr_stime)
+        .field("pr_cutime", prstatus.pr_cutime)
+        .field("pr_cstime", prstatus.pr_cstime)
+        .field("pr_reg", intptr_t(prstatus.pr_reg))
+        .field("pr_fpvalid", prstatus.pr_fpvalid);
 }

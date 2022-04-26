@@ -77,9 +77,6 @@ public:
     template <typename T> static VCb
     setf(T &val, T to=true) { return [&val, to] () { val = to; }; }
 
-    template <typename T> void
-    convert(const char *opt, T& val) { opt = val; }
-
     template <typename T> static typename std::enable_if<std::is_integral<T>::value, T>::type
     convert(const char *opt) { return strtol(opt, 0, 0); }
 

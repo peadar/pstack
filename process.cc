@@ -52,12 +52,23 @@ Process::load(const PstackOptions &options)
     if (!execImage)
         throw (Exception() << "no executable image located for process");
 
-    Elf::Addr r_debug_addr = findRDebugAddr();
-    bool isStatic = r_debug_addr == 0 || r_debug_addr == Elf::Addr(-1);
-    if (isStatic)
-        addElfObject(execImage, 0);
-    else
-        loadSharedObjects(r_debug_addr);
+    try {
+        Elf::Addr r_debug_addr = findRDebugAddr();
+        bool isStatic = r_debug_addr == 0 || r_debug_addr == Elf::Addr(-1);
+
+        if (isStatic)
+            addElfObject(execImage, 0);
+        else
+            loadSharedObjects(r_debug_addr);
+    }
+    catch (const Exception &) {
+        // We were unable to read the link map.
+        // The primary cause is that the core file is truncated.
+        // Go do the Hail Mary version.
+        if (loadSharedObjectsFromFileNote())
+            return;
+        throw;
+    }
 
     if (!options.nothreaddb) {
         td_err_e the;
@@ -225,10 +236,10 @@ struct PrintableFrame {
     const PstackOptions &options;
     Elf::Addr functionOffset;
     Elf::Addr objIp;
-    Dwarf::StackFrame *frame;
+    const Dwarf::StackFrame &frame;
     std::vector<Dwarf::DIE> inlined; // func + inlined.
     const Elf::Sym &symbol();
-    PrintableFrame(Dwarf::StackFrame *frame, int frameNo, const PstackOptions &options);
+    PrintableFrame(const Dwarf::StackFrame &frame, int frameNo, const PstackOptions &options);
     PrintableFrame(const PrintableFrame &) = delete;
     PrintableFrame() = delete;
 };
@@ -236,52 +247,48 @@ struct PrintableFrame {
 const Elf::Sym &
 PrintableFrame::symbol() {
     if (!searchedSym) {
-        if (frame->elf)
-            frame->elf->findSymbolByAddress(objIp, STT_FUNC, symbol_, symName);
+        if (frame.elf)
+            frame.elf->findSymbolByAddress(objIp, STT_FUNC, symbol_, symName);
         searchedSym = true;
     }
     return symbol_;
 }
 
-PrintableFrame::PrintableFrame(Dwarf::StackFrame *frame, int frameNo, const PstackOptions &options)
+PrintableFrame::PrintableFrame(const Dwarf::StackFrame &frame, int frameNo, const PstackOptions &options)
     : frameNumber(frameNo)
-    , isSignalFrame(frame->cie != nullptr && frame->cie->isSignalHandler)
+    , isSignalFrame(frame.cie != nullptr && frame.cie->isSignalHandler)
     , options(options)
     , functionOffset(std::numeric_limits<Elf::Addr>::max())
     , frame(frame)
 {
     symbol_.st_shndx = SHN_UNDEF;
-    if (frame->elf == nullptr)
+    if (frame.elf == nullptr)
         return;
-    objIp = frame->scopeIP() - frame->elfReloc;
-    Dwarf::Unit::sptr u = frame->dwarf->lookupUnit(objIp);
-    if (u) {
-        Dwarf::DIE function = u->root().findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram);
-        if (function) {
-            frame->function = function;
-            std::ostringstream sos;
-            ::dieName(sos, function);
-            this->dieName = sos.str();
-            auto lowpc = function.attribute(Dwarf::DW_AT_low_pc);
-            if (lowpc.valid()) {
-               functionOffset = objIp - uintmax_t(lowpc);
+    objIp = frame.scopeIP() - frame.elfReloc;
+    auto function = frame.function();
+    if (function) {
+        std::ostringstream sos;
+        ::dieName(sos, function);
+        this->dieName = sos.str();
+        auto lowpc = function.attribute(Dwarf::DW_AT_low_pc);
+        if (lowpc.valid()) {
+            functionOffset = objIp - uintmax_t(lowpc);
+        } else {
+            auto rangesAt = function.attribute(Dwarf::DW_AT_ranges);
+            if (rangesAt.valid()) {
+                auto ranges = Dwarf::Ranges(rangesAt);
+                functionOffset = objIp - ranges[0].first;
             } else {
-               auto rangesAt = function.attribute(Dwarf::DW_AT_ranges);
-               if (rangesAt.valid()) {
-                  auto ranges = Dwarf::Ranges(rangesAt);
-                  functionOffset = objIp - ranges[0].first;
-               } else {
-                  // no function start address - we'll try and find it
-                  // below in the ELF fallback code.
-               }
+                // no function start address - we'll try and find it
+                // below in the ELF fallback code.
             }
-            while (function) {
-               auto inl = function.findEntryForAddr(objIp, Dwarf::DW_TAG_inlined_subroutine);
-               if (!inl)
-                  break;
-               inlined.push_back(inl);
-               function = std::move(inl);
-            }
+        }
+        while (function) {
+            auto inl = function.findEntryForAddr(objIp, Dwarf::DW_TAG_inlined_subroutine);
+            if (!inl)
+                break;
+            inlined.push_back(inl);
+            function = std::move(inl);
         }
     }
     if (functionOffset == std::numeric_limits<Elf::Addr>::max()) {
@@ -295,7 +302,7 @@ PrintableFrame::PrintableFrame(Dwarf::StackFrame *frame, int frameNo, const Psta
             functionOffset = objIp - symbol().st_value;
     }
     if (!options.nosrc)
-        source = frame->dwarf->sourceFromAddr(objIp);
+        source = frame.dwarf->sourceFromAddr(objIp);
 }
 
 std::ostream &
@@ -320,7 +327,7 @@ operator << (std::ostream &os, const JSON<std::pair<const Elf::Sym *, std::strin
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
+operator << (std::ostream &os, const JSON<Dwarf::StackFrame, Process *> &jt)
 {
     auto &frame =jt.object;
     PstackOptions options;
@@ -329,14 +336,14 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame *, Process *> &jt)
 
     JObject jo(os);
     jo
-        .field("ip", frame->rawIP());
-    if (frame->elf)
+        .field("ip", frame.rawIP());
+    if (frame.elf)
         jo
-            .field("object", stringify(*frame->elf->io))
-            .field("loadaddr", frame->elfReloc)
+            .field("object", stringify(*frame.elf->io))
+            .field("loadaddr", frame.elfReloc)
             .field("source", pframe.source)
             .field("die", pframe.dieName)
-            .field("cfa", frame->cfa)
+            .field("cfa", frame.cfa)
             .field("offset", pframe.functionOffset)
             .field("trampoline", pframe.isSignalFrame)
         ;
@@ -353,17 +360,16 @@ std::ostream &
 operator << (std::ostream &os, const JSON<ThreadStack, Process *> &ts)
 {
     return JObject(os)
-        .field("ti_tid", ts->info.ti_tid)
-        .field("ti_type", ts->info.ti_type)
-        .field("ti_stack", ts->stack, ts.context);
+        .field("ti_tid", ts.object.info.ti_tid)
+        .field("ti_type", ts.object.info.ti_type)
+        .field("ti_stack", ts.object.stack, ts.context);
 }
 
 struct ArgPrint {
     const Process &p;
-    const struct Dwarf::StackFrame *frame;
-    const PstackOptions &options;
-    ArgPrint(const Process &p_, const Dwarf::StackFrame *frame_, const PstackOptions &options_)
-        : p(p_), frame(frame_), options(options_) {}
+    const PrintableFrame &pframe;
+    ArgPrint(const Process &p_, const PrintableFrame &pframe_)
+        : p(p_), pframe(pframe_) {}
 };
 
 struct RemoteValue {
@@ -530,11 +536,11 @@ operator << (std::ostream &os, const RemoteValue &rv)
 std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
-    if (!ap.frame->function || !ap.options.doargs)
+    if (!ap.pframe.frame.function() || !ap.pframe.options.doargs)
         return os;
     using namespace Dwarf;
     const char *sep = "";
-    for (auto child : ap.frame->function.children()) {
+    for (auto child : ap.pframe.frame.function().children()) {
         switch (child.tag()) {
             case DW_TAG_formal_parameter: {
                 auto name = child.name();
@@ -546,7 +552,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
 
                     if (attr.valid()) {
                         Dwarf::ExpressionStack fbstack;
-                        addr = fbstack.eval(ap.p, attr, ap.frame, ap.frame->elfReloc);
+                        addr = fbstack.eval(ap.p, attr, &ap.pframe.frame, ap.pframe.frame.elfReloc);
                         os << "=";
                         if (fbstack.isReg) {
                            os << ProcPtr(ap.p, type, addr)
@@ -577,6 +583,7 @@ std::ostream &operator << (std::ostream &os, Dwarf::UnwindMechanism mech) {
       case Dwarf::UnwindMechanism::FRAMEPOINTER: return os << "frame pointer";
       case Dwarf::UnwindMechanism::BAD_IP_RECOVERY: return os << "popped faulting IP";
       case Dwarf::UnwindMechanism::TRAMPOLINE: return os << "signal trampoline";
+      case Dwarf::UnwindMechanism::INVALID: return os << "invalid";
    }
    abort();
 }
@@ -595,8 +602,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread,
 }
 
 std::ostream &
-Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
-        Dwarf::StackFrame *frame) const
+Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, Dwarf::StackFrame &frame) const
 {
 
     IOFlagSave _(os);
@@ -627,13 +633,13 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
     os << "#"
         << std::left << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
         << std::right << "0x" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0')
-        << frame->rawIP() << std::dec;
+        << frame.rawIP() << std::dec;
 
     if (verbose > 0)
-        os << "/" << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame->cfa;
+        os << "/" << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame.cfa;
     os << std::dec;
 
-    if (frame->elf) {
+    if (frame.elf) {
         std::string name;
         std::string flags = "";
         if (pframe.isSignalFrame)
@@ -642,27 +648,27 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe,
             name = pframe.dieName;
         } else if (pframe.symName != "") {
             name = pframe.symName;
-            flags += frame->function ? "%" : "!";
+            flags += pframe.frame.function() ? "%" : "!";
         } else {
             name = "<unknown>";
         }
         os << " in "
             << name
             << flags
-            << "(" << ArgPrint(*this, frame, pframe.options) << ")";
+            << "(" << ArgPrint(*this, pframe) << ")";
 
         if (pframe.functionOffset != std::numeric_limits<Elf::Addr>::max())
             os << "+" << pframe.functionOffset;
-        os << " in " << stringify(*frame->elf->io);
+        os << " in " << stringify(*frame.elf->io);
         if (verbose)
-           os << "@0x" << std::hex << frame->rawIP() - frame->elfReloc << std::dec;
+           os << "@0x" << std::hex << frame.rawIP() - frame.elfReloc << std::dec;
         if (src.first != "")
            os << " at " << src.first << ":" << std::dec << src.second;
     } else {
         os << " no information for frame";
     }
     if (verbose)
-       os << " via " << frame->mechanism;
+       os << " via " << frame.mechanism;
     os << "\n";
     return os;
 }
@@ -686,17 +692,7 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
 {
 
     struct r_debug rDebug;
-    try {
-        io->readObj(rdebugAddr, &rDebug);
-    }
-    catch (const Exception &) {
-        // We were unable to read the link map.
-        // The primary cause is that the core file is truncated.
-        // Go do the Hail Mary version.
-        if (loadSharedObjectsFromFileNote())
-            return;
-        throw;
-    }
+    io->readObj(rdebugAddr, &rDebug);
 
     /* Iterate over the r_debug structure's entries, loading libraries */
     struct link_map map;
@@ -835,23 +831,22 @@ void
 ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
 {
     stack.clear();
+    stack.reserve(20);
     try {
-        auto curFrame = new Dwarf::StackFrame(Dwarf::UnwindMechanism::MACHINEREGS);
-        auto startFrame = curFrame;
-        const Dwarf::StackFrame *prevFrame = 0;
+        stack.emplace_back(Dwarf::UnwindMechanism::MACHINEREGS);
 
         // Set up the first frame using the machine context registers
-        startFrame->setCoreRegs(regs);
+        stack.front().setCoreRegs(regs);
 
-        Dwarf::StackFrame *nextFrame;
-        for (size_t frameCount = 0; frameCount < maxFrames; frameCount++,
-              prevFrame = curFrame, curFrame = nextFrame) {
-            if (curFrame == 0)
-               break;
-            stack.push_back(curFrame);
-            nextFrame = 0;
+        for (size_t frameCount = 0; frameCount < maxFrames; frameCount++) {
+            stack.emplace_back(Dwarf::UnwindMechanism::INVALID);
+            assert(stack.size() == frameCount + 2);
+            auto &curFrame = stack[frameCount];
+            auto &nextFrame = stack[frameCount+1];
+
             try {
-               nextFrame = curFrame->unwind(p);
+                if (!curFrame.unwind(p, nextFrame))
+                   break;
             }
             catch (const std::exception &ex) {
 
@@ -878,19 +873,19 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 // runtime-generated code, or something else that wasn't in a
                 // normal ELF phdr, so it seems more likely this is the best
                 // thing to do.
-                if ((curFrame == startFrame ||
-                         (prevFrame->cie && prevFrame->cie->isSignalHandler)) &&
-                   (curFrame->phdr == 0 || (curFrame->phdr->p_flags & PF_X) == 0)) {
-                    nextFrame = new Dwarf::StackFrame(*curFrame,
-                          Dwarf::UnwindMechanism::BAD_IP_RECOVERY);
+                if ((frameCount == 0 ||
+                         (stack[frameCount-1].cie && stack[frameCount-1].cie->isSignalHandler)) &&
+                   (curFrame.phdr == 0 || (curFrame.phdr->p_flags & PF_X) == 0)) {
+                    nextFrame.regs = curFrame.regs;
                     // get stack pointer in the current frame, and read content of
                     // TOS
-                    auto sp = curFrame->getReg(SPREG);
+                    auto sp = curFrame.getReg(SPREG);
                     Elf::Addr ip;
                     auto in = p.io->read(sp, sizeof ip, (char *)&ip);
                     if (in == sizeof ip) {
-                        nextFrame->setReg(SPREG, sp + sizeof ip); // pop...
-                        nextFrame->setReg(IPREG, ip);             // .. insn pointer.
+                        nextFrame.setReg(SPREG, sp + sizeof ip); // pop...
+                        nextFrame.setReg(IPREG, ip);             // .. insn pointer.
+                        nextFrame.mechanism = Dwarf::UnwindMechanism::BAD_IP_RECOVERY;
                         continue;
                     }
                 }
@@ -901,17 +896,17 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 Elf::Addr reloc;
                 const Elf::Phdr *segment;
                 Elf::Object::sptr obj;
-                std::tie(reloc, obj, segment) = p.findSegment(curFrame->rawIP());
+                std::tie(reloc, obj, segment) = p.findSegment(curFrame.rawIP());
                 if (obj) {
                     Elf::Addr sigContextAddr = 0;
-                    auto objip = curFrame->rawIP() - reloc;
+                    auto objip = curFrame.rawIP() - reloc;
                     auto restoreSym = obj->findDebugSymbol("__restore");
                     if (restoreSym.st_shndx != SHN_UNDEF && objip == restoreSym.st_value)
-                        sigContextAddr = curFrame->getReg(SPREG) + 4;
+                        sigContextAddr = curFrame.getReg(SPREG) + 4;
                     else {
                         auto restoreRtSym = obj->findDebugSymbol("__restore_rt");
                         if (restoreRtSym.st_shndx != SHN_UNDEF && objip == restoreRtSym.st_value)
-                            sigContextAddr = p.io->readObj<Elf::Addr>(curFrame->getReg(SPREG) + 8) + 20;
+                            sigContextAddr = p.io->readObj<Elf::Addr>(curFrame.getReg(SPREG) + 8) + 20;
                     }
                     if (sigContextAddr != 0) {
                        // This mapping is based on DWARF regnos, and ucontext.h
@@ -936,10 +931,10 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                            { 14, REG_FS }
                        };
                        p.io->readObj(sigContextAddr, &regs);
-                       nextFrame = new Dwarf::StackFrame(*curFrame,
-                             Dwarf::UnwindMechanism::TRAMPOLINE);
+                       nextFrame.regs = curFrame.regs;
                        for (auto &reg : gregmap)
-                           nextFrame->setReg(reg.dwarf, regs[reg.greg]);
+                           nextFrame.setReg(reg.dwarf, regs[reg.greg]);
+                       nextFrame.mechanism = Dwarf::UnwindMechanism::TRAMPOLINE;
                        continue;
                     }
                 }
@@ -950,17 +945,19 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 // Use ebp/rbp to find return address and saved BP.
                 // Restore those, and the stack pointer itself.
                 Elf::Addr newBp, newIp, oldBp;
-                oldBp = curFrame->getReg(BPREG);
-                if (oldBp == 0)
-                   return; // null base pointer means we're done.
+                oldBp = curFrame.getReg(BPREG);
+                if (oldBp == 0) {
+                   // null base pointer means we're done.
+                   break;
+                }
                 p.io->readObj(oldBp + ELF_BYTES, &newIp);
                 p.io->readObj(oldBp, &newBp);
                 if (newBp > oldBp && newIp > 4096) {
-                    nextFrame = new Dwarf::StackFrame(*curFrame,
-                          Dwarf::UnwindMechanism::FRAMEPOINTER);
-                    nextFrame->setReg(SPREG, oldBp + ELF_BYTES * 2);
-                    nextFrame->setReg(BPREG, newBp);
-                    nextFrame->setReg(IPREG, newIp);
+                    nextFrame.regs = curFrame.regs;
+                    nextFrame.setReg(SPREG, oldBp + ELF_BYTES * 2);
+                    nextFrame.setReg(BPREG, newBp);
+                    nextFrame.setReg(IPREG, newIp);
+                    nextFrame.mechanism = Dwarf::UnwindMechanism::FRAMEPOINTER;
                     continue;
                 }
 #endif
@@ -971,6 +968,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
     catch (const std::exception &ex) {
         std::clog << "warning: exception unwinding stack: " << ex.what() << std::endl;
     }
+    if (stack.back().mechanism == Dwarf::UnwindMechanism::INVALID)
+       stack.pop_back();
 }
 
 std::shared_ptr<Process> Process::load(Elf::Object::sptr exec, std::string id, const PstackOptions &options, Dwarf::ImageCache &imageCache) {
@@ -993,4 +992,47 @@ std::shared_ptr<Process> Process::load(Elf::Object::sptr exec, std::string id, c
     }
     proc->load(options);
     return proc;
+}
+
+
+std::list<ThreadStack>
+Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
+    std::list<ThreadStack> threadStacks;
+    std::set<pid_t> tracedLwps;
+    StopProcess processSuspender(this);
+    listThreads([this, &threadStacks, &tracedLwps, maxFrames] (
+                       const td_thrhandle_t *thr) {
+
+        Elf::CoreRegisters regs;
+        td_err_e the;
+#ifdef __linux__
+        the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
+#else
+        the = td_thr_getgregs(thr, &regs);
+#endif
+        if (the == TD_OK) {
+            threadStacks.push_back(ThreadStack());
+            td_thr_get_info(thr, &threadStacks.back().info);
+            threadStacks.back().unwind(*this, regs, maxFrames);
+            tracedLwps.insert(threadStacks.back().info.ti_lid);
+        }
+    });
+
+    for (auto &lwp : lwps) {
+        if (tracedLwps.find(lwp.first) == tracedLwps.end()) {
+            threadStacks.push_back(ThreadStack());
+            threadStacks.back().info.ti_lid = lwp.first;
+            Elf::CoreRegisters regs;
+            getRegs(lwp.first,  &regs);
+            threadStacks.back().unwind(*this, regs, maxFrames);
+        }
+    }
+
+    // if we don't need to print arguments to functions, we now have the full
+    // backtrace and don't need to read anything more from the process.
+    // Everything else is just parsing debug data, so we can resume now.
+    if (!options.doargs)
+       processSuspender.clear();
+
+    return threadStacks;
 }

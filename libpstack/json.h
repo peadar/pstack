@@ -40,7 +40,6 @@ public:
    const T& object;
    const C context;
    JSON(const T &object_, const C context_ = C()) : object(object_), context(context_) {}
-   const T *operator -> () const { return &object; }
    JSON() = delete;
 };
 
@@ -181,7 +180,7 @@ struct Escape {
 
 struct JSONEncodingError : public std::exception {
    std::string msg;
-   const char *what() { return msg.c_str(); }
+   const char *what() const noexcept { return msg.c_str(); }
    JSONEncodingError(std::string &&rhs) : msg(std::move(rhs)) {}
 };
 

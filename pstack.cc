@@ -31,43 +31,7 @@ volatile bool interrupted = false;
 std::ostream &
 pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFrames)
 {
-    // get its back trace.
-    std::list<ThreadStack> threadStacks;
-    std::set<pid_t> tracedLwps;
-    StopProcess processSuspender(&proc);
-    proc.listThreads([&proc, &threadStacks, &tracedLwps, maxFrames] (
-                       const td_thrhandle_t *thr) {
-
-        Elf::CoreRegisters regs;
-        td_err_e the;
-#ifdef __linux__
-        the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
-#else
-        the = td_thr_getgregs(thr, &regs);
-#endif
-        if (the == TD_OK) {
-            threadStacks.push_back(ThreadStack());
-            td_thr_get_info(thr, &threadStacks.back().info);
-            threadStacks.back().unwind(proc, regs, maxFrames);
-            tracedLwps.insert(threadStacks.back().info.ti_lid);
-        }
-    });
-
-    for (auto &lwp : proc.lwps) {
-        if (tracedLwps.find(lwp.first) == tracedLwps.end()) {
-            threadStacks.push_back(ThreadStack());
-            threadStacks.back().info.ti_lid = lwp.first;
-            Elf::CoreRegisters regs;
-            proc.getRegs(lwp.first,  &regs);
-            threadStacks.back().unwind(proc, regs, maxFrames);
-        }
-    }
-
-    // if we don't need to print arguments to functions, we now have the full
-    // backtrace and don't need to read anything more from the process.
-    // Everything else is just parsing debug data, so we can resume now.
-    if (!options.doargs)
-       processSuspender.clear();
+   const auto &threadStacks = proc.getStacks(options, maxFrames);
 
     if (doJson) {
         os << json(threadStacks, &proc);
@@ -283,31 +247,31 @@ emain(int argc, char **argv)
     // discovering the executable
     Elf::Object::sptr exec;
 
+
+    auto doStack = [=, &options] (Process &proc) {
+        proc.load(options);
+        while (!interrupted) {
+#if defined(WITH_PYTHON)
+            if (doPython || printAllStacks) {
+                bool isPythonProcess = pystack(proc, std::cout, options, pythonModules);
+                // error if -p but not python process
+                if (doPython && !isPythonProcess)
+                    throw Exception() << "Couldn't find a Python interpreter";
+            }
+            if (!doPython)
+#endif
+            {
+                pstack(proc, std::cout, options, maxFrames);
+            }
+            if (sleepTime != 0.0)
+                usleep(sleepTime * 1000000);
+            else
+                break;
+        }
+    };
+
     for (int i = optind; i < argc; i++) {
         try {
-            auto doStack = [=, &options] (Process &proc) {
-                proc.load(options);
-                while (!interrupted) {
-#if defined(WITH_PYTHON)
-                    if (doPython || printAllStacks) {
-                        bool isPythonProcess = pystack(proc, std::cout, options, pythonModules);
-                        // error if -p but not python process
-                        if (doPython && !isPythonProcess)
-                            throw Exception() << "Couldn't find a Python interpreter";
-                    }
-
-                    if (!doPython)
-#endif
-                    {
-                        pstack(proc, std::cout, options, maxFrames);
-                    }
-
-                    if (sleepTime != 0.0)
-                        usleep(sleepTime * 1000000);
-                    else
-                        break;
-                }
-            };
             auto process = Process::load(exec, argv[i], options, imageCache);
             if (process == nullptr)
                 exec = imageCache.getImageForName(argv[i]);

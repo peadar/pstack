@@ -21,7 +21,7 @@ struct ps_prochandle {};
 class Process;
 
 namespace Dwarf {
-struct StackFrame;
+class StackFrame;
 class ExpressionStack : public std::stack<Elf::Addr> {
 public:
     bool isReg;
@@ -58,9 +58,15 @@ enum class UnwindMechanism {
    // previous frame to be invoked. Unwinding requires decoding the register
    // state stored by the kernel on the stack.
    TRAMPOLINE,
+
+   // Invalid stack frame - not unwound/unwind failed.
+   INVALID,
 };
 
-struct StackFrame {
+class StackFrame {
+    mutable Dwarf::DIE function_;
+public:
+    Dwarf::DIE function() const;
     Elf::Addr rawIP() const;
     Elf::Addr scopeIP() const;
     Elf::Addr cfa;
@@ -72,8 +78,8 @@ struct StackFrame {
     CFI *frameInfo;
     const FDE *fde;
     const CIE *cie;
-    Dwarf::DIE function;
     UnwindMechanism mechanism;
+    StackFrame() : StackFrame(UnwindMechanism::INVALID) {}
     StackFrame(UnwindMechanism mechanism)
         : cfa(0)
         , elfReloc(0)
@@ -84,29 +90,23 @@ struct StackFrame {
         , cie(0)
         , mechanism(mechanism)
     {}
-    StackFrame(const StackFrame &prev, UnwindMechanism mechanism)
-       : StackFrame(mechanism)
-       { regs = prev.regs; }
     StackFrame &operator = (const StackFrame &) = delete;
     void setReg(unsigned, cpureg_t);
     cpureg_t getReg(unsigned regno) const;
     Elf::Addr getCFA(const Process &, const CallFrame &) const;
-    StackFrame *unwind(Process &p);
+    bool unwind(Process &p, StackFrame &out);
     void setCoreRegs(const Elf::CoreRegisters &);
     void getCoreRegs(Elf::CoreRegisters &) const;
     void getFrameBase(const Process &, intmax_t, ExpressionStack *) const;
+    void findObjectCode(Process &);
 };
 }
 
 struct ThreadStack {
     td_thrinfo_t info;
-    std::vector<Dwarf::StackFrame *> stack;
+    std::vector<Dwarf::StackFrame> stack;
     ThreadStack() {
         memset(&info, 0, sizeof info);
-    }
-    ~ThreadStack() {
-        for (auto i = stack.begin(); i != stack.end(); ++i)
-            delete *i;
     }
     void unwind(Process &, Elf::CoreRegisters &regs, unsigned maxFrames);
 };
@@ -178,12 +178,10 @@ public:
     Process(Elf::Object::sptr exec, Reader::sptr memory, const PstackOptions &prl, Dwarf::ImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
-    virtual void findLWPs() = 0;
-
     virtual void resumeProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
     std::ostream &dumpStackText(std::ostream &, const ThreadStack &, const PstackOptions &) const;
-    std::ostream &dumpFrameText(std::ostream &, const PrintableFrame &, Dwarf::StackFrame *) const;
+    std::ostream &dumpFrameText(std::ostream &, const PrintableFrame &, Dwarf::StackFrame &) const;
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &) const;
     template <typename T> void listThreads(const T &);
 
@@ -198,6 +196,7 @@ public:
     resolveSymbolDetail(const char *name, bool includeDebug,
                         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match =
                            [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
+    virtual std::list<ThreadStack> getStacks(const PstackOptions &, unsigned maxFrames);
     virtual ~Process();
     virtual void load(const PstackOptions &);
     virtual pid_t getPID() const = 0;
@@ -237,7 +236,7 @@ public:
     void stopProcess() override;
     void resumeProcess() override;
     virtual void load(const PstackOptions &) override;
-    virtual void findLWPs() override;
+    void findLWPs();
     virtual pid_t getPID() const override;
 protected:
     bool loadSharedObjectsFromFileNote() override;
@@ -266,7 +265,7 @@ public:
     virtual void resume(lwpid_t) override;
     void stopProcess() override;
     void resumeProcess()  override { }
-    virtual void findLWPs() override;
+    void findLWPs();
     virtual void load(const PstackOptions &) override;
     virtual pid_t getPID() const override;
 protected:
