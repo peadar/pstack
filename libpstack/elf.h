@@ -136,6 +136,7 @@ class SymHash {
     const Word *buckets;
 public:
     static const char *tablename() { return ".hash"; }
+    static int sectiontype() { return SHT_HASH; }
     SymHash(Reader::csptr hash_, Reader::csptr syms_, Reader::csptr strings_);
     std::pair<uint32_t, Sym> findSymbol(const std::string &name); // fills sym, and returns index.
 };
@@ -161,7 +162,8 @@ class GnuHash {
     uint32_t bucketoff(size_t idx) const { return bloomoff(header.bloom_size) + idx * 4; }
     uint32_t chainoff(size_t idx) const { return bucketoff(header.nbuckets) + idx * 4; }
 public:
-    static const char *tablename() { return ".gnu_hash"; }
+    static const char *tablename() { return ".gnu.hash"; }
+    static int sectiontype() { return SHT_GNU_HASH; }
     GnuHash(const Reader::csptr &hash_, const Reader::csptr &syms_, const Reader::csptr &strings_) :
         hash(hash_), syms(syms_), strings(strings_), header(hash->readObj<Header>(0)) { }
     std::pair<uint32_t, Sym> findSymbol(const char *) const;
@@ -314,7 +316,7 @@ private:
     // types and section names, so share the code.
     template <typename HashType> HashType *get_hash(std::unique_ptr<HashType> &ptr) {
         if (ptr == nullptr) {
-            auto &section { getSection( HashType::tablename(), SHT_GNU_HASH) };
+            auto &section { getSection( HashType::tablename(), HashType::sectiontype() ) };
             if (section) {
                 auto &syms = getLinkedSection(section);
                 auto &strings = getLinkedSection(syms);
