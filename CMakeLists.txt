@@ -126,10 +126,12 @@ add_library(dwelf ${LIBTYPE}
          ${lzmasrc}
          )
 
+
 add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc logproc.cc
    dwarfproc.cc procdump.cc ${stubsrc})
 
 add_executable(canal canal.cc ${pysrc})
+
 add_executable(${PSTACK_BIN} pstack.cc ${pysrc})
 
 target_link_libraries(procman ${LTHREADDB} dwelf)
@@ -188,3 +190,9 @@ add_test(NAME thread COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE
 
 # for automake and rpmbuild
 add_custom_target(check COMMAND make test)
+
+# bonus: heap debugger
+add_library(hdbg SHARED heap.c)
+add_executable(hdmp hdmp.cc)
+target_link_libraries(hdmp dwelf procman)
+target_link_libraries(hdbg dl)

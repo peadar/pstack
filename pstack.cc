@@ -263,7 +263,6 @@ emain(int argc, char **argv)
     if (execName != "")
        exec = imageCache.getImageForName(execName);
 
-
     auto doStack = [=, &options] (Process &proc) {
         proc.load(options);
         while (!interrupted) {
