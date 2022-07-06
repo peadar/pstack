@@ -7,6 +7,8 @@ set(CMAKE_BUILD_TYPE Debug)
 
 set(CMAKE_CXX_STANDARD 14)
 
+add_definitions("-O0 -D_FORTIFY_SOURCE=0")
+
 add_library(testhelper STATIC abort.c)
 
 add_executable(thread thread.cc)
