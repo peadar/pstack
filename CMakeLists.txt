@@ -170,8 +170,15 @@ if (NOT (Python2_Development_FOUND))
    message(WARNING "no python2 support found")
 endif()
 
+# bonus: heap debugger
+add_library(hdbg SHARED heap.c)
+add_executable(hdmp hdmp.cc)
+target_link_libraries(hdmp dwelf procman)
+target_link_libraries(hdbg dl)
+
 install(TARGETS ${PSTACK_BIN} canal DESTINATION bin)
-install(TARGETS dwelf procman DESTINATION lib${LIB_SUFFIX})
+install(TARGETS hdmp DESTINATION bin)
+install(TARGETS dwelf procman hdbg DESTINATION lib${LIB_SUFFIX})
 install(FILES ${CMAKE_SOURCE_DIR}/pstack.1 DESTINATION share/man/man1 RENAME ${PSTACK_BIN}.1 )
 install(DIRECTORY libpstack DESTINATION include)
 install(CODE "execute_process (COMMAND setcap cap_sys_ptrace+ep ${DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/${PSTACK_BIN} RESULT_VARIABLE ret)
@@ -190,9 +197,3 @@ add_test(NAME thread COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE
 
 # for automake and rpmbuild
 add_custom_target(check COMMAND make test)
-
-# bonus: heap debugger
-add_library(hdbg SHARED heap.c)
-add_executable(hdmp hdmp.cc)
-target_link_libraries(hdmp dwelf procman)
-target_link_libraries(hdbg dl)
