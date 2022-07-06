@@ -68,7 +68,7 @@ enum class UnwindMechanism {
 class StackFrame {
     mutable Dwarf::DIE function_;
 public:
-    Dwarf::DIE function() const;
+    Dwarf::DIE &function() const;
     Elf::Addr rawIP() const;
     Elf::Addr scopeIP() const;
     Elf::Addr cfa;

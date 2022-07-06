@@ -407,7 +407,7 @@ operator << (std::ostream &os, const ProcPtr &pp) {
        std::string s = pp.proc.io->readString(pp.addr);
        os << "\"" << s << "\"";
     } else {
-       os << (void *)pp.addr;
+       os << pp.addr << "(" << (void *)pp.addr << ")";
     }
     return os;
 }

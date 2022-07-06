@@ -58,7 +58,7 @@ StackFrame::scopeIP() const
     return raw - 1;
 }
 
-Dwarf::DIE StackFrame::function() const {
+Dwarf::DIE &StackFrame::function() const {
     if (!function_) {
         auto objIp = scopeIP() - elfReloc;
         Dwarf::Unit::sptr u = dwarf->lookupUnit(objIp);
