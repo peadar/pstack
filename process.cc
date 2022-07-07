@@ -554,12 +554,16 @@ operator << (std::ostream &os, const ArgPrint &ap)
                         Dwarf::ExpressionStack fbstack;
                         addr = fbstack.eval(ap.p, attr, &ap.pframe.frame, ap.pframe.frame.elfReloc);
                         os << "=";
-                        if (fbstack.isReg) {
-                           os << ProcPtr(ap.p, type, addr)
-                              << "{r" << fbstack.inReg << "}";
-                        } else {
-                           os << RemoteValue(ap.p, addr, type);
+                        try {
+                           if (fbstack.isReg)
+                              os << ProcPtr(ap.p, type, addr) << "{r" << fbstack.inReg << "}";
+                           else
+                              os << RemoteValue(ap.p, addr, type);
                         }
+                        catch (const Exception &ex) {
+                           os << "<" << ex.what() << ">";
+                        }
+
                     } else {
                         auto constVal = child.attribute(Dwarf::DW_AT_const_value);
                         if (constVal.valid())
