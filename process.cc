@@ -1005,9 +1005,16 @@ Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
     std::list<ThreadStack> threadStacks;
     std::set<pid_t> tracedLwps;
     StopProcess processSuspender(this);
+
+    /*
+     * First find "threads", the userland pthread_t concept. This uses the
+     * pthread "agent". This is the userland-visible part of the threading
+     * system, and allows us to find pthread ids, and (in theory) deal with
+     * threading systems where there is not a 1:1 correspondence between
+     * userland pthreads and kernel LWPs
+     */
     listThreads([this, &threadStacks, &tracedLwps, maxFrames] (
                        const td_thrhandle_t *thr) {
-
         Elf::CoreRegisters regs;
         td_err_e the;
 #ifdef __linux__
@@ -1023,6 +1030,17 @@ Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
         }
     });
 
+     /*
+      * Now find LWPs, the kernel scheduled entities.  If we saw a thread above
+      * with this LWP assigned as its `ti_lid` field then that thread was the
+      * one actively scheduled on this LWP, so there's no need to print out its
+      * backtrace. We assume that in a system where N(threads) != N(lwps), then
+      * threads that are not currently scheduled would get their register set
+      * from somewhere other than the LWP (eg, cached in some structure that
+      * td_thr_getregs would have found without resorting to ps_lgetregs().
+      * There are no extant linux systems that I'm aware of that use a non-1:1
+      * thread model, so we can't really test this.
+      */
     for (auto &lwp : lwps) {
         if (tracedLwps.find(lwp.first) == tracedLwps.end()) {
             threadStacks.push_back(ThreadStack());
@@ -1033,11 +1051,13 @@ Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
         }
     }
 
-    // if we don't need to print arguments to functions, we now have the full
-    // backtrace and don't need to read anything more from the process.
-    // Everything else is just parsing debug data, so we can resume now.
+    /*
+     * if we don't need to print arguments to functions, we now have the full
+     * backtrace and don't need to read anything more from the process.
+     * Everything else is just parsing debug data, so we can resume now.
+     */
     if (!options.doargs)
-       processSuspender.clear();
+        processSuspender.clear();
 
     return threadStacks;
 }

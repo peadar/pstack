@@ -63,7 +63,7 @@ LiveProcess::getRegs(lwpid_t pid, Elf::CoreRegisters *reg)
     iovec iov;
     iov.iov_base = reg;
     iov.iov_len = sizeof *reg;
-    int rc= ptrace(PTRACE_GETREGSET, pid, NT_PRSTATUS, &iov) != -1;
+    int rc = ptrace(PTRACE_GETREGSET, pid, NT_PRSTATUS, &iov);
     resume(pid);
     return rc == 0;
 #endif
