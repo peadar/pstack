@@ -213,7 +213,11 @@ Info::lookupUnit(Elf::Addr addr) const {
             auto highpc = root.attribute(DW_AT_high_pc);
             auto ranges = root.attribute(DW_AT_ranges);
             if (lowpc.valid() && highpc.valid()) {
-                (*aranges)[uintmax_t(highpc)] = std::make_pair(uintmax_t(highpc) - uintmax_t(lowpc), u->offset);
+               uintmax_t low = uintmax_t(lowpc);
+               uintmax_t high = uintmax_t(highpc);
+               if (highpc.form() != DW_FORM_addr)
+                  high += low;
+               (*aranges)[high] = std::make_pair(high - low, u->offset);
             }
             if (ranges.valid()) {
                 auto rs = Ranges(ranges);
