@@ -16,7 +16,7 @@
 namespace Dwarf {
 
 enum HasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
-
+class DIE;
 class DWARFReader;
 class Info;
 class LineInfo;
@@ -134,6 +134,15 @@ struct Block {
 };
 
 enum class ContainsAddr { YES, NO, UNKNOWN };
+
+
+// Ranges represents a sequence of addresses. The main use is to check if a text
+// address exists in the range, and is therefore associated with some information,
+// such as a location list, etc.
+class Ranges : public std::vector<std::pair<uintmax_t, uintmax_t>> {
+   public:
+      Ranges(Unit *, uintmax_t offset, uintmax_t base);
+};
 
 // An abstract "DIE" -
 // A die exists in a tree within a unit. A die can be the rooot of a unit's tree, or
@@ -267,14 +276,8 @@ public:
     // Get a human-readable name for a type die - ascends through namespaces
     // that contain this DIE, walks through pointers and references, etc.
     std::string typeName(const DIE &);
-};
 
-// Ranges represents a sequence of addresses. The main use is to check if a text
-// address exists in the range, and is therefore associated with some information,
-// such as a location list, etc.
-class Ranges : public std::vector<std::pair<uintmax_t, uintmax_t>> {
-public:
-   bool isNew { true };
+    const Ranges *getRanges() const;
 };
 
 // ARanges provides a fast way of finding the compilation unit associatd with a
@@ -380,11 +383,16 @@ class Unit : public std::enable_shared_from_this<Unit> {
     std::unique_ptr<Macros> macros;
     UnitType unitType;
 
+    // Previously decoded ranges at a given offset in .debug_ranges / .debug_rnglists
+    using RangesForOffset = std::map<Elf::Addr, std::unique_ptr<Ranges>>;
+    RangesForOffset rangesForOffset;
+
 public:
 
     using sptr = std::shared_ptr<Unit>;
     using csptr = std::shared_ptr<const Unit>;
-    using RangesForOffset = std::map<Elf::Addr, Ranges>;
+
+    const Ranges *getRanges(uintmax_t offset, uintmax_t base);
 
     const Info *const dwarf; // back pointer to DWARF info
 
@@ -397,9 +405,6 @@ public:
     size_t dwarfLen; // Size, as reported by DWARF length header.
     uint8_t addrlen; // size of addresses in this unit.
     unsigned char id[8]; // Unit ID for DWO.
-
-    // Previously decoded ranges at a given offset in .debug_ranges / .debug_rnglists
-    RangesForOffset rangesForOffset;
 
     Unit(const Info *, DWARFReader &);
     ~Unit();
@@ -682,7 +687,6 @@ public:
     explicit operator bool() const { return valid() && value().flag; }
     explicit operator DIE() const;
     explicit operator const Block &() const { return *value().block; }
-    explicit operator const Ranges &() const;
     AttrName name() const;
     const DIE die;
 

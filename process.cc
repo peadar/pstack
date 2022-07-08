@@ -274,10 +274,9 @@ PrintableFrame::PrintableFrame(const Dwarf::StackFrame &frame, int frameNo, cons
         if (lowpc.valid()) {
             functionOffset = objIp - uintmax_t(lowpc);
         } else {
-            auto rangesAt = function.attribute(Dwarf::DW_AT_ranges);
-            if (rangesAt.valid()) {
-                auto ranges = Dwarf::Ranges(rangesAt);
-                functionOffset = objIp - ranges[0].first;
+            auto ranges = function.getRanges();
+            if (ranges) {
+                functionOffset = objIp - (*ranges)[0].first;
             } else {
                 // no function start address - we'll try and find it
                 // below in the ELF fallback code.
@@ -951,21 +950,28 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 // frame-pointer unwinding.
                 // Use ebp/rbp to find return address and saved BP.
                 // Restore those, and the stack pointer itself.
-                Elf::Addr newBp, newIp, oldBp;
-                oldBp = curFrame.getReg(BPREG);
-                if (oldBp == 0) {
-                   // null base pointer means we're done.
-                   break;
-                }
-                p.io->readObj(oldBp + ELF_BYTES, &newIp);
-                p.io->readObj(oldBp, &newBp);
-                if (newBp > oldBp && newIp > 4096) {
-                    nextFrame.regs = curFrame.regs;
-                    nextFrame.setReg(SPREG, oldBp + ELF_BYTES * 2);
-                    nextFrame.setReg(BPREG, newBp);
-                    nextFrame.setReg(IPREG, newIp);
-                    nextFrame.mechanism = Dwarf::UnwindMechanism::FRAMEPOINTER;
-                    continue;
+                //
+                // We skip this if the instruction pointer is zero - we hope
+                // we'd have resolved null-pointer calls above, and if we find
+                // a 0 ip on the call stack, it's a good indication the
+                // unwinding is finished.
+                if (curFrame.rawIP() != 0) {
+                   Elf::Addr newBp, newIp, oldBp;
+                   oldBp = curFrame.getReg(BPREG);
+                   if (oldBp == 0) {
+                      // null base pointer means we're done.
+                      break;
+                   }
+                   p.io->readObj(oldBp + ELF_BYTES, &newIp);
+                   p.io->readObj(oldBp, &newBp);
+                   if (newBp > oldBp && newIp > 4096) {
+                       nextFrame.regs = curFrame.regs;
+                       nextFrame.setReg(SPREG, oldBp + ELF_BYTES * 2);
+                       nextFrame.setReg(BPREG, newBp);
+                       nextFrame.setReg(IPREG, newIp);
+                       nextFrame.mechanism = Dwarf::UnwindMechanism::FRAMEPOINTER;
+                       continue;
+                   }
                 }
 #endif
                 throw;

@@ -162,6 +162,14 @@ Unit::findAbbreviation(size_t code) const
     return it != abbreviations.end() ? &it->second : nullptr;
 }
 
+const Ranges *
+Unit::getRanges(uintmax_t offset, uintmax_t base) {
+    auto &ptr = rangesForOffset[offset];
+    if (ptr == nullptr)
+        ptr.reset(new Ranges(this, offset, base));
+    return ptr.get();
+}
+
 void
 Unit::purge()
 {

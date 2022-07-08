@@ -84,14 +84,16 @@ DIE::containsAddress(Elf::Addr addr) const
 
     // We may have .debug_ranges or .debug_rnglists - see if there's a
     // DW_AT_ranges attr.
-    Elf::Addr base = low.valid() ? uintmax_t(low) : 0;
-    auto ranges = attribute(DW_AT_ranges, true);
-    if (ranges.valid()) {
-        // Iterate over the ranges, and see if the address lies inside.
-        for (auto &range : Ranges(ranges))
-            if (range.first + base <= addr && addr <= range.second + base )
-                return ContainsAddr::YES;
-        return ContainsAddr::NO;
+    auto rangeattr = attribute(DW_AT_ranges);
+    if (rangeattr.valid()) {
+        auto ranges = unit->getRanges(uintmax_t(rangeattr), low.valid() ? uintmax_t(low) : 0);
+        if (ranges) {
+            // Iterate over the ranges, and see if the address lies inside.
+            for (auto &range : *ranges)
+                if (range.first <= addr && addr <= range.second)
+                    return ContainsAddr::YES;
+            return ContainsAddr::NO;
+        }
     }
     return ContainsAddr::UNKNOWN;
 }
@@ -426,38 +428,29 @@ DIE::Attribute::operator uintmax_t() const
     }
 }
 
-DIE::Attribute::operator const Ranges&() const
-{
-    auto val = value().addr;
+Ranges::Ranges(Unit *unit, uintmax_t offset, uintmax_t base) {
 
-    Ranges &ranges = die.unit->rangesForOffset[val];
-
-    if (!ranges.isNew)
-        return ranges;
-
-    ranges.isNew = false;
-
-    if (die.unit->version < 5) {
+    if (unit->version < 5) {
         // DWARF4 units use debug_ranges
-        DWARFReader reader(die.unit->dwarf->debugRanges, value().addr);
+        DWARFReader reader(unit->dwarf->debugRanges, offset);
         for (;;) {
             auto start = reader.getuint(sizeof (Elf::Addr));
             auto end = reader.getuint(sizeof (Elf::Addr));
             if (start == 0 && end == 0)
                 break;
-            ranges.emplace_back(std::make_pair(start, end));
+            if (start == std::numeric_limits<Elf::Addr>::max())
+                base = end;
+            else
+                emplace_back(std::make_pair(start + base, end + base));
         }
     } else {
-        // DWARF5 units use debug_rnglists.
-        Elf::Off offset = value().addr;
-
         // Offset by rnglists_base in the root DIE.
-        auto root = die.unit->root();
+        auto root = unit->root();
         auto attr = root.attribute(DW_AT_rnglists_base);
         if (attr.valid())
             offset += uintmax_t(attr);
 
-        auto &elf = die.unit->dwarf->elf;
+        auto &elf = unit->dwarf->elf;
         auto rnglists = elf->sectionReader(".debug_rnglists", ".zdebug_rnglists", nullptr);
         auto addrs = elf->sectionReader(".debug_addr", ".zdebug_addr", nullptr);
         DWARFReader r(rnglists, offset);
@@ -465,6 +458,7 @@ DIE::Attribute::operator const Ranges&() const
         uintmax_t base = 0;
         for (bool done = false; !done;) {
             auto entryType = DW_RLE(r.getu8());
+            auto addrlen = unit->addrlen;
             switch (entryType) {
                 case DW_RLE_end_of_list:
                     done = true;
@@ -493,24 +487,24 @@ DIE::Attribute::operator const Ranges&() const
                 case DW_RLE_offset_pair: {
                     auto offstart = r.getuleb128();
                     auto offend = r.getuleb128();
-                    ranges.emplace_back(offstart + base, offend + base);
+                    emplace_back(offstart + base, offend + base);
                     break;
                 }
 
                 case DW_RLE_base_address:
-                    base = r.getuint(die.unit->addrlen);
+                    base = r.getuint(addrlen);
                     break;
 
                 case DW_RLE_start_end: {
-                    auto start = r.getuint(die.unit->addrlen);
-                    auto end = r.getuint(die.unit->addrlen);
-                    ranges.emplace_back(start, end);
+                    auto start = r.getuint(addrlen);
+                    auto end = r.getuint(addrlen);
+                    emplace_back(start, end);
                     break;
                 }
                 case DW_RLE_start_length: {
-                    auto start = r.getuint(die.unit->addrlen);
+                    auto start = r.getuint(addrlen);
                     auto len = r.getuleb128();
-                    ranges.emplace_back(start, start + len);
+                    emplace_back(start, start + len);
                     break;
                 }
                 default:
@@ -518,7 +512,6 @@ DIE::Attribute::operator const Ranges&() const
             }
         }
     }
-    return ranges;
 }
 
 DIE::Attribute::operator std::string() const
@@ -696,6 +689,15 @@ DIE::typeName(const DIE &type)
             return stringify("(unhandled tag ", type.tag(), ")");
         }
     }
+}
+
+const Ranges * DIE::getRanges() const {
+    auto ranges = attribute(DW_AT_ranges);
+    if (!ranges.valid())
+        return nullptr;
+    auto lowpc = attribute(DW_AT_low_pc);
+    // decode ranges - do it through the unit, so we can cache the result.
+    return unit->getRanges(uintmax_t(ranges), lowpc.valid() ? uintmax_t(lowpc) : 0);
 }
 
 }

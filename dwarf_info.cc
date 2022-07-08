@@ -211,7 +211,6 @@ Info::lookupUnit(Elf::Addr addr) const {
             auto root = u->root();
             auto lowpc = root.attribute(DW_AT_low_pc);
             auto highpc = root.attribute(DW_AT_high_pc);
-            auto ranges = root.attribute(DW_AT_ranges);
             if (lowpc.valid() && highpc.valid()) {
                uintmax_t low = uintmax_t(lowpc);
                uintmax_t high = uintmax_t(highpc);
@@ -219,12 +218,11 @@ Info::lookupUnit(Elf::Addr addr) const {
                   high += low;
                (*aranges)[high] = std::make_pair(high - low, u->offset);
             }
-            if (ranges.valid()) {
-                auto rs = Ranges(ranges);
-                for (auto r : rs) {
+            // do we have ranges for this DIE?
+            auto ranges = root.getRanges();
+            if (ranges)
+                for (auto r : *ranges)
                     (*aranges)[r.second] = std::make_pair(r.first, u->offset);
-                }
-            }
         }
     }
 

@@ -540,12 +540,14 @@ StackFrame::unwind(Process &p, StackFrame &out)
     }
 
     // If the return address isn't defined, then we can't unwind.
-    if (rarInfo == dcf.registers.end() || rarInfo->second.type == UNDEF) {
+    if (rarInfo == dcf.registers.end() || rarInfo->second.type == UNDEF || cfa == 0) {
         if (verbose > 1) {
            *debug << "DWARF unwinding stopped at "
               << std::hex << scopeIP() << std::dec
-              << ": " << (rarInfo == dcf.registers.end() ?
-                    "no RAR register found" : "RAR register undefined")
+              << ": " <<
+              (rarInfo == dcf.registers.end() ? "no RAR register found"
+               : rarInfo->second.type == UNDEF ? "RAR register undefined"
+               : "null CFA for frame")
               << std::endl;
         }
         return false;

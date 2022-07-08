@@ -435,15 +435,6 @@ operator << (std::ostream &os, const JSON<Dwarf::DIE::Attribute> &o)
         writer.field("value", "unknown");
     }
 
-    switch (attr.name()) {
-        case DW_AT_ranges: {
-            const auto &ranges = Ranges(attr);
-            writer.field("ranges", ranges);
-            break;
-        }
-        default:
-            break;
-    }
     return os;
 }
 
