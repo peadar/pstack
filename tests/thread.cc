@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <vector>
-#include <libpstack/json.h>
+#include "libpstack/json.h"
 
 pthread_mutex_t l = PTHREAD_MUTEX_INITIALIZER;
 int in_entry;
