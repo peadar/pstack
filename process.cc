@@ -639,7 +639,7 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, Dwarf::St
     os << "#"
         << std::left << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
         << std::right << "0x" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0')
-        << frame.rawIP() << std::dec;
+        << frame.rawIP();
 
     if (verbose > 0)
         os << "/" << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame.cfa;
