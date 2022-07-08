@@ -14,9 +14,9 @@ def JSON(cmd, childfunc = None):
         args.append(cm.core())
         text = subprocess.check_output(args)
         j = json.loads( text )
-        return j
+        return j, cm.output
 
 def TEXT(cmd):
     with coremonitor.CoreMonitor( cmd, None ) as cm:
         text = subprocess.check_output(["./%s" % PSTACK_BIN, "-a", cm.core()])
-        return text
+        return text, cm.output

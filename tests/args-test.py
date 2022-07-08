@@ -4,5 +4,5 @@
 import pstack
 import re
 
-text = pstack.TEXT(["tests/args"])
+text, _ = pstack.TEXT(["tests/args"])
 assert re.search('aFunctionWithArgs.*msg="tweet", value=42', text)

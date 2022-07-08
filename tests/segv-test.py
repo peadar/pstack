@@ -5,7 +5,7 @@ import coremonitor
 import pstack
 
 for cmd in [ "tests/segv", 'tests/segvrt' ]:
-   pstack_result = pstack.JSON([cmd])
+   pstack_result, _ = pstack.JSON([cmd])
    frames = pstack_result[0]["ti_stack"]
 
    (trampolines, symbols, dies) = zip(

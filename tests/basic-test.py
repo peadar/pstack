@@ -2,7 +2,7 @@
 
 import pstack
 
-threads = pstack.JSON(["tests/basic"])
+threads, _ = pstack.JSON(["tests/basic"])
 assert len(threads) == 1
 thread = threads[0]
 stack = thread["ti_stack"]

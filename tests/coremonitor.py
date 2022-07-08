@@ -11,6 +11,7 @@ class CoreMonitor( object ):
       if args is None:
           self.pid = os.fork()
           self.exe = "*"
+          self.output = None
           if self.pid == 0:
               os._exit(childproc())
           else:
@@ -19,7 +20,7 @@ class CoreMonitor( object ):
           p = subprocess.Popen( args, stdout=subprocess.PIPE )
           self.pid = p.pid
           self.exe = os.path.basename( args[0] )
-          ( self.input, self.output ) = p.communicate()
+          ( self.output, self.errors ) = p.communicate()
       self.corefile = self.core_pattern.replace( "%e", self.exe )
       if '%p' in self.core_pattern:
           self.corefile = self.corefile.replace( "%p", "%d" % self.pid )

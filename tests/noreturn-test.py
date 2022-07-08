@@ -10,7 +10,7 @@ def child():
     dll = ctypes.CDLL("tests/libnoreturn.so")
     dll.thisFunctionWontReturn()
 
-process = pstack.JSON(None, child)
+process, _ = pstack.JSON(None, child)
 stack = process[0]["ti_stack"]
 frames = [ frame for frame in stack if "die" in frame and frame["die"] == "thisFunctionWontReturn" ]
 assert len(frames) == 1, "we should see our function on the stack"

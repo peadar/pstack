@@ -361,7 +361,9 @@ operator << (std::ostream &os, const JSON<ThreadStack, Process *> &ts)
 {
     return JObject(os)
         .field("ti_tid", ts.object.info.ti_tid)
+        .field("ti_lid", ts.object.info.ti_lid)
         .field("ti_type", ts.object.info.ti_type)
+        .field("ti_pri", ts.object.info.ti_pri)
         .field("ti_stack", ts.object.stack, ts.context);
 }
 
