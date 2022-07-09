@@ -742,7 +742,7 @@ operator<< (std::ostream &os,
     auto &symStrings = obj.getLinkedSection(sec);
 
     return JObject(os)
-        .field("name", symStrings.io->readString(t.object.st_name))
+        .field("name", symStrings.io()->readString(t.object.st_name))
         .field("value", t.object.st_value)
         .field("size",t.object.st_size)
         .field("info", int(t.object.st_info))
@@ -785,10 +785,10 @@ operator <<(std::ostream &os, const JSON<Elf::Section, const Elf::Object *> &jse
         if ((sh.sh_flags & flag.value) != 0)
             flags.insert(flag.name);
 
-    std::string secName = strs.io->readString(sh.sh_name);
+    std::string secName = strs.io()->readString(sh.sh_name);
 
     writer.field("size", sh.sh_size)
-        .field("uncompressedSize", sec.io->size())
+        .field("uncompressedSize", sec.io()->size())
         .field("name", secName)
         .field("flags", flags)
         .field("address", sh.sh_addr)
@@ -805,17 +805,17 @@ operator <<(std::ostream &os, const JSON<Elf::Section, const Elf::Object *> &jse
         case SHT_SYMTAB:
         case SHT_DYNSYM: {
             auto context = std::make_tuple(std::ref(o), std::ref(sec));
-            writer.field("symbols", ReaderArray<Elf::Sym>(*sec.io), &context);
+            writer.field("symbols", ReaderArray<Elf::Sym>(*sec.io()), &context);
             break;
         }
         case SHT_RELA:
-            writer.field("reloca", ReaderArray<Elf::Rela>(*sec.io));
+            writer.field("reloca", ReaderArray<Elf::Rela>(*sec.io()));
             break;
     }
 
     if (textContent.find(secName) != textContent.end()) {
         char buf[1024];
-        auto count = sec.io->read(0, std::min(sizeof buf - 1, size_t(sec.io->size())), buf);
+        auto count = sec.io()->read(0, std::min(sizeof buf - 1, size_t(sec.io()->size())), buf);
         buf[count] = 0;
         writer.field("content", buf);
     }

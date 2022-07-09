@@ -201,7 +201,7 @@ SymbolSection<Symtype> *
 Object::getSymtab(std::unique_ptr<SymbolSection<Symtype>> &table, const char *name, int type) {
     if (table == nullptr) {
         auto &sec {getSection( name, type) };
-        table.reset(new SymbolSection<Symtype>(this, sec.io, getLinkedSection(sec).io));
+        table.reset(new SymbolSection<Symtype>(this, sec.io(), getLinkedSection(sec).io()));
     }
     return table.get();
 }
@@ -241,7 +241,7 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
     auto &sshdr = sectionHeaders[elfHeader.e_shstrndx];
     size_t secid = 0;
     for (auto &h : sectionHeaders) {
-        auto name = sshdr.io->readString(h.shdr.sh_name);
+        auto name = sshdr.io()->readString(h.shdr.sh_name);
         namedSection[name] = secid++;
     }
 
@@ -250,7 +250,7 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
      */
     auto &section =  getSection(".dynamic", SHT_DYNAMIC );
     if (section) {
-        ReaderArray<Dyn> content(*section.io);
+        ReaderArray<Dyn> content(*section.io());
         for (auto dyn : content)
            dynamic[dyn.d_tag].push_back(dyn);
     }
@@ -276,15 +276,15 @@ Object::symbolVersions() const
 
           size_t off = 0;
           for (size_t cnt = verneednum[0].d_un.d_val; cnt; --cnt) {
-             auto verneed = gnu_version_r.io->readObj<Verneed>(off);
+             auto verneed = gnu_version_r.io()->readObj<Verneed>(off);
              Off auxOff = off + verneed.vn_aux;
-             auto filename = strings.io->readString(verneed.vn_file);
+             auto filename = strings.io()->readString(verneed.vn_file);
              auto &file = rv->files[filename];
              if (verbose >= 3)
                 *debug << "\treading version requirement aux entries for " << filename << std::endl;
              for (auto i = 0; i < verneed.vn_cnt; ++i) {
-                auto aux = gnu_version_r.io->readObj<Vernaux>(auxOff);
-                auto name = strings.io->readString(aux.vna_name);
+                auto aux = gnu_version_r.io()->readObj<Vernaux>(auxOff);
+                auto name = strings.io()->readString(aux.vna_name);
                 rv->versions[aux.vna_other] = name;
                 file.push_back(aux.vna_other);
                 if (verbose >= 3)
@@ -303,15 +303,15 @@ Object::symbolVersions() const
        if (verdefnum.size() != 0) {
           size_t off = 0;
           for (size_t cnt = verdefnum[0].d_un.d_val; cnt; --cnt) {
-             auto verdef = gnu_version_d.io->readObj<Verdef>(off);
+             auto verdef = gnu_version_d.io()->readObj<Verdef>(off);
              Off auxOff = off + verdef.vd_aux;
              // There's two verdaux entries for some symbols. First is
              // "predecessor" of some sort. Last is the version string, so
              // we'll pick that one
              std::string name;
              for (auto i = 0; i < verdef.vd_cnt; ++i) {
-                auto aux = gnu_version_d.io->readObj<Verdaux>(auxOff);
-                name = strings.io->readString(aux.vda_name);
+                auto aux = gnu_version_d.io()->readObj<Verdaux>(auxOff);
+                name = strings.io()->readString(aux.vda_name);
                 auxOff += aux.vda_next;
              }
              rv->versions[verdef.vd_ndx] = name;
@@ -408,7 +408,7 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
 #ifdef WITH_LZMA
         auto &gnu_debugdata = getSection(".gnu_debugdata", SHT_PROGBITS );
         if (gnu_debugdata) {
-           auto reader = make_shared<const LzmaReader>(gnu_debugdata.io);
+           auto reader = make_shared<const LzmaReader>(gnu_debugdata.io());
            debugData = make_shared<Object>(imageCache, reader, true);
         }
 #else
@@ -539,7 +539,7 @@ Object::getDebug() const
         // if we have a debug link, use that to attempt to find the debug file.
         auto &hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
         if (hdr) {
-            auto link = hdr.io->readString(0);
+            auto link = hdr.io()->readString(0);
             auto dir = dirname(stringify(*io));
             debugObject = imageCache.getDebugImage(dir + "/" + link); //
         }
@@ -588,7 +588,7 @@ Object::sectionReader(const char *name, const char *compressedName, const Elf::S
     if (raw) {
         if (secp)
             *secp = &raw;
-        return raw.io;
+        return raw.io();
     }
     std::string dwoname = std::string(name) + ".dwo";
     const auto &dwo = getSection(dwoname, SHT_PROGBITS);
@@ -596,7 +596,7 @@ Object::sectionReader(const char *name, const char *compressedName, const Elf::S
     if (dwo) {
         if (secp)
             *secp = &dwo;
-        return dwo.io;
+        return dwo.io();
     }
 
     if (compressedName != nullptr) {
@@ -604,7 +604,7 @@ Object::sectionReader(const char *name, const char *compressedName, const Elf::S
         if (zraw) {
 #ifdef WITH_ZLIB
             unsigned char sig[12];
-            zraw.io->readObj(0, sig, sizeof sig);
+            zraw.io()->readObj(0, sig, sizeof sig);
             if (memcmp((const char *)sig, "ZLIB", 4) != 0)
                 return Reader::csptr();
             uint64_t sz = 0;
@@ -614,7 +614,7 @@ Object::sectionReader(const char *name, const char *compressedName, const Elf::S
             }
             if (secp)
                 *secp = &zraw;
-            return make_shared<InflateReader>(sz, OffsetReader(zraw.io, sizeof sig, sz));
+            return make_shared<InflateReader>(sz, OffsetReader(zraw.io(), sizeof sig, sz));
 #else
             std::clog << "warning: no zlib support to process compressed debug info in "
                 << *io << std::endl;
@@ -683,31 +683,39 @@ elf_hash(const string &text)
 }
 
 Section::Section(const Reader::csptr &image, Off off)
+    : image(image)
 {
     image->readObj(off, &shdr);
     // Null sections get null readers.
-    if (shdr.sh_type == SHT_NULL) {
-        io = make_shared<NullReader>();
-        return;
-    }
-    auto rawIo = make_shared<OffsetReader>(image, shdr.sh_offset, shdr.sh_size);
-    if ((shdr.sh_flags & SHF_COMPRESSED) == 0) {
-        io = rawIo;
-    } else {
+
+}
+
+Reader::csptr Section::io() const {
+    if (io_ == nullptr) {
+        if (shdr.sh_type == SHT_NULL) {
+            io_ = make_shared<NullReader>();
+        } else {
+            auto rawIo = make_shared<OffsetReader>(image, shdr.sh_offset, shdr.sh_size);
+            if ((shdr.sh_flags & SHF_COMPRESSED) == 0) {
+                io_ = rawIo;
+            } else {
 #ifdef WITH_ZLIB
-        auto chdr = rawIo->readObj<Chdr>(0);
-        io = make_shared<InflateReader>(chdr.ch_size, OffsetReader(rawIo,
-                 sizeof chdr, shdr.sh_size - sizeof chdr));
+                auto chdr = rawIo->readObj<Chdr>(0);
+                io_ = make_shared<InflateReader>(chdr.ch_size, OffsetReader(rawIo,
+                         sizeof chdr, shdr.sh_size - sizeof chdr));
 #else
-        static bool warned = false;
-        if (!warned) {
-            warned = true;
-            std::clog <<"warning: no support configured for compressed debug info in "
-               << *image << std::endl;
-        }
-        io = make_shared<NullReader>();
+                static bool warned = false;
+                if (!warned) {
+                    warned = true;
+                    std::clog <<"warning: no support configured for compressed debug info in "
+                       << *image << std::endl;
+                }
+                io_ = make_shared<NullReader>();
 #endif
+            }
+        }
     }
+    return io_;
 }
 
 Object::sptr
@@ -778,7 +786,7 @@ ImageCache::flush(Object::sptr o)
 
 VersionedSymbol::VersionedSymbol(const Sym &sym_, const Section &versionInfo, size_t idx)
     : Sym(sym_)
-    , versionIdx(versionInfo ? versionInfo.io->readObj<Half>(idx * sizeof (Half)) : -1)
+    , versionIdx(versionInfo ? versionInfo.io()->readObj<Half>(idx * sizeof (Half)) : -1)
 { }
 
 namespace {

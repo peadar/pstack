@@ -281,7 +281,7 @@ std::string
 Info::getAltImageName() const
 {
     auto &section = elf->getSection(".gnu_debugaltlink", 0);
-    const auto &name = section.io->readString(0);
+    const auto &name = section.io()->readString(0);
     if (name[0] == '/')
         return name;
 

@@ -176,13 +176,16 @@ public:
  * An ELF section is effectively a pair of an Shdr to describe an ELF
  * section, and and a reader object in which to find the content.
  */
-struct Section {
+class Section {
+    mutable Reader::csptr io_;
+    Reader::csptr image;
+public:
     Shdr shdr;
-    Reader::csptr io;
     operator bool() const { return shdr.sh_type != SHT_NULL; }
     Section(const Reader::csptr &image, Off off);
     Section() { shdr.sh_type = SHT_NULL; }
     Section(const Section &) = delete;
+    Reader::csptr io() const;
 };
 
 class Notes {
@@ -321,7 +324,7 @@ private:
                 auto &syms = getLinkedSection(section);
                 auto &strings = getLinkedSection(syms);
                 if (syms && strings)
-                    ptr = std::make_unique<HashType>(section.io, syms.io, strings.io);
+                    ptr = std::make_unique<HashType>(section.io(), syms.io(), strings.io());
             }
         }
         return ptr.get();
