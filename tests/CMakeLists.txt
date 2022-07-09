@@ -7,7 +7,7 @@ set(CMAKE_BUILD_TYPE Debug)
 
 set(CMAKE_CXX_STANDARD 14)
 
-add_definitions("-O0 -D_FORTIFY_SOURCE=0 -I..")
+add_definitions("-O0 -D_FORTIFY_SOURCE=0 -I${CMAKE_SOURCE_DIR}")
 
 add_library(testhelper STATIC abort.c)
 
