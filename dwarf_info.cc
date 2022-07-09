@@ -280,7 +280,7 @@ Info::linesAt(intmax_t offset, Unit &unit) const
 std::string
 Info::getAltImageName() const
 {
-    auto &section = elf->getSection(".gnu_debugaltlink", 0);
+    auto &section = elf->getSection(".gnu_debugaltlink", SHT_NULL);
     const auto &name = section.io()->readString(0);
     if (name[0] == '/')
         return name;

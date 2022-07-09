@@ -264,6 +264,11 @@ public:
     // Get a section by name. If type is not SHT_NULL, the type of the section
     // must match the passed type.
     const Section &getSection(const std::string &name, Word type) const;
+
+    // Get a "debug" section. the content of this section may be in this
+    // object, or the associated debug ELF object.
+    const Section &getDebugSection(const std::string &name, Word type) const;
+
     std::map<int, std::vector<Dyn>> dynamic;
 
     // Accessing segments.

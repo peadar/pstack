@@ -123,8 +123,8 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
         case DW_FORM_sec_offset:
             if (unit->version >= 5) {
                 // For dwarf 5, this will be a debug_loclists entry.
-                auto &sec = dwarf->elf->getSection(".debug_loclists", SHT_PROGBITS);
-                DWARFReader r(sec.io(), uintmax_t(attr));
+                auto sec = dwarf->elf->sectionReader(".debug_loclists", ".zdebug_loclists", nullptr);
+                DWARFReader r(sec, uintmax_t(attr));
                 for (;;) {
                     auto lle = DW_LLE(r.getu8());
                     switch (lle) {
@@ -151,8 +151,8 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                         case DW_LLE_base_addressx:
                             {
                             auto idx = r.getuleb128();
-                            auto &addrsec = dwarf->elf->getSection(".debug_addr", SHT_PROGBITS);
-                            addrsec.io()->readObj(idx * unit->addrlen, &base);
+                            auto addrsec = dwarf->elf->sectionReader(".debug_addr", ".zdebug_addr", nullptr);
+                            addrsec->readObj(idx * unit->addrlen, &base);
                             }
                             break;
 
@@ -174,10 +174,10 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                 }
             } else {
                 // For dwarf 4, this will be a debug_loc entry.
-                auto &sec = dwarf->elf->getSection(".debug_loc", SHT_PROGBITS);
-                // convert this object-relative addr to a unit-relative one
+                auto sec = dwarf->elf->sectionReader(".debug_loc", ".zdebug_loc", 0);
 
-                DWARFReader r(sec.io(), uintmax_t(attr));
+                // convert this object-relative addr to a unit-relative one
+                DWARFReader r(sec, uintmax_t(attr));
                 for (;;) {
                     Elf::Addr start = r.getint(sizeof start);
                     Elf::Addr end = r.getint(sizeof end);

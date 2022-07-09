@@ -200,7 +200,7 @@ template<typename Symtype>
 SymbolSection<Symtype> *
 Object::getSymtab(std::unique_ptr<SymbolSection<Symtype>> &table, const char *name, int type) {
     if (table == nullptr) {
-        auto &sec {getSection( name, type) };
+        auto &sec {getDebugSection( name, type ) };
         table.reset(new SymbolSection<Symtype>(this, sec.io(), getLinkedSection(sec).io()));
     }
     return table.get();
@@ -248,7 +248,7 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
     /*
      * Load dynamic entries
      */
-    auto &section =  getSection(".dynamic", SHT_DYNAMIC );
+    auto &section = getSection(".dynamic", SHT_DYNAMIC );
     if (section) {
         ReaderArray<Dyn> content(*section.io());
         for (auto dyn : content)
@@ -433,16 +433,28 @@ const Section &
 Object::getSection(const string &name, Word type) const
 {
     auto s = namedSection.find(name);
-
     if (s != namedSection.end()) {
         auto &ref = sectionHeaders[s->second];
         if (ref.shdr.sh_type == type || type == SHT_NULL)
             return ref;
     }
-
     Object *debug = getDebug();
     if (debug)
         return debug->getSection(name, type);
+    return sectionHeaders[0];
+}
+
+const Section &
+Object::getDebugSection(const string &name, Word type) const
+{
+    auto &local = getSection(name, type);
+    if (local && local.shdr.sh_type != SHT_NOBITS) {
+        return local;
+    }
+    auto debug = getDebug();
+    if (debug) {
+        return debug->getSection(name, type);
+    }
     return sectionHeaders[0];
 }
 
@@ -451,9 +463,6 @@ Object::getSection(Word idx) const
 {
     if (sectionHeaders[idx].shdr.sh_type != SHT_NULL)
         return sectionHeaders[idx];
-    auto debug = getDebug();
-    if (debug)
-        return debug->getSection(idx);
     return sectionHeaders[0];
 }
 
@@ -582,7 +591,7 @@ Object::getDebug() const
 Reader::csptr
 Object::sectionReader(const char *name, const char *compressedName, const Elf::Section **secp)
 {
-    const auto &raw = getSection(name, SHT_PROGBITS);
+    const auto &raw = getDebugSection(name, SHT_PROGBITS);
     if (secp != nullptr)
         *secp = nullptr;
     if (raw) {
@@ -591,7 +600,7 @@ Object::sectionReader(const char *name, const char *compressedName, const Elf::S
         return raw.io();
     }
     std::string dwoname = std::string(name) + ".dwo";
-    const auto &dwo = getSection(dwoname, SHT_PROGBITS);
+    const auto &dwo = getDebugSection(dwoname, SHT_PROGBITS);
 
     if (dwo) {
         if (secp)
@@ -600,7 +609,7 @@ Object::sectionReader(const char *name, const char *compressedName, const Elf::S
     }
 
     if (compressedName != nullptr) {
-        const auto &zraw = getSection(compressedName, SHT_PROGBITS);
+        const auto &zraw = getDebugSection(compressedName, SHT_PROGBITS);
         if (zraw) {
 #ifdef WITH_ZLIB
             unsigned char sig[12];
