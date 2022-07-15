@@ -123,8 +123,9 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
         case DW_FORM_sec_offset:
             if (unit->version >= 5) {
                 // For dwarf 5, this will be a debug_loclists entry.
-                auto sec = dwarf->elf->sectionReader(".debug_loclists", ".zdebug_loclists", nullptr);
-                DWARFReader r(sec, uintmax_t(attr));
+                auto &sec = dwarf->elf->getDebugSection(".debug_loclists", SHT_NULL);
+                auto &addrsec = dwarf->elf->getDebugSection(".debug_addr", SHT_NULL);
+                DWARFReader r(sec.io(), uintmax_t(attr));
                 for (;;) {
                     auto lle = DW_LLE(r.getu8());
                     switch (lle) {
@@ -151,8 +152,7 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                         case DW_LLE_base_addressx:
                             {
                             auto idx = r.getuleb128();
-                            auto addrsec = dwarf->elf->sectionReader(".debug_addr", ".zdebug_addr", nullptr);
-                            addrsec->readObj(idx * unit->addrlen, &base);
+                            addrsec.io()->readObj(idx * unit->addrlen, &base);
                             }
                             break;
 
@@ -174,10 +174,10 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                 }
             } else {
                 // For dwarf 4, this will be a debug_loc entry.
-                auto sec = dwarf->elf->sectionReader(".debug_loc", ".zdebug_loc", 0);
+                auto &sec = dwarf->elf->getDebugSection(".debug_loc", SHT_NULL);
 
                 // convert this object-relative addr to a unit-relative one
-                DWARFReader r(sec, uintmax_t(attr));
+                DWARFReader r(sec.io(), uintmax_t(attr));
                 for (;;) {
                     Elf::Addr start = r.getint(sizeof start);
                     Elf::Addr end = r.getint(sizeof end);
@@ -197,7 +197,7 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
         case DW_FORM_block:
         case DW_FORM_exprloc: {
             const auto &block = Block(attr);
-            DWARFReader r(dwarf->debugInfo, block.offset, block.offset + block.length);
+            DWARFReader r(dwarf->debugInfo.io(), block.offset, block.offset + block.length);
             return eval(proc, r, frame, reloc);
         }
         default:
@@ -454,19 +454,21 @@ StackFrame::findObjectCode(Process &p)
 
     dwarf = p.getDwarf(elf);
     // Try and find DWARF data with debug frame information, or an eh_frame section.
-    if (dwarf) {
-        auto frames = { dwarf->getEhFrame(), dwarf->getDebugFrame() };
-        for (auto f : frames) {
-            if (f != nullptr) {
-                fde = f->findFDE(scopeIP() - elfReloc);
-                if (fde != nullptr) {
-                    frameInfo = f;
-                    cie = &f->cies[fde->cieOff];
-                    break;
-                }
-            }
-        }
+    if (!dwarf)
+        return;
+
+    auto frame = dwarf->getEhFrame();
+    if (!frame) {
+        frame = dwarf->getDebugFrame();
+        if (!frame)
+            return;
     }
+    fde = frame->findFDE(scopeIP() - elfReloc);
+    if (fde == nullptr)
+        return;
+
+    frameInfo = frame;
+    cie = &frame->cies[fde->cieOff];
 }
 
 bool

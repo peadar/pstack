@@ -289,20 +289,23 @@ emain(int argc, char **argv)
        LogProcess lp{exec, btLogs, options, imageCache};
        doStack(lp);
        return 0;
-    }
-
-    for (int i = optind; i < argc; i++) {
-        try {
-            auto process = Process::load(exec, argv[i], options, imageCache);
-            if (process == nullptr)
-                exec = imageCache.getImageForName(argv[i]);
-            else
-                doStack(*process);
-        } catch (const std::exception &e) {
-            std::cerr << "trace of " << argv[i] << " failed: " << e.what() << "\n";
+    } else {
+        for (int i = optind; i < argc; i++) {
+            try {
+                auto process = Process::load(exec, argv[i], options, imageCache);
+                if (process == nullptr)
+                    exec = imageCache.getImageForName(argv[i]);
+                else
+                    doStack(*process);
+            } catch (const std::exception &e) {
+                std::cerr << "trace of " << argv[i] << " failed: " << e.what() << "\n";
+            }
         }
     }
-    return 0;
+    // exit, rather than return. This prevents us freeing all the cached data,
+    // which is very costly, but pointless to just fiddle the heap before
+    // exiting anyway
+    exit(0);
 }
 }
 

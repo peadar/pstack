@@ -68,9 +68,7 @@ Notes::iterator::iterator(const Object *object_, bool begin)
 
 void Notes::iterator::startSection() {
     offset = 0;
-    io = std::make_shared<OffsetReader>(object->io,
-          Off(phdrsi->p_offset),
-          Off(phdrsi->p_filesz));
+    io = std::make_shared<OffsetReader>("note section", object->io, Off(phdrsi->p_offset), Off(phdrsi->p_filesz));
 }
 
 Notes::iterator &Notes::iterator::operator++()
@@ -102,8 +100,7 @@ NoteDesc::name() const
 Reader::csptr
 NoteDesc::data() const
 {
-   return make_shared<OffsetReader>(io, sizeof note + roundup2(note.n_namesz, 4),
-                                    note.n_descsz);
+   return make_shared<OffsetReader>("note descriptor", io, sizeof note + roundup2(note.n_namesz, 4), note.n_descsz);
 }
 
 template <>
@@ -210,7 +207,6 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
     : io(std::move(io_))
     , elfHeader(io->readObj<Ehdr>(0))
     , imageCache(cache)
-    , sectionHeaders(elfHeader.e_shnum)
     , debugLoaded(isDebug) // don't attempt to load separate debug info for a debug ELF.
     , lastSegmentForAddress(nullptr)
 {
@@ -218,7 +214,7 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
     if (!IS_ELF(elfHeader) || elfHeader.e_ident[EI_VERSION] != EV_CURRENT)
         throw (Exception() << *io << ": content is not an ELF image");
 
-    OffsetReader headers(io, elfHeader.e_phoff, elfHeader.e_phnum * sizeof (Phdr));
+    OffsetReader headers("program headers", io, elfHeader.e_phoff, elfHeader.e_phnum * sizeof (Phdr));
     for (auto hdr : ReaderArray<Phdr>(headers))
         programHeaders[hdr.p_type].push_back(hdr);
     // Sort program headers by VA.
@@ -229,32 +225,35 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
 
     Elf::Off off;
     int i;
+    // sectionHeaders.reserve(elfHeader.e_shnum);
     for (off = elfHeader.e_shoff, i = 0; i < elfHeader.e_shnum; i++) {
-        sectionHeaders[i] = Section(io, off);
+        sectionHeaders.emplace_back(std::make_unique<Section>(this, off));
         off += elfHeader.e_shentsize;
     }
 
-    if (elfHeader.e_shstrndx == SHN_UNDEF)
-        return;
+    if (elfHeader.e_shstrndx != SHN_UNDEF) {
+       // Create a mapping from section header names to section headers.
+       // We need to do this after reading all the section headers, because
+       // until then we don't have the details of the shstr section
+       auto &sshdr = sectionHeaders[elfHeader.e_shstrndx];
+       size_t secid = 0;
+       for (auto &h : sectionHeaders) {
+           auto name = sshdr->io()->readString(h->shdr.sh_name);
+           namedSection[name] = secid++;
+           h->name = name;
+       }
 
-    // Create a mapping from section header names to section headers.
-    auto &sshdr = sectionHeaders[elfHeader.e_shstrndx];
-    size_t secid = 0;
-    for (auto &h : sectionHeaders) {
-        auto name = sshdr.io()->readString(h.shdr.sh_name);
-        namedSection[name] = secid++;
+       /*
+        * Load dynamic entries
+        */
+       auto &section = getSection(".dynamic", SHT_DYNAMIC );
+       if (section) {
+           ReaderArray<Dyn> content(*section.io());
+           for (auto dyn : content)
+              dynamic[dyn.d_tag].push_back(dyn);
+       }
+       gnu_version = &getSection(".gnu_version", SHT_GNU_versym);
     }
-
-    /*
-     * Load dynamic entries
-     */
-    auto &section = getSection(".dynamic", SHT_DYNAMIC );
-    if (section) {
-        ReaderArray<Dyn> content(*section.io());
-        for (auto dyn : content)
-           dynamic[dyn.d_tag].push_back(dyn);
-    }
-    gnu_version = &getSection(".gnu_version", SHT_GNU_versym);
 }
 
 const SymbolVersioning *
@@ -389,7 +388,7 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
                 continue;
             }
             auto &sec = sectionHeaders[candidate.st_shndx];
-            if ((sec.shdr.sh_flags & SHF_ALLOC) == 0)
+            if ((sec->shdr.sh_flags & SHF_ALLOC) == 0)
                 continue;
             sym = candidate;
             name = table.name(candidate);
@@ -435,35 +434,37 @@ Object::getSection(const string &name, Word type) const
     auto s = namedSection.find(name);
     if (s != namedSection.end()) {
         auto &ref = sectionHeaders[s->second];
-        if (ref.shdr.sh_type == type || type == SHT_NULL)
-            return ref;
+        if (ref->shdr.sh_type == type || type == SHT_NULL)
+            return *ref;
     }
-    Object *debug = getDebug();
-    if (debug)
-        return debug->getSection(name, type);
-    return sectionHeaders[0];
+    if (name.rfind(".debug_", 0) == 0) {
+        // We check for the section names in Section::io() to do decompression
+        // for this type of section.
+        const auto &compressed = getSection(std::string(".z") + name.substr(1), type);
+        if (compressed)
+            return compressed;
+    }
+    return *sectionHeaders[0];
 }
 
 const Section &
 Object::getDebugSection(const string &name, Word type) const
 {
     auto &local = getSection(name, type);
-    if (local && local.shdr.sh_type != SHT_NOBITS) {
+    if (local && local.shdr.sh_type != SHT_NOBITS)
         return local;
-    }
     auto debug = getDebug();
-    if (debug) {
+    if (debug)
         return debug->getSection(name, type);
-    }
-    return sectionHeaders[0];
+    return *sectionHeaders[0];
 }
 
 const Section &
 Object::getSection(Word idx) const
 {
-    if (sectionHeaders[idx].shdr.sh_type != SHT_NULL)
-        return sectionHeaders[idx];
-    return sectionHeaders[0];
+    if (sectionHeaders[idx]->shdr.sh_type != SHT_NULL)
+        return *sectionHeaders[idx];
+    return *sectionHeaders[0];
 }
 
 const Section &
@@ -471,12 +472,12 @@ Object::getLinkedSection(const Section &from) const
 {
     if (!from)
         return from;
-    if (&from >= &sectionHeaders[0] && &from <= &sectionHeaders[sectionHeaders.size() - 1])
-        return sectionHeaders[from.shdr.sh_link];
+    if (from.elf == this) // it might come from the debug object...
+        return *sectionHeaders[from.shdr.sh_link];
     auto debug = getDebug();
     if (debug)
        return debug->getLinkedSection(from);
-    return sectionHeaders[0];
+    return *sectionHeaders[0];
 }
 
 /*
@@ -579,7 +580,7 @@ Object::getDebug() const
 
         // looks like the exe has been prelinked - adjust the debug info too.
         for (auto &sect : debugObject->sectionHeaders)
-            sect.shdr.sh_addr += diff;
+            sect->shdr.sh_addr += diff;
 
         for (auto &sectType : debugObject->programHeaders)
             for (auto &sect : sectType.second)
@@ -587,52 +588,6 @@ Object::getDebug() const
     }
     return debugObject.get();
 }
-
-Reader::csptr
-Object::sectionReader(const char *name, const char *compressedName, const Elf::Section **secp)
-{
-    const auto &raw = getDebugSection(name, SHT_PROGBITS);
-    if (secp != nullptr)
-        *secp = nullptr;
-    if (raw) {
-        if (secp)
-            *secp = &raw;
-        return raw.io();
-    }
-    std::string dwoname = std::string(name) + ".dwo";
-    const auto &dwo = getDebugSection(dwoname, SHT_PROGBITS);
-
-    if (dwo) {
-        if (secp)
-            *secp = &dwo;
-        return dwo.io();
-    }
-
-    if (compressedName != nullptr) {
-        const auto &zraw = getDebugSection(compressedName, SHT_PROGBITS);
-        if (zraw) {
-#ifdef WITH_ZLIB
-            unsigned char sig[12];
-            zraw.io()->readObj(0, sig, sizeof sig);
-            if (memcmp((const char *)sig, "ZLIB", 4) != 0)
-                return Reader::csptr();
-            uint64_t sz = 0;
-            for (size_t i = 4; i < 12; ++i) {
-                sz <<= 8;
-                sz |= sig[i];
-            }
-            if (secp)
-                *secp = &zraw;
-            return make_shared<InflateReader>(sz, OffsetReader(zraw.io(), sizeof sig, sz));
-#else
-            std::clog << "warning: no zlib support to process compressed debug info in "
-                << *io << std::endl;
-#endif
-        }
-    }
-    return Reader::csptr();
-}
-
 
 template <typename Symtype> bool
 SymbolSection<Symtype>::linearSearch(const string &desiredName, Sym &sym) const
@@ -691,48 +646,70 @@ elf_hash(const string &text)
     return (h);
 }
 
-Section::Section(const Reader::csptr &image, Off off)
-    : image(image)
-{
-    image->readObj(off, &shdr);
-    // Null sections get null readers.
-
+Section::Section(Object *elf, Off off) : elf(elf) {
+    elf->io->readObj(off, &shdr);
 }
 
 Reader::csptr Section::io() const {
-    if (io_ == nullptr) {
-        if (shdr.sh_type == SHT_NULL) {
-            io_ = make_shared<NullReader>();
-        } else {
-            auto rawIo = make_shared<OffsetReader>(image, shdr.sh_offset, shdr.sh_size);
-            if ((shdr.sh_flags & SHF_COMPRESSED) == 0) {
-                io_ = rawIo;
-            } else {
-#ifdef WITH_ZLIB
-                auto chdr = rawIo->readObj<Chdr>(0);
-                io_ = make_shared<InflateReader>(chdr.ch_size, OffsetReader(rawIo,
-                         sizeof chdr, shdr.sh_size - sizeof chdr));
-#else
-                static bool warned = false;
-                if (!warned) {
-                    warned = true;
-                    std::clog <<"warning: no support configured for compressed debug info in "
-                       << *image << std::endl;
-                }
-                io_ = make_shared<NullReader>();
+    if (io_ != nullptr)
+        return io_;
+
+    if (shdr.sh_type == SHT_NULL) {
+        io_ = make_shared<NullReader>();
+        return io_;
+    }
+
+    // deal with two possible zlib-compressed sections. The sane,
+    // "SHF_COMPRESSED" version, and the hacky ".zdebug_" versions.
+#ifndef WITH_ZLIB
+    bool wantedZlib = false;
 #endif
+    auto rawIo = make_shared<OffsetReader>(name, elf->io, shdr.sh_offset, shdr.sh_size);
+    if (name.rfind(".zdebug_", 0) == 0) {
+#ifdef WITH_ZLIB
+        unsigned char sig[12];
+        rawIo->readObj(0, sig, sizeof sig);
+        if (memcmp((const char *)sig, "ZLIB", 4) == 0) {
+            uint64_t sz = 0;
+            for (size_t i = 4; i < 12; ++i) {
+                sz <<= 8;
+                sz |= sig[i];
             }
+            io_ = make_shared<InflateReader>(sz, OffsetReader("zlib compressed content after signature", rawIo, sizeof sig, sz));
+        }
+#else
+        wantedZlib = true;
+#endif
+    } else if ((shdr.sh_flags & SHF_COMPRESSED) != 0) {
+#ifdef WITH_ZLIB
+        auto chdr = rawIo->readObj<Chdr>(0);
+        io_ = make_shared<InflateReader>(chdr.ch_size, OffsetReader("zlip compressed content after chdr", rawIo, sizeof chdr, shdr.sh_size - sizeof chdr));
+#else
+        wantedZlib = true;
+#endif
+    } else {
+        io_ = rawIo;
+    }
+#ifndef WITH_ZLIB
+    if (wantedZlib) {
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            std::clog <<"warning: no support configured for compressed debug info in section "
+                << name << " of " << *elf->io << std::endl;
         }
     }
+#endif
+    if (io_ == nullptr)
+        io_ = make_shared<NullReader>();
     return io_;
 }
 
 Object::sptr
 ImageCache::getImageForName(const string &name, bool isDebug) {
     auto res = getImageIfLoaded(name);
-    if (res != nullptr) {
+    if (res != nullptr)
         return res;
-    }
     auto item = make_shared<Object>(*this, std::make_shared<MmapReader>(name), isDebug);
     // don't cache negative entries: assign into the cache after we've constructed:
     // a failure to load the image will throw.

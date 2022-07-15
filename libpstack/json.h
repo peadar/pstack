@@ -38,8 +38,8 @@
 template <typename T, typename C = char> class JSON {
 public:
    const T& object;
-   const C context;
-   JSON(const T &object_, const C context_ = C()) : object(object_), context(context_) {}
+   const C &context;
+   JSON(const T &object_, const C &context_ = C()) : object(object_), context(context_) {}
    JSON() = delete;
 };
 
@@ -48,7 +48,7 @@ public:
  */
 template <typename T, typename C = char>
 JSON<T, C>
-json(const T &object, const C context = C()) {
+json(const T &object, const C &context = C()) {
    return JSON<T, C>(object, context);
 }
 
@@ -130,7 +130,7 @@ constexpr std::true_type is_associative_container(const C *) {
  * Print a non-associative container
  */
 template <typename Container, typename Context>
-void print_container(std::ostream &os, const Container &container, Context ctx, std::false_type)
+void print_container(std::ostream &os, const Container &container, Context &&ctx, std::false_type)
 {
    os << "[ ";
    const char *sep = "";

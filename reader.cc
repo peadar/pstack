@@ -220,7 +220,7 @@ CacheReader::readString(Off off) const
     return entry.value;
 }
 
-std::shared_ptr<const Reader>
+Reader::csptr
 loadFile(const string &path)
 {
     return std::make_shared<CacheReader>(
@@ -256,17 +256,17 @@ MmapReader::~MmapReader() {
    munmap(base, len);
 }
 
-OffsetReader::OffsetReader(Reader::csptr upstream_, Off offset_, Off length_)
+OffsetReader::OffsetReader(const std::string& name, Reader::csptr upstream_, Off offset_, Off length_)
     : upstream(upstream_)
     , offset(offset_)
+    , name(name)
 {
     for (;;) {
         auto orReader = dynamic_cast<const OffsetReader *>(upstream.get());
         if (!orReader)
             break;
         if (verbose > 2)
-            *debug << "optimize: collapse OR reader : "
-                << upstream.get() << "->" << orReader->upstream.get() << "\n";
+            *debug << "optimize: collapse OR reader : " << upstream.get() << "->" << orReader->upstream.get() << "\n";
         offset += orReader->offset;
         upstream = orReader->upstream;
         if (length_ != std::numeric_limits<Off>::max())

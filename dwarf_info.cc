@@ -9,17 +9,12 @@
 namespace Dwarf {
 
 std::unique_ptr<CFI>
-Info::decodeCFI(const char *name, const char *zname, FIType ftype) const {
-    const Elf::Section *sec;
-    auto io = elf->sectionReader(name, zname, &sec);
-    if (!io)
-        return std::unique_ptr<CFI>();
+Info::decodeCFI(const Elf::Section &section, FIType ftype) const {
     try {
-        return std::make_unique<CFI>(this, sec->shdr.sh_addr, io, ftype);
+        return std::make_unique<CFI>(this, section.shdr.sh_addr, section.io(), ftype);
     }
     catch (const Exception &ex) {
-        *debug << "can't decode " << name << " for " << *elf->io << ": "
-            << ex.what() << "\n";
+        *debug << "can't decode " << section.name << " for " << *elf->io << ": " << ex.what() << "\n";
     }
     return std::unique_ptr<CFI>();
 };
@@ -28,7 +23,9 @@ CFI *
 Info::getEhFrame() const {
     if (!ehFrameLoaded) {
         ehFrameLoaded = true;
-        ehFrame = decodeCFI(".eh_frame", nullptr, FI_EH_FRAME);
+        auto &sec = elf->getDebugSection(".eh_frame", SHT_PROGBITS);
+        if (sec)
+           ehFrame = decodeCFI(sec, FI_EH_FRAME);
     }
     return ehFrame.get();
 }
@@ -37,18 +34,20 @@ CFI *
 Info::getDebugFrame() const {
     if (!debugFrameLoaded) {
         debugFrameLoaded = true;
-        debugFrame = decodeCFI(".debug_frame", ".zdebug_frame", FI_DEBUG_FRAME);
+        auto &sec = elf->getSection(".debug_frame", SHT_PROGBITS);
+        if (sec)
+           debugFrame = decodeCFI(sec, FI_DEBUG_FRAME);
     }
     return debugFrame.get();
 }
 
 Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     : elf(obj)
-    , debugInfo(obj->sectionReader(".debug_info", ".zdebug_info"))
-    , debugStrings(obj->sectionReader(".debug_str", ".zdebug_str"))
-    , debugLineStrings(obj->sectionReader(".debug_line_str", ".zdebug_line_str"))
-    , debugRanges(obj->sectionReader(".debug_ranges", ".zdebug_ranges"))
-    , debugStrOffsets(obj->sectionReader(".debug_str_offsets", ".zdebug_str_offsets"))
+    , debugInfo(obj->getDebugSection(".debug_info", SHT_NULL))
+    , debugStrings(obj->getDebugSection(".debug_str", SHT_NULL))
+    , debugLineStrings(obj->getDebugSection(".debug_line_str", SHT_NULL))
+    , debugRanges(obj->getDebugSection(".debug_ranges", SHT_NULL))
+    , debugStrOffsets(obj->getDebugSection(".debug_str_offsets", SHT_NULL))
     , imageCache(cache_)
 {
 }
@@ -68,10 +67,10 @@ const std::list<PubnameUnit> &
 Info::pubnames() const
 {
     if (pubnameUnits == nullptr) {
-        auto pubnamesh {elf->sectionReader(".debug_pubnames", ".zdebug_pubnames")};
         pubnameUnits.reset( new std::list<PubnameUnit> );
+        auto &pubnamesh = elf->getDebugSection(".debug_pubnames", SHT_NULL);
         if (pubnamesh) {
-            DWARFReader r(pubnamesh);
+            DWARFReader r(pubnamesh.io());
             while (!r.empty())
                 pubnameUnits->emplace_back(r);
         }
@@ -84,11 +83,11 @@ Info::getUnit(Elf::Off offset) const
 {
     auto &ent = units[offset];
     if (ent == nullptr) {
-        DWARFReader r(debugInfo, offset);
+        DWARFReader r(debugInfo.io(), offset);
         ent = std::make_shared<Unit>(this, r);
         if (verbose >= 3)
             *debug << "create unit " << ent->name() << "@" << offset
-                      << " in " << *debugInfo << "\n";
+                      << " in " << *debugInfo.io() << "\n";
     }
     return ent;
 }
@@ -137,7 +136,7 @@ Info::offsetToDIE(Elf::Off offset) const
                 if (entry) {
                     if (verbose > 1)
                         *debug << "search for DIE at " << offset
-                                  << " in " << *debugInfo
+                                  << " in " << *debugInfo.io()
                                   << " started at " << uOffset
                                   << ", found at " << u->offset
                                   << " and took " << i << " iterations\n";
@@ -191,9 +190,9 @@ Unit::sptr
 Info::lookupUnit(Elf::Addr addr) const {
     if (aranges == nullptr) {
         aranges.reset(new ARanges());
-        auto arangesh = elf->sectionReader(".debug_aranges", ".zdebug_aranges");
-        if (arangesh != nullptr) {
-            DWARFReader r(arangesh);
+        auto &arangesh = elf->getDebugSection(".debug_aranges", SHT_NULL);
+        if (arangesh) {
+            DWARFReader r(arangesh.io());
             while (!r.empty())
                 decodeARangeSet(r);
         }
@@ -242,8 +241,8 @@ Info::strx(Unit &unit, size_t idx) const {
     auto root = unit.root();
     auto base = intmax_t(root.attribute(DW_AT_str_offsets_base));
     auto len = unit.dwarfLen;
-    DWARFReader r(debugStrOffsets, base + len * idx);
-    return debugStrings->readString(r.getuint(len));
+    DWARFReader r(debugStrOffsets.io(), base + len * idx);
+    return debugStrings.io()->readString(r.getuint(len));
 }
 
 Info::~Info() = default;
@@ -269,9 +268,9 @@ LineInfo *
 Info::linesAt(intmax_t offset, Unit &unit) const
 {
     auto lines = new LineInfo();
-    auto lineshdr = elf->sectionReader(".debug_line", ".zdebug_line");
+    auto &lineshdr = elf->getDebugSection(".debug_line", SHT_NULL);
     if (lineshdr) {
-        DWARFReader r(lineshdr, offset);
+        DWARFReader r(lineshdr.io(), offset);
         lines->build(r, unit);
     }
     return lines;
@@ -286,7 +285,7 @@ Info::getAltImageName() const
         return name;
 
     // relative - prefix it with dirname of the image
-    const auto &exedir = dirname(linkResolve(debugInfo->filename()));
+    const auto &exedir = dirname(linkResolve(elf->io->filename()));
     return stringify(exedir, "/", name);
 }
 

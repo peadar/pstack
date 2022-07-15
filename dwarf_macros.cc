@@ -43,19 +43,19 @@ void
 Macros::readD4(const Info &dwarf, intmax_t offset)
 {
     // Legacy dwarf macro information
-    auto macrosh = dwarf.elf->sectionReader(".debug_macinfo", ".zdebug_macinfo");
+    auto &macrosh = dwarf.elf->getDebugSection(".debug_macinfo", SHT_NULL);
     if (!macrosh)
         return;
-    io = std::make_shared<OffsetReader>(macrosh, offset);
+    io = std::make_shared<OffsetReader>("debug_macinfo subsection", macrosh.io(), offset);
 }
 
 void
 Macros::readD5(const Info &dwarf, intmax_t offset)
 {
-    auto macrosh = dwarf.elf->sectionReader(".debug_macro", ".zdebug_macro");
+    auto &macrosh = dwarf.elf->getDebugSection(".debug_macro", SHT_NULL);
     if (!macrosh)
         return;
-    DWARFReader dr(macrosh, offset);
+    DWARFReader dr(macrosh.io(), offset);
     // this may report v4, even though .debug_macro did not exist in DWARF 4`
     /* macrosVersion = */ dr.getu16();
 
@@ -79,7 +79,7 @@ Macros::readD5(const Info &dwarf, intmax_t offset)
                 table.emplace_back(dr.getu8());
         }
     }
-    io = std::make_shared<OffsetReader>(macrosh, dr.getOffset());
+    io = std::make_shared<OffsetReader>("macro subsection", macrosh.io(), dr.getOffset());
 }
 
 bool

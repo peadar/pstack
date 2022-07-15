@@ -48,11 +48,11 @@ DWARFReader::readFormString(const Info &dwarf, Unit &unit, Form form)
             abort();
         case DW_FORM_line_strp: {
             auto off = getuint(unit.dwarfLen);
-            return dwarf.debugLineStrings->readString(off);
+            return dwarf.debugLineStrings.io()->readString(off);
         }
         case DW_FORM_strp: {
             auto off = getuint(unit.dwarfLen);
-            return dwarf.debugStrings->readString(off);
+            return dwarf.debugStrings.io()->readString(off);
         }
         case DW_FORM_strx: {
             size_t off = getuleb128();

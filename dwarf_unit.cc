@@ -8,8 +8,8 @@ namespace Dwarf {
 void
 Unit::load()
 {
-    auto abbrev { dwarf->elf->sectionReader(".debug_abbrev", ".zdebug_abbrev") };
-    DWARFReader abbR(abbrev, abbrevOffset);
+    auto &abbrev { dwarf->elf->getDebugSection(".debug_abbrev", SHT_NULL) };
+    DWARFReader abbR(abbrev.io(), abbrevOffset);
     uintmax_t code;
     while ((code = abbR.getuleb128()) != 0)
         abbreviations.emplace(std::piecewise_construct,

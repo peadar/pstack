@@ -178,13 +178,14 @@ public:
  */
 class Section {
     mutable Reader::csptr io_;
-    Reader::csptr image;
 public:
+    Object *elf; // the image in which the section resides.
+    std::string name;
     Shdr shdr;
     operator bool() const { return shdr.sh_type != SHT_NULL; }
-    Section(const Reader::csptr &image, Off off);
-    Section() { shdr.sh_type = SHT_NULL; }
+    Section(Object *io, Off off);
     Section(const Section &) = delete;
+    Section() { shdr.sh_type = SHT_NULL; }
     Reader::csptr io() const;
 };
 
@@ -250,7 +251,8 @@ class Object : public std::enable_shared_from_this<Object> {
 public:
     typedef std::shared_ptr<Object> sptr;
     typedef std::vector<Phdr> ProgramHeaders;
-    typedef std::vector<Section> SectionHeaders;
+    // Use pointers so we can avoid copy-construction of Sections.
+    typedef std::vector<std::unique_ptr<Section>> SectionHeaders;
 
     // construct/destruct. Note you will generally need to use make_shared to
     // create an Object
@@ -288,11 +290,6 @@ public:
     // symbol table data as extracted from .gnu.debugdata -
     // https://sourceware.org/gdb/current/onlinedocs/gdb/MiniDebugInfo.html
     Elf::Addr endVA() const;
-
-    // Helper to create a reader for a specific section in an object, that may have
-    // an alternatively named, compressed, counterpart.
-    Reader::csptr sectionReader(const char *name, const char *compressedName,
-                                const Elf::Section **secp = nullptr);
 
     // find text version from versioned symbol.
     std::string symbolVersion(const VersionedSymbol &) const;
@@ -403,7 +400,7 @@ public:
     }
     iterator &operator++();
     NoteDesc operator *() {
-        return NoteDesc(curNote, std::make_shared<const OffsetReader>(io, offset));
+        return NoteDesc(curNote, std::make_shared<const OffsetReader>("note content", io, offset));
     }
 };
 

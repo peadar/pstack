@@ -607,11 +607,11 @@ public:
     CFI *getEhFrame() const;
 
     // direct access to various DWARF sections.
-    const Reader::csptr debugInfo;
-    const Reader::csptr debugStrings;
-    const Reader::csptr debugLineStrings;
-    const Reader::csptr debugRanges;
-    const Reader::csptr debugStrOffsets;
+    const Elf::Section & debugInfo;
+    const Elf::Section & debugStrings;
+    const Elf::Section & debugLineStrings;
+    const Elf::Section & debugRanges;
+    const Elf::Section & debugStrOffsets;
 
     // For _strx forms, indirect through debugStrOffsets to get a string for a
     // specific index.
@@ -619,7 +619,7 @@ public:
 
 private:
     ImageCache &imageCache;
-    std::unique_ptr<CFI> decodeCFI(const char *name, const char *zname, FIType ftype) const;
+    std::unique_ptr<CFI> decodeCFI(const Elf::Section &, FIType ftype) const;
 
     // These are mutable so we can lazy-eval them when getters are called, and
     // maintain logical constness.
@@ -745,7 +745,7 @@ struct MacroVisitor {
 
 inline
 Info::Units::iterator Info::Units::iterator::operator ++() {
-    currentUnit = currentUnit->end == info->debugInfo->size()
+    currentUnit = currentUnit->end == info->debugInfo.io()->size()
         ? nullptr
         : info->getUnit( currentUnit->end );
     return *this;

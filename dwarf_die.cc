@@ -345,7 +345,7 @@ DIE::getParentOffset() const
 std::shared_ptr<DIE::Raw>
 DIE::decode(Unit *unit, const DIE &parent, Elf::Off offset)
 {
-    DWARFReader r(unit->dwarf->debugInfo, offset);
+    DWARFReader r(unit->dwarf->debugInfo.io(), offset);
     size_t abbrev = r.getuleb128();
     if (abbrev == 0) {
         // If we get to the terminator, then we now know the parent's nextSibling:
@@ -432,7 +432,7 @@ Ranges::Ranges(Unit *unit, uintmax_t offset, uintmax_t base) {
 
     if (unit->version < 5) {
         // DWARF4 units use debug_ranges
-        DWARFReader reader(unit->dwarf->debugRanges, offset);
+        DWARFReader reader(unit->dwarf->debugRanges.io(), offset);
         for (;;) {
             auto start = reader.getuint(sizeof (Elf::Addr));
             auto end = reader.getuint(sizeof (Elf::Addr));
@@ -451,9 +451,9 @@ Ranges::Ranges(Unit *unit, uintmax_t offset, uintmax_t base) {
             offset += uintmax_t(attr);
 
         auto &elf = unit->dwarf->elf;
-        auto rnglists = elf->sectionReader(".debug_rnglists", ".zdebug_rnglists", nullptr);
-        auto addrs = elf->sectionReader(".debug_addr", ".zdebug_addr", nullptr);
-        DWARFReader r(rnglists, offset);
+        auto &rnglists = elf->getDebugSection(".debug_rnglists", SHT_NULL);
+        // auto &addrs = elf->getDebugSection(".debug_addr", SHT_NULL); // XXX: would be used by the "x" ops below
+        DWARFReader r(rnglists.io(), offset);
 
         uintmax_t base = 0;
         for (bool done = false; !done;) {
@@ -529,16 +529,16 @@ DIE::Attribute::operator std::string() const
             auto &strs = alt->debugStrings;
             if (!strs)
                 return "(alt string table unavailable)";
-            return strs->readString(value().addr);
+            return strs.io()->readString(value().addr);
         }
         case DW_FORM_strp:
-            return dwarf->debugStrings->readString(value().addr);
+            return dwarf->debugStrings.io()->readString(value().addr);
 
         case DW_FORM_line_strp:
-            return dwarf->debugLineStrings->readString(value().addr);
+            return dwarf->debugLineStrings.io()->readString(value().addr);
 
         case DW_FORM_string:
-            return die.unit->dwarf->debugInfo->readString(value().addr);
+            return die.unit->dwarf->debugInfo.io()->readString(value().addr);
 
         case DW_FORM_strx1:
         case DW_FORM_strx2:

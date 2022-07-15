@@ -627,7 +627,7 @@ std::ostream &operator<< (std::ostream &os, const JSON<Elf::Object> &elf)
         .field("type", typeNames[ehdr.e_type])
         .field("entry", ehdr.e_entry)
         .field("abi", brand < sizeof abiNames / sizeof abiNames[0]? abiNames[brand] : nullptr)
-        .field("sections", elf.object.sectionHeaders, &elf.object)
+        .field("sections", elf.object.sectionHeaders)
         .field("segments", mappedSegments, &elf.object)
         .field("notes", elf.object.notes())
         .field("versioninfo", *elf.object.symbolVersions())
@@ -697,12 +697,9 @@ const struct sh_flag_names {
  * Debug output of an Elf symbol.
  */
 std::ostream &
-operator<< (std::ostream &os,
-        const JSON<Elf::Sym,
-        std::tuple<const Elf::Object &, const Elf::Section &> *> &t)
+operator<< (std::ostream &os, const JSON<Elf::Sym, Elf::Section> &t)
 {
-    auto &obj = std::get<0>(*t.context);
-    auto &sec = std::get<1>(*t.context);
+    auto &sec = t.context;
     static const char *bindingNames[] = {
         "STB_LOCAL",
         "STB_GLOBAL",
@@ -739,7 +736,7 @@ operator<< (std::ostream &os,
         "STT_LOPROC + 1",
         "STT_HIPROC"
     };
-    auto &symStrings = obj.getLinkedSection(sec);
+    auto &symStrings = sec.elf->getLinkedSection(sec);
 
     return JObject(os)
         .field("name", symStrings.io()->readString(t.object.st_name))
@@ -764,14 +761,12 @@ sectionTypeName(intmax_t sectionType)
 }
 
 std::ostream &
-operator <<(std::ostream &os, const JSON<Elf::Section, const Elf::Object *> &jsection)
+operator <<(std::ostream &os, const JSON<std::unique_ptr<Elf::Section>> &jsection)
 {
     JObject writer(os);
 
-    auto &o = *jsection.context;
     const auto &sec = jsection.object;
-    auto &strs = o.getSection(o.getHeader().e_shstrndx);
-    const Elf::Shdr &sh = sec.shdr;
+    const Elf::Shdr &sh = sec->shdr;
 
     // Secions that have content that's raw text.
     static std::set<std::string> textContent = {
@@ -785,11 +780,9 @@ operator <<(std::ostream &os, const JSON<Elf::Section, const Elf::Object *> &jse
         if ((sh.sh_flags & flag.value) != 0)
             flags.insert(flag.name);
 
-    std::string secName = strs.io()->readString(sh.sh_name);
-
     writer.field("size", sh.sh_size)
-        .field("uncompressedSize", sec.io()->size())
-        .field("name", secName)
+        .field("uncompressedSize", sec->io()->size())
+        .field("name", sec->name)
         .field("flags", flags)
         .field("address", sh.sh_addr)
         .field("offset", sh.sh_offset)
@@ -804,18 +797,17 @@ operator <<(std::ostream &os, const JSON<Elf::Section, const Elf::Object *> &jse
     switch (sh.sh_type) {
         case SHT_SYMTAB:
         case SHT_DYNSYM: {
-            auto context = std::make_tuple(std::ref(o), std::ref(sec));
-            writer.field("symbols", ReaderArray<Elf::Sym>(*sec.io()), &context);
+            writer.field("symbols", ReaderArray<Elf::Sym>(*sec->io()), *sec);
             break;
         }
         case SHT_RELA:
-            writer.field("reloca", ReaderArray<Elf::Rela>(*sec.io()));
+            writer.field("reloca", ReaderArray<Elf::Rela>(*sec->io()));
             break;
     }
 
-    if (textContent.find(secName) != textContent.end()) {
+    if (textContent.find(sec->name) != textContent.end()) {
         char buf[1024];
-        auto count = sec.io()->read(0, std::min(sizeof buf - 1, size_t(sec.io()->size())), buf);
+        auto count = sec->io()->read(0, std::min(sizeof buf - 1, size_t(sec->io()->size())), buf);
         buf[count] = 0;
         writer.field("content", buf);
     }
@@ -853,7 +845,7 @@ operator<< (std::ostream &os, const JSON<Elf::Phdr, const Elf::Object *> &jo)
     Elf::Off strtab = 0;
     switch (phdr.p_type) {
         case PT_DYNAMIC: {
-            OffsetReader dynReader(jo.context->io, phdr.p_offset, phdr.p_filesz);
+            OffsetReader dynReader("PT_DYNAMIC", jo.context->io, phdr.p_offset, phdr.p_filesz);
             for (const auto & i : ReaderArray<Elf::Dyn>(dynReader)) {
                if (i.d_tag == DT_STRTAB) {
                   strtab = i.d_un.d_ptr;

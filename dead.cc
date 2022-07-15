@@ -196,8 +196,8 @@ CoreProcess::loadSharedObjectsFromFileNote()
             auto data = note.data();
             auto header = data->readObj<FileNoteHeader>(0);
             Elf::Off stroff = 0;
-            auto entries = std::make_shared<OffsetReader>(data, sizeof header, header.count * sizeof (FileEntry));
-            auto fileNames = std::make_shared<OffsetReader>(data, sizeof header + header.count * sizeof (FileEntry));
+            auto entries = std::make_shared<OffsetReader>("FILE note entries", data, sizeof header, header.count * sizeof (FileEntry));
+            auto fileNames = std::make_shared<OffsetReader>("FILE note names", data, sizeof header + header.count * sizeof (FileEntry));
             uintptr_t totalSize = 0;
             for (auto entry : ReaderArray<FileEntry>(*entries)) {
                 auto name = fileNames->readString(stroff);
