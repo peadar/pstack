@@ -12,7 +12,20 @@ namespace Dwarf {
 class DWARFReader {
     Elf::Off off;
     Elf::Off end;
-    uintmax_t getuleb128shift(int &shift, bool &msb);
+
+    uintmax_t getuleb128shift(int &shift, bool &msb) {
+        uintmax_t result;
+        unsigned char byte;
+        for (result = 0, shift = 0;;) {
+            io->readObj(off++, &byte);
+            result |= uintmax_t(byte & 0x7f) << shift;
+            shift += 7;
+            if ((byte & 0x80) == 0)
+                break;
+        }
+        msb = (byte & 0x40) != 0;
+        return result;
+    }
 public:
     ::Reader::csptr io;
     unsigned addrLen;
@@ -80,11 +93,13 @@ public:
             rc = rc << 8 | p[-i];
         return rc;
     }
+
     uintmax_t getuleb128() {
         int shift;
         bool msb;
         return getuleb128shift(shift, msb);
     }
+
     intmax_t getsleb128() {
         int shift;
         bool msb;

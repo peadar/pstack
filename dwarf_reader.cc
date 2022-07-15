@@ -4,22 +4,6 @@
 
 namespace Dwarf {
 
-uintmax_t
-DWARFReader::getuleb128shift(int &shift, bool &msb)
-{
-    uintmax_t result;
-    unsigned char byte;
-    for (result = 0, shift = 0;;) {
-        io->readObj(off++, &byte);
-        result |= uintmax_t(byte & 0x7f) << shift;
-        shift += 7;
-        if ((byte & 0x80) == 0)
-            break;
-    }
-    msb = (byte & 0x40) != 0;
-    return result;
-}
-
 void
 DWARFReader::readForm(const Info &info, Unit &unit, Form form)
 {
