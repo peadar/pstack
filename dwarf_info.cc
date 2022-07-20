@@ -221,7 +221,7 @@ Info::lookupUnit(Elf::Addr addr) const {
             auto ranges = root.getRanges();
             if (ranges)
                 for (auto r : *ranges)
-                    (*aranges)[r.second] = std::make_pair(r.first, u->offset);
+                    (*aranges)[r.second] = { r.first, u->offset };
         }
     }
 
