@@ -596,20 +596,14 @@ DIE::Attribute::operator DIE() const
 DIE
 DIE::findEntryForAddr(Elf::Addr address, Tag t, bool skipStart)
 {
-    switch (containsAddress(address)) {
-        case ContainsAddr::NO:
-            return DIE();
-        case ContainsAddr::YES:
-            if (!skipStart && tag() == t)
-                return *this;
-            /* FALLTHRU */
-        case ContainsAddr::UNKNOWN:
-            for (auto child : children()) {
-                auto descendent = child.findEntryForAddr(address, t, false);
-                if (descendent)
-                    return descendent;
-            }
-            return DIE();
+    if (containsAddress(address) == ContainsAddr::YES) {
+        if (!skipStart && tag() == t)
+            return *this;
+        for (auto child : children()) {
+            auto descendent = child.findEntryForAddr(address, t, false);
+            if (descendent)
+                return descendent;
+        }
     }
     return DIE();
 }
