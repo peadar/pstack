@@ -4,6 +4,7 @@
 #include "libpstack/stringify.h"
 #include "libpstack/fs.h"
 #include <set>
+#include <algorithm>
 
 namespace Dwarf {
 
@@ -101,8 +102,20 @@ DIE::containsAddress(Elf::Addr addr) const
 DIE::Attribute
 DIE::attribute(AttrName name, bool local) const
 {
-    auto loc = raw->type->attrName2Idx.find(name);
-    if (loc != raw->type->attrName2Idx.end())
+    struct cmp {
+       bool operator()(const AttrName lhs, const Abbreviation::AttrNameEnt &rhs) const { return lhs < rhs.first; }
+       bool operator()(const Abbreviation::AttrNameEnt &lhs, const AttrName rhs) const { return lhs.first < rhs; }
+    };
+    if (!raw->type->sorted) {
+       std::sort(raw->type->attrName2Idx.begin(), raw->type->attrName2Idx.end());
+       raw->type->sorted = true;
+    }
+    auto loc = std::lower_bound(
+          raw->type->attrName2Idx.begin(),
+          raw->type->attrName2Idx.end(),
+          name, cmp());
+
+    if (loc != raw->type->attrName2Idx.end() && loc->first == name)
         return Attribute(*this, &raw->type->forms.at(loc->second));
 
     // If we have attributes of any of these types, we can look for other

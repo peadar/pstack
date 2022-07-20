@@ -249,6 +249,7 @@ Info::~Info() = default;
 Abbreviation::Abbreviation(DWARFReader &r)
     : tag(Tag(r.getuleb128()))
     , hasChildren(HasChildren(r.getu8()) == DW_CHILDREN_yes)
+    , sorted(false)
     , nextSibIdx(-1)
 {
     for (size_t i = 0;; ++i) {
@@ -260,7 +261,7 @@ Abbreviation::Abbreviation(DWARFReader &r)
             nextSibIdx = int(i);
         intmax_t value = (form == DW_FORM_implicit_const) ? r.getsleb128() : 0;
         forms.emplace_back(form, value);
-        attrName2Idx[name] = i;
+        attrName2Idx.emplace_back(name, i);
     }
 }
 

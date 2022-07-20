@@ -102,10 +102,12 @@ struct FormEntry {
 struct Abbreviation {
     Tag tag;
     bool hasChildren;
+    mutable bool sorted;
     std::vector<FormEntry> forms;
-    using AttrNameMap = std::unordered_map<AttrName, size_t>;
+    using AttrNameEnt = std::pair<AttrName, size_t>;
+    using AttrNameMap = std::vector<AttrNameEnt>;
     int nextSibIdx;
-    AttrNameMap attrName2Idx;
+    mutable AttrNameMap attrName2Idx; // mutable so we can sort on demand
     Abbreviation(DWARFReader &);
     Abbreviation() {}
 };
@@ -226,8 +228,6 @@ public:
         const_iterator end() const;
         using value_type = DIE;
     };
-
-
 
     // Indicate if the passed DIE contains code covering the passed address.
     // The result can be yes, no, or unknown.
