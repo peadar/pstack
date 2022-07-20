@@ -845,15 +845,15 @@ operator<< (std::ostream &os, const JSON<Elf::Phdr, const Elf::Object *> &jo)
     Elf::Off strtab = 0;
     switch (phdr.p_type) {
         case PT_DYNAMIC: {
-            OffsetReader dynReader("PT_DYNAMIC", jo.context->io, phdr.p_offset, phdr.p_filesz);
-            for (const auto & i : ReaderArray<Elf::Dyn>(dynReader)) {
+            auto dynReader = jo.context->io->view("PT_DYNAMIC", phdr.p_offset, phdr.p_filesz);
+            for (const auto & i : ReaderArray<Elf::Dyn>(*dynReader)) {
                if (i.d_tag == DT_STRTAB) {
                   strtab = i.d_un.d_ptr;
                   break;
                }
             }
             writer.field("dynamic",
-                  ReaderArray<Elf::Dyn>(dynReader), std::make_pair(jo.context, strtab));
+                  ReaderArray<Elf::Dyn>(*dynReader), std::make_pair(jo.context, strtab));
             break;
         }
     }

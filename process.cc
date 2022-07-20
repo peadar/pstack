@@ -127,8 +127,7 @@ Process::processAUXV(const Reader &auxio)
             }
             case AT_SYSINFO_EHDR: {
                 try {
-                    auto elf = std::make_shared<Elf::Object>(imageCache,
-                                    std::make_shared<OffsetReader>("(vdso image)", io, hdr, 65536));
+                    auto elf = std::make_shared<Elf::Object>(imageCache, io->view("(vdso image)", hdr, 65536));
                     vdsoBase = hdr;
                     addElfObject(elf, hdr);
                     vdsoImage = elf;
@@ -745,8 +744,8 @@ Process::findRDebugAddr()
     // Find DT_DEBUG in the process's dynamic section.
     for (auto &segment : execImage->getSegments(PT_DYNAMIC)) {
         // Read from the process, not the executable - the linker will have updated the content.
-        OffsetReader dynReader("PT_DYNAMIC segment", io, segment.p_vaddr + loadAddr, segment.p_filesz);
-        ReaderArray<Elf::Dyn> dynamic(dynReader);
+        auto dynReader = io->view("PT_DYNAMIC segment", segment.p_vaddr + loadAddr, segment.p_filesz);
+        ReaderArray<Elf::Dyn> dynamic(*dynReader);
         for (auto dyn : dynamic)
             if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0)
                 return dyn.d_un.d_ptr;

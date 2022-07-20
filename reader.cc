@@ -63,7 +63,7 @@ FileReader::~FileReader()
     ::close(file);
 }
 
-MemReader::MemReader(const string &descr, size_t len_, const char *data_)
+MemReader::MemReader(const string &descr, size_t len_, const void *data_)
     : descr(descr)
     , len(len_)
     , data(data_)
@@ -76,7 +76,7 @@ MemReader::read(Off off, size_t count, char *ptr) const
     if (off > Off(len))
         throw (Exception() << "read past end of memory");
     size_t rc = std::min(count, len - size_t(off));
-    memcpy(ptr, data + off, rc);
+    memcpy(ptr, (const char *)data + off, rc);
     return rc;
 }
 
@@ -85,6 +85,12 @@ MemReader::describe(std::ostream &os) const
 {
     os << descr;
 }
+
+string
+MemReader::readString(Off offset) const {
+   return string((char *)data + offset);
+}
+
 
 string
 Reader::readString(Off offset) const
@@ -101,6 +107,11 @@ Reader::readString(Off offset) const
         res += c;
     }
     return res;
+}
+
+Reader::csptr
+Reader::view(const std::string &name, Off offset, Off size) const {
+   return std::make_shared<OffsetReader>(name, shared_from_this(), offset, size);
 }
 
 size_t
@@ -227,34 +238,38 @@ loadFile(const string &path)
         std::make_shared<FileReader>(path));
 }
 
-size_t
-MmapReader::read(Off off, size_t count, char *ptr) const {
-   Off size = std::min(count, len - size_t(off));
-   memcpy(ptr, (char *)base + off, size);
-   return count;
-}
-
 MmapReader::MmapReader(const string &name_)
-   : name(name_)
+   : MemReader(name_, 0, nullptr)
 {
-   int fd = openfile(name);
+   int fd = openfile(name_);
    struct stat s;
    fstat(fd, &s);
    len = s.st_size;
-   base = mmap(0, len, PROT_READ, MAP_PRIVATE, fd, 0);
+   data = mmap(0, len, PROT_READ, MAP_PRIVATE, fd, 0);
    close(fd);
-   if (base == MAP_FAILED)
+   if (data == MAP_FAILED)
       throw (Exception() << "mmap failed: " << strerror(errno));
 }
 
-string
-MmapReader::readString(Off offset) const {
-   return string((char *)base + offset);
+MmapReader::~MmapReader() {
+   munmap((void *)data, len);
 }
 
-MmapReader::~MmapReader() {
-   munmap(base, len);
+class MemOffsetReader : public MemReader {
+   Reader::csptr upstream;
+public:
+   MemOffsetReader(const std::string &name, const MemReader *upstream_, Off offset, Off size)
+      : MemReader(name, size, (char *)upstream_->data + offset)
+      , upstream(upstream_->shared_from_this())
+   {
+   }
+};
+
+MemReader::csptr
+MemReader::view(const std::string &name, Off offset, Off size) const {
+   return std::make_shared<MemOffsetReader>(name, this, offset, size);
 }
+
 
 OffsetReader::OffsetReader(const std::string& name, Reader::csptr upstream_, Off offset_, Off length_)
     : upstream(upstream_)

@@ -34,7 +34,7 @@
 // LzmaReader (to decompress the .gnu_debugdata, and give the plain ELF image)
 // OffsetReader (for .symtab in the nested ELF image)
 
-class Reader {
+class Reader : public std::enable_shared_from_this<Reader> {
     Reader(const Reader &);
 public:
     using Off = unsigned long;
@@ -61,6 +61,7 @@ public:
     virtual Off size() const = 0;
     typedef std::shared_ptr<Reader> sptr;
     typedef std::shared_ptr<const Reader> csptr;
+    virtual csptr view(const std::string &name, Off start, Off length=std::numeric_limits<Off>::max()) const;
 };
 
 static inline std::ostream &operator << (std::ostream &os, const Reader &reader)
@@ -102,21 +103,8 @@ public:
     std::string filename() const override { return name; }
     Off size() const override;
 };
-// Reader implementations
-class MmapReader : public Reader {
-    std::string name;
-    size_t len;
-    void *base;
-public:
-    virtual size_t read(Off off, size_t count, char *ptr) const override ;
-    MmapReader(const std::string &name_);
-    ~MmapReader();
-    std::string readString(Off offset) const override;
-    void describe(std::ostream &os) const  override { os << name; }
-    std::string filename() const override { return name; }
-    Off size() const override { return len; }
-};
 
+// Reader implementations
 
 class CacheReader : public Reader {
     struct CacheEnt {
@@ -157,14 +145,23 @@ public:
 class MemReader : public Reader {
 protected:
     std::string descr;
-    size_t len;
-    const char *data;
 public:
+    size_t len;
+    const void *data;
     virtual size_t read(Off off, size_t count, char *ptr) const override;
-    MemReader(const std::string &, size_t, const char *);
+    MemReader(const std::string &, size_t, const void *);
     void describe(std::ostream &) const override;
     Off size() const override { return len; }
     std::string filename() const override { return "in-memory"; }
+    std::string readString(Off offset) const override;
+    virtual csptr view(const std::string &name, Off start, Off length=std::numeric_limits<Off>::max()) const override;
+};
+
+class MmapReader : public MemReader {
+public:
+    MmapReader(const std::string &name_);
+    ~MmapReader();
+    std::string filename() const override { return descr; }
 };
 
 class NullReader : public Reader {

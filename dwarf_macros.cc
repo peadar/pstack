@@ -46,7 +46,7 @@ Macros::readD4(const Info &dwarf, intmax_t offset)
     auto &macrosh = dwarf.elf->getDebugSection(".debug_macinfo", SHT_NULL);
     if (!macrosh)
         return;
-    io = std::make_shared<OffsetReader>("debug_macinfo subsection", macrosh.io(), offset);
+    io = macrosh.io()->view("debug_macinfo subsection", offset);
 }
 
 void

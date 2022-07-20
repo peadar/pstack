@@ -68,7 +68,7 @@ Notes::iterator::iterator(const Object *object_, bool begin)
 
 void Notes::iterator::startSection() {
     offset = 0;
-    io = std::make_shared<OffsetReader>("note section", object->io, Off(phdrsi->p_offset), Off(phdrsi->p_filesz));
+    io = object->io->view("note section", Off(phdrsi->p_offset), size_t(phdrsi->p_filesz));
 }
 
 Notes::iterator &Notes::iterator::operator++()
@@ -100,7 +100,7 @@ NoteDesc::name() const
 Reader::csptr
 NoteDesc::data() const
 {
-   return make_shared<OffsetReader>("note descriptor", io, sizeof note + roundup2(note.n_namesz, 4), note.n_descsz);
+   return io->view("note descriptor", sizeof note + roundup2(note.n_namesz, 4), note.n_descsz);
 }
 
 template <>
@@ -214,8 +214,8 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
     if (!IS_ELF(elfHeader) || elfHeader.e_ident[EI_VERSION] != EV_CURRENT)
         throw (Exception() << *io << ": content is not an ELF image");
 
-    OffsetReader headers("program headers", io, elfHeader.e_phoff, elfHeader.e_phnum * sizeof (Phdr));
-    for (auto hdr : ReaderArray<Phdr>(headers))
+    auto headers = io->view("program headers", elfHeader.e_phoff, elfHeader.e_phnum * sizeof (Phdr));
+    for (auto hdr : ReaderArray<Phdr>(*headers))
         programHeaders[hdr.p_type].push_back(hdr);
     // Sort program headers by VA.
     for (auto &phdrs : programHeaders)
@@ -665,13 +665,13 @@ Reader::csptr Section::io() const {
     bool wantedZlib = false;
 #endif
 
-    auto rawIo = make_shared<OffsetReader>(name, elf->io, shdr.sh_offset, shdr.sh_size);
+    auto rawIo = elf->io->view(name, shdr.sh_offset, shdr.sh_size);
     if ((shdr.sh_flags & SHF_COMPRESSED) != 0) {
 #ifdef WITH_ZLIB
         auto chdr = rawIo->readObj<Chdr>(0);
         io_ = make_shared<InflateReader>(
               chdr.ch_size,
-              OffsetReader("ZLIB compressed content after chdr", rawIo, sizeof chdr, shdr.sh_size - sizeof chdr));
+              *rawIo->view("ZLIB compressed content after chdr", sizeof chdr, shdr.sh_size - sizeof chdr));
 #else
         wantedZlib = true;
 #endif
@@ -687,7 +687,7 @@ Reader::csptr Section::io() const {
             }
             io_ = make_shared<InflateReader>(
                   sz,
-                  OffsetReader("ZLIB compressed content after magic signature", rawIo, sizeof sig, sz));
+                  *rawIo->view("ZLIB compressed content after magic signature", sizeof sig, sz));
 #else
             wantedZlib = true;
 #endif
