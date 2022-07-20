@@ -2,6 +2,7 @@
 #define pstack_reader_h
 
 #include <stdint.h>
+#include <climits>
 #include <stdlib.h>
 #include <iostream>
 #include <memory>
@@ -34,6 +35,28 @@
 // LzmaReader (to decompress the .gnu_debugdata, and give the plain ELF image)
 // OffsetReader (for .symtab in the nested ELF image)
 
+template <typename T, typename Iter> static inline std::pair<T, size_t> readleb128(Iter it) {
+   static_assert(CHAR_BIT == 8);
+   constexpr auto roll = (sizeof(T) -1) * CHAR_BIT + 1;
+   constexpr uintmax_t mask = uintmax_t(0x7f) << roll;
+   T val = 0;
+   auto start = it;
+   for(;;) {
+      val >>= 7;
+      val &= ~mask;
+      val |= T(*it) << roll;
+      if ((*it & 0x80) == 0) {
+         ++it;
+         break;
+      }
+      ++it;
+   }
+   size_t count = it - start;
+   val >>= (sizeof roll * 8) - (count * 7);
+   return {val, count};
+}
+
+
 class Reader : public std::enable_shared_from_this<Reader> {
     Reader(const Reader &);
 public:
@@ -48,6 +71,10 @@ public:
     template <typename Obj> Obj readObj(Off offset) const;
     // read a sequence of count bytes at offset off. May give a short return.
     virtual size_t read(Off off, size_t count, char *ptr) const = 0;
+
+    // read a LEB128 encoded integer.
+    virtual std::pair<uintmax_t, size_t> readULEB128(Off off) const;
+    virtual std::pair<intmax_t, size_t> readSLEB128(Off off) const;
 
     // describe this reader.
     virtual void describe(std::ostream &os) const = 0;
@@ -155,6 +182,8 @@ public:
     std::string filename() const override { return "in-memory"; }
     std::string readString(Off offset) const override;
     virtual csptr view(const std::string &name, Off start, Off length=std::numeric_limits<Off>::max()) const override;
+    virtual std::pair<uintmax_t, size_t> readULEB128(Off off) const override;
+    virtual std::pair<intmax_t, size_t> readSLEB128(Off off) const override;
 };
 
 class MmapReader : public MemReader {
@@ -205,19 +234,21 @@ template <typename T>
 struct ReaderArray {
    class iterator {
       const Reader *reader;
-      Reader::Off offset;
    public:
+      Reader::Off offset;
       T operator *();
       iterator(const Reader *reader_, Reader::Off offset_) : reader(reader_),offset(offset_) {}
       bool operator == (const iterator &rhs) { return offset == rhs.offset && reader == rhs.reader; }
       bool operator != (const iterator &rhs) { return ! (*this == rhs); }
+      size_t operator - (const iterator &rhs) { return offset - rhs.offset; }
       void operator++() { offset += sizeof (T); }
    };
    const Reader &reader;
+   size_t initialOffset;
    typedef T value_type;
-   iterator begin() const { return iterator(&reader, 0); }
+   iterator begin() const { return iterator(&reader, initialOffset); }
    iterator end() const { return iterator(&reader, reader.size()); }
-   ReaderArray(const Reader &reader_) : reader(reader_) {
+   ReaderArray(const Reader &reader_, size_t offset = 0) : reader(reader_), initialOffset(offset) {
       assert(reader.size() % sizeof (T) == 0);
    }
 };

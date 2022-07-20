@@ -12,24 +12,9 @@ namespace Dwarf {
 class DWARFReader {
     Elf::Off off;
     Elf::Off end;
-
-    uintmax_t getuleb128shift(int &shift, bool &msb) {
-        uintmax_t result;
-        unsigned char byte;
-        for (result = 0, shift = 0;;) {
-            io->readObj(off++, &byte);
-            result |= uintmax_t(byte & 0x7f) << shift;
-            shift += 7;
-            if ((byte & 0x80) == 0)
-                break;
-        }
-        msb = (byte & 0x40) != 0;
-        return result;
-    }
 public:
     ::Reader::csptr io;
     unsigned addrLen;
-
     DWARFReader(Reader::csptr io_, Elf::Off off_ = 0, size_t end_ = std::numeric_limits<size_t>::max())
         : off(off_)
         , end(end_ == std::numeric_limits<size_t>::max() ? io_->size() : end_)
@@ -37,7 +22,6 @@ public:
         , addrLen(ELF_BITS / 8)
         {
         }
-
     void getBytes(size_t size, unsigned char *to) {
        io->readObj(off, to, size);
        off += size;
@@ -95,20 +79,14 @@ public:
     }
 
     uintmax_t getuleb128() {
-        int shift;
-        bool msb;
-        return getuleb128shift(shift, msb);
+        auto v = io->readULEB128(off);
+        skip(v.second);
+        return v.first;
     }
-
     intmax_t getsleb128() {
-        int shift;
-        bool msb;
-        intmax_t result = (intmax_t) getuleb128shift(shift, msb);
-        // sign-extend the MSB to the rest of the intmax_t. Don't shift more
-        // than the number of bits in intmax_t though!
-        if (msb && shift < std::numeric_limits<intmax_t>::digits)
-            result |= - ((uintmax_t)1 << shift);
-        return result;
+        auto v = io->readSLEB128(off);
+        skip(v.second);
+        return v.first;
     }
 
     std::string readFormString(const Info &, Unit &, Form f);

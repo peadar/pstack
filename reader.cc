@@ -299,3 +299,33 @@ OffsetReader::read(Off off, size_t count, char *ptr) const {
        count = length - off;
     return upstream->read(off + offset, count, ptr);
 }
+
+std::pair<uintmax_t, size_t>
+Reader::readULEB128(Off off) const
+{
+    ReaderArray<unsigned char> ar ( *this, off );
+    return readleb128<uintmax_t>(ar.begin());
+}
+
+std::pair<intmax_t, size_t>
+Reader::readSLEB128(Off off) const
+{
+    ReaderArray<unsigned char> ar ( *this, off );
+    return readleb128<intmax_t>(ar.begin());
+}
+
+
+std::pair<uintmax_t, size_t>
+MemReader::readULEB128(Off off) const
+{
+    auto p = reinterpret_cast<const char *>(data) + off;
+    return readleb128<uintmax_t>(p);
+}
+
+std::pair<intmax_t, size_t>
+MemReader::readSLEB128(Off off) const
+{
+    auto p = reinterpret_cast<const char *>(data) + off;
+    return readleb128<intmax_t>(p);
+}
+
