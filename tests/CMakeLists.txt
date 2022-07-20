@@ -14,6 +14,8 @@ add_library(testhelper STATIC abort.c)
 add_executable(thread thread.cc)
 add_executable(badfp badfp.c)
 add_executable(basic basic.c)
+add_executable(basic-zlib basic.c)
+add_executable(basic-zlib-gnu basic.c)
 add_executable(segv segv.c)
 add_executable(segvrt segvrt.c)
 add_executable(inline inline.c)
@@ -30,3 +32,9 @@ target_link_libraries(noreturn testhelper)
 target_link_libraries(cpp testhelper)
 target_link_libraries(inline testhelper)
 SET_TARGET_PROPERTIES(noreturn PROPERTIES COMPILE_FLAGS "-O2 -g")
+
+# Build the basic executable with some options to compress debug sections with
+# zlib and zlib-gnu, and ensure we can decode them
+
+target_link_options(basic-zlib PUBLIC -Wl,--compress-debug-sections=zlib)
+target_link_options(basic-zlib-gnu PUBLIC -Wl,--compress-debug-sections=zlib-gnu)

@@ -45,6 +45,7 @@ class CoreMonitor( object ):
       files = glob.glob( self.corefile )
       if files:
          return files[0]
+      print("expected core '%s' did not appear" % self.corefile )
       return None
 
 if __name__ == "__main__":
