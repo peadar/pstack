@@ -664,29 +664,34 @@ Reader::csptr Section::io() const {
 #ifndef WITH_ZLIB
     bool wantedZlib = false;
 #endif
+
     auto rawIo = make_shared<OffsetReader>(name, elf->io, shdr.sh_offset, shdr.sh_size);
-    if (name.rfind(".zdebug_", 0) == 0) {
+    if ((shdr.sh_flags & SHF_COMPRESSED) != 0) {
 #ifdef WITH_ZLIB
+        auto chdr = rawIo->readObj<Chdr>(0);
+        io_ = make_shared<InflateReader>(
+              chdr.ch_size,
+              OffsetReader("ZLIB compressed content after chdr", rawIo, sizeof chdr, shdr.sh_size - sizeof chdr));
+#else
+        wantedZlib = true;
+#endif
+    } else if (name.rfind(".zdebug_", 0) == 0) {
         unsigned char sig[12];
         rawIo->readObj(0, sig, sizeof sig);
         if (memcmp((const char *)sig, "ZLIB", 4) == 0) {
+#ifdef WITH_ZLIB
             uint64_t sz = 0;
             for (size_t i = 4; i < 12; ++i) {
                 sz <<= 8;
                 sz |= sig[i];
             }
-            io_ = make_shared<InflateReader>(sz, OffsetReader("zlib compressed content after signature", rawIo, sizeof sig, sz));
+            io_ = make_shared<InflateReader>(
+                  sz,
+                  OffsetReader("ZLIB compressed content after magic signature", rawIo, sizeof sig, sz));
+#else
+            wantedZlib = true;
+#endif
         }
-#else
-        wantedZlib = true;
-#endif
-    } else if ((shdr.sh_flags & SHF_COMPRESSED) != 0) {
-#ifdef WITH_ZLIB
-        auto chdr = rawIo->readObj<Chdr>(0);
-        io_ = make_shared<InflateReader>(chdr.ch_size, OffsetReader("zlip compressed content after chdr", rawIo, sizeof chdr, shdr.sh_size - sizeof chdr));
-#else
-        wantedZlib = true;
-#endif
     } else {
         io_ = rawIo;
     }
