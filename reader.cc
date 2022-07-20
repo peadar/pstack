@@ -261,16 +261,17 @@ OffsetReader::OffsetReader(const std::string& name, Reader::csptr upstream_, Off
     , offset(offset_)
     , name(name)
 {
+    // If we create an offset reader with the upstream being another offset
+    // reader, we can just add the offsets, and use the
+    // upstream-of-the-upstream instead.
     for (;;) {
         auto orReader = dynamic_cast<const OffsetReader *>(upstream.get());
         if (!orReader)
             break;
         if (verbose > 2)
-            *debug << "optimize: collapse OR reader : " << upstream.get() << "->" << orReader->upstream.get() << "\n";
+            *debug << "optimize: collapse offset reader : " << *upstream.get() << "->" << *orReader->upstream.get() << "\n";
         offset += orReader->offset;
         upstream = orReader->upstream;
-        if (length_ != std::numeric_limits<Off>::max())
-            length -= orReader->offset;
     }
     length = length_ == std::numeric_limits<Off>::max() ? upstream->size() - offset : length_;
 }

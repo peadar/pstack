@@ -191,7 +191,7 @@ public:
     virtual size_t read(Off off, size_t count, char *ptr) const override;
     OffsetReader(const std::string &name, Reader::csptr upstream_, Off offset_, Off length_ = std::numeric_limits<Off>::max());
     void describe(std::ostream &os) const override {
-        os << name << "( range " << "[" << offset << "," << offset + length << "]" << " of " << *upstream << ")";
+        os << name << "( range " << "[" << offset << "," << offset + length << "]" << " of " << *upstream << " )";
     }
     Off size() const override { return length; }
     std::string filename() const override { return upstream->filename(); }
