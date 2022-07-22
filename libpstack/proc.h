@@ -119,7 +119,6 @@ struct PstackOptions {
    bool doargs = false;
    bool dolocals = false;
    bool nothreaddb = false;
-   std::vector<std::pair<std::string, std::string>> pathReplacements;
    int maxdepth = std::numeric_limits<int>::max();
 };
 
