@@ -17,8 +17,8 @@ LogProcess::LogProcess(Elf::Object::sptr exec, const std::vector<std::string> &l
 }
 
 void
-LogProcess::load(const PstackOptions &options) {
-    Process::load(options);
+LogProcess::load() {
+    Process::load();
 }
 
 bool

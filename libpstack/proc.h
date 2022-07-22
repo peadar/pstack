@@ -200,7 +200,7 @@ public:
                            [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
     virtual std::list<ThreadStack> getStacks(const PstackOptions &, unsigned maxFrames);
     virtual ~Process();
-    virtual void load(const PstackOptions &);
+    virtual void load();
     virtual pid_t getPID() const = 0;
     virtual std::vector<AddressRange> addressSpace() const = 0;
     static std::shared_ptr<Process> load(Elf::Object::sptr exe, std::string id, const PstackOptions &options, Dwarf::ImageCache &cache);
@@ -237,7 +237,7 @@ public:
     virtual void resume(pid_t) override;
     void stopProcess() override;
     void resumeProcess() override;
-    virtual void load(const PstackOptions &) override;
+    virtual void load() override;
     void findLWPs();
     virtual pid_t getPID() const override;
 protected:
@@ -268,7 +268,7 @@ public:
     void stopProcess() override;
     void resumeProcess()  override { }
     void findLWPs();
-    virtual void load(const PstackOptions &) override;
+    virtual void load() override;
     virtual pid_t getPID() const override;
 protected:
     bool loadSharedObjectsFromFileNote() override;
@@ -302,7 +302,7 @@ class LogProcess : public Process {
    std::list<ThreadStack> stacks;
 public:
    LogProcess(Elf::Object::sptr exec, const std::vector<std::string> &logs, const PstackOptions &, Dwarf::ImageCache &);
-   void load(const PstackOptions &);
+   void load();
    bool getRegs(lwpid_t, Elf::CoreRegisters *);
    void resume(pid_t);
    void resumeProcess();

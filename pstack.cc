@@ -264,7 +264,7 @@ emain(int argc, char **argv)
        exec = imageCache.getImageForName(execName);
 
     auto doStack = [=, &options] (Process &proc) {
-        proc.load(options);
+        proc.load();
         while (!interrupted) {
 #if defined(WITH_PYTHON)
             if (doPython || printAllStacks) {

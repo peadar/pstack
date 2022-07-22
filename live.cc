@@ -36,14 +36,16 @@ LiveProcess::LiveProcess(Elf::Object::sptr &ex, pid_t pid_,
     , pid(pid_)
 {
     (void)ps_getpid(this);
+    if (alreadyStopped)
+       lwps[pid].stopCount = 1;
 }
 
 void
-LiveProcess::load(const PstackOptions &options)
+LiveProcess::load()
 {
     StopLWP here(this, pid);
     processAUXV(LiveReader(pid, "auxv"));
-    Process::load(options);
+    Process::load();
 }
 
 bool

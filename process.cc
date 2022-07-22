@@ -40,7 +40,7 @@ Process::Process(Elf::Object::sptr exec, Reader::sptr memory,
 }
 
 void
-Process::load(const PstackOptions &options)
+Process::load()
 {
     /*
      * Attach the executable and any shared libs.
@@ -995,7 +995,7 @@ std::shared_ptr<Process> Process::load(Elf::Object::sptr exec, std::string id, c
           return nullptr; // image is ELF, but not a core - just return null
        proc = std::make_shared<CoreProcess>(exec, core, options, imageCache);
     }
-    proc->load(options);
+    proc->load();
     return proc;
 }
 

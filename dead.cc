@@ -13,7 +13,7 @@ CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
 }
 
 void
-CoreProcess::load(const PstackOptions &options)
+CoreProcess::load()
 {
 #ifdef __linux__
     for (auto note : coreImage->notes()) {
@@ -23,7 +23,7 @@ CoreProcess::load(const PstackOptions &options)
        }
     }
 #endif
-    Process::load(options);
+    Process::load();
 }
 
 void CoreReader::describe(std::ostream &os) const
