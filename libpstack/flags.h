@@ -8,6 +8,17 @@
 #include <cassert>
 #include <unistd.h>
 
+namespace {
+template <typename T> void convert(const char *opt, T &to) {
+   if constexpr (std::is_integral<T>::value)
+      to = strtol(opt, 0, 0);
+   else if constexpr (std::is_floating_point<T>::value)
+      to = strtod(opt, 0);
+   else
+      to = opt;
+}
+}
+
 /*
  * A wrapper for getopt_long that correlates long and short options together,
  * and allows for a functional interface for handling options.
@@ -77,16 +88,11 @@ public:
     template <typename T> static VCb
     setf(T &val, T to=true) { return [&val, to] () { val = to; }; }
 
-    template <typename T> static typename std::enable_if<std::is_integral<T>::value, T>::type
-    convert(const char *opt) { return strtol(opt, 0, 0); }
-
-    template <typename T> static typename std::enable_if<std::is_floating_point<T>::value, T>::type
-    convert(const char *opt) { return strtod(opt, 0); }
 
     // Helper to set a value from a string, using convert to convert from
     // string to whatever type is required.
     template <typename T> static Cb
-    set(T &val) { return [&val] (const char *opt) { val = convert<T>(opt); }; }
+    set(T &val) { return [&val] (const char *opt) { convert<T>(opt, val); }; }
 
     // Append to a container with push_back, with a converted value.
     template <typename T, typename C> static Cb
