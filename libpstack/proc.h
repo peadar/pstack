@@ -230,7 +230,9 @@ struct LiveThreadList;
 class LiveProcess : public Process {
     pid_t pid;
 public:
-    LiveProcess(Elf::Object::sptr &, pid_t, const PstackOptions &, Dwarf::ImageCache &);
+    // attach to existing process.
+    LiveProcess(Elf::Object::sptr &, pid_t, const PstackOptions &, Dwarf::ImageCache &, bool alreadyStopped=false);
+
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
     virtual void stop(pid_t) override;
     virtual void resume(pid_t) override;

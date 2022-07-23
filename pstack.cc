@@ -11,11 +11,13 @@
 
 #include <sys/types.h>
 #include <sys/signal.h>
+#include <sys/wait.h>
 
 #include <sysexits.h>
 #include <unistd.h>
 
 #include <csignal>
+#include <algorithm>
 
 #include <iostream>
 #include <set>
@@ -31,8 +33,7 @@ volatile bool interrupted = false;
 std::ostream &
 pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFrames)
 {
-   const auto &threadStacks = proc.getStacks(options, maxFrames);
-
+    const auto &threadStacks = proc.getStacks(options, maxFrames);
     if (doJson) {
         os << json(threadStacks, &proc);
     } else {
@@ -44,6 +45,91 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFra
     }
     return os;
 }
+
+int
+startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &options, Dwarf::ImageCache &ic) {
+   std::vector<std::string> args;
+   for (size_t off = 0;;) {
+      auto pos = cmd.find(' ', off);
+      if (pos == std::string::npos) {
+         args.push_back(cmd.substr(off));
+         break;
+      } else {
+         args.push_back(cmd.substr(off, pos));
+         off = pos + 1;
+      }
+   }
+
+   int rc, status;
+   pid_t pid = fork();
+   switch (pid) {
+      case 0: {
+         rc = ptrace(PTRACE_TRACEME, 0, 0, 0);
+         assert(rc == 0);
+         if (verbose > 2)
+             *debug << getpid() << " traced, waiting for debugger..." << std::endl;
+         raise(SIGSTOP);
+         if (verbose > 2)
+             *debug << getpid() << " ... resumed\n";
+         std::vector<const char *> sysargs;
+         std::transform(args.begin(), args.end(), std::back_inserter(sysargs),
+                        [] (const std::string &arg) { return arg.c_str(); });
+         execvp(sysargs[0], (char **)&sysargs[0]);
+         if (verbose > 2)
+             *debug << getpid() << " execvp failed: " << strerror(errno) << "\n";
+         // child
+         break;
+      }
+      case -1:
+         // error
+         return -1;
+      default:
+
+         std::shared_ptr<Process> p;
+         while (true) {
+            if (verbose > 2)
+               *debug << getpid() << " waiting...\n";
+            rc = wait(&status);
+            if (rc != pid) {
+               if (verbose > 2)
+                  *debug << getpid() << "... wait failed: " << strerror(errno) << "\n";
+               break;
+            }
+            if (verbose > 2)
+               *debug << getpid() << "... done - rc=" << rc << ", status=" << WaitStatus(status) << "\n";
+
+            if (WIFSTOPPED(status)) {
+               int contsig = WSTOPSIG(status);
+               switch (contsig) {
+                  case SIGSTOP:
+                     contsig = 0;
+                     break;
+                  case SIGTRAP:
+                     contsig = 0;
+                     break;
+                  default:
+                     if (p == nullptr) {
+                        p = std::make_shared<LiveProcess>(exe, pid, options, ic, true);
+                        p->load();
+                     }
+                     pstack(*p, std::cout, options, 100);
+               }
+               rc = ptrace(PTRACE_CONT, pid, 0, contsig == SIGTRAP ? 0 : contsig);
+               if (rc == -1)
+                  *debug << getpid() << " ptrace failed to continue - " << strerror(errno) << "\n";
+
+               assert(rc == 0);
+               if (verbose > 2)
+                  *debug << getpid() << "..done\n";
+            } else {
+               return 0;
+            }
+         }
+         break;
+   }
+   return 0;
+}
+
 
 #ifdef WITH_PYTHON
 template<int V> void doPy(Process &proc, std::ostream &o,
@@ -118,6 +204,7 @@ emain(int argc, char **argv)
     std::string execName;
     bool printAllStacks = false;
     int exitCode = -1; // used for options that exit immediately to signal exit.
+    std::string subprocessCmd;
 
     Flags flags;
     flags
@@ -248,20 +335,30 @@ emain(int argc, char **argv)
           'e',
           "executable",
           "executable to use by default", [&](const char *opt) { execName = opt; })
-
+    .add("command",
+          'x',
+          "command line",
+          "execute command line as subprocess", Flags::set<std::string>(subprocessCmd))
     .parse(argc, argv);
 
     if (exitCode != -1)
         return exitCode;
 
-    if (optind == argc && btLogs.empty())
-        return usage(std::cerr, argv[0], flags);
 
     // any instance of a non-core ELF image will override default behaviour of
     // discovering the executable
     Elf::Object::sptr exec;
     if (execName != "")
        exec = imageCache.getImageForName(execName);
+
+    if (subprocessCmd != "") {
+       // create a new process and trace it.
+       exit(startChild(exec, subprocessCmd, options, imageCache));
+    }
+
+    if (optind == argc && btLogs.empty())
+        return usage(std::cerr, argv[0], flags);
+
 
     auto doStack = [=, &options] (Process &proc) {
         proc.load();

@@ -28,7 +28,7 @@ LiveReader::LiveReader(pid_t pid, const std::string &base)
    : FileReader(procname(pid, base)) {}
 
 LiveProcess::LiveProcess(Elf::Object::sptr &ex, pid_t pid_,
-            const PstackOptions &options, Dwarf::ImageCache &imageCache)
+            const PstackOptions &options, Dwarf::ImageCache &imageCache, bool alreadyStopped)
     : Process(
             ex ? ex : imageCache.getImageForName(procname(pid_, "exe")),
             std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")),
@@ -154,7 +154,7 @@ LiveProcess::resumeProcess()
         if (td_thr_dbresume(thr) == TD_NOCAPAB) {
             // this doesn't work in general, but it's ok, we'll suspend the LWP
             if (verbose >= 3)
-                *debug << "can't resume thread "  << thr << "\n";
+                *debug << "can't resume thread "  << thr << " (will resume it's LWP)\n";
         }
     });
 
