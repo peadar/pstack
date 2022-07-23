@@ -121,7 +121,7 @@ add_library(dwelf ${LIBTYPE}
          elf.cc
          flags.cc
          reader.cc
-         util.cc
+         fs.cc
          ${inflatesrc}
          ${lzmasrc}
          )

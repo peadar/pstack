@@ -8,8 +8,6 @@
 #include "libpstack/fs.h"
 #include "libpstack/global.h"
 
-std::vector<std::pair<std::string,std::string>> pathReplacements;
-
 using std::string;
 Reader::Off
 FileReader::size() const

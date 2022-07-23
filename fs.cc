@@ -8,6 +8,8 @@
 #include "libpstack/fs.h"
 #include "libpstack/exception.h"
 
+std::vector<std::pair<std::string,std::string>> pathReplacements;
+
 std::string
 dirname(const std::string &in)
 {
