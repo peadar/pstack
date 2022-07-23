@@ -313,4 +313,11 @@ public:
    virtual std::list<ThreadStack> getStacks(const PstackOptions &, unsigned maxFrames);
 };
 
+struct WaitStatus {
+   int status;
+   WaitStatus(int status) : status{status}{}
+};
+
+std::ostream &operator << (std::ostream &os, WaitStatus ws);
+
 #endif

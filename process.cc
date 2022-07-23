@@ -21,6 +21,7 @@
 #include <limits>
 #include <set>
 #include <sys/ucontext.h>
+#include <sys/wait.h>
 #include <signal.h>
 
 Process::Process(Elf::Object::sptr exec, Reader::sptr memory,
@@ -1061,3 +1062,17 @@ Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
 
     return threadStacks;
 }
+
+std::ostream & operator << (std::ostream &os, WaitStatus ws) {
+   if (WIFSIGNALED(ws.status)) {
+      os << "signal(" << strsignal(WTERMSIG(ws.status)) << ")";
+      if (WCOREDUMP(ws.status))
+         os << "(core dumped)";
+   }
+   else if (WIFSTOPPED(ws.status))
+      os << "stop(" << strsignal(WSTOPSIG(ws.status)) << ")";
+   else if (WIFEXITED(ws.status))
+      os << "exit(" << WEXITSTATUS(ws.status) << ")";
+   return os;
+}
+
