@@ -17,36 +17,6 @@ FileReader::size() const
     return fileSize;
 }
 
-static int
-openFileDirect(const string &name_, int mode, int mask)
-{
-    auto fd = open(name_.c_str(), mode, mask);
-    if (verbose > 2) {
-       if (fd != -1)
-          *debug << "opened " << name_ << ", fd=" << fd << std::endl;
-       else
-          *debug << "failed to open " << name_ << ": " << strerror(errno) << std::endl;
-    }
-    return fd;
-}
-
-int
-openfile(const string &name, int mode, int mask)
-{
-    int fd = -1;
-    for (auto &r : pathReplacements) {
-       if (name.compare(0, r.first.size(), r.first) == 0) {
-          fd = openFileDirect(r.second + std::string(name, r.first.size()), mode, mask);
-          if (fd != -1)
-             return fd;
-       }
-    }
-    fd = openFileDirect(name, mode, mask);
-    if (fd != -1)
-       return fd;
-    throw (Exception() << "cannot open file '" << name << "': " << strerror(errno));
-}
-
 FileReader::FileReader(string name_)
     : name(std::move(name_))
     , file(openfile(name))

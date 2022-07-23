@@ -1,6 +1,12 @@
 #include <iostream>
+#include <fcntl.h>
+#include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
 #include <sys/stat.h>
+#include "libpstack/global.h"
+#include "libpstack/fs.h"
+#include "libpstack/exception.h"
 
 std::string
 dirname(const std::string &in)
@@ -40,3 +46,35 @@ linkResolve(std::string name)
     }
     return name;
 }
+
+static int
+openFileDirect(const std::string &name_, int mode, int mask)
+{
+    auto fd = open(name_.c_str(), mode, mask);
+    if (verbose > 2) {
+       if (fd != -1)
+          *debug << "opened " << name_ << ", fd=" << fd << std::endl;
+       else
+          *debug << "failed to open " << name_ << ": " << strerror(errno) << std::endl;
+    }
+    return fd;
+}
+
+int
+openfile(const std::string &name, int mode, int mask)
+{
+    int fd = -1;
+    for (auto &r : pathReplacements) {
+       if (name.compare(0, r.first.size(), r.first) == 0) {
+          fd = openFileDirect(r.second + std::string(name, r.first.size()), mode, mask);
+          if (fd != -1)
+             return fd;
+       }
+    }
+    fd = openFileDirect(name, mode, mask);
+    if (fd != -1)
+       return fd;
+    throw (Exception() << "cannot open file '" << name << "': " << strerror(errno));
+}
+
+
