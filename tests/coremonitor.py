@@ -5,22 +5,13 @@ import os.path
 import os
 
 class CoreMonitor( object ):
-   def __init__( self, args, childproc = None):
+   def __init__(self, args):
       with open( "/proc/sys/kernel/core_pattern" ) as f:
          self.core_pattern = f.read().strip()
-      if args is None:
-          self.pid = os.fork()
-          self.exe = "*"
-          self.output = None
-          if self.pid == 0:
-              os._exit(childproc())
-          else:
-              os.waitpid(self.pid, 0)
-      else:
-          p = subprocess.Popen( args, stdout=subprocess.PIPE )
-          self.pid = p.pid
-          self.exe = os.path.basename( args[0] )
-          ( self.output, self.errors ) = p.communicate()
+      p = subprocess.Popen( args, stdout=subprocess.PIPE )
+      self.pid = p.pid
+      self.exe = os.path.basename( args[0] )
+      ( self.output, self.errors ) = p.communicate()
       self.corefile = self.core_pattern.replace( "%e", self.exe )
       if '%p' in self.core_pattern:
           self.corefile = self.corefile.replace( "%p", "%d" % self.pid )

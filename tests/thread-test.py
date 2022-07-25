@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
 import pstack
 import json
@@ -21,7 +21,7 @@ for thread in pstack:
         if frame['die'] == 'entry':
             # the soruce for "entry" should be thread.c
             if not frame['source']:
-                print "warning: no source info to test"
+                print("warning: no source info to test")
             else:
                 assert frame['source'][0]['file'].endswith( 'thread.cc' )
                 lineNo = frame['source'][0]['line']

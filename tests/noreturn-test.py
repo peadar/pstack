@@ -1,16 +1,9 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 # This tests argument printing works to some extent
 
 import pstack
 
-def child():
-    import os
-    print os.getcwd()
-    import ctypes
-    dll = ctypes.CDLL("tests/libnoreturn.so")
-    dll.thisFunctionWontReturn()
-
-process, _ = pstack.JSON(None, child)
+process, _ = pstack.JSON(["tests/noreturn"])
 stack = process[0]["ti_stack"]
 frames = [ frame for frame in stack if "die" in frame and frame["die"] == "thisFunctionWontReturn" ]
 assert len(frames) == 1, "we should see our function on the stack"

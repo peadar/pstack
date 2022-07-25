@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 # This tests argument printing works to some extent
 
 import pstack

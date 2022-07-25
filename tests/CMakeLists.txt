@@ -20,7 +20,7 @@ add_executable(segv segv.c)
 add_executable(segvrt segvrt.c)
 add_executable(inline inline.c)
 add_executable(args args.cc)
-add_library(noreturn SHARED noreturn.c noreturn-ext.c)
+add_executable(noreturn noreturn.c noreturn-ext.c)
 add_executable(cpp cpp.cc)
 
 target_link_libraries(thread pthread testhelper)
