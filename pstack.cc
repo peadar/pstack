@@ -46,6 +46,10 @@ pstack(Process &proc, const PstackOptions &options, int maxFrames)
     }
 }
 
+// This is mostly for testing. We start the process, and run pstack when we see
+// a signal that is likely to terminate the process, then kill it. This allows
+// us to reliably run pstack on a process that will abort or segfault, and
+// doesn't require a readable core file.
 int
 startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &options, Dwarf::ImageCache &ic) {
    std::vector<std::string> args;
@@ -66,11 +70,6 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
       case 0: {
          rc = ptrace(PTRACE_TRACEME, 0, 0, 0);
          assert(rc == 0);
-         if (verbose > 2)
-             *debug << getpid() << " traced, waiting for debugger..." << std::endl;
-         raise(SIGSTOP);
-         if (verbose > 2)
-             *debug << getpid() << " ... resumed\n";
          std::vector<const char *> sysargs;
          std::transform(args.begin(), args.end(), std::back_inserter(sysargs),
                         [] (const std::string &arg) { return arg.c_str(); });
@@ -85,9 +84,14 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
          // error
          return -1;
       default:
-
          std::shared_ptr<Process> p;
-         while (true) {
+         char statusBuf[PATH_MAX];
+         snprintf(statusBuf, sizeof statusBuf, "/proc/%d/status", pid);
+         struct closer { void operator()(FILE *f){ fclose(f); }};
+         std::unique_ptr<FILE, closer> statusFile { fopen(statusBuf, "r") };
+         assert(statusFile.get());
+
+         for (;;) {
             if (verbose > 2)
                *debug << getpid() << " waiting...\n";
             rc = wait(&status);
@@ -100,29 +104,38 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
                *debug << getpid() << "... done - rc=" << rc << ", status=" << WaitStatus(status) << "\n";
 
             if (WIFSTOPPED(status)) {
-               int contsig = WSTOPSIG(status);
-               switch (contsig) {
-                  case SIGSTOP:
-                     contsig = 0;
-                     break;
-                  case SIGTRAP:
-                     contsig = 0;
-                     break;
-                  default:
-                     if (p == nullptr) {
-                        p = std::make_shared<LiveProcess>(exe, pid, options, ic, true);
-                        p->load();
-                     }
-                     pstack(*p, std::cout, options, 100);
+               // Read the content of the process's SigIgn and SigCgt info from procfs.
+               fflush(statusFile.get());
+               fseek(statusFile.get(), 0, SEEK_SET);
+               char line[PATH_MAX];
+               unsigned long sigblk = -1, sigign = -1, sigcgt = -1;
+               while (fgets(line, sizeof line, statusFile.get()) != NULL) {
+                  if (strncmp(line, "SigBlk:\t", 8) == 0)
+                     sigblk = strtoul(line + 8, 0, 16);
+                  else if (strncmp(line, "SigCgt:\t", 8) == 0)
+                     sigcgt = strtoul(line + 8, 0, 16);
+                  else if (strncmp(line, "SigIgn:\t", 8) == 0)
+                     sigign = strtoul(line + 8, 0, 16);
                }
-               rc = ptrace(PTRACE_CONT, pid, 0, contsig == SIGTRAP ? 0 : contsig);
+               unsigned long handledSigs = sigblk | sigcgt | sigign;
+               handledSigs |= 1 << (SIGTRAP - 1);
+               int stopsig = WSTOPSIG(status);
+               int contsig = stopsig == SIGSTOP || stopsig == SIGTRAP ? 0 : stopsig;
+               if (((1 << (stopsig -1)) & handledSigs) == 0) {
+                  p = std::make_shared<LiveProcess>(exe, pid, options, ic, true);
+                  p->load();
+                  pstack(*p, options, 100);
+                  rc = ptrace(PTRACE_KILL, pid, 0, contsig);
+               } else {
+                  rc = ptrace(PTRACE_CONT, pid, 0, contsig);
+               }
                if (rc == -1)
-                  *debug << getpid() << " ptrace failed to continue - " << strerror(errno) << "\n";
-
+                  *debug << getpid() << " ptrace failed to kill/continue - " << strerror(errno) << "\n";
                assert(rc == 0);
                if (verbose > 2)
                   *debug << getpid() << "..done\n";
-            } else {
+            }
+            else {
                return 0;
             }
          }
@@ -338,7 +351,7 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
     .add("command",
           'x',
           "command line",
-          "execute command line as subprocess", Flags::set<std::string>(subprocessCmd))
+          "execute command line as subprocess, trace when it receives a signal", Flags::set<std::string>(subprocessCmd))
     .add("output",
           'o',
           "output file",
@@ -387,11 +400,9 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
                 break;
         }
     };
-
     if (!btLogs.empty()) {
        LogProcess lp{exec, btLogs, options, imageCache};
        doStack(lp);
-       return 0;
     } else {
         for (int i = optind; i < argc; i++) {
             try {
