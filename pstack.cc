@@ -74,6 +74,7 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
          std::vector<const char *> sysargs;
          std::transform(args.begin(), args.end(), std::back_inserter(sysargs),
                         [] (const std::string &arg) { return arg.c_str(); });
+         sysargs.push_back(nullptr);
          execvp(sysargs[0], (char **)&sysargs[0]);
          if (verbose > 2)
              *debug << getpid() << " execvp failed: " << strerror(errno) << "\n";
