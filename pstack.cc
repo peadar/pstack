@@ -18,7 +18,7 @@
 
 #include <csignal>
 #include <algorithm>
-
+#include <fstream>
 #include <iostream>
 #include <set>
 
@@ -30,10 +30,11 @@ namespace {
 bool doJson = false;
 volatile bool interrupted = false;
 
-std::ostream &
-pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFrames)
+void
+pstack(Process &proc, const PstackOptions &options, int maxFrames)
 {
     const auto &threadStacks = proc.getStacks(options, maxFrames);
+    auto &os = *options.output;
     if (doJson) {
         os << json(threadStacks, &proc);
     } else {
@@ -43,7 +44,6 @@ pstack(Process &proc, std::ostream &os, const PstackOptions &options, int maxFra
             os << std::endl;
         }
     }
-    return os;
 }
 
 int
@@ -132,10 +132,9 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
 
 
 #ifdef WITH_PYTHON
-template<int V> void doPy(Process &proc, std::ostream &o,
-      const PstackOptions &options, bool showModules, const PyInterpInfo &info) {
+template<int V> void doPy(Process &proc, const PstackOptions &options, bool showModules, const PyInterpInfo &info) {
     StopProcess here(&proc);
-    PythonPrinter<V> printer(proc, o, options, info);
+    PythonPrinter<V> printer(proc, *options.output, options, info);
     if (!printer.interpFound())
         throw Exception() << "no python interpreter found";
     printer.printInterpreters(showModules);
@@ -152,7 +151,7 @@ template<int V> void doPy(Process &proc, std::ostream &o,
  * @param showModules   Whether to show modules
  * @return              boolean of whether the process was a Python process or not
  */
-bool pystack(Process &proc, std::ostream &o, const PstackOptions &options, bool showModules) {
+bool pystack(Process &proc, const PstackOptions &options, bool showModules) {
     PyInterpInfo info = getPyInterpInfo(proc);
 
     if (info.libpython == nullptr) // not a python process or python interpreter not found
@@ -160,13 +159,13 @@ bool pystack(Process &proc, std::ostream &o, const PstackOptions &options, bool 
 
     if (info.versionHex < V2HEX(3, 0)) { // Python 2.x
 #ifdef WITH_PYTHON2
-        doPy<2>(proc, o, options, showModules, info);
+        doPy<2>(proc, options, showModules, info);
 #else
         throw (Exception() << "no support for discovered python 2 interpreter");
 #endif
     } else { // Python 3.x
 #ifdef WITH_PYTHON3
-        doPy<3>(proc, o, options, showModules, info);
+        doPy<3>(proc, options, showModules, info);
 #else
         throw (Exception() << "no support for discovered python 3 interpreter");
 #endif
@@ -189,12 +188,12 @@ usage(std::ostream &os, const char *name, const Flags &options)
 }
 
 int
-emain(int argc, char **argv)
+emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
 {
     int maxFrames = 1024;
-    Dwarf::ImageCache imageCache;
     double sleepTime = 0.0;
     PstackOptions options;
+    std::ofstream out;
 
 #if defined(WITH_PYTHON)
     bool doPython = false;
@@ -236,7 +235,7 @@ emain(int argc, char **argv)
             "ELF file",
             "dump details of an ELF image in JSON and exit",
             [&](const char *arg) {
-                std::cout << json(Elf::Object(imageCache, loadFile(arg)));
+                *options.output << json(Elf::Object(imageCache, loadFile(arg)));
                 exitCode = 0; })
 
     .add("dwarf-dump",
@@ -246,7 +245,7 @@ emain(int argc, char **argv)
             [&](const char *arg) {
                 auto dumpobj = std::make_shared<Elf::Object>(imageCache, loadFile(arg));
                 auto di = std::make_shared<Dwarf::Info>(dumpobj, imageCache);
-                std::cout << json(*di);
+                *options.output << json(*di);
                 exitCode = 0; })
 
     .add("depth",
@@ -339,33 +338,39 @@ emain(int argc, char **argv)
           'x',
           "command line",
           "execute command line as subprocess", Flags::set<std::string>(subprocessCmd))
+    .add("output",
+          'o',
+          "output file",
+          "write output to <output file> instead of stdout", [&options, &out] (const char *opt) {
+             out = std::move(std::ofstream(opt, std::ofstream::out|std::ofstream::trunc));
+             options.output = &out;
+          })
     .parse(argc, argv);
 
     if (exitCode != -1)
         return exitCode;
 
-
     // any instance of a non-core ELF image will override default behaviour of
     // discovering the executable
     Elf::Object::sptr exec;
     if (execName != "")
-       exec = imageCache.getImageForName(execName);
+         exec = imageCache.getImageForName(execName);
 
     if (subprocessCmd != "") {
-       // create a new process and trace it.
-       exit(startChild(exec, subprocessCmd, options, imageCache));
+        // create a new process and trace it.
+        startChild(exec, subprocessCmd, options, imageCache);
+        return 0;
     }
 
     if (optind == argc && btLogs.empty())
         return usage(std::cerr, argv[0], flags);
-
 
     auto doStack = [=, &options] (Process &proc) {
         proc.load();
         while (!interrupted) {
 #if defined(WITH_PYTHON)
             if (doPython || printAllStacks) {
-                bool isPythonProcess = pystack(proc, std::cout, options, pythonModules);
+                bool isPythonProcess = pystack(proc, options, pythonModules);
                 // error if -p but not python process
                 if (doPython && !isPythonProcess)
                     throw Exception() << "Couldn't find a Python interpreter";
@@ -373,7 +378,7 @@ emain(int argc, char **argv)
             if (!doPython)
 #endif
             {
-                pstack(proc, std::cout, options, maxFrames);
+                pstack(proc, options, maxFrames);
             }
             if (sleepTime != 0.0)
                 usleep(sleepTime * 1000000);
@@ -399,10 +404,7 @@ emain(int argc, char **argv)
             }
         }
     }
-    // exit, rather than return. This prevents us freeing all the cached data,
-    // which is very costly, but pointless to just fiddle the heap before
-    // exiting anyway
-    exit(0);
+    return 0;
 }
 }
 
@@ -410,13 +412,15 @@ int
 main(int argc, char **argv)
 {
     try {
+        Dwarf::ImageCache imageCache;
         struct sigaction sa;
         memset(&sa, 0, sizeof sa);
         sa.sa_handler = [](int) { interrupted = true; };
         // Only interrupt cleanly once. Then just terminate, in case we're stuck in a loop
         sa.sa_flags = SA_RESETHAND;
         sigaction(SIGINT, &sa, nullptr);
-        emain(argc, argv);
+        emain(argc, argv, imageCache);
+        exit(0);
     }
     catch (std::exception &ex) {
         std::clog << "error: " << ex.what() << std::endl;

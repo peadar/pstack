@@ -113,13 +113,13 @@ struct ThreadStack {
     void unwind(Process &, Elf::CoreRegisters &regs, unsigned maxFrames);
 };
 
-
 struct PstackOptions {
    bool nosrc = false;
    bool doargs = false;
    bool dolocals = false;
    bool nothreaddb = false;
    int maxdepth = std::numeric_limits<int>::max();
+   std::ostream *output = &std::cout;
 };
 
 /*
