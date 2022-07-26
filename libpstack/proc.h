@@ -81,6 +81,7 @@ public:
     const FDE *fde;
     const CIE *cie;
     UnwindMechanism mechanism;
+    bool isSignalTrampoline;
     StackFrame() : StackFrame(UnwindMechanism::INVALID) {}
     StackFrame(UnwindMechanism mechanism)
         : cfa(0)
@@ -91,6 +92,7 @@ public:
         , fde(0)
         , cie(0)
         , mechanism(mechanism)
+        , isSignalTrampoline(false)
     {}
     StackFrame &operator = (const StackFrame &) = delete;
     void setReg(unsigned, cpureg_t);

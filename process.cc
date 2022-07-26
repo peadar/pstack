@@ -225,7 +225,6 @@ struct PrintableFrame {
     Elf::Sym symbol_;
     std::vector<std::pair<std::string, int>> source;
     bool searchedSym = false;
-    bool isSignalFrame;
     const PstackOptions &options;
     Elf::Addr functionOffset;
     Elf::Addr objIp;
@@ -249,7 +248,6 @@ PrintableFrame::symbol() {
 
 PrintableFrame::PrintableFrame(const Dwarf::StackFrame &frame, int frameNo, const PstackOptions &options)
     : frameNumber(frameNo)
-    , isSignalFrame(frame.cie != nullptr && frame.cie->isSignalHandler)
     , options(options)
     , functionOffset(std::numeric_limits<Elf::Addr>::max())
     , frame(frame)
@@ -337,7 +335,7 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame, Process *> &jt)
             .field("die", pframe.dieName)
             .field("cfa", frame.cfa)
             .field("offset", pframe.functionOffset)
-            .field("trampoline", pframe.isSignalFrame)
+            .field("trampoline", frame.isSignalTrampoline)
         ;
     const auto &sym = pframe.symbol();
     if (sym.st_shndx != SHN_UNDEF)
@@ -641,7 +639,7 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, Dwarf::St
     if (frame.elf) {
         std::string name;
         std::string flags = "";
-        if (pframe.isSignalFrame)
+        if (frame.isSignalTrampoline)
             flags += "*";
         if (pframe.dieName != "") {
             name = pframe.dieName;
@@ -852,7 +850,11 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
 
             try {
                 if (!curFrame.unwind(p, nextFrame))
-                   break;
+                    break;
+#ifdef __aarch64__
+                if (nextFrame.getReg(32) == trampoline)
+                    nextFrame.isSignalTrampoline = true;
+#endif
             }
             catch (const std::exception &ex) {
 
@@ -881,14 +883,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 //
                 // For ARM, the concept is the same, but we look at the link
                 // register rather than a pushd return address
-                if ((frameCount == 0 ||
-                         (stack[frameCount-1].cie && stack[frameCount-1].cie->isSignalHandler)
-#ifdef __aarch64__
-                         // The aarch64 VDSO has no eh_frame, so test
-                         // explicitly for the signal trampoline above us
-                         || (trampoline && stack[frameCount - 1].regs[32] == trampoline)
-#endif
-                         ) &&
+                if ((frameCount == 0 || (stack[frameCount-1].isSignalTrampoline)) &&
                    (curFrame.phdr == 0 || (curFrame.phdr->p_flags & PF_X) == 0)) {
                     nextFrame.regs = curFrame.regs;
 #if defined(__amd64__) || defined(__i386__)

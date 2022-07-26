@@ -469,6 +469,8 @@ StackFrame::findObjectCode(Process &p)
 
     frameInfo = frame;
     cie = &frame->cies[fde->cieOff];
+    if (cie->isSignalHandler)
+       isSignalTrampoline = true;
 }
 
 bool
