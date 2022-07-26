@@ -40,7 +40,9 @@ static void getstacktrace(void **ents, int max);
 static void sanity_freenode(struct memdesc *desc);
 static void *buffer_malloc(size_t amount);
 static void *buffer_calloc(size_t members, size_t size);
-static void buffer_free(void *unused) { }
+static void buffer_free(void *unused) {
+   (void)unused;
+}
 
 struct hdbg_info hdbg; // not static - "hdmp" finds this symbol.
 
@@ -332,7 +334,8 @@ static void assertheap() {
 }
 
 // simple frame-pointer based stack unwind.
-#ifdef __LP64__
+//
+#if defined(__x86_64__)
 static void __attribute__((naked,optimize("O0")))
 getframe(void ***bp, void  ***ip) {
     asm( "mov (%rsp), %rax;"
@@ -341,7 +344,13 @@ getframe(void ***bp, void  ***ip) {
          "ret;"
     );
 }
+#elif defined(__aarch64__)
+void
+getframe(void ***bp, void  ***ip) {
+   //XXX: TODO: support aarch64
+}
 #else
+
 static void __attribute__((naked,noinline,optimize("O0")))
 getframe(void ***bp, void  ***ip) {
     asm("mov (%esp), %ecx;"
