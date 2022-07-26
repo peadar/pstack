@@ -774,7 +774,7 @@ Process::findRDebugAddr()
 namespace std {
 bool
 operator < (const std::pair<Elf::Addr, Elf::Object::sptr> &entry, Elf::Addr addr) {
-   return entry.second->endVA() + entry.first < addr;
+   return entry.first < addr;
 }
 }
 
@@ -782,10 +782,13 @@ std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>
 Process::findSegment(Elf::Addr addr) const
 {
     auto it = std::lower_bound(objects.begin(), objects.end(), addr);
-    if (it != objects.end()) {
-        auto segment = it->second->getSegmentForAddress(addr - it->first);
-        if (segment)
-            return std::make_tuple(it->first, it->second, segment);
+    if (it != objects.begin()) {
+       --it;
+       if (it->first  + it->second->endVA() >= addr) {
+           auto segment = it->second->getSegmentForAddress(addr - it->first);
+           if (segment)
+               return std::make_tuple(it->first, it->second, segment);
+       }
     }
     return std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>();
 }
