@@ -29,7 +29,7 @@ StackFrame::getCoreRegs(Elf::CoreRegisters &core) const
 Elf::Addr
 StackFrame::rawIP() const
 {
-    return getReg(cie ? cie->rar : IPREG);
+    return getReg(IPREG);
 }
 
 Elf::Addr
