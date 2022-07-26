@@ -47,8 +47,10 @@ ps_pglobal_lookup(struct ps_prochandle *ph, const char *ld_object_name,
     try {
         *ld_symbol_addr = psaddr_t(intptr_t(p->resolveSymbol(ld_symbol_name, true,
             [ld_object_name](const Elf::Addr, const Elf::Object::sptr &o) {
-                return basename(stringify(*o->io)) == std::string(ld_object_name);
-            })));
+                auto bn = basename(o->io->filename());
+                return bn == ld_object_name || bn == "libc.so.6";
+            }
+            )));
         return PS_OK;
     }
     catch (...) {
