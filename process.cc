@@ -855,7 +855,6 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
 
                 // Some machine specific methods of unwinding if DWARF fails.
 
-#if defined(__amd64__) || defined(__i386__)
                 // if we're the top-of-stack, or there's a signal handler just
                 // above, and the instruction pointer in the current frame
                 // doesn't look like it comes from a code segment, then there's
@@ -872,10 +871,14 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 // runtime-generated code, or something else that wasn't in a
                 // normal ELF phdr, so it seems more likely this is the best
                 // thing to do.
+                //
+                // For ARM, the concept is the same, but we look at the link
+                // register rather than a pushd return address
                 if ((frameCount == 0 ||
                          (stack[frameCount-1].cie && stack[frameCount-1].cie->isSignalHandler)) &&
                    (curFrame.phdr == 0 || (curFrame.phdr->p_flags & PF_X) == 0)) {
                     nextFrame.regs = curFrame.regs;
+#if defined(__amd64__) || defined(__i386__)
                     // get stack pointer in the current frame, and read content of
                     // TOS
                     auto sp = curFrame.getReg(SPREG);
@@ -887,8 +890,11 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                         nextFrame.mechanism = Dwarf::UnwindMechanism::BAD_IP_RECOVERY;
                         continue;
                     }
-                }
+#elif defined(__aarch64__)
+                    nextFrame.setReg(IPREG, curFrame.getReg(30)); // pop...
+                    continue;
 #endif
+                }
 
 #ifdef __i386__
                 // Deal with signal trampolines for i386
