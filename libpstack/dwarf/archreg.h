@@ -113,7 +113,7 @@ REGMAP(16, regs[16])
 REGMAP(17, regs[17])
 #else
 #define IPREG 32
-#define CFA_RESTORE_REGNO 13
+#define CFA_RESTORE_REGNO 31
 REGMAP(0, regs[0])
 REGMAP(1, regs[1])
 REGMAP(2, regs[2])
