@@ -501,6 +501,8 @@ StackFrame::unwind(Process &p, StackFrame &out)
 
 #ifdef CFA_RESTORE_REGNO
     // "The CFA is defined to be the stack pointer in the calling frame."
+    // This could get updated if there's a rule for CFA_RESTORE_REGNO, but
+    // that's the stack pointer, and it's unlikely there will be an encoding for this
     out.setReg(CFA_RESTORE_REGNO, cfa);
 #endif
     for (auto &entry : dcf.registers) {
@@ -554,6 +556,11 @@ StackFrame::unwind(Process &p, StackFrame &out)
         }
         return false;
     }
+
+    // We know the RAR is defined, so make that the instruction pointer in the
+    // new frame.
+    if (cie && cie->rar != IPREG)
+       out.setReg(IPREG, out.getReg(cie->rar));
     out.mechanism = UnwindMechanism::DWARF;
     return true;
 }
