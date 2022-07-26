@@ -831,6 +831,10 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
 {
     stack.clear();
     stack.reserve(20);
+
+    auto sigreturnSym = p.vdsoImage->findDynamicSymbol("__kernel_rt_sigreturn");
+    Elf::Addr trampoline = sigreturnSym.st_shndx == SHN_UNDEF ? 0 : sigreturnSym.st_value + p.vdsoBase;
+
     try {
         stack.emplace_back(Dwarf::UnwindMechanism::MACHINEREGS);
 
@@ -875,7 +879,13 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 // For ARM, the concept is the same, but we look at the link
                 // register rather than a pushd return address
                 if ((frameCount == 0 ||
-                         (stack[frameCount-1].cie && stack[frameCount-1].cie->isSignalHandler)) &&
+                         (stack[frameCount-1].cie && stack[frameCount-1].cie->isSignalHandler)
+#ifdef __aarch64__
+                         // The aarch64 VDSO has no eh_frame, so test
+                         // explicitly for the signal trampoline above us
+                         || (trampoline && stack[frameCount - 1].regs[32] == trampoline)
+#endif
+                         ) &&
                    (curFrame.phdr == 0 || (curFrame.phdr->p_flags & PF_X) == 0)) {
                     nextFrame.regs = curFrame.regs;
 #if defined(__amd64__) || defined(__i386__)
@@ -896,7 +906,24 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
 #endif
                 }
 
-#ifdef __i386__
+#if defined(__aarch64__)
+                // This is as per arch/arm64/kernel/signal.c
+                struct rt_sigframe {
+                   siginfo_t si;
+                   ucontext_t uc;
+                };
+
+                if (trampoline && trampoline == curFrame.rawIP()) {
+                    auto frame = p.io->readObj<rt_sigframe>(curFrame.regs[31]);
+                    for (int i = 0; i < 31; ++i)
+                       nextFrame.setReg(i, frame.uc.uc_mcontext.regs[i]);
+                    nextFrame.setReg(31, frame.uc.uc_mcontext.sp);
+                    nextFrame.setReg(32, frame.uc.uc_mcontext.pc);
+                }
+                nextFrame.mechanism = Dwarf::UnwindMechanism::TRAMPOLINE;
+                continue;
+
+#elif defined(__i386__)
                 // Deal with signal trampolines for i386
                 Elf::Addr reloc;
                 const Elf::Phdr *segment;

@@ -153,13 +153,16 @@ class Process : public ps_prochandle {
     Elf::Addr entry;
     Elf::Addr interpBase;
     void loadSharedObjects(Elf::Addr);
+public:
     Elf::Addr vdsoBase;
 
 protected:
     virtual bool loadSharedObjectsFromFileNote() = 0;
     td_thragent_t *agent;
+public:
     Elf::Object::sptr execImage;
     Elf::Object::sptr vdsoImage;
+protected:
     std::string abiPrefix;
     PstackOptions options;
 
