@@ -191,7 +191,7 @@ add_test(NAME args COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_D
 add_test(NAME badfp COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/badfp-test.py)
 add_test(NAME basic COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_SOURCE_DIR}/tests/basic-test.py)
 add_test(NAME cpp COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp-test.py)
-add_test(NAME noreturn COMMAND env PSTACK_BIN=${PSTACK_BIN} python2 ${CMAKE_CURRENT_SOURCE_DIR}/tests/noreturn-test.py)
+add_test(NAME noreturn COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/noreturn-test.py)
 add_test(NAME segv COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_SOURCE_DIR}/tests/segv-test.py)
 add_test(NAME thread COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/thread-test.py)
 
