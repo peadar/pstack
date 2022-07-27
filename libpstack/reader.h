@@ -35,25 +35,24 @@
 // LzmaReader (to decompress the .gnu_debugdata, and give the plain ELF image)
 // OffsetReader (for .symtab in the nested ELF image)
 
-template <typename T, typename Iter> static inline std::pair<T, size_t> readleb128(Iter it) {
+template <typename T, typename Iter> static inline std::pair<T, size_t> readleb128(Iter start) {
    static_assert(CHAR_BIT == 8);
-   constexpr auto roll = (sizeof(T) -1) * CHAR_BIT + 1;
-   constexpr uintmax_t mask = uintmax_t(0x7f) << roll;
-   T val = 0;
-   auto start = it;
-   for(;;) {
-      val >>= 7;
-      val &= ~mask;
-      val |= T(*it) << roll;
-      if ((*it & 0x80) == 0) {
-         ++it;
-         break;
+   T result = 0;
+   unsigned shift = 0;
+   unsigned char byte;
+   for (auto it = start;; ++it) {
+      byte = *it;
+      result |= T(byte & 0x7f) << shift;
+      shift += 7;
+      if ((byte & 0x80) == 0) {
+         if constexpr (std::is_signed_v<T>) {
+            using U_T = typename std::make_unsigned<T>::type;
+            if (shift < sizeof(T) * CHAR_BIT && (byte & 0x40))
+               result |= ~U_T(0) << shift;
+         }
+         return { result, it - start + 1 };
       }
-      ++it;
-   }
-   size_t count = it - start;
-   val >>= (sizeof roll * 8) - (count * 7);
-   return {val, count};
+   };
 }
 
 

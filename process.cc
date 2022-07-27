@@ -833,8 +833,10 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
     stack.clear();
     stack.reserve(20);
 
+#ifdef __aarch64__
     auto sigreturnSym = p.vdsoImage->findDynamicSymbol("__kernel_rt_sigreturn");
     Elf::Addr trampoline = sigreturnSym.st_shndx == SHN_UNDEF ? 0 : sigreturnSym.st_value + p.vdsoBase;
+#endif
 
     try {
         stack.emplace_back(Dwarf::UnwindMechanism::MACHINEREGS);
