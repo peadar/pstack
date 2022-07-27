@@ -380,7 +380,6 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
         return usage(std::cerr, argv[0], flags);
 
     auto doStack = [=, &options] (Process &proc) {
-        proc.load();
         while (!interrupted) {
 #if defined(WITH_PYTHON)
             if (doPython || printAllStacks) {
@@ -402,11 +401,12 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
     };
     if (!btLogs.empty()) {
        LogProcess lp{exec, btLogs, options, imageCache};
+       lp.load();
        doStack(lp);
     } else {
         for (int i = optind; i < argc; i++) {
             try {
-                auto process = Process::load(exec, argv[i], options, imageCache);
+                auto process = Process::load(exec, argv[i], options, imageCache); // this calls the load() instance member.
                 if (process == nullptr)
                     exec = imageCache.getImageForName(argv[i]);
                 else
