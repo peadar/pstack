@@ -24,6 +24,7 @@
 #include "libpstack/global.h"
 #include "libpstack/fs.h"
 #include "libpstack/ioflag.h"
+#include "libpstack/flags.h"
 #ifdef WITH_PYTHON
 #include "libpstack/python.h"
 #endif
@@ -123,28 +124,43 @@ public:
     }
 };
 
-class Usage {};
+struct Usage {
+   const Flags &flags;
+   Usage(Flags &flags) : flags(flags) {}
+};
 
 bool operator < (const ListedSymbol &sym, Elf::Off addr) {
     return sym.memaddr() + sym.sym.st_size < addr;
 }
 
 static const char *virtpattern = "_ZTV*"; /* wildcard for all vtbls */
-static bool compareSymbolsByFrequency(const ListedSymbol &l, const ListedSymbol &r)
-    { return l.count > r.count; }
 
 ostream &
-operator <<(ostream &os, const Usage &)
+operator <<(ostream &os, const Usage &u)
 {
-   return os
-      << "usage: canal [options] <executable> <core>" << endl
-      << "options:" << endl
-      << "\t-p <pattern>: use a specific pattern to search (default " << virtpattern << ") (repeatable)" << endl
-      << "\t-s: show the address of each located object" << endl
-      << "\t-v: verbose (repeat for more verbosity)" << endl
-      << "\t-h: this message" << endl
-      << "\t-r <prefix=path>: replace 'prefix' in core with 'path' when loading shared libraries" << endl
-      ;
+   return os <<
+R"---(
+Nominally, Canal finds references to symbols matching a specific set
+of patterns within a core file or process, and produces a histogram
+showing the frequency of occurrances of references to each mached symbol.
+By default, it will find references to vtables (by matching the pattern
+'_ZTV*', which starts the mangled name of a vtable), but you can use
+your own pattern to find references to similar type-describing objects.
+
+In the default operating mode, it gives a pretty accurate estimate of
+the number each type of polymorphic C++ object allocated in the process.
+You may also use canal to find references to specific addresses, or
+references that lie within a specific range of addresses.
+
+This whole thing should be a python extension module to allow much finer
+control over its operation.
+
+usage:
+canal [options] [executable] <core|pid>
+
+options:
+)---" << u.flags;
+
 }
 
 int
@@ -157,113 +173,51 @@ mainExcept(int argc, char *argv[])
     std::vector<std::string> patterns;
     Elf::Object::sptr exec;
     Elf::Object::sptr core;
-    int c;
-    int verbose = 0;
     bool showaddrs = false;
     bool showsyms = false;
-    int rate = 1;
 
     std::vector<std::pair<Elf::Off, Elf::Off>> searchaddrs;
-    char *strbuf = 0;
-    char *findstr = 0;
-    size_t findstrlen = 0;
+    std::string findstr;
     int symOffset = -1;
-    bool showloaded = false;
 
-    while ((c = getopt(argc, argv, "o:vhr:sp:f:Pe:S:R:K:lVt")) != -1) {
-        switch (c) {
+    Flags flags;
+
+    flags
 #ifdef WITH_PYTHON
-            case 'P':
-               doPython = true;
-               patterns.push_back("Py*_Type");
-               break;
+    .add("python", 'P', "try to find python objects", setf(doPython))
 #endif
-            case 'V':
-               showsyms = true;
-               break;
-            case 's':
-                showaddrs = true;
-                break;
-            case 'v':
-                verbose++;
-                break;
-            case 'h':
-                clog << Usage();
-                return 0;
-            case 'o': // offset within a symbol that the pointers must meet.
-                symOffset = strtol(optarg, 0, 0);
-                break;
-
-            case 'p':
-                patterns.push_back(optarg);
-                break;
-
-            case 'r': {
-                char *from = strdup(optarg);
-                char *to  = strchr(from, '=');
-                if (to == 0)
-                    throw "must specify <to>=<from> for '-r'";
-                *to++ = 0;
-                pathReplacements.push_back(std::make_pair(from, to));
-                break;
-            }
-
-            case 'S':
-                findstr = optarg;
-                findstrlen = strlen(findstr);
-                strbuf = new char[findstrlen];
-                break;
-
-            case 'f': {
-                Elf::Off start = strtoll(optarg, 0, 0);
-                searchaddrs.push_back(make_pair(start, start + 1));
-                break;
-            }
-
-            case 'K':
-                rate = atoi(optarg);
-                break;
-            case 'R': {
-                std::ifstream in;
-                in.open(optarg);
-                if (!in.good())
-                    abort();
-                char buf[1024];
-                int count = 0;
-                while (in.good()) {
-                    in.getline(buf, sizeof buf);
-                    if (in.eof())
-                        break;
-                    if (++count % rate != 0)
-                        continue;
-                    char *p = buf;
-                    while (isspace(*p))
-                        p++;
-                    Elf::Off start = strtoll(p, &p, 0);
-                    while (*p && isspace(*p))
-                        p++;
-                    Elf::Off end = *p ? strtoll(p, &p, 0) : start + 1;
-                    searchaddrs.push_back(make_pair(start, end));
-                    IOFlagSave _(std::clog);
-                    std::clog << "push " << hex << start << ", " << end
-                       << " (" << int(*p) << ")" << std::endl;
-                }
-                break;
-            }
-
-            case 'e':
-                searchaddrs.back().second = strtoll(optarg, 0, 0);
-                break;
-
-            case 'X':
-                ps_lgetfpregs(0, 0, 0);
-                break;
-
-            case 'l':
-                showloaded = true;
-                break;
-        }
-    }
+    .add("show-syms", 'V', "show symbols matching search pattern", Flags::setf(showsyms))
+    .add("show-addrs", 's', "show adddress of references found in core", Flags::setf(showaddrs))
+    .add("verbose", 'v', "increase verbosity (may be repeated)", [&]() { ++verbose; })
+    .add("help", 'h', "show this message", [&]() { std::cout << Usage(flags); exit(0); })
+    .add("offset",
+          'o',
+          "offset from symbol location",
+          "limit search to matches that are exactly <offset> from the symbol",
+          Flags::set(symOffset))
+    .add("pattern", 'p', "glob",
+          "add <glob> to the list of patterns to be matched for symbols",
+          [&](const char *data) { patterns.push_back(data); })
+    .add("replace-path", 'r', "from:to",
+          "replace references to path <from> with <tp> when finding libraries",
+          [&](const char *data) {
+             std::string both = data;
+             size_t colon = both.find(':');
+             if (colon == std::string::npos)
+                throw "must specify <to>=<from> for '-r'";
+             pathReplacements.push_back(std::make_pair(both.substr(0, colon), both.substr(colon + 1)));
+          })
+    .add("start-location", 'f', "addresss",
+          "instead of searching for symbols, find references to a specified address. Decimal, or prefix with 0x for hex",
+          [&](const char *p) {
+          Elf::Off start = strtoul(p, 0, 0);
+          searchaddrs.push_back(make_pair(start, start + 1));
+          })
+    .add("end-location", 'e', "end-address",
+          "change previous 'f' option to include all addresses in range ['f' addr, 'e' addr)",
+          [&](const char *p) { searchaddrs.back().second = strtoul(p, 0, 0); })
+    .add("string", 'S', "text", "search the core for the text string <text>, and print it's address", Flags::set(findstr))
+    .parse(argc, argv);
 
     if (argc - optind >= 2) {
         exec = imageCache.getImageForName(argv[optind]);
@@ -271,7 +225,7 @@ mainExcept(int argc, char *argv[])
     }
 
     if (argc - optind < 1) {
-        clog << Usage();
+        clog << Usage(flags);
         return 0;
     }
 
@@ -283,20 +237,14 @@ mainExcept(int argc, char *argv[])
     }
     clog << "opened process " << process << endl;
 
-    if (showloaded) {
-        for (auto &loaded : process->objects)
-            std::cout << *loaded.second->io << "\n";
-        exit(0);
-    }
+    SymbolStore store;
 
     if (patterns.empty())
         patterns.push_back(virtpattern);
 
-    SymbolStore store;
     for (auto &loaded : process->objects) {
         size_t count = 0;
-
-        auto findSymbols = [&count, verbose, showsyms, &store, &patterns, &loaded]( auto table ) {
+        auto findSymbols = [&count, showsyms, &store, &patterns, &loaded]( auto table ) {
            for (const auto &sym : *table) {
                for (auto &pattern : patterns) {
                    auto name = table->name(sym);
@@ -310,10 +258,8 @@ mainExcept(int argc, char *argv[])
                }
            }
         };
-
         findSymbols( loaded.second->dynamicSymbols() );
         findSymbols( loaded.second->debugSymbols() );
-
         if (verbose)
             *debug << "found " << count << " symbols in " << *loaded.second->io << endl;
     }
@@ -321,28 +267,24 @@ mainExcept(int argc, char *argv[])
        exit(0);
 
     // Now run through the corefile, searching for virtual objects.
-    Elf::Off filesize = 0;
-    Elf::Off memsize = 0;
 #ifdef WITH_PYTHON
     PythonPrinter<2> py(*process, std::cout, PstackOptions());
 #endif
     std::vector<Elf::Off> data;
     auto as = process->addressSpace();
     for (auto &segment : as ) {
-        filesize += segment.fileSize;
-        memsize += segment.memSize;
-        int seg_count = 0;
         if (verbose) {
             IOFlagSave _(*debug);
             *debug << "scan " << hex << segment.start <<  " to " << segment.start + segment.memSize
                 << " (filesiz = " << segment.fileSize  << ", memsiz=" << segment.memSize << ") ";
         }
 
-        if (findstr) {
-            for (auto loc = segment.start; loc < segment.start + segment.fileSize - findstrlen; loc++) {
-                size_t rc = process->io->read(loc, findstrlen, strbuf);
-                assert(rc == findstrlen);
-                if (memcmp(strbuf, findstr, rc) == 0) {
+        if (findstr != "") {
+           std::vector<char> corestr(findstr.size());
+            for (auto loc = segment.start; loc < segment.start + segment.fileSize - findstr.size(); loc++) {
+                size_t rc = process->io->read(loc, findstr.size(), corestr.data());
+                assert(rc == findstr.size());
+                if (memcmp(findstr.data(), corestr.data(), findstr.size()) == 0) {
                     IOFlagSave _(cout);
                     std::cout << "0x" << hex << loc << "\n";
                 }
@@ -397,7 +339,6 @@ mainExcept(int argc, char *argv[])
                                 }
 #endif
                                 sym->count++;
-                                seg_count++;
                             }
                         }
                     }
@@ -408,16 +349,10 @@ mainExcept(int argc, char *argv[])
             else
                 search(OffsetFreeSymbolMatcher());
         }
-
-        if (verbose)
-            *debug << seg_count << endl;
-
     }
-    if (verbose)
-        *debug << "core file contains " << filesize << " out of "
-           << memsize << " bytes of memory\n";
     auto histogram = store.flatten();
-    sort(histogram.begin(), histogram.end(), compareSymbolsByFrequency);
+    sort(histogram.begin(), histogram.end(),
+      [](const ListedSymbol &l, const ListedSymbol &r) { return l.count > r.count; });
 
     for (auto &i : histogram)
         if (i.count)
