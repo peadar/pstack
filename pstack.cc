@@ -108,14 +108,14 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
                fflush(statusFile.get());
                fseek(statusFile.get(), 0, SEEK_SET);
                char line[PATH_MAX];
-               unsigned long sigblk = -1, sigign = -1, sigcgt = -1;
+               uint64_t sigblk = -1, sigign = -1, sigcgt = -1;
                while (fgets(line, sizeof line, statusFile.get()) != NULL) {
                   if (strncmp(line, "SigBlk:\t", 8) == 0)
-                     sigblk = strtoul(line + 8, 0, 16);
+                     sigblk = strtoull(line + 8, 0, 16);
                   else if (strncmp(line, "SigCgt:\t", 8) == 0)
-                     sigcgt = strtoul(line + 8, 0, 16);
+                     sigcgt = strtoull(line + 8, 0, 16);
                   else if (strncmp(line, "SigIgn:\t", 8) == 0)
-                     sigign = strtoul(line + 8, 0, 16);
+                     sigign = strtoull(line + 8, 0, 16);
                }
                unsigned long handledSigs = sigblk | sigcgt | sigign;
                handledSigs |= 1 << (SIGTRAP - 1);
