@@ -919,9 +919,9 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                        nextFrame.setReg(i, frame.uc.uc_mcontext.regs[i]);
                     nextFrame.setReg(31, frame.uc.uc_mcontext.sp);
                     nextFrame.setReg(32, frame.uc.uc_mcontext.pc);
+                    nextFrame.mechanism = Dwarf::UnwindMechanism::TRAMPOLINE;
+                    continue;
                 }
-                nextFrame.mechanism = Dwarf::UnwindMechanism::TRAMPOLINE;
-                continue;
 
 #elif defined(__i386__)
                 // Deal with signal trampolines for i386
