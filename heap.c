@@ -344,7 +344,7 @@ getframe(void ***bp, void  ***ip) {
          "ret;"
     );
 }
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(__arm__)
 void
 getframe(void ***bp, void  ***ip) {
    //XXX: TODO: support aarch64
