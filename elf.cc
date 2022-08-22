@@ -444,6 +444,9 @@ Object::getSection(const string &name, Word type) const
         if (compressed)
             return compressed;
     }
+    static std::string dwosuffix = ".dwo";
+    if (!std::equal(dwosuffix.rbegin(), dwosuffix.rend(), name.rbegin()))
+       return getSection(name + ".dwo", type);
     return *sectionHeaders[0];
 }
 
