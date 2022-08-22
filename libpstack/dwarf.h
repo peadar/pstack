@@ -381,7 +381,6 @@ class Unit : public std::enable_shared_from_this<Unit> {
     Elf::Off abbrevOffset;
     std::unique_ptr<LineInfo> lines;
     std::unique_ptr<Macros> macros;
-    UnitType unitType;
 
     // Previously decoded ranges at a given offset in .debug_ranges / .debug_rnglists
     using RangesForOffset = std::map<Elf::Addr, std::unique_ptr<Ranges>>;
@@ -397,6 +396,7 @@ public:
     const Info *const dwarf; // back pointer to DWARF info
 
     // header fields
+    UnitType unitType;
     const Elf::Off offset; // offset into debug_info
     const uint32_t length; // unit length
     const Elf::Off end; // a.k.a. start of next unit.

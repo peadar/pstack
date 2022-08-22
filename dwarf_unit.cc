@@ -20,6 +20,7 @@ Unit::load()
 Unit::Unit(const Info *di, DWARFReader &r)
     : abbrevOffset{ 0 }
     , dwarf(di)
+    , unitType(DW_UT_compile)
     , offset(r.getOffset())
     , length(r.getlength(&dwarfLen))
     , end(r.getOffset() + length)
@@ -34,10 +35,10 @@ Unit::Unit(const Info *di, DWARFReader &r)
         case DW_UT_compile:
         case DW_UT_type:
         case DW_UT_partial:
-        case DW_UT_skeleton:
             r.addrLen = addrlen = r.getu8();
             abbrevOffset = r.getuint(dwarfLen);
             break;
+        case DW_UT_skeleton:
         case DW_UT_split_compile:
         case DW_UT_split_type:
             r.addrLen = addrlen = r.getu8();
