@@ -190,12 +190,13 @@ operator << (std::ostream &os, const JSON<td_thr_type_e, ctx> &jt)
 
 static bool
 dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
-
-    // use the specification DIE instead of this if we have one.
+    // use the specification or abstract origin DIE instead of this if we have one.
     auto spec = die.attribute(Dwarf::DW_AT_specification);
-    if (spec.valid()) {
+    if (spec.valid())
         return dieName(os, Dwarf::DIE(spec), first);
-    }
+    auto origin = die.attribute(Dwarf::DW_AT_abstract_origin);
+    if (origin.valid())
+        return dieName(os, Dwarf::DIE(origin), first);
 
     // Don't walk up past compile units.
     if (die.tag() == Dwarf::DW_TAG_compile_unit || die.tag() == Dwarf::DW_TAG_partial_unit)
