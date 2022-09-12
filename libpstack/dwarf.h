@@ -612,10 +612,14 @@ public:
     const Elf::Section & debugLineStrings;
     const Elf::Section & debugRanges;
     const Elf::Section & debugStrOffsets;
+    const Elf::Section & debugAddr;
 
     // For _strx forms, indirect through debugStrOffsets to get a string for a
     // specific index.
     std::string strx(Unit &unit, size_t idx) const;
+
+    // addrx forms are similar - indirect through table in .debug_addr.
+    uintmax_t addrx(Unit &unit, size_t idx) const;
 
 private:
     ImageCache &imageCache;

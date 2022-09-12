@@ -48,6 +48,7 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     , debugLineStrings(obj->getDebugSection(".debug_line_str", SHT_NULL))
     , debugRanges(obj->getDebugSection(".debug_ranges", SHT_NULL))
     , debugStrOffsets(obj->getDebugSection(".debug_str_offsets", SHT_NULL))
+    , debugAddr(obj->getDebugSection(".debug_addr", SHT_NULL))
     , imageCache(cache_)
 {
 }
@@ -232,7 +233,6 @@ Info::lookupUnit(Elf::Addr addr) const {
     return nullptr;
 }
 
-
 std::string
 Info::strx(Unit &unit, size_t idx) const {
     if (!debugStrOffsets)
@@ -243,6 +243,15 @@ Info::strx(Unit &unit, size_t idx) const {
     auto len = unit.dwarfLen;
     DWARFReader r(debugStrOffsets.io(), base + len * idx);
     return debugStrings.io()->readString(r.getuint(len));
+}
+
+uintmax_t
+Info::addrx(Unit &unit, size_t idx) const {
+    if (!debugAddr)
+        throw Exception() << "no debug addr table, but have addrx form";
+    auto root = unit.root();
+    auto base = intmax_t(root.attribute(DW_AT_addr_base));
+    return debugAddr.io()->readObj<Elf::Addr>(base + idx * sizeof(Elf::Addr));
 }
 
 Info::~Info() = default;

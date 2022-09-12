@@ -59,6 +59,11 @@ DIE::containsAddress(Elf::Addr addr) const
         Elf::Addr start, end;
         switch (low.form()) {
             case DW_FORM_addr:
+            case DW_FORM_addrx:
+            case DW_FORM_addrx1:
+            case DW_FORM_addrx2:
+            case DW_FORM_addrx3:
+            case DW_FORM_addrx4:
                 start = uintmax_t(low);
                 break;
             default:
@@ -68,6 +73,11 @@ DIE::containsAddress(Elf::Addr addr) const
 
         switch (high.form()) {
             case DW_FORM_addr:
+            case DW_FORM_addrx:
+            case DW_FORM_addrx1:
+            case DW_FORM_addrx2:
+            case DW_FORM_addrx3:
+            case DW_FORM_addrx4:
                 end = uintmax_t(high);
                 break;
             case DW_FORM_data1:
@@ -228,6 +238,7 @@ DIE::Attribute::Value::Value(DWARFReader &r, const FormEntry &forment, Unit *uni
         break;
 
     case DW_FORM_strx2:
+    case DW_FORM_addrx2:
     case DW_FORM_ref2:
         addr = r.getu16();
         break;
@@ -436,6 +447,13 @@ DIE::Attribute::operator uintmax_t() const
     case DW_FORM_addr:
     case DW_FORM_sec_offset:
         return value().addr;
+
+    case DW_FORM_addrx:
+    case DW_FORM_addrx1:
+    case DW_FORM_addrx2:
+    case DW_FORM_addrx3:
+    case DW_FORM_addrx4:
+        return die.unit->dwarf->addrx(*die.unit, value().udata);
     default:
         abort();
     }
