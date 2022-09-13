@@ -97,7 +97,7 @@ DIE::containsAddress(Elf::Addr addr) const
     // DW_AT_ranges attr.
     auto rangeattr = attribute(DW_AT_ranges);
     if (rangeattr.valid()) {
-        auto ranges = unit->getRanges(uintmax_t(rangeattr), low.valid() ? uintmax_t(low) : 0);
+        auto ranges = unit->getRanges(*this, low.valid() ? uintmax_t(low) : 0);
         if (ranges) {
             // Iterate over the ranges, and see if the address lies inside.
             for (auto &range : *ranges)
@@ -454,16 +454,21 @@ DIE::Attribute::operator uintmax_t() const
     case DW_FORM_addrx3:
     case DW_FORM_addrx4:
         return die.unit->dwarf->addrx(*die.unit, value().udata);
+
+    case DW_FORM_rnglistx:
+        return die.unit->dwarf->rnglistx(*die.unit, value().udata);
     default:
         abort();
     }
 }
 
-Ranges::Ranges(Unit *unit, uintmax_t offset, uintmax_t base) {
+Ranges::Ranges(const DIE &die, uintmax_t base) {
 
-    if (unit->version < 5) {
+    auto ranges = die.attribute(DW_AT_ranges);
+
+    if (die.getUnit()->version < 5) {
         // DWARF4 units use debug_ranges
-        DWARFReader reader(unit->dwarf->debugRanges.io(), offset);
+        DWARFReader reader(die.getUnit()->dwarf->debugRanges.io(), uintmax_t(ranges));
         for (;;) {
             auto start = reader.getuint(sizeof (Elf::Addr));
             auto end = reader.getuint(sizeof (Elf::Addr));
@@ -475,29 +480,25 @@ Ranges::Ranges(Unit *unit, uintmax_t offset, uintmax_t base) {
                 emplace_back(std::make_pair(start + base, end + base));
         }
     } else {
-        // Offset by rnglists_base in the root DIE.
-        auto root = unit->root();
-        auto attr = root.attribute(DW_AT_rnglists_base);
-        if (attr.valid())
-            offset += uintmax_t(attr);
+        DWARFReader r(die.getUnit()->dwarf->debugRangelists.io(), uintmax_t(ranges));
 
-        auto &elf = unit->dwarf->elf;
-        auto &rnglists = elf->getDebugSection(".debug_rnglists", SHT_NULL);
+        // const auto &elf = die.getUnit()->dwarf->elf;
         // auto &addrs = elf->getDebugSection(".debug_addr", SHT_NULL); // XXX: would be used by the "x" ops below
-        DWARFReader r(rnglists.io(), offset);
 
         uintmax_t base = 0;
+        auto addrlen = die.getUnit()->addrlen;
+        auto &unit = *die.getUnit();
+        const auto &dwarf = *unit.dwarf;
         for (bool done = false; !done;) {
             auto entryType = DW_RLE(r.getu8());
-            auto addrlen = unit->addrlen;
             switch (entryType) {
                 case DW_RLE_end_of_list:
                     done = true;
                     break;
 
                 case DW_RLE_base_addressx: {
-                    /* auto baseidx = */ r.getuleb128();
-                    abort();
+                    auto baseidx = r.getuleb128();
+                    base = dwarf.addrx(unit, baseidx);
                     break;
                 }
 
@@ -509,9 +510,9 @@ Ranges::Ranges(Unit *unit, uintmax_t offset, uintmax_t base) {
                 }
 
                 case DW_RLE_startx_length: {
-                    /* auto starti = */ r.getuleb128();
-                    /* auto len = */ r.getuleb128();
-                    abort();
+                    auto start = dwarf.addrx(unit, r.getuleb128());
+                    auto len = r.getuleb128();
+                    emplace_back(start, start + len);
                     break;
                 }
 
@@ -727,8 +728,7 @@ const Ranges * DIE::getRanges() const {
     if (!ranges.valid())
         return nullptr;
     auto lowpc = attribute(DW_AT_low_pc);
-    // decode ranges - do it through the unit, so we can cache the result.
-    return unit->getRanges(uintmax_t(ranges), lowpc.valid() ? uintmax_t(lowpc) : 0);
+    return unit->getRanges(*this, lowpc.valid() ? uintmax_t(lowpc) : 0);
 }
 
 }

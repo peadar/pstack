@@ -143,7 +143,7 @@ enum class ContainsAddr { YES, NO, UNKNOWN };
 // such as a location list, etc.
 class Ranges : public std::vector<std::pair<uintmax_t, uintmax_t>> {
    public:
-      Ranges(Unit *, uintmax_t offset, uintmax_t base);
+      Ranges(const DIE &, uintmax_t base);
 };
 
 // An abstract "DIE" -
@@ -391,7 +391,7 @@ public:
     using sptr = std::shared_ptr<Unit>;
     using csptr = std::shared_ptr<const Unit>;
 
-    const Ranges *getRanges(uintmax_t offset, uintmax_t base);
+    const Ranges *getRanges(const DIE &die, uintmax_t base);
 
     const Info *const dwarf; // back pointer to DWARF info
 
@@ -613,6 +613,7 @@ public:
     const Elf::Section & debugRanges;
     const Elf::Section & debugStrOffsets;
     const Elf::Section & debugAddr;
+    const Elf::Section & debugRangelists;
 
     // For _strx forms, indirect through debugStrOffsets to get a string for a
     // specific index.
@@ -620,6 +621,9 @@ public:
 
     // addrx forms are similar - indirect through table in .debug_addr.
     uintmax_t addrx(Unit &unit, size_t idx) const;
+
+    // rnglistx again similar, but more convoluted.
+    uintmax_t rnglistx(Unit &unit, size_t idx) const;
 
 private:
     ImageCache &imageCache;

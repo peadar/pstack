@@ -49,6 +49,7 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     , debugRanges(obj->getDebugSection(".debug_ranges", SHT_NULL))
     , debugStrOffsets(obj->getDebugSection(".debug_str_offsets", SHT_NULL))
     , debugAddr(obj->getDebugSection(".debug_addr", SHT_NULL))
+    , debugRangelists(obj->getDebugSection(".debug_rnglists", SHT_NULL))
     , imageCache(cache_)
 {
 }
@@ -309,6 +310,33 @@ Info::getAltDwarf() const
     if (altDwarf == nullptr)
         throw (Exception() << "no alt-dwarf found");
     return altDwarf;
+}
+
+uintmax_t
+Info::rnglistx(Unit &unit, size_t slot) const {
+
+    DWARFReader r(debugRangelists.io(), 0);
+    auto root = unit.root();
+    auto attr = root.attribute(DW_AT_rnglists_base);
+    auto base = attr.valid() ? uintmax_t(attr) : 0;
+
+    // We need to parse the first part of the header to get the size of the
+    // entries in the table.
+    size_t dwarflen;
+    auto len = r.getlength(&dwarflen);
+    /*
+     * We don't need the rest of the fields:
+    auto version = r.getuint(2);
+    auto address_size = r.getuint(1);
+    auto ss_size = r.getuint(1);
+    auto offset_entry_count = r.getuint(4);
+    */
+
+    // read the entry at base + slot ...
+    r.setOffset(base + slot * dwarflen);
+
+    // ...and add the base back.
+    return base + r.getuint(dwarflen);
 }
 
 

@@ -164,10 +164,10 @@ Unit::findAbbreviation(size_t code) const
 }
 
 const Ranges *
-Unit::getRanges(uintmax_t offset, uintmax_t base) {
-    auto &ptr = rangesForOffset[offset];
+Unit::getRanges(const DIE &die, uintmax_t base) {
+    auto &ptr = rangesForOffset[die.offset];
     if (ptr == nullptr)
-        ptr.reset(new Ranges(this, offset, base));
+        ptr.reset(new Ranges(die, base));
     return ptr.get();
 }
 
