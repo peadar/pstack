@@ -453,10 +453,10 @@ DIE::Attribute::operator uintmax_t() const
     case DW_FORM_addrx2:
     case DW_FORM_addrx3:
     case DW_FORM_addrx4:
-        return die.unit->dwarf->addrx(*die.unit, value().udata);
+        return die.unit->addrx(value().udata);
 
     case DW_FORM_rnglistx:
-        return die.unit->dwarf->rnglistx(*die.unit, value().udata);
+        return die.unit->rnglistx(value().udata);
     default:
         abort();
     }
@@ -488,7 +488,6 @@ Ranges::Ranges(const DIE &die, uintmax_t base) {
         uintmax_t base = 0;
         auto addrlen = die.getUnit()->addrlen;
         auto &unit = *die.getUnit();
-        const auto &dwarf = *unit.dwarf;
         for (bool done = false; !done;) {
             auto entryType = DW_RLE(r.getu8());
             switch (entryType) {
@@ -498,7 +497,7 @@ Ranges::Ranges(const DIE &die, uintmax_t base) {
 
                 case DW_RLE_base_addressx: {
                     auto baseidx = r.getuleb128();
-                    base = dwarf.addrx(unit, baseidx);
+                    base = unit.addrx(baseidx);
                     break;
                 }
 
@@ -510,7 +509,7 @@ Ranges::Ranges(const DIE &die, uintmax_t base) {
                 }
 
                 case DW_RLE_startx_length: {
-                    auto start = dwarf.addrx(unit, r.getuleb128());
+                    auto start = unit.addrx(r.getuleb128());
                     auto len = r.getuleb128();
                     emplace_back(start, start + len);
                     break;
@@ -577,7 +576,7 @@ DIE::Attribute::operator std::string() const
         case DW_FORM_strx3:
         case DW_FORM_strx4:
         case DW_FORM_strx:
-            return dwarf->strx(*die.unit, value().addr);
+            return die.unit->strx(value().addr);
 
         default:
             abort();

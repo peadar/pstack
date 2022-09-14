@@ -40,7 +40,7 @@ DWARFReader::readFormString(const Info &dwarf, Unit &unit, Form form)
         }
         case DW_FORM_strx: {
             size_t off = getuleb128();
-            return dwarf.strx(unit, off);
+            return unit.strx(off);
         }
     }
 }

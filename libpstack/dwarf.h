@@ -429,6 +429,17 @@ public:
 
     bool sourceFromAddr(Elf::Addr addr, std::vector<std::pair<std::string, int>> &info);
     const Abbreviation *findAbbreviation(size_t) const;
+
+    // For _strx forms, indirect through debugStrOffsets to get a string for a
+    // specific index.
+    std::string strx(size_t idx);
+
+    // addrx forms are similar - indirect through table in .debug_addr.
+    uintmax_t addrx(size_t idx);
+
+    // rnglistx again similar, but more convoluted.
+    uintmax_t rnglistx(size_t idx);
+
 };
 
 // A frame-descriptor-entry describes the details of how to unwind the stack
@@ -614,16 +625,6 @@ public:
     const Elf::Section & debugStrOffsets;
     const Elf::Section & debugAddr;
     const Elf::Section & debugRangelists;
-
-    // For _strx forms, indirect through debugStrOffsets to get a string for a
-    // specific index.
-    std::string strx(Unit &unit, size_t idx) const;
-
-    // addrx forms are similar - indirect through table in .debug_addr.
-    uintmax_t addrx(Unit &unit, size_t idx) const;
-
-    // rnglistx again similar, but more convoluted.
-    uintmax_t rnglistx(Unit &unit, size_t idx) const;
 
 private:
     ImageCache &imageCache;

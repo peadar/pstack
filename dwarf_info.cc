@@ -234,27 +234,6 @@ Info::lookupUnit(Elf::Addr addr) const {
     return nullptr;
 }
 
-std::string
-Info::strx(Unit &unit, size_t idx) const {
-    if (!debugStrOffsets)
-        throw Exception() << "no string offsets table, but have strx form";
-    // Get the root die, and the string offset base.
-    auto root = unit.root();
-    auto base = intmax_t(root.attribute(DW_AT_str_offsets_base));
-    auto len = unit.dwarfLen;
-    DWARFReader r(debugStrOffsets.io(), base + len * idx);
-    return debugStrings.io()->readString(r.getuint(len));
-}
-
-uintmax_t
-Info::addrx(Unit &unit, size_t idx) const {
-    if (!debugAddr)
-        throw Exception() << "no debug addr table, but have addrx form";
-    auto root = unit.root();
-    auto base = intmax_t(root.attribute(DW_AT_addr_base));
-    return debugAddr.io()->readObj<Elf::Addr>(base + idx * sizeof(Elf::Addr));
-}
-
 Info::~Info() = default;
 Abbreviation::Abbreviation(DWARFReader &r)
     : tag(Tag(r.getuleb128()))
@@ -311,33 +290,5 @@ Info::getAltDwarf() const
         throw (Exception() << "no alt-dwarf found");
     return altDwarf;
 }
-
-uintmax_t
-Info::rnglistx(Unit &unit, size_t slot) const {
-
-    DWARFReader r(debugRangelists.io(), 0);
-    auto root = unit.root();
-    auto attr = root.attribute(DW_AT_rnglists_base);
-    auto base = attr.valid() ? uintmax_t(attr) : 0;
-
-    // We need to parse the first part of the header to get the size of the
-    // entries in the table.
-    size_t dwarflen;
-    auto len = r.getlength(&dwarflen);
-    /*
-     * We don't need the rest of the fields:
-    auto version = r.getuint(2);
-    auto address_size = r.getuint(1);
-    auto ss_size = r.getuint(1);
-    auto offset_entry_count = r.getuint(4);
-    */
-
-    // read the entry at base + slot ...
-    r.setOffset(base + slot * dwarflen);
-
-    // ...and add the base back.
-    return base + r.getuint(dwarflen);
-}
-
 
 }

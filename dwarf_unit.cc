@@ -17,6 +17,55 @@ Unit::load()
                 std::forward_as_tuple(abbR));
 }
 
+std::string
+Unit::strx(size_t idx) {
+    if (!dwarf->debugStrOffsets)
+        throw Exception() << "no string offsets table, but have strx form";
+    // Get the root die, and the string offset base.
+    auto base = intmax_t(root().attribute(DW_AT_str_offsets_base));
+    auto len = dwarfLen;
+    DWARFReader r(dwarf->debugStrOffsets.io(), base + len * idx);
+    return dwarf->debugStrings.io()->readString(r.getuint(len));
+}
+
+uintmax_t
+Unit::addrx(size_t idx) {
+    if (!dwarf->debugAddr)
+        throw Exception() << "no debug addr table, but have addrx form";
+    auto base = intmax_t(root().attribute(DW_AT_addr_base));
+    return dwarf->debugAddr.io()->readObj<Elf::Addr>(base + idx * sizeof(Elf::Addr));
+}
+
+
+uintmax_t
+Unit::rnglistx(size_t slot) {
+
+    DWARFReader r(dwarf->debugRangelists.io(), 0);
+    auto attr = root().attribute(DW_AT_rnglists_base);
+    auto base = attr.valid() ? uintmax_t(attr) : 0;
+
+    // We need to parse the first part of the header to get the size of the
+    // entries in the table.
+    size_t dwarflen;
+    auto len = r.getlength(&dwarflen);
+    (void)len;
+    /*
+     * We don't need the rest of the fields:
+    auto version = r.getuint(2);
+    auto address_size = r.getuint(1);
+    auto ss_size = r.getuint(1);
+    auto offset_entry_count = r.getuint(4);
+    */
+
+    // seek to the entry at base + slot ...
+    r.setOffset(base + slot * dwarflen);
+
+    // ...then read and add the base.
+    return base + r.getuint(dwarflen);
+}
+
+
+
 Unit::Unit(const Info *di, DWARFReader &r)
     : abbrevOffset{ 0 }
     , dwarf(di)
