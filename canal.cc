@@ -278,16 +278,29 @@ mainExcept(int argc, char *argv[])
             *debug << "scan " << hex << segment.start <<  " to " << segment.start + segment.memSize
                 << " (filesiz = " << segment.fileSize  << ", memsiz=" << segment.memSize << ") ";
         }
-
         if (findstr != "") {
-           std::vector<char> corestr(findstr.size());
-            for (auto loc = segment.start; loc < segment.start + segment.fileSize - findstr.size(); loc++) {
-                size_t rc = process->io->read(loc, findstr.size(), corestr.data());
-                assert(rc == findstr.size());
-                if (memcmp(findstr.data(), corestr.data(), findstr.size()) == 0) {
+            std::vector<char> corestr;
+            corestr.resize(std::max(size_t(4096UL), findstr.size() * 4));
+            for (size_t in, memPos = segment.start, corestrPos = 0; memPos < segment.start + segment.fileSize; memPos += in) {
+                size_t freeCorestr = corestr.size() - corestrPos;
+                size_t remainingSegment = segment.fileSize - (memPos - segment.start);
+                size_t readsize = std::min(remainingSegment, freeCorestr);
+                in = process->io->read(memPos, readsize, corestr.data() + corestrPos);
+                assert(in == readsize);
+                corestrPos += in;
+                for (auto found = corestr.begin();; ++found) {
+                    found = std::search(corestr.begin(), corestr.begin() + corestrPos, findstr.begin(), findstr.end());
+                    if (found == corestr.end())
+                        break;
                     IOFlagSave _(cout);
-                    std::cout << "0x" << hex << loc << "\n";
+                    std::cout << "0x" << hex << memPos + (found - corestr.begin()) << "\n";
                 }
+                if (corestrPos >= findstr.size()) {
+                    memmove(corestr.data(),
+                            corestr.data() + corestrPos - findstr.size() + 1,
+                            findstr.size() - 1);
+                }
+                memPos += in;
             }
         } else {
             auto search = [&](auto m) {
