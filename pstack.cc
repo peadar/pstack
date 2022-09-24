@@ -356,7 +356,7 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
           'o',
           "output file",
           "write output to <output file> instead of stdout", [&options, &out] (const char *opt) {
-             out = std::move(std::ofstream(opt, std::ofstream::out|std::ofstream::trunc));
+             out = std::ofstream(opt, std::ofstream::out|std::ofstream::trunc);
              options.output = &out;
           })
     .parse(argc, argv);
