@@ -225,9 +225,17 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
 
     Elf::Off off;
     int i;
+
+    // If there are too many headers, we need to look in the first section header
+    // to get the actual count.
+    int headerCount = elfHeader.e_shnum == 0 && elfHeader.e_shentsize != 0 ?
+       1 : elfHeader.e_shnum;
+
     // sectionHeaders.reserve(elfHeader.e_shnum);
-    for (off = elfHeader.e_shoff, i = 0; i < elfHeader.e_shnum; i++) {
+    for (off = elfHeader.e_shoff, i = 0; i < headerCount; i++) {
         sectionHeaders.emplace_back(std::make_unique<Section>(this, off));
+        if (i == 0 && elfHeader.e_shnum == 0)
+            headerCount = sectionHeaders[0]->shdr.sh_size;
         off += elfHeader.e_shentsize;
     }
 
@@ -235,7 +243,13 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
        // Create a mapping from section header names to section headers.
        // We need to do this after reading all the section headers, because
        // until then we don't have the details of the shstr section
-       auto &sshdr = sectionHeaders[elfHeader.e_shstrndx];
+       //
+       // We need to deal with the fact that e_shstrndx might be too small
+       // to hold the index of the string section, and look in sh_link if so.
+       int shstrSec = elfHeader.e_shstrndx == SHN_XINDEX ?
+           sectionHeaders[0]->shdr.sh_link :
+           elfHeader.e_shstrndx;
+       auto &sshdr = sectionHeaders[shstrSec];
        size_t secid = 0;
        for (auto &h : sectionHeaders) {
            auto name = sshdr->io()->readString(h->shdr.sh_name);
