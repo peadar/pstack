@@ -269,13 +269,15 @@ Info::linesAt(intmax_t offset, Unit &unit) const
 std::string
 Info::getAltImageName() const
 {
-    auto &section = elf->getSection(".gnu_debugaltlink", SHT_NULL);
+    auto &section = elf->getDebugSection(".gnu_debugaltlink", SHT_NULL);
     const auto &name = section.io()->readString(0);
     if (name[0] == '/')
         return name;
 
-    // relative - prefix it with dirname of the image
-    const auto &exedir = dirname(linkResolve(elf->io->filename()));
+    // relative - prefix it with dirname of the image (note we use the image
+    // from the section, not from "this", as it may have been in a separate ELF
+    // image.
+    const auto &exedir = dirname(linkResolve(section.elf->io->filename()));
     return stringify(exedir, "/", name);
 }
 
