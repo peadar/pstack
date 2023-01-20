@@ -148,6 +148,9 @@ LineInfo::build(DWARFReader &r, Unit &unit)
         r.skip(diff);
     }
 
+    if (r.getOffset() == end)
+       return;
+
     LineState state(this);
     while (r.getOffset() < end) {
         unsigned c = r.getu8();
