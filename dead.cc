@@ -161,8 +161,13 @@ void
 CoreProcess::findLWPs()
 {
     for (auto note : coreImage->notes()) {
-        if (note.name() == "CORE" && note.type() == NT_PRSTATUS)
-            (void)lwps[note.data()->readObj<prstatus_t>(0).pr_pid];
+        if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
+            auto prstatus = note.data()->readObj<prstatus_t>(0);
+            (void)lwps[prstatus.pr_pid];
+            if (verbose) {
+               *debug << "task " << prstatus.pr_pid << " current sig is " << prstatus.pr_cursig << "\n";
+            }
+        }
     }
 }
 
