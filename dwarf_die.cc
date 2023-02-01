@@ -8,20 +8,22 @@
 
 namespace Dwarf {
 
-class DIE::Raw {
+class DIE::Raw : public std::enable_shared_from_this<DIE::Raw> {
     Raw() = delete;
     Raw(const Raw &) = delete;
     const Abbreviation *type;
     std::vector<DIE::Attribute::Value> values;
-    Elf::Off parent; // 0 implies we do not yet know the parent's offset.
+    std::shared_ptr<DIE::Raw> parent;
+    Elf::Off offset;
     Elf::Off firstChild;
     Elf::Off nextSibling;
 public:
-    Raw(Unit *, DWARFReader &, size_t, Elf::Off parent);
+    Raw(Unit *, DWARFReader &, size_t, const std::shared_ptr<Raw> &parent, Elf::Off offset);
     ~Raw();
     // Mostly, Raw DIEs are hidden from everything. DIE needs access though
     friend class DIE;
-    static std::shared_ptr<Raw> decode(Unit *unit, const DIE &parent, Elf::Off offset);
+    static std::shared_ptr<Raw> decode(Unit *u, const std::shared_ptr<DIE::Raw> &parent, DWARFReader &r);
+    void populateParentOffsets(const std::shared_ptr<Unit> &unit, ParentOffsets &offsets, DWARFReader &r);
 };
 
 DIE
@@ -153,9 +155,31 @@ DIE::name() const
     return attr.valid() ? std::string(attr) : "";
 }
 
-DIE::Raw::Raw(Unit *unit, DWARFReader &r, size_t abbrev, Elf::Off parent_)
+DIE
+DIE::getParent() const
+{
+    if (raw->parent) {
+        return DIE(unit, raw->parent);
+    }
+    if (unit->isRoot(*this)) // there's no parent if we're the root.
+       return DIE();
+
+    // We don't already have the raw die for the parent, find its offset, and load it.
+    return unit->offsetToDIE(DIE(), unit->getParentOffsets().at(raw->offset));
+}
+
+
+Elf::Off
+DIE::getOffset() const
+{
+    return raw->offset;
+}
+
+
+DIE::Raw::Raw(Unit *unit, DWARFReader &r, size_t abbrev, const std::shared_ptr<Raw> &parent_, Elf::Off offset)
     : type(unit->findAbbreviation(abbrev))
     , parent(parent_)
+    , offset(offset)
     , firstChild(0)
     , nextSibling(0)
 {
@@ -343,42 +367,48 @@ DIE::Raw::~Raw()
 }
 
 static void walk(const DIE & die) { for (auto c : die.children()) { walk(c); } };
-Elf::Off
-DIE::getParentOffset() const
-{
-    if (raw->parent == 0 && !unit->isRoot(*this)) {
-        // This DIE has a parent, but we did not know where it was when we
-        // decoded it. We have to search for the parent in the tree. We could
-        // limit our search a bit, but the easiest thing to do is just walk the
-        // tree from the root down. (This also fixes the problem for any other
-        // dies in the same unit.)
-        if (verbose)
-            *debug << "warning: no parent offset "
-                << "for die " << name()
-                << " at offset " << offset
-                << " in unit " << unit->name()
-                << " of " << *unit->dwarf->elf->io
-                << ", need to do full walk of DIE tree"
-                << std::endl;
-        walk(unit->root());
-        assert(raw->parent != 0);
-    }
-    return raw->parent;
-}
 
-std::shared_ptr<DIE::Raw>
-DIE::decode(Unit *unit, const DIE &parent, Elf::Off offset)
-{
-    DWARFReader r(unit->dwarf->debugInfo.io(), offset);
+std::shared_ptr<DIE::Raw> DIE::Raw::decode(Unit *u, const std::shared_ptr<DIE::Raw> &parent, DWARFReader &r) {
+    auto off = r.getOffset();
     size_t abbrev = r.getuleb128();
     if (abbrev == 0) {
         // If we get to the terminator, then we now know the parent's nextSibling:
         // update it now.
         if (parent)
-            parent.raw->nextSibling = r.getOffset();
+            parent->nextSibling = r.getOffset();
         return nullptr;
     }
-    return std::make_shared<DIE::Raw>(unit, r, abbrev, parent.getOffset());
+    return std::make_shared<DIE::Raw>(u, r, abbrev, parent, off);
+}
+
+void
+DIE::populateParentOffsets(ParentOffsets &offsets) const {
+   DWARFReader r(unit->dwarf->debugInfo.io(), raw->firstChild);
+   raw->populateParentOffsets(unit, offsets, r);
+}
+
+void
+DIE::Raw::populateParentOffsets(const std::shared_ptr<Unit> &unit, ParentOffsets &offsets, DWARFReader &r) {
+   if (!type->hasChildren)
+      return;
+   assert(r.getOffset() == firstChild);
+   for (;;) {
+      auto child = decode(unit.get(), shared_from_this(), r);
+      if (child == 0) {
+         break; // hit the terminator.
+      }
+      offsets[child->offset] = offset;
+      child->populateParentOffsets(unit, offsets, r);
+   }
+   assert(nextSibling != 0); // the child reading the terminator should have set this.
+}
+
+
+std::shared_ptr<DIE::Raw>
+DIE::decode(Unit *unit, const DIE &parent, Elf::Off offset)
+{
+    DWARFReader r(unit->dwarf->debugInfo.io(), offset);
+    return Raw::decode(unit, parent.raw, r);
 }
 
 DIE::Children::const_iterator &DIE::Children::const_iterator::operator++() {
@@ -387,7 +417,7 @@ DIE::Children::const_iterator &DIE::Children::const_iterator::operator++() {
     // unit, (and hence didn't know the parent at the time), take the
     // opportunity to update its parent pointer
     if (currentDIE && parent && currentDIE.raw->parent == 0)
-        currentDIE.raw->parent = parent.offset;
+        currentDIE.raw->parent = parent.raw;
     return *this;
 }
 
@@ -398,7 +428,7 @@ DIE::Children::const_iterator::const_iterator(const DIE &first, const DIE & pare
     // As above, take the opportunity to update the current DIE's parent field
     // if it has not already been decided.
     if (currentDIE && parent && currentDIE.raw->parent == 0)
-        currentDIE.raw->parent = parent.offset;
+        currentDIE.raw->parent = parent.raw;
 }
 
 AttrName

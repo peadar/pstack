@@ -105,6 +105,18 @@ Unit::Unit(const Info *di, DWARFReader &r)
     // we now have enough info to parse the abbreviations and the DIE tree.
 }
 
+const ParentOffsets &
+Unit::getParentOffsets() {
+   if (parentOffsets == nullptr) {
+      parentOffsets = std::make_unique<ParentOffsets>();
+      DIE r = root();
+      r.populateParentOffsets(*parentOffsets);
+   }
+   return *parentOffsets;
+   
+
+}
+
 /*
  * Convert an offset to a raw DIE.
  * Offsets are relative to the start of the DWARF info section, *not* the unit.
@@ -117,14 +129,7 @@ std::shared_ptr<DIE::Raw>
 Unit::offsetToRawDIE(const DIE &parent, Elf::Off offset) {
     if (offset == 0 || offset < this->offset || offset >= this->end)
         return nullptr;
-
-    auto &rawptr = allEntries[offset];
-    if (rawptr == nullptr) {
-        rawptr = DIE::decode(this, parent, offset);
-        // this may still be null, and occupy space in the hash table, but
-        // it's harmless, and cheaper than removing the entry.
-    }
-    return rawptr;
+     return DIE::decode(this, parent, offset);
 }
 
 /*
@@ -137,7 +142,7 @@ DIE
 Unit::offsetToDIE(const DIE &parent, Elf::Off offset) {
     if (abbreviations.empty())
         load();
-    return DIE(shared_from_this(), offset, offsetToRawDIE(parent, offset));
+    return DIE(shared_from_this(), offsetToRawDIE(parent, offset));
 }
 
 DIE Unit::root() {
@@ -214,7 +219,7 @@ Unit::findAbbreviation(size_t code) const
 
 const Ranges *
 Unit::getRanges(const DIE &die, uintmax_t base) {
-    auto &ptr = rangesForOffset[die.offset];
+    auto &ptr = rangesForOffset[die.getOffset()];
     if (ptr == nullptr)
         ptr.reset(new Ranges(die, base));
     return ptr.get();
@@ -223,7 +228,6 @@ Unit::getRanges(const DIE &die, uintmax_t base) {
 void
 Unit::purge()
 {
-    allEntries = AllEntries();
     rangesForOffset = decltype(rangesForOffset)();
     macros.reset(nullptr);
 }

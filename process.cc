@@ -202,9 +202,8 @@ dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
     if (die.tag() == Dwarf::DW_TAG_compile_unit || die.tag() == Dwarf::DW_TAG_partial_unit)
         return false;
 
-    auto parent = die.getParentOffset();
-    assert(parent != 0); // because die would have been a unit or partial unit
-    bool printedParent = dieName(os, die.getUnit()->offsetToDIE(Dwarf::DIE(), parent), false);
+    auto parent = die.getParent();
+    bool printedParent = parent && dieName(os, parent, false);
 
     auto tag = die.tag();
     if (first ||

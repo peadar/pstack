@@ -258,7 +258,6 @@ std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIE> &jo) {
         .field("type", entry.tag())
         .field("cuOffset", entry.getOffset() - entry.getUnit()->offset)
         .field("offset", entry.getOffset())
-        .field("parent", entry.getParentOffset())
         .field("attributes", entry.attributes());
 
     if (entry.hasChildren())

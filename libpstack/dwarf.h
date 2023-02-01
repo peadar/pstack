@@ -146,6 +146,8 @@ class Ranges : public std::vector<std::pair<uintmax_t, uintmax_t>> {
       Ranges(const DIE &, uintmax_t base);
 };
 
+ using ParentOffsets = std::unordered_map<Elf::Off, Elf::Off>;
+
 // An abstract "DIE" -
 // A die exists in a tree within a unit. A die can be the rooot of a unit's tree, or
 // a child, and may have children itself. "DIE" allows us access to this information.
@@ -159,17 +161,14 @@ class DIE {
 
     // DIEs are only constructed by units: hide constructors from everyone else.
     friend Unit;
-
-    Elf::Off offset;
     class Raw;
 
     std::shared_ptr<Raw> raw;
     std::shared_ptr<Unit> unit;
 
     // construct a DIE from its "Raw" DIE, unit, and offset.
-    DIE(const std::shared_ptr<Unit> &unit, size_t offset_, const std::shared_ptr<Raw> &raw)
-        : offset(offset_)
-        , raw(raw)
+    DIE(const std::shared_ptr<Unit> &unit, const std::shared_ptr<Raw> &raw)
+        : raw(raw)
         , unit(unit)
         {}
 
@@ -187,6 +186,8 @@ class DIE {
 public:
     // An attribute of a DIE.
     class Attribute;
+
+    void populateParentOffsets(ParentOffsets &offsets) const;
 
     // A collection of attributes for a DIE, as returned by DIE::attributes
     class Attributes {
@@ -217,7 +218,6 @@ public:
         Attributes(const DIE &die) : die(die) {}
     };
 
-
     // Iterable object for children of a DIE - as returned by children()
     class Children {
         const DIE &parent;
@@ -233,18 +233,14 @@ public:
     // The result can be yes, no, or unknown.
     ContainsAddr containsAddress(Elf::Addr addr) const;
 
-    // Return the offset (relative to the .debug_info section) of the parent DIE.
-    Elf::Off getParentOffset() const;
-
     // Return the offset (relative to the .debug_info section) of this DIE
-    Elf::Off getOffset() const { return offset; }
-
+    Elf::Off getOffset() const;
+    DIE getParent() const;
     const std::shared_ptr<Unit> &getUnit() const { return unit; }
 
     // Construct a "null" DIE.
     DIE()
-        : offset(0)
-        , raw(nullptr)
+        : raw(nullptr)
         , unit(nullptr)
         {}
 
@@ -357,7 +353,9 @@ public:
 // A (partial-) compilation unit.
 class Unit : public std::enable_shared_from_this<Unit> {
 
+public:
     using Abbreviations = std::unordered_map<size_t, Abbreviation>;
+private:
 
     // We store DIEs as their "raw" counterparts - when used by the API, we
     // return a DIE to wrap them. The DIE wrapper includes a reference to the
@@ -370,13 +368,14 @@ class Unit : public std::enable_shared_from_this<Unit> {
     Unit() = delete;
     Unit(const Unit &) = delete;
 
+    mutable std::unique_ptr<ParentOffsets> parentOffsets;
+
     std::shared_ptr<DIE::Raw> offsetToRawDIE(const DIE &parent, Elf::Off offset);
     // Used to ensure abbreviations and other potentially expensive data is
     // parsed. Internals will call this to undo a "purge()"
     void load();
 
     Abbreviations abbreviations;
-    AllEntries allEntries;
     Elf::Off rootOffset;
     Elf::Off abbrevOffset;
     std::unique_ptr<LineInfo> lines;
@@ -387,6 +386,10 @@ class Unit : public std::enable_shared_from_this<Unit> {
     RangesForOffset rangesForOffset;
 
 public:
+
+
+    // returns a mapping of offset (of die) to offset (of its parent)
+    const ParentOffsets &getParentOffsets();
 
     using sptr = std::shared_ptr<Unit>;
     using csptr = std::shared_ptr<const Unit>;
@@ -409,7 +412,7 @@ public:
     Unit(const Info *, DWARFReader &);
     ~Unit();
 
-    void purge(); // Remove all "raw" DIEs from allEntries, potentially freeing memory.
+    void purge();
 
     // Is a given DIE the root for this unit?
     bool isRoot(const DIE &die) { return die.getOffset() == rootOffset; }
