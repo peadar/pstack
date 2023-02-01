@@ -106,10 +106,7 @@ Info::offsetToDIE(Elf::Off offset) const
     // offset <= the required DIE offset, and walk forward until we find the
     // first unit that has an end > the DIE offset (they can be the same unit)
 
-    auto it = std::upper_bound( units.begin(), units.end(), offset,
-            [] (Elf::Off offset, const std::pair<Elf::Off, std::shared_ptr<Unit>> &u)
-                { return offset < u.first; });
-
+    auto it = units.upper_bound(offset);
     // "it" is the first unit with an offset > our DIE offset. Our required
     // Unit is before this in the sequence.
     Elf::Off uOffset;
