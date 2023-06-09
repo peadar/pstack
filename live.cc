@@ -78,7 +78,6 @@ LiveProcess::resume(lwpid_t pid)
     assert(tcb.stopCount != 0); // We can't resume an LWP that is not suspended.
     if (--tcb.stopCount != 0)
         return;
-    kill(pid, SIGCONT);
     if (ptrace(PT_DETACH, pid, caddr_t(1), 0) != 0)
         std::clog << "failed to detach from process " << pid << ": " << strerror(errno) << "\n";
     dynamic_cast<CacheReader&>(*io).flush();
