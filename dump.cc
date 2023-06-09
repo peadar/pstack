@@ -373,6 +373,19 @@ operator << (std::ostream &os, const JSON<Dwarf::Block> &b)
 }
 
 std::ostream &
+operator << (std::ostream &os, const JSON<Dwarf::Encoding> &b)
+{
+#define DWARF_ATE(enc, val) case Dwarf::enc: os << json(#enc) ; break;
+
+    switch (b.object) {
+#include "libpstack/dwarf/encodings.h"
+        default: os << int(b.object); break;
+    }
+    return os;
+}
+
+
+std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::DIE::Attribute> &o)
 {
     using namespace Dwarf;
@@ -380,60 +393,68 @@ operator << (std::ostream &os, const JSON<Dwarf::DIE::Attribute> &o)
     JObject writer(os);
 
     writer.field("form", attr.form());
-    switch (attr.form()) {
-    case DW_FORM_addr:
-    case DW_FORM_data1:
-    case DW_FORM_data2:
-    case DW_FORM_data4:
-    case DW_FORM_data8:
-    case DW_FORM_sec_offset:
-    case DW_FORM_udata:
-        writer.field("value", uintmax_t(attr));
-        break;
 
-    case DW_FORM_sdata:
-    case DW_FORM_implicit_const:
-        writer.field("value", intmax_t(attr));
-        break;
+    switch (attr.name()) {
+        case DW_AT_encoding:
+            writer.field("value", Encoding(uintmax_t(attr)));
+            break;
+        default:
+            switch (attr.form()) {
+                case DW_FORM_addr:
+                case DW_FORM_data1:
+                case DW_FORM_data2:
+                case DW_FORM_data4:
+                case DW_FORM_data8:
+                case DW_FORM_sec_offset:
+                case DW_FORM_udata:
+                    writer.field("value", uintmax_t(attr));
+                    break;
 
-    case DW_FORM_GNU_strp_alt:
-    case DW_FORM_string:
-    case DW_FORM_strp:
-    case DW_FORM_line_strp:
-    case DW_FORM_strx:
-    case DW_FORM_strx1:
-    case DW_FORM_strx2:
-    case DW_FORM_strx3:
-    case DW_FORM_strx4:
-        writer.field("value", std::string(attr));
-        break;
+                case DW_FORM_sdata:
+                case DW_FORM_implicit_const:
+                    writer.field("value", intmax_t(attr));
+                    break;
 
-    case DW_FORM_ref_addr:
-    case DW_FORM_ref2:
-    case DW_FORM_ref4:
-    case DW_FORM_ref8:
-    case DW_FORM_GNU_ref_alt:
-    case DW_FORM_ref_udata: {
-        writer.field("value", attr.value().addr);
-        break;
-    }
-    case DW_FORM_exprloc:
-    case DW_FORM_block1:
-    case DW_FORM_block2:
-    case DW_FORM_block4:
-    case DW_FORM_block:
-        writer.field("value", Dwarf::Block(attr));
-        break;
+                case DW_FORM_GNU_strp_alt:
+                case DW_FORM_string:
+                case DW_FORM_strp:
+                case DW_FORM_line_strp:
+                case DW_FORM_strx:
+                case DW_FORM_strx1:
+                case DW_FORM_strx2:
+                case DW_FORM_strx3:
+                case DW_FORM_strx4:
+                    writer.field("value", std::string(attr));
+                    break;
 
-    case DW_FORM_flag:
-        writer.field("value", bool(attr));
-        break;
+                case DW_FORM_ref_addr:
+                case DW_FORM_ref2:
+                case DW_FORM_ref4:
+                case DW_FORM_ref8:
+                case DW_FORM_GNU_ref_alt:
+                case DW_FORM_ref_udata: {
+                    writer.field("value", attr.value().addr);
+                    break;
+                }
+                case DW_FORM_exprloc:
+                case DW_FORM_block1:
+                case DW_FORM_block2:
+                case DW_FORM_block4:
+                case DW_FORM_block:
+                    writer.field("value", Dwarf::Block(attr));
+                    break;
 
-    case DW_FORM_flag_present:
-        writer.field("value", true);
-        break;
-    default:
-        writer.field("value", "unknown");
+                case DW_FORM_flag:
+                    writer.field("value", bool(attr));
+                    break;
+
+                case DW_FORM_flag_present:
+                    writer.field("value", true);
+                    break;
+                default:
+                    writer.field("value", "unknown");
+            }
+            break;
     }
 
     return os;
