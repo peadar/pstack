@@ -34,7 +34,7 @@ getLine(const Reader &proc, const PyCodeObject *code, const PyFrameObject *frame
     return line;
 }
 
-template <int PyV> class HeapPrinter : public PythonTypePrinter<PyV> {
+template <int PyV> class HeapPrinter final : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *, const PyTypeObject *pto, Elf::Addr remote) const override {
         pc->os << pc->proc.io->readString(Elf::Addr(pto->tp_name));
         if (pto->tp_dictoffset > 0) {
@@ -52,7 +52,7 @@ template <int PyV> class HeapPrinter : public PythonTypePrinter<PyV> {
     bool dupdetect() const override { return true; }
 };
 
-template <int PyV> class StringPrinter : public PythonTypePrinter<PyV> {
+template <int PyV> class StringPrinter final : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *, const PyTypeObject *, Elf::Addr addr) const override {
         auto str = readString<PyV>(*pc->proc.io, addr);
         pc->os << "\"" << str << "\"";
@@ -62,7 +62,7 @@ template <int PyV> class StringPrinter : public PythonTypePrinter<PyV> {
     bool dupdetect() const override { return false; }
 };
 
-template <int PyV> class FloatPrinter : public PythonTypePrinter<PyV> {
+template <int PyV> class FloatPrinter final : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         auto *pfo = (const PyFloatObject *)pyo;
         pc->os << std::fixed << std::setprecision(6) << pfo->ob_fval;
@@ -78,7 +78,7 @@ struct PyModuleObject {
    PyObject *md_dict;
 };
 
-template<int PyV> class ModulePrinter : public PythonTypePrinter<PyV> {
+template<int PyV> class ModulePrinter final : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         auto *pmo = (PyModuleObject *)pyo;
         pc->print((Elf::Addr)pmo->md_dict);
@@ -87,7 +87,7 @@ template<int PyV> class ModulePrinter : public PythonTypePrinter<PyV> {
     const char *type() const override { return "PyModule_Type"; }
 };
 
-template<int PyV> class ListPrinter : public PythonTypePrinter<PyV> {
+template<int PyV> class ListPrinter final : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *po, const PyTypeObject *, Elf::Addr) const override {
         auto plo = reinterpret_cast<const PyListObject *>(po);
         pc->os << "[ \n";
@@ -108,7 +108,7 @@ template<int PyV> class ListPrinter : public PythonTypePrinter<PyV> {
     bool dupdetect() const override { return true; }
 };
 
-template <int PyV> class TypePrinter : public PythonTypePrinter<PyV> {
+template <int PyV> class TypePrinter final : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         auto pto = (const _typeobject *)pyo;
         pc->os << "type :\"" << pc->proc.io->readString(Elf::Addr(pto->tp_name)) << "\"";
@@ -118,7 +118,7 @@ template <int PyV> class TypePrinter : public PythonTypePrinter<PyV> {
     bool dupdetect() const override { return true; }
 };
 
-template <int PyV> class LongPrinter : public PythonTypePrinter<PyV> {
+template <int PyV> class LongPrinter final : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         auto plo = (PyLongObject *)pyo;
         auto size = ((PyVarObject *)plo)->ob_size;
@@ -136,7 +136,7 @@ template <int PyV> class LongPrinter : public PythonTypePrinter<PyV> {
     bool dupdetect() const override { return false; }
 };
 
-template <int PyV> class TuplePrinter : public PythonTypePrinter<PyV> {
+template <int PyV> class TuplePrinter final : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr remoteAddr) const override {
         auto tuple = reinterpret_cast<const PyTupleObject *>(pyo);
         auto size = std::min(((PyVarObject *)tuple)->ob_size, Py_ssize_t(100));
@@ -193,7 +193,7 @@ printTupleVars(const PythonPrinter<PyV> *pc, Elf::Addr namesAddr, Elf::Addr valu
 
 }
 
-template <int PyV> class FramePrinter : public PythonTypePrinter<PyV> {
+template <int PyV> class FramePrinter final : public PythonTypePrinter<PyV> {
     Elf::Addr print(const PythonPrinter<PyV> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr remoteAddr) const override {
         auto pfo = (const PyFrameObject *)pyo;
         if (pfo->f_code != 0) {

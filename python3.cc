@@ -58,7 +58,7 @@ int64_t readIndex(const Reader &r, const Elf::Addr addr, size_t indexSize) {
         default: throw Exception() << "Envalid dictionary size"; // Shouldn't happen
     }
 }
-class DictPrinter : public PythonTypePrinter<3> {
+class DictPrinter final : public PythonTypePrinter<3> {
     Elf::Addr print(const PythonPrinter<3> *pc, const PyObject *object, const PyTypeObject *, Elf::Addr) const override {
         PyDictObject *dict = (PyDictObject *)object;
         if (dict->ma_used == 0) {
@@ -103,7 +103,7 @@ class DictPrinter : public PythonTypePrinter<3> {
 };
 static DictPrinter dictPrinter;
 
-class BoolPrinter : public PythonTypePrinter<3> {
+class BoolPrinter final : public PythonTypePrinter<3> {
     Elf::Addr print(const PythonPrinter<3> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         auto pio = (const _longobject *)pyo;
         pc->os << (pio->ob_digit[0] ? "True" : "False");

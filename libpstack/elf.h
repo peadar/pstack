@@ -258,7 +258,7 @@ public:
     // construct/destruct. Note you will generally need to use make_shared to
     // create an Object
     Object(ImageCache &, Reader::csptr, bool isDebug=false);
-    ~Object();
+    ~Object() noexcept = default;
 
     // Accessing sections.
     const Section &getSection(Word idx) const;
@@ -382,8 +382,7 @@ public:
    {
       io->readObj(0, &note);
    }
-   ~NoteDesc() {
-   }
+   ~NoteDesc() noexcept = default;
 };
 
 class Notes::iterator {
@@ -430,7 +429,7 @@ class ImageCache {
     int elfLookups;
 public:
     ImageCache();
-    virtual ~ImageCache();
+    virtual ~ImageCache() noexcept;
     virtual void flush(Object::sptr);
     Object::sptr getImageForName(const std::string &name, bool isDebug = false);
     Object::sptr getImageIfLoaded(const std::string &name);

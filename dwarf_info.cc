@@ -231,7 +231,6 @@ Info::lookupUnit(Elf::Addr addr) const {
     return nullptr;
 }
 
-Info::~Info() = default;
 Abbreviation::Abbreviation(DWARFReader &r)
     : tag(Tag(r.getuleb128()))
     , hasChildren(HasChildren(r.getu8()) == DW_CHILDREN_yes)

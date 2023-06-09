@@ -594,13 +594,13 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread,
     os << "thread: " << (void *)thread.info.ti_tid << ", lwp: "
        << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
     int frameNo = 0;
-    for (auto frame : thread.stack)
+    for (auto &frame : thread.stack)
         dumpFrameText(os, PrintableFrame(frame, frameNo++, options), frame);
     return os;
 }
 
 std::ostream &
-Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, Dwarf::StackFrame &frame) const
+Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, const Dwarf::StackFrame &frame) const
 {
 
     IOFlagSave _(os);

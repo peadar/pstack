@@ -407,7 +407,7 @@ public:
     unsigned char id[8]; // Unit ID for DWO.
 
     Unit(const Info *, DWARFReader &);
-    ~Unit();
+    ~Unit() noexcept = default;
 
     void purge(); // Remove all "raw" DIEs from allEntries, potentially freeing memory.
 
@@ -577,7 +577,7 @@ public:
     };
 
     Info(Elf::Object::sptr, ImageCache &);
-    ~Info();
+    ~Info() noexcept = default;
 
     // Get a reference the the "alt" DWARF image, as pointed to by
     // ".gnu_debugaltlink"
@@ -662,7 +662,7 @@ public:
     Info::sptr getDwarf(Elf::Object::sptr);
     void flush(Elf::Object::sptr);
     ImageCache();
-    ~ImageCache();
+    ~ImageCache() noexcept;
 };
 
 // An attribute within a DIE. A value that you can convert to one of a number
@@ -687,7 +687,7 @@ public:
     Attribute(const DIE &dieref_, const FormEntry *formp_)
        : die{dieref_}, formp{formp_} {}
     Attribute() : die(), formp(nullptr) {}
-    ~Attribute() = default;
+    ~Attribute() noexcept = default;
 
     bool valid() const { return formp != nullptr; }
     explicit operator std::string() const;

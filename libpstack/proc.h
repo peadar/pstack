@@ -94,7 +94,8 @@ public:
         , mechanism(mechanism)
         , isSignalTrampoline(false)
     {}
-    StackFrame &operator = (const StackFrame &) = delete;
+    StackFrame &operator = (const StackFrame &) = default;
+    StackFrame(const StackFrame &) = default;
     void setReg(unsigned, cpureg_t);
     cpureg_t getReg(unsigned regno) const;
     Elf::Addr getCFA(const Process &, const CallFrame &) const;
@@ -187,7 +188,7 @@ public:
     virtual void resumeProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
     std::ostream &dumpStackText(std::ostream &, const ThreadStack &, const PstackOptions &) const;
-    std::ostream &dumpFrameText(std::ostream &, const PrintableFrame &, Dwarf::StackFrame &) const;
+    std::ostream &dumpFrameText(std::ostream &, const PrintableFrame &, const Dwarf::StackFrame &) const;
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &) const;
     template <typename T> void listThreads(const T &);
 
@@ -232,7 +233,7 @@ public:
 std::string procname(pid_t pid, const std::string &);
 
 struct LiveThreadList;
-class LiveProcess : public Process {
+class LiveProcess final : public Process {
     pid_t pid;
 public:
     // attach to existing process.
@@ -252,7 +253,7 @@ protected:
 };
 
 class CoreProcess;
-class CoreReader : public Reader {
+class CoreReader final : public Reader {
     Process *p;
     Elf::Object::sptr core;
 protected:
@@ -264,7 +265,7 @@ public:
     std::string filename() const override { return "process memory"; }
 };
 
-class CoreProcess : public Process {
+class CoreProcess final : public Process {
 public:
     Elf::Object::sptr coreImage;
     CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core, const PstackOptions &, Dwarf::ImageCache &);
@@ -303,7 +304,7 @@ public:
     StopLWP(Process *proc_, lwpid_t lwp_) : proc(proc_), lwp(lwp_) { proc->stop(lwp); }
     ~StopLWP() { proc->resume(lwp); }
 };
-class LogProcess : public Process {
+class LogProcess final : public Process {
    const std::vector<std::string> &logs;
    std::list<ThreadStack> stacks;
 public:

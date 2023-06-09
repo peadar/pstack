@@ -22,7 +22,7 @@ template <> std::string readString<2>(const Reader &r, const Elf::Addr addr) {
 }
 
 namespace {
-class BoolPrint : public PythonTypePrinter<2> {
+class BoolPrint final : public PythonTypePrinter<2> {
     Elf::Addr print(const PythonPrinter<2> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         auto pio = (const PyIntObject *)pyo;
         pc->os << (pio->ob_ival ? "True" : "False");
@@ -33,7 +33,7 @@ class BoolPrint : public PythonTypePrinter<2> {
 };
 static BoolPrint boolPrinter;
 
-class ClassPrinter : public PythonTypePrinter<2> {
+class ClassPrinter final : public PythonTypePrinter<2> {
     Elf::Addr print(const PythonPrinter<2> *pc, const PyObject *po, const PyTypeObject *, Elf::Addr) const override {
         auto pco = reinterpret_cast<const PyClassObject *>(po);
         pc->os << "<class ";
@@ -46,7 +46,7 @@ class ClassPrinter : public PythonTypePrinter<2> {
 };
 static ClassPrinter classPrinter;
 
-class DictPrinter : public PythonTypePrinter<2> {
+class DictPrinter final : public PythonTypePrinter<2> {
     Elf::Addr print(const PythonPrinter<2> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         PyDictObject *pdo = (PyDictObject *)pyo;
         if (pdo->ma_used == 0) {
@@ -82,7 +82,7 @@ class DictPrinter : public PythonTypePrinter<2> {
 };
 static DictPrinter dictPrinter;
 
-class InstancePrinter : public PythonTypePrinter<2> {
+class InstancePrinter final : public PythonTypePrinter<2> {
     Elf::Addr print(const PythonPrinter<2> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         const auto pio = reinterpret_cast<const PyInstanceObject *>(pyo);
         pc->depth++;
@@ -102,7 +102,7 @@ class InstancePrinter : public PythonTypePrinter<2> {
 };
 static InstancePrinter instancePrinter;
 
-class IntPrint : public PythonTypePrinter<2> {
+class IntPrint final : public PythonTypePrinter<2> {
     Elf::Addr print(const PythonPrinter<2> *pc, const PyObject *pyo, const PyTypeObject *, Elf::Addr) const override {
         auto pio = (const PyIntObject *)pyo;
         pc->os << pio->ob_ival;

@@ -223,7 +223,7 @@ MmapReader::~MmapReader() {
    munmap((void *)data, len);
 }
 
-class MemOffsetReader : public MemReader {
+class MemOffsetReader final : public MemReader {
    Reader::csptr upstream;
 public:
    MemOffsetReader(const std::string &name, const MemReader *upstream_, Off offset, Off size)

@@ -228,7 +228,4 @@ Unit::purge()
     macros.reset(nullptr);
 }
 
-
-Unit::~Unit() = default;
-
 }

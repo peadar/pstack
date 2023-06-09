@@ -533,8 +533,6 @@ Object::findDebugSymbol(const string &name)
     return syment.disposition == CachedSymbol::SYM_FOUND ? syment.sym : undef();
 }
 
-Object::~Object() = default;
-
 Object *
 Object::getDebug() const
 {
@@ -740,7 +738,7 @@ ImageCache::getImageForName(const string &name, bool isDebug) {
 }
 
 ImageCache::ImageCache() : elfHits(0), elfLookups(0) {}
-ImageCache::~ImageCache() {
+ImageCache::~ImageCache() noexcept {
     if (verbose >= 2) {
         *debug << "ELF image cache: lookups: " << elfLookups << ", hits=" << elfHits << std::endl;
         for (const auto &items : cache) {

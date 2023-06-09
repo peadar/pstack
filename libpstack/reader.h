@@ -132,7 +132,7 @@ public:
 
 // Reader implementations
 
-class CacheReader : public Reader {
+class CacheReader final : public Reader {
     struct CacheEnt {
         std::string value;
         bool isNew;
@@ -185,14 +185,14 @@ public:
     virtual std::pair<intmax_t, size_t> readSLEB128(Off off) const override;
 };
 
-class MmapReader : public MemReader {
+class MmapReader final : public MemReader {
 public:
     MmapReader(const std::string &name_);
     ~MmapReader();
     std::string filename() const override { return descr; }
 };
 
-class NullReader : public Reader {
+class NullReader final : public Reader {
 public:
     virtual size_t read(Off, size_t, char *) const override {
         throw Exception() << " read from null reader";
@@ -204,7 +204,7 @@ public:
     std::string filename() const override { return "nowhere"; }
 };
 
-class OffsetReader : public Reader {
+class OffsetReader final : public Reader {
     Reader::csptr upstream;
     Off offset;
     Off length;
