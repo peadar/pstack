@@ -1,6 +1,5 @@
 #include <features.h>
 
-#define REGMAP(a,b)
 #include "libpstack/dwarf/archreg.h"
 #include "libpstack/dwarf.h"
 #include "libpstack/proc.h"
@@ -8,7 +7,6 @@
 #include "libpstack/global.h"
 #include "libpstack/stringify.h"
 #include "libpstack/ioflag.h"
-
 
 #include <link.h>
 #include <unistd.h>
@@ -23,6 +21,50 @@
 #include <sys/ucontext.h>
 #include <sys/wait.h>
 #include <signal.h>
+
+
+
+/*
+ * convert a gregset_t to an Elf::CoreRegs
+ */
+void
+gregset2core(Elf::CoreRegisters &core, const gregset_t greg) {
+#if defined(__i386__)
+    core.edi = greg[REG_EDI];
+    core.esi = greg[REG_ESI];
+    core.ebp = greg[REG_EBP];
+    core.esp = greg[REG_ESP];
+    core.ebx = greg[REG_EBX];
+    core.edx = greg[REG_EDX];
+    core.ecx = greg[REG_ECX];
+    core.eax = greg[REG_EAX];
+    core.eip = greg[REG_EIP];
+#elif defined(__amd64__)
+    core.r8 = greg[REG_R8];
+    core.r9 = greg[REG_R9];
+    core.r10 = greg[REG_R10];
+    core.r11 = greg[REG_R11];
+    core.r12 = greg[REG_R12];
+    core.r13 = greg[REG_R13];
+    core.r14 = greg[REG_R14];
+    core.r15 = greg[REG_R15];
+    core.rdi = greg[REG_RDI];
+    core.rsi = greg[REG_RSI];
+    core.rbp = greg[REG_RBP];
+    core.rbx = greg[REG_RBX];
+    core.rdx = greg[REG_RDX];
+    core.rax = greg[REG_RAX];
+    core.rcx = greg[REG_RCX];
+    core.rsp = greg[REG_RSP];
+    core.rip = greg[REG_RIP];
+#elif defined(__arm__)
+    // ARM has unfied types for NT_PRSTATUS and ucontext, and the offsets are
+    // actually the DWARF register numbers, too.
+    for (int i = 0; i < ELF_NGREG)
+        core.regs[i] = greg[i];
+#endif
+}
+
 
 Process::Process(Elf::Object::sptr exec, Reader::sptr memory,
                   const PstackOptions &options, Dwarf::ImageCache &cache)
@@ -792,7 +834,7 @@ Process::findSegment(Elf::Addr addr) const
     return std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>();
 }
 
-std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Sym>
 Process::resolveSymbolDetail(const char *name, bool includeDebug,
         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
 {
@@ -801,11 +843,11 @@ Process::resolveSymbolDetail(const char *name, bool includeDebug,
            continue;
         auto sym = loaded.second->findDynamicSymbol(name);
         if (sym.st_shndx != SHN_UNDEF)
-           return std::make_tuple(loaded.second, loaded.first, sym.st_value + loaded.first);
+           return std::make_tuple(loaded.second, loaded.first, sym);
         if (includeDebug) {
            auto sym = loaded.second->findDebugSymbol(name);
            if (sym.st_shndx != SHN_UNDEF)
-              return std::make_tuple(loaded.second, loaded.first, sym.st_value + loaded.first);
+              return std::make_tuple(loaded.second, loaded.first, sym);
         }
     }
     throw (Exception() << "symbol " << name << " not found");
@@ -816,7 +858,7 @@ Process::resolveSymbol(const char *name, bool includeDebug,
         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
 {
     auto info = resolveSymbolDetail(name, includeDebug, match);
-    return std::get<2>(info);
+    return std::get<1>(info) + std::get<2>(info).st_value;
 
 }
 
@@ -944,30 +986,11 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                     if (sigContextAddr != 0) {
                        // This mapping is based on DWARF regnos, and ucontext.h
                        gregset_t regs;
-                       static const struct {
-                           int dwarf;
-                           int greg;
-                       }  gregmap[] = {
-                           { 1, REG_EAX },
-                           { 2, REG_ECX },
-                           { 3, REG_EBX },
-                           { 4, REG_ESP },
-                           { 5, REG_EBP },
-                           { 6, REG_ESI },
-                           { 7, REG_EDI },
-                           { 8, REG_EIP },
-                           { 9, REG_EFL },
-                           { 10, REG_CS },
-                           { 11, REG_SS },
-                           { 12, REG_DS },
-                           { 13, REG_ES },
-                           { 14, REG_FS }
-                       };
                        p.io->readObj(sigContextAddr, &regs);
-                       nextFrame.regs = curFrame.regs;
-                       for (auto &reg : gregmap)
-                           nextFrame.setReg(reg.dwarf, regs[reg.greg]);
                        nextFrame.mechanism = Dwarf::UnwindMechanism::TRAMPOLINE;
+                       Elf::CoreRegisters core;
+                       gregset2core(core, regs);
+                       nextFrame.setCoreRegs(core);
                        continue;
                     }
                 }

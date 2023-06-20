@@ -127,16 +127,18 @@ add_library(dwelf ${LIBTYPE}
          )
 
 
-add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc logproc.cc
+add_library(procman ${LIBTYPE} dead.cc self.cc live.cc process.cc proc_service.cc logproc.cc
    dwarfproc.cc procdump.cc ${stubsrc})
 
 add_executable(canal canal.cc ${pysrc})
+add_executable(smol smol.cc)
 
 add_executable(${PSTACK_BIN} pstack.cc ${pysrc})
 
 target_link_libraries(procman ${LTHREADDB} dwelf)
 target_link_libraries(${PSTACK_BIN} dwelf procman)
 target_link_libraries(canal dwelf procman)
+target_link_libraries(smol dwelf procman)
 
 if (TIDY)
 set (CLANG_TIDY "clang-tidy;-checks=*,-*readability-braces-around-statements,-fuchsia*,-hicpp-braces-around-statements,-*llvmlibc*")

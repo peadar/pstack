@@ -12,6 +12,7 @@ extern "C" {
 #include <sstream>
 #include <functional>
 #include <bitset>
+#include <ucontext.h> // for gregset_t
 
 #include "libpstack/ps_callback.h"
 #include "libpstack/dwarf.h"
@@ -151,7 +152,6 @@ struct AddressRange {
 };
 
 class Process : public ps_prochandle {
-    Elf::Addr findRDebugAddr();
     Elf::Addr entry;
     Elf::Addr interpBase;
     void loadSharedObjects(Elf::Addr);
@@ -159,6 +159,7 @@ public:
     Elf::Addr vdsoBase;
 
 protected:
+    virtual Elf::Addr findRDebugAddr();
     virtual bool loadSharedObjectsFromFileNote() = 0;
     td_thragent_t *agent;
 public:
@@ -198,7 +199,7 @@ public:
 
     // find symbol data of named symbol in the process.
     // like resolveSymbol, but return the library and that library's load address as well as the address in the process.
-    std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+    std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Sym>
     resolveSymbolDetail(const char *name, bool includeDebug,
                         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match =
                            [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
@@ -250,6 +251,27 @@ protected:
     bool loadSharedObjectsFromFileNote() override;
     std::vector<AddressRange> addressSpace() const override;
 };
+
+
+class SelfProcess : public Process {
+    pid_t pid;
+public:
+    // attach to existing process.
+    SelfProcess(const Elf::Object::sptr &, const PstackOptions &, Dwarf::ImageCache &);
+
+    virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
+    virtual void stop(pid_t) override;
+    virtual void resume(pid_t) override;
+    void stopProcess() override;
+    void resumeProcess() override;
+    virtual void load() override;
+    virtual pid_t getPID() const override;
+protected:
+    virtual Elf::Addr findRDebugAddr();
+    bool loadSharedObjectsFromFileNote() override;
+    std::vector<AddressRange> addressSpace() const override;
+};
+
 
 class CoreProcess;
 class CoreReader : public Reader {
@@ -326,5 +348,7 @@ struct WaitStatus {
 };
 
 std::ostream &operator << (std::ostream &os, WaitStatus ws);
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::StackFrame, Process *> &jt);
+void gregset2core(Elf::CoreRegisters &core, const gregset_t greg);
 
 #endif
