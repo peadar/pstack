@@ -238,6 +238,9 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
             headerCount = sectionHeaders[0]->shdr.sh_size;
         off += elfHeader.e_shentsize;
     }
+    if (sectionHeaders.size() == 0) {
+        sectionHeaders.push_back(std::make_unique<Section>());
+    }
 
     if (elfHeader.e_shstrndx != SHN_UNDEF) {
        // Create a mapping from section header names to section headers.
