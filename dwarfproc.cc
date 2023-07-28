@@ -13,27 +13,27 @@ namespace Dwarf {
 void
 StackFrame::setCoreRegs(const Elf::CoreRegisters &sys)
 {
-#define REGMAP(number, field) setReg(number, sys.field);
-#include "libpstack/dwarf/archreg.h"
+#define REGMAP(number, field) ::Elf::setReg(regs, number, sys.field);
+#include "libpstack/archreg.h"
 #undef REGMAP
 }
 
 void
 StackFrame::getCoreRegs(Elf::CoreRegisters &core) const
 {
-#define REGMAP(number, field) core.field = getReg(number);
-#include "libpstack/dwarf/archreg.h"
+#define REGMAP(number, field) core.field = Elf::getReg(regs, number);
+#include "libpstack/archreg.h"
 #undef REGMAP
 }
 
 Elf::Addr
 StackFrame::rawIP() const
 {
-    return getReg(IPREG);
+    return Elf::getReg(regs, IPREG);
 }
 
-Elf::Addr
-StackFrame::scopeIP() const
+Dwarf::ProcessLocation
+StackFrame::scopeIP(const Process &proc) const
 {
     // For a return address on the stack, it normally represents the next
     // instruction after a call. For functions that don't return, this might
@@ -46,37 +46,33 @@ StackFrame::scopeIP() const
     // the process's register state - this is the currently executing
     // instruction, so accurately reflects the position in the top stack frame.
     //
-    // The other is for signal trampolines - this is the first instruction that
-    // executes on return from the signal handler, and the stack frame is
-    // synthetically configured so this instruction is in fact the first one in
-    // the trampoline function (eg, __restore_rt)
+    // The other is for signal trampolines - In this case, the return address
+    // has been synthesized to be the entrypoint of a function (eg,
+    // __restore_rt) to handle return from the signal handler, and will be the
+    // first instruction in the function - there's no previous call instruction
+    // to point at, so we use it directly.
     auto raw = rawIP();
     if (raw == 0)
-       return 0;
-    if (mechanism == UnwindMechanism::MACHINEREGS || (cie != nullptr && cie->isSignalHandler))
-       return raw;
-    return raw - 1;
-}
+       return { proc, raw };
+    if (mechanism == UnwindMechanism::MACHINEREGS)
+       return { proc, raw };
+    Dwarf::ProcessLocation location(proc, raw);
 
-Dwarf::DIE &StackFrame::function() const {
-    if (!function_) {
-        auto objIp = scopeIP() - elfReloc;
-        Dwarf::Unit::sptr u = dwarf->lookupUnit(objIp);
-        if (u) {
-            function_ = u->root().findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram);
-        }
-    }
-    return function_;
+    auto lcie = location.cie();
+    if (lcie != nullptr && lcie->isSignalHandler)
+       return location;
+    return {proc, raw - 1};
 }
 
 void
 StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *stack) const
 {
-    auto f = function();
+    ProcessLocation location = scopeIP(p);
+    auto f = location.die();
     if (f) {
         auto base = f.attribute(DW_AT_frame_base);
         if (base.valid()) {
-            stack->push(stack->eval(p, base, this, elfReloc) + offset);
+            stack->push(stack->eval(p, base, this, location.elfReloc) + offset);
             stack->isReg = false;
             return;
         }
@@ -111,7 +107,8 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
 {
     Unit::sptr unit = attr.die.getUnit();
     const Info *dwarf = unit->dwarf;
-    auto ip = frame->scopeIP();
+    auto loc = frame->scopeIP(proc);
+    auto ip = loc.address();
 
     const auto &unitEntry = unit->root();
     auto unitLow = unitEntry.attribute(DW_AT_low_pc);
@@ -139,7 +136,7 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                             auto len = r.getuleb128();
                             if (base + start <= ip && ip < base + end) {
                                DWARFReader exr(r.io, r.getOffset(), r.getOffset() + len);
-                               return eval(proc, exr, frame, frame->elfReloc);
+                               return eval(proc, exr, frame, loc.elfReloc);
                             }
                             r.skip(len);
                             break;
@@ -162,7 +159,7 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                             auto len = r.getuleb128();
                             if (base + start <= ip && ip < base + end) {
                                DWARFReader exr(r.io, r.getOffset(), r.getOffset() + len);
-                               return eval(proc, exr, frame, frame->elfReloc);
+                               return eval(proc, exr, frame, loc.elfReloc);
                             }
                             r.skip(len);
                             break;
@@ -186,7 +183,7 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                     auto len = r.getuint(2);
                     if (ip >= base + start && ip < base + end) {
                         DWARFReader exr(r.io, r.getOffset(), r.getOffset() + Elf::Word(len));
-                        return eval(proc, exr, frame, frame->elfReloc);
+                        return eval(proc, exr, frame, loc.elfReloc);
                     }
                     r.skip(len);
                 }
@@ -268,7 +265,7 @@ ExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *fra
             case DW_OP_breg24: case DW_OP_breg25: case DW_OP_breg26: case DW_OP_breg27:
             case DW_OP_breg28: case DW_OP_breg29: case DW_OP_breg30: case DW_OP_breg31: {
                 Elf::Off offset = r.getsleb128();
-                push(frame->getReg(op - DW_OP_breg0) + offset);
+                push(Elf::getReg(frame->regs, op - DW_OP_breg0) + offset);
                 break;
             }
 
@@ -374,10 +371,10 @@ ExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *fra
             case DW_OP_reg28: case DW_OP_reg29: case DW_OP_reg30: case DW_OP_reg31:
                 isReg = true;
                 inReg = op - DW_OP_reg0;
-                push(frame->getReg(op - DW_OP_reg0));
+                push(Elf::getReg(frame->regs, op - DW_OP_reg0));
                 break;
             case DW_OP_regx:
-                push(frame->getReg(r.getsleb128()));
+                push(Elf::getReg(frame->regs, r.getsleb128()));
                 break;
 
             case DW_OP_entry_value:
@@ -392,7 +389,8 @@ ExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *fra
                 break; // XXX: the returned value is not a location, but the underlying value itself.
             case DW_OP_GNU_parameter_ref:
                 {
-                  auto unit = frame->function().getUnit();
+                  auto loc = frame->scopeIP(proc);
+                  auto unit = loc.die().getUnit();
                   auto off = r.getuint(4);
                   auto die = unit->offsetToDIE(DIE(), off + unit->offset);
                   std::clog << die << "\n";
@@ -413,13 +411,45 @@ ExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *fra
     return poptop();
 }
 
-Elf::Addr
-StackFrame::getCFA(const Process &proc, const CallFrame &dcf) const
-{
+
+StackFrame::StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs_)
+    : regs(regs_)
+    , cfa(0)
+    , mechanism(mechanism)
+    , isSignalTrampoline(false)
+{}
+
+std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
+    auto location = scopeIP(p);
+    auto cfi = location.cfi();
+    auto fde = location.fde();
+    auto cie = location.cie();
+    if (fde == nullptr || cie == nullptr)
+        throw (Exception() << "no FDE/CIE for instruction address "
+              << std::hex << location.address() << std::dec << " in " << *location.elf()->io);
+
+    if (cie->isSignalHandler)
+       isSignalTrampoline = true;
+
+    // relocate from process address to object address
+    Elf::Off objaddr = location.address() - location.elfReloc;
+
+    DWARFReader r(cfi->io, fde->instructions, fde->end);
+
+    auto iter = location.dwarf()->callFrameForAddr.find(objaddr);
+    if (iter == location.dwarf()->callFrameForAddr.end())
+        location.dwarf()->callFrameForAddr[objaddr] = cie->execInsns(r, fde->iloc, objaddr);
+
+    const CallFrame &dcf = location.dwarf()->callFrameForAddr[objaddr];
+
+    // Given the registers available, and the state of the call unwind data,
+    // calculate the CFA at this point.
+    Elf::CoreRegisters out;
     switch (dcf.cfaValue.type) {
         case SAME:
         case UNDEF:
-            return getReg(dcf.cfaReg);
+            cfa = Elf::getReg(regs, dcf.cfaReg);
+            break;
         case VAL_OFFSET:
         case VAL_EXPRESSION:
         case REG:
@@ -428,84 +458,27 @@ StackFrame::getCFA(const Process &proc, const CallFrame &dcf) const
             break;
 
         case OFFSET:
-            return getReg(dcf.cfaReg) + dcf.cfaValue.u.offset;
+            cfa = Elf::getReg(regs, dcf.cfaReg) + dcf.cfaValue.u.offset;
+            break;
+
         case EXPRESSION: {
             ExpressionStack stack;
             auto start = dcf.cfaValue.u.expression.offset;
             auto end = start + dcf.cfaValue.u.expression.length;
-            DWARFReader r(frameInfo->io, start, end);
-            return stack.eval(proc, r, this, elfReloc);
+            DWARFReader r(location.cfi()->io, start, end);
+            cfa = stack.eval(p, r, this, location.elfReloc);
+            break;
         }
+        default:
+            cfa = -1;
     }
-    return -1;
-}
-
-void
-StackFrame::findObjectCode(Process &p)
-{
-    // just do this once, it's expensive.
-    if (elf)
-        return;
-
-    std::tie(elfReloc, elf, phdr) = p.findSegment(scopeIP());
-
-    if (elf == nullptr)
-        return;
-
-    dwarf = p.getDwarf(elf);
-    // Try and find DWARF data with debug frame information, or an eh_frame section.
-    if (!dwarf)
-        return;
-
-    auto frame = dwarf->getEhFrame();
-    if (!frame) {
-        frame = dwarf->getDebugFrame();
-        if (!frame)
-            return;
-    }
-    fde = frame->findFDE(scopeIP() - elfReloc);
-    if (fde == nullptr)
-        return;
-
-    frameInfo = frame;
-    cie = &frame->cies[fde->cieOff];
-    if (cie->isSignalHandler)
-       isSignalTrampoline = true;
-}
-
-bool
-StackFrame::unwind(Process &p, StackFrame &out)
-{
-    findObjectCode(p);
-    if (elf == nullptr)
-        throw (Exception() << "no image for instruction address "
-              << std::hex << scopeIP() << std::dec);
-
-    if (fde == nullptr)
-        throw (Exception() << "no FDE for instruction address "
-              << std::hex << scopeIP() << std::dec << " in " << *elf->io);
-
-    // relocate from process address to object address
-    Elf::Off objaddr = scopeIP() - elfReloc;
-
-    DWARFReader r(frameInfo->io, fde->instructions, fde->end);
-
-    auto iter = dwarf->callFrameForAddr.find(objaddr);
-    if (iter == dwarf->callFrameForAddr.end())
-        dwarf->callFrameForAddr[objaddr] = cie->execInsns(r, fde->iloc, objaddr);
-
-    const CallFrame &dcf = dwarf->callFrameForAddr[objaddr];
-
-    // Given the registers available, and the state of the call unwind data,
-    // calculate the CFA at this point.
-    cfa = getCFA(p, dcf);
     auto rarInfo = dcf.registers.find(cie->rar);
 
 #ifdef CFA_RESTORE_REGNO
     // "The CFA is defined to be the stack pointer in the calling frame."
     // This could get updated if there's a rule for CFA_RESTORE_REGNO, but
     // that's the stack pointer, and it's unlikely there will be an encoding for this
-    out.setReg(CFA_RESTORE_REGNO, cfa);
+    Elf::setReg(out, CFA_RESTORE_REGNO, cfa);
 #endif
     for (auto &entry : dcf.registers) {
         const auto &unwind = entry.second;
@@ -513,32 +486,30 @@ StackFrame::unwind(Process &p, StackFrame &out)
         switch (unwind.type) {
             case UNDEF:
             case SAME:
-                out.setReg(regno, getReg(regno));
+                Elf::setReg(out, regno, Elf::getReg(regs, regno));
                 break;
             case OFFSET: {
                 Elf::Addr reg; // XXX: assume addrLen = sizeof Elf_Addr
                 p.io->readObj(cfa + unwind.u.offset, &reg);
-                out.setReg(regno, reg);
+                Elf::setReg(out, regno, reg);
                 break;
             }
             case REG:
-                out.setReg(regno, getReg(unwind.u.reg));
+                Elf::setReg(out, regno, Elf::getReg(out,unwind.u.reg));
                 break;
-
             case VAL_EXPRESSION:
             case EXPRESSION: {
                 ExpressionStack stack;
                 stack.push(cfa);
-                DWARFReader reader(frameInfo->io, unwind.u.expression.offset,
+                DWARFReader reader(cfi->io, unwind.u.expression.offset,
                       unwind.u.expression.offset + unwind.u.expression.length);
-                auto val = stack.eval(p, reader, this, elfReloc);
+                auto val = stack.eval(p, reader, this, location.elfReloc);
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                 if (unwind.type == EXPRESSION)
                     p.io->readObj(val, &val);
-                out.setReg(regno, val);
+                Elf::setReg(out, regno, val);
                 break;
             }
-
             default:
             case ARCH:
                 break;
@@ -549,34 +520,127 @@ StackFrame::unwind(Process &p, StackFrame &out)
     if (rarInfo == dcf.registers.end() || rarInfo->second.type == UNDEF || cfa == 0) {
         if (verbose > 1) {
            *debug << "DWARF unwinding stopped at "
-              << std::hex << scopeIP() << std::dec
+              << std::hex << location.address() << std::dec
               << ": " <<
               (rarInfo == dcf.registers.end() ? "no RAR register found"
                : rarInfo->second.type == UNDEF ? "RAR register undefined"
                : "null CFA for frame")
               << std::endl;
         }
-        return false;
+        return std::nullopt;
     }
 
     // We know the RAR is defined, so make that the instruction pointer in the
     // new frame.
     if (cie && cie->rar != IPREG)
-       out.setReg(IPREG, out.getReg(cie->rar));
-    out.mechanism = UnwindMechanism::DWARF;
-    return true;
+       Elf::setReg(out, IPREG, Elf::getReg(out, cie->rar));
+    return out;
+}
+
+
+const MaybeNamedSymbol &CodeLocation::symbol() const {
+    if (!symbol_ && dwarf_) {
+        symbol_ = dwarf_->elf->findSymbolByAddress(location_, STT_NOTYPE);
+    }
+    return symbol_;
+}
+
+const MaybeNamedSymbol ProcessLocation::symbol() const {
+    if (codeloc)
+        return codeloc->symbol();
+    return std::nullopt;
+}
+
+const FDE *
+CodeLocation::fde() const {
+    if (fde_ == nullptr) {
+        fde_ = cfi()->findFDE(location_);
+    }
+    return fde_;
+}
+
+const FDE *
+ProcessLocation::fde() const {
+    return codeloc->fde();
+}
+
+const DIE &
+CodeLocation::die() const {
+    if (!die_ && dwarf_) {
+        Dwarf::Unit::sptr u = dwarf_->lookupUnit(location_);
+        if (u) {
+            die_ = u->root().findEntryForAddr(location_, Dwarf::DW_TAG_subprogram);
+        }
+    }
+    return die_;
+}
+
+const DIE &
+ProcessLocation::die() const {
+    return codeloc->die();
+}
+
+ProcessLocation::ProcessLocation(const Process &proc, Elf::Addr address_) {
+    set(proc, address_);
+}
+
+const CIE *
+ProcessLocation::cie() const {
+    auto lfde = fde();
+    if (lfde == nullptr)
+        return nullptr;
+    return &cfi()->cies.at(lfde->cieOff);
+}
+
+std::vector<std::pair<std::string, int>>
+CodeLocation::source() const
+{
+    if (dwarf_)
+        return dwarf_->sourceFromAddr(location_);
+    return {};
+}
+
+std::vector<std::pair<std::string, int>>
+ProcessLocation::source() const {
+    return codeloc ? codeloc->source() : std::vector<std::pair<std::string, int>>();
+}
+
+CodeLocation::CodeLocation() : location_(0), phdr_(nullptr), cie_(nullptr), fde_(nullptr), cfi_(nullptr) {
+}
+
+CodeLocation::CodeLocation(Dwarf::Info::sptr info, const Elf::Phdr *phdr, Elf::Addr off)
+    : location_(off)
+    , dwarf_(info), phdr_(phdr), cie_(nullptr), fde_(nullptr), cfi_(nullptr)
+{
 }
 
 void
-StackFrame::setReg(unsigned regno, cpureg_t regval)
+ProcessLocation::set(const Process &proc, Elf::Addr address)
 {
-    regs[regno] = regval;
+    auto [ elfReloc, elf, phdr ] = proc.findSegment(address);
+    auto dwarf = elf ? proc.getDwarf(elf) : nullptr;
+    if (dwarf) {
+        codeloc = std::make_shared<CodeLocation>(dwarf, phdr, address - elfReloc);
+        this->elfReloc = elfReloc;
+    } else {
+        this->codeloc = nullptr;
+    }
 }
 
-cpureg_t
-StackFrame::getReg(unsigned regno) const
-{
-    auto i = regs.find(regno);
-    return i != regs.end() ? i->second : 0;
+const CFI *
+CodeLocation::cfi() const {
+
+    CFI *cfi = dwarf_->getCFI();
+    if (cfi == nullptr)
+        throw (Exception() << "no CFI for " << *dwarf_->elf->io);
+    return cfi;
 }
+
+const CFI *
+ProcessLocation::cfi() const {
+    if (codeloc == nullptr)
+        throw Exception() << "no object for address";
+    return codeloc->cfi();
+}
+
 }

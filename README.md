@@ -168,26 +168,3 @@ enable, add `-DPYTHON3=ON -DPYTHON3_SOURCE=<path-to-python3>` to the cmake
 commandline.  Pay attention to the output of cmake to ensure all the features
 you want are enabled.
 
-## Alternatives - using gdb
-
-The default implementation on Redhat/fedora/CentOS based systems is
-a simple wrapper script that attaches to the process with gdb, and
-asks gdb to generate the backtrace. gdb is a great tool, and gives
-good accurate results, but it is intended for interactive debugging,
-can be slow to attach to processes, and will leave them suspended for
-a signficant amount of time.
-
-## Alternatives - using a pstack implementation that uses frame pointers
-
-Debian systems have a pstack version that relies on "frame pointers",
-i.e., explicit registers assigned when compiling the code to indicate
-where stack frames start and end. This was common in older environments,
-like 32-bit x86, and you can explicitly add frame pointers when compiling
-by using `-fno-frame-pointer-omission`
-
-However, modern ABIs eschew the use of frame pointers, and instead use
-tables of unwinding data that parallel the executable code that need
-to be parsed to properly unwind the stack of a program. This makes such
-pstack variants unreliable when unwinding the stack
-
-

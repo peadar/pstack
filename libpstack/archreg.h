@@ -1,4 +1,7 @@
 /* Maps from DWARF register numbers to pt_regs fields for each architecture. */
+#ifndef REGMAP
+#define REGMAP(a, b)
+#endif
 #ifdef __i386__
 #define IPREG 8
 #define BPREG 5
@@ -149,3 +152,4 @@ REGMAP(31, sp)
 REGMAP(32, pc)
 #endif
 #endif
+#undef REGMAP

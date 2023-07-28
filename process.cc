@@ -1,14 +1,12 @@
 #include <features.h>
 
-#define REGMAP(a,b)
-#include "libpstack/dwarf/archreg.h"
+#include "libpstack/archreg.h"
 #include "libpstack/dwarf.h"
 #include "libpstack/proc.h"
 #include "libpstack/ps_callback.h"
 #include "libpstack/global.h"
 #include "libpstack/stringify.h"
 #include "libpstack/ioflag.h"
-
 
 #include <link.h>
 #include <unistd.h>
@@ -23,6 +21,50 @@
 #include <sys/ucontext.h>
 #include <sys/wait.h>
 #include <signal.h>
+
+
+
+/*
+ * convert a gregset_t to an Elf::CoreRegs
+ */
+void
+gregset2core(Elf::CoreRegisters &core, const gregset_t greg) {
+#if defined(__i386__)
+    core.edi = greg[REG_EDI];
+    core.esi = greg[REG_ESI];
+    core.ebp = greg[REG_EBP];
+    core.esp = greg[REG_ESP];
+    core.ebx = greg[REG_EBX];
+    core.edx = greg[REG_EDX];
+    core.ecx = greg[REG_ECX];
+    core.eax = greg[REG_EAX];
+    core.eip = greg[REG_EIP];
+#elif defined(__amd64__)
+    core.r8 = greg[REG_R8];
+    core.r9 = greg[REG_R9];
+    core.r10 = greg[REG_R10];
+    core.r11 = greg[REG_R11];
+    core.r12 = greg[REG_R12];
+    core.r13 = greg[REG_R13];
+    core.r14 = greg[REG_R14];
+    core.r15 = greg[REG_R15];
+    core.rdi = greg[REG_RDI];
+    core.rsi = greg[REG_RSI];
+    core.rbp = greg[REG_RBP];
+    core.rbx = greg[REG_RBX];
+    core.rdx = greg[REG_RDX];
+    core.rax = greg[REG_RAX];
+    core.rcx = greg[REG_RCX];
+    core.rsp = greg[REG_RSP];
+    core.rip = greg[REG_RIP];
+#elif defined(__arm__)
+    // ARM has unfied types for NT_PRSTATUS and ucontext, and the offsets are
+    // actually the DWARF register numbers, too.
+    for (int i = 0; i < ELF_NGREG)
+        core.regs[i] = greg[i];
+#endif
+}
+
 
 Process::Process(Elf::Object::sptr exec, Reader::sptr memory,
                   const PstackOptions &options, Dwarf::ImageCache &cache)
@@ -84,7 +126,7 @@ Process::load()
 }
 
 Dwarf::Info::sptr
-Process::getDwarf(Elf::Object::sptr elf)
+Process::getDwarf(Elf::Object::sptr elf) const
 {
     return imageCache.getDwarf(elf);
 }
@@ -219,45 +261,33 @@ dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
     return printedParent;
 }
 
+// Data useful for both JSON and text printed formats.
 struct PrintableFrame {
+    const Process &proc;
     int frameNumber;
     std::string dieName;
-    std::string symName;
-    Elf::Sym symbol_;
-    std::vector<std::pair<std::string, int>> source;
-    bool searchedSym = false;
     const PstackOptions &options;
     Elf::Addr functionOffset;
-    Elf::Addr objIp;
     const Dwarf::StackFrame &frame;
     std::vector<Dwarf::DIE> inlined; // func + inlined.
-    const Elf::Sym &symbol();
-    PrintableFrame(const Dwarf::StackFrame &frame, int frameNo, const PstackOptions &options);
+    PrintableFrame(const Process &, const Dwarf::StackFrame &frame, int frameNo, const PstackOptions &options);
     PrintableFrame(const PrintableFrame &) = delete;
     PrintableFrame() = delete;
 };
 
-const Elf::Sym &
-PrintableFrame::symbol() {
-    if (!searchedSym) {
-        if (frame.elf)
-            frame.elf->findSymbolByAddress(objIp, STT_FUNC, symbol_, symName);
-        searchedSym = true;
-    }
-    return symbol_;
-}
-
-PrintableFrame::PrintableFrame(const Dwarf::StackFrame &frame, int frameNo, const PstackOptions &options)
-    : frameNumber(frameNo)
+PrintableFrame::PrintableFrame(const Process &proc, const Dwarf::StackFrame &frame, int frameNo, const PstackOptions &options)
+    : proc(proc)
+    , frameNumber(frameNo)
     , options(options)
     , functionOffset(std::numeric_limits<Elf::Addr>::max())
     , frame(frame)
 {
-    symbol_.st_shndx = SHN_UNDEF;
-    if (frame.elf == nullptr)
+    auto location = frame.scopeIP(proc);
+
+    if (location.elf() == nullptr)
         return;
-    objIp = frame.scopeIP() - frame.elfReloc;
-    auto function = frame.function();
+    Elf::Addr objIp = location.address() - location.elfReloc;
+    auto function = location.die();
     if (function) {
         std::ostringstream sos;
         ::dieName(sos, function);
@@ -288,12 +318,10 @@ PrintableFrame::PrintableFrame(const Dwarf::StackFrame &frame, int frameNo, cons
         // enough info to find the first address.
         //
         // Fall back to using the ELF symbol instead.
-        auto &sym = symbol();
-        if (sym.st_shndx != SHN_UNDEF)
-            functionOffset = objIp - symbol().st_value;
+        auto maybesym = location.symbol();
+        if (maybesym)
+            functionOffset = objIp - maybesym->first.st_value;
     }
-    if (!options.nosrc)
-        source = frame.dwarf->sourceFromAddr(objIp);
 }
 
 std::ostream &
@@ -305,50 +333,55 @@ operator << (std::ostream &os, const JSON<std::pair<std::string, int>> &jt)
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<std::pair<const Elf::Sym *, std::string>> &js)
+operator << (std::ostream &os, const JSON<std::pair<Elf::Sym, std::string>> &js)
 {
     const auto &obj = js.object;
     return JObject(os)
         .field("st_name", obj.second)
-        .field("st_value", obj.first->st_value)
-        .field("st_size", obj.first->st_size)
-        .field("st_info", int(obj.first->st_info))
-        .field("st_other", int(obj.first->st_other))
-        .field("st_shndx", obj.first->st_shndx);
+        .field("st_value", obj.first.st_value)
+        .field("st_size", obj.first.st_size)
+        .field("st_info", int(obj.first.st_info))
+        .field("st_other", int(obj.first.st_other))
+        .field("st_shndx", obj.first.st_shndx);
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<Dwarf::StackFrame, Process *> &jt)
+operator << (std::ostream &os, const JSON<Dwarf::ProcessLocation, const Process *> &)
+{
+    return os;
+}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<Dwarf::StackFrame, const Process *> &jt)
 {
     auto &frame =jt.object;
     PstackOptions options;
     options.doargs = true;
-    PrintableFrame pframe(frame, 0, options);
+    Dwarf::ProcessLocation location = frame.scopeIP(*jt.context);
+    PrintableFrame pframe(*jt.context, frame, 0, options);
 
     JObject jo(os);
     jo
-        .field("ip", frame.rawIP());
-    if (frame.elf)
-        jo
-            .field("object", stringify(*frame.elf->io))
-            .field("loadaddr", frame.elfReloc)
-            .field("source", pframe.source)
-            .field("die", pframe.dieName)
-            .field("cfa", frame.cfa)
-            .field("offset", pframe.functionOffset)
-            .field("trampoline", frame.isSignalTrampoline)
+        .field("ip", frame.rawIP())
+        .field("offset", pframe.functionOffset)
+        .field("trampoline", frame.isSignalTrampoline)
+        .field("die", pframe.dieName)
+        .field("loadaddr", location.elfReloc)
         ;
-    const auto &sym = pframe.symbol();
-    if (sym.st_shndx != SHN_UNDEF)
-        jo.field("symbol", std::make_pair(&sym, pframe.symName));
+
+    const auto &sym = location.symbol();
+    if (sym)
+        jo.field("symbol", *sym);
     else
         jo.field("symbol", JsonNull());
+
+    jo.field("source", location.source());
 
     return jo;
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<ThreadStack, Process *> &ts)
+operator << (std::ostream &os, const JSON<ThreadStack, const Process *> &ts)
 {
     return JObject(os)
         .field("ti_tid", ts.object.info.ti_tid)
@@ -529,11 +562,12 @@ operator << (std::ostream &os, const RemoteValue &rv)
 std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
-    if (!ap.pframe.frame.function() || !ap.pframe.options.doargs)
+    Dwarf::ProcessLocation location = ap.pframe.frame.scopeIP(ap.p);
+    if (!location.die() || !ap.pframe.options.doargs)
         return os;
     using namespace Dwarf;
     const char *sep = "";
-    for (auto child : ap.pframe.frame.function().children()) {
+    for (auto child : location.die().children()) {
         switch (child.tag()) {
             case DW_TAG_formal_parameter: {
                 auto name = child.name();
@@ -545,7 +579,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
 
                     if (attr.valid()) {
                         Dwarf::ExpressionStack fbstack;
-                        addr = fbstack.eval(ap.p, attr, &ap.pframe.frame, ap.pframe.frame.elfReloc);
+                        addr = fbstack.eval(ap.p, attr, &ap.pframe.frame, location.elfReloc);
                         os << "=";
                         try {
                            if (fbstack.isReg)
@@ -595,7 +629,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread,
        << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
     int frameNo = 0;
     for (auto &frame : thread.stack)
-        dumpFrameText(os, PrintableFrame(frame, frameNo++, options), frame);
+        dumpFrameText(os, PrintableFrame(*this, frame, frameNo++, options), frame);
     return os;
 }
 
@@ -605,7 +639,9 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, const Dwa
 
     IOFlagSave _(os);
 
-    std::pair<std::string, int> src = pframe.source.size() ? pframe.source[0] : std::make_pair( "", std::numeric_limits<Elf::Addr>::max());
+    Dwarf::ProcessLocation location = pframe.frame.scopeIP(pframe.proc);
+    auto source = location.source();
+    std::pair<std::string, int> src = source.size() ? source[0] : std::make_pair( "", std::numeric_limits<Elf::Addr>::max());
     for (auto i = pframe.inlined.rbegin(); i != pframe.inlined.rend(); ++i) {
        os << "#"
            << std::left << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
@@ -633,20 +669,20 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, const Dwa
         << std::right << "0x" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0')
         << frame.rawIP();
 
-    if (verbose > 0)
-        os << "/" << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame.cfa;
     os << std::dec;
 
-    if (frame.elf) {
+    if (location.valid()) {
         std::string name;
         std::string flags = "";
         if (frame.isSignalTrampoline)
             flags += "*";
+
+        auto sym = location.symbol();
         if (pframe.dieName != "") {
             name = pframe.dieName;
-        } else if (pframe.symName != "") {
-            name = pframe.symName;
-            flags += pframe.frame.function() ? "%" : "!";
+        } else if (sym) {
+            name = sym->second;
+            flags += location.die() ? "%" : "!";
         } else {
             name = "<unknown>";
         }
@@ -657,9 +693,9 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, const Dwa
 
         if (pframe.functionOffset != std::numeric_limits<Elf::Addr>::max())
             os << "+" << pframe.functionOffset;
-        os << " in " << stringify(*frame.elf->io);
+        os << " in " << stringify(*location.elf()->io);
         if (verbose)
-           os << "@0x" << std::hex << frame.rawIP() - frame.elfReloc << std::dec;
+           os << "@0x" << std::hex << frame.rawIP() - location.elfReloc << std::dec;
         if (src.first != "")
            os << " at " << src.first << ":" << std::dec << src.second;
     } else {
@@ -792,7 +828,7 @@ Process::findSegment(Elf::Addr addr) const
     return std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>();
 }
 
-std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Sym>
 Process::resolveSymbolDetail(const char *name, bool includeDebug,
         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
 {
@@ -801,11 +837,11 @@ Process::resolveSymbolDetail(const char *name, bool includeDebug,
            continue;
         auto sym = loaded.second->findDynamicSymbol(name);
         if (sym.st_shndx != SHN_UNDEF)
-           return std::make_tuple(loaded.second, loaded.first, sym.st_value + loaded.first);
+           return std::make_tuple(loaded.second, loaded.first, sym);
         if (includeDebug) {
            auto sym = loaded.second->findDebugSymbol(name);
            if (sym.st_shndx != SHN_UNDEF)
-              return std::make_tuple(loaded.second, loaded.first, sym.st_value + loaded.first);
+              return std::make_tuple(loaded.second, loaded.first, sym);
         }
     }
     throw (Exception() << "symbol " << name << " not found");
@@ -816,7 +852,7 @@ Process::resolveSymbol(const char *name, bool includeDebug,
         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
 {
     auto info = resolveSymbolDetail(name, includeDebug, match);
-    return std::get<2>(info);
+    return std::get<1>(info) + std::get<2>(info).st_value;
 
 }
 
@@ -840,23 +876,24 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
 #endif
 
     try {
-        stack.emplace_back(Dwarf::UnwindMechanism::MACHINEREGS);
+        stack.emplace_back(Dwarf::UnwindMechanism::MACHINEREGS, regs);
 
         // Set up the first frame using the machine context registers
         stack.front().setCoreRegs(regs);
 
         for (size_t frameCount = 0; frameCount < maxFrames; frameCount++) {
-            stack.emplace_back(Dwarf::UnwindMechanism::INVALID);
-            assert(stack.size() == frameCount + 2);
-            auto &curFrame = stack[frameCount];
-            auto &nextFrame = stack[frameCount+1];
+            auto &prev = stack.back();
 
             try {
-                if (!curFrame.unwind(p, nextFrame))
+                auto maybeNewRegs = prev.unwind(p);
+                if (!maybeNewRegs)
                     break;
+                auto &newRegs = *maybeNewRegs;
+                stack.emplace_back(Dwarf::UnwindMechanism::DWARF, newRegs);
 #ifdef __aarch64__
-                if (nextFrame.getReg(32) == trampoline)
-                    nextFrame.isSignalTrampoline = true;
+                auto &cur = stack.back();
+                if (Elf::getReg(newRegs, 32) == trampoline)
+                    cur.isSignalTrampoline = true;
 #endif
             }
             catch (const std::exception &ex) {
@@ -886,25 +923,30 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 //
                 // For ARM, the concept is the same, but we look at the link
                 // register rather than a pushd return address
-                if ((frameCount == 0 || (stack[frameCount-1].isSignalTrampoline)) &&
-                   (curFrame.phdr == 0 || (curFrame.phdr->p_flags & PF_X) == 0)) {
-                    nextFrame.regs = curFrame.regs;
+
+                auto newRegs = prev.regs; // start with a copy of prev frames regs.
+
+                if (stack.size() == 1 || prev.isSignalTrampoline) {
+                    Dwarf::ProcessLocation prevlocation = prev.scopeIP(p);
+                    Dwarf::ProcessLocation location(p, Elf::getReg(newRegs, IPREG));
+                    if (!prevlocation.valid() || (location.valid() && (location.codeloc->phdr_->p_flags & PF_X) == 0)) {
 #if defined(__amd64__) || defined(__i386__)
-                    // get stack pointer in the current frame, and read content of
-                    // TOS
-                    auto sp = curFrame.getReg(SPREG);
-                    Elf::Addr ip;
-                    auto in = p.io->read(sp, sizeof ip, (char *)&ip);
-                    if (in == sizeof ip) {
-                        nextFrame.setReg(SPREG, sp + sizeof ip); // pop...
-                        nextFrame.setReg(IPREG, ip);             // .. insn pointer.
-                        nextFrame.mechanism = Dwarf::UnwindMechanism::BAD_IP_RECOVERY;
-                        continue;
-                    }
+                        // get stack pointer in the current frame, and read content of TOS
+                        auto sp = Elf::getReg(prev.regs, SPREG);
+                        Elf::Addr ip;
+                        auto in = p.io->read(sp, sizeof ip, (char *)&ip);
+                        if (in == sizeof ip) {
+                            Elf::setReg(newRegs, SPREG, sp + sizeof ip); // pop...
+                            Elf::setReg(newRegs, IPREG, ip);             // .. insn pointer.
+                            stack.emplace_back(Dwarf::UnwindMechanism::BAD_IP_RECOVERY, newRegs);
+                            continue;
+                        }
 #elif defined(__aarch64__)
-                    nextFrame.setReg(IPREG, curFrame.getReg(30)); // pop...
-                    continue;
+                        setReg(newRegs, IPREG, curFrame.getReg(30)); // pop...
+                        stack.emplace_back(p, Dwarf::UnwindMechanism::BAD_IP_RECOVERY, newRegs);
+                        continue;
 #endif
+                    }
                 }
 
 #if defined(__aarch64__)
@@ -914,13 +956,13 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                    ucontext_t uc;
                 };
 
-                if (trampoline && trampoline == curFrame.rawIP()) {
-                    auto frame = p.io->readObj<rt_sigframe>(curFrame.regs[31]);
+                if (trampoline && trampoline == prev.rawIP()) {
+                    auto sigframe = p.io->readObj<rt_sigframe>(prev.getReg(31));
                     for (int i = 0; i < 31; ++i)
-                       nextFrame.setReg(i, frame.uc.uc_mcontext.regs[i]);
-                    nextFrame.setReg(31, frame.uc.uc_mcontext.sp);
-                    nextFrame.setReg(32, frame.uc.uc_mcontext.pc);
-                    nextFrame.mechanism = Dwarf::UnwindMechanism::TRAMPOLINE;
+                       setReg(newRegs, i, sigframe.uc.uc_mcontext.regs[i]);
+                    setReg(newRegs, 31, sigframe.uc.uc_mcontext.sp);
+                    setReg(newRegs, 32, sigframe.uc.uc_mcontext.pc);
+                    stack.emplace_back(p, Dwarf::UnwindMechanism::TRAMPOLINE, newRegs);
                     continue;
                 }
 
@@ -929,45 +971,25 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 Elf::Addr reloc;
                 const Elf::Phdr *segment;
                 Elf::Object::sptr obj;
-                std::tie(reloc, obj, segment) = p.findSegment(curFrame.rawIP());
+                std::tie(reloc, obj, segment) = p.findSegment(prev.rawIP());
                 if (obj) {
                     Elf::Addr sigContextAddr = 0;
-                    auto objip = curFrame.rawIP() - reloc;
+                    auto objip = prev.rawIP() - reloc;
                     auto restoreSym = obj->findDebugSymbol("__restore");
                     if (restoreSym.st_shndx != SHN_UNDEF && objip == restoreSym.st_value)
-                        sigContextAddr = curFrame.getReg(SPREG) + 4;
+                        sigContextAddr = prev.getReg(SPREG) + 4;
                     else {
                         auto restoreRtSym = obj->findDebugSymbol("__restore_rt");
                         if (restoreRtSym.st_shndx != SHN_UNDEF && objip == restoreRtSym.st_value)
-                            sigContextAddr = p.io->readObj<Elf::Addr>(curFrame.getReg(SPREG) + 8) + 20;
+                            sigContextAddr = p.io->readObj<Elf::Addr>(prev.getReg(SPREG) + 8) + 20;
                     }
                     if (sigContextAddr != 0) {
                        // This mapping is based on DWARF regnos, and ucontext.h
                        gregset_t regs;
-                       static const struct {
-                           int dwarf;
-                           int greg;
-                       }  gregmap[] = {
-                           { 1, REG_EAX },
-                           { 2, REG_ECX },
-                           { 3, REG_EBX },
-                           { 4, REG_ESP },
-                           { 5, REG_EBP },
-                           { 6, REG_ESI },
-                           { 7, REG_EDI },
-                           { 8, REG_EIP },
-                           { 9, REG_EFL },
-                           { 10, REG_CS },
-                           { 11, REG_SS },
-                           { 12, REG_DS },
-                           { 13, REG_ES },
-                           { 14, REG_FS }
-                       };
                        p.io->readObj(sigContextAddr, &regs);
-                       nextFrame.regs = curFrame.regs;
-                       for (auto &reg : gregmap)
-                           nextFrame.setReg(reg.dwarf, regs[reg.greg]);
-                       nextFrame.mechanism = Dwarf::UnwindMechanism::TRAMPOLINE;
+                       Elf::CoreRegisters core;
+                       gregset2core(core, regs);
+                       stack.emplace_back(p, Dwarf::UnwindMechanism::TRAMPOLINE, core);
                        continue;
                     }
                 }
@@ -982,9 +1004,9 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 // we'd have resolved null-pointer calls above, and if we find
                 // a 0 ip on the call stack, it's a good indication the
                 // unwinding is finished.
-                if (curFrame.rawIP() != 0) {
+                if (prev.rawIP() != 0) {
                    Elf::Addr newBp, newIp, oldBp;
-                   oldBp = curFrame.getReg(BPREG);
+                   oldBp = Elf::getReg(prev.regs, BPREG);
                    if (oldBp == 0) {
                       // null base pointer means we're done.
                       break;
@@ -992,11 +1014,10 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                    p.io->readObj(oldBp + ELF_BYTES, &newIp);
                    p.io->readObj(oldBp, &newBp);
                    if (newBp > oldBp && newIp > 4096) {
-                       nextFrame.regs = curFrame.regs;
-                       nextFrame.setReg(SPREG, oldBp + ELF_BYTES * 2);
-                       nextFrame.setReg(BPREG, newBp);
-                       nextFrame.setReg(IPREG, newIp);
-                       nextFrame.mechanism = Dwarf::UnwindMechanism::FRAMEPOINTER;
+                       Elf::setReg(newRegs, SPREG, oldBp + ELF_BYTES * 2);
+                       Elf::setReg(newRegs, BPREG, newBp);
+                       Elf::setReg(newRegs, IPREG, newIp);
+                       stack.emplace_back(Dwarf::UnwindMechanism::FRAMEPOINTER, newRegs);
                        continue;
                    }
                 }
@@ -1008,8 +1029,6 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
     catch (const std::exception &ex) {
         std::clog << "warning: exception unwinding stack: " << ex.what() << std::endl;
     }
-    if (stack.back().mechanism == Dwarf::UnwindMechanism::INVALID)
-       stack.pop_back();
 }
 
 std::shared_ptr<Process> Process::load(Elf::Object::sptr exec, std::string id, const PstackOptions &options, Dwarf::ImageCache &imageCache) {
@@ -1096,6 +1115,7 @@ Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
 
     return threadStacks;
 }
+
 
 std::ostream & operator << (std::ostream &os, WaitStatus ws) {
    if (WIFSIGNALED(ws.status)) {

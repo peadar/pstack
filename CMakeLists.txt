@@ -44,6 +44,7 @@ message(STATUS "Version: ${VERSION_TAG}")
 add_definitions("-DVERSION=${VERSION_TAG}")
 
 set(CMAKE_CXX_STANDARD 17)
+add_definitions("-std=c++17") # the above does not work for clang.
 
 add_definitions("-Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
 # Adding frame pointers makes things easy to run performance measurements with,
@@ -127,16 +128,18 @@ add_library(dwelf ${LIBTYPE}
          )
 
 
-add_library(procman ${LIBTYPE} dead.cc live.cc process.cc proc_service.cc logproc.cc
+add_library(procman ${LIBTYPE} dead.cc self.cc live.cc process.cc proc_service.cc logproc.cc
    dwarfproc.cc procdump.cc ${stubsrc})
 
 add_executable(canal canal.cc ${pysrc})
+add_executable(smol smol.cc)
 
 add_executable(${PSTACK_BIN} pstack.cc ${pysrc})
 
 target_link_libraries(procman ${LTHREADDB} dwelf)
 target_link_libraries(${PSTACK_BIN} dwelf procman)
 target_link_libraries(canal dwelf procman)
+target_link_libraries(smol dwelf procman)
 
 if (TIDY)
 set (CLANG_TIDY "clang-tidy;-checks=*,-*readability-braces-around-statements,-fuchsia*,-hicpp-braces-around-statements,-*llvmlibc*")
