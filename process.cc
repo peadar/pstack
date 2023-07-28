@@ -282,12 +282,11 @@ PrintableFrame::PrintableFrame(const Process &proc, const Dwarf::StackFrame &fra
     , functionOffset(std::numeric_limits<Elf::Addr>::max())
     , frame(frame)
 {
-    auto scopeIP = frame.scopeIP(proc);
-    Dwarf::LocInfo location(proc, scopeIP);
+    auto location = frame.scopeIP(proc);
 
-    if (location.elf == nullptr)
+    if (location.elf() == nullptr)
         return;
-    Elf::Addr objIp = scopeIP - location.elfReloc;
+    Elf::Addr objIp = location.address() - location.elfReloc;
     auto function = location.die();
     if (function) {
         std::ostringstream sos;
@@ -319,9 +318,9 @@ PrintableFrame::PrintableFrame(const Process &proc, const Dwarf::StackFrame &fra
         // enough info to find the first address.
         //
         // Fall back to using the ELF symbol instead.
-        auto &[sym, _] = location.symbol();
-        if (sym.st_shndx != SHN_UNDEF)
-            functionOffset = objIp - sym.st_value;
+        auto maybesym = location.symbol();
+        if (maybesym)
+            functionOffset = objIp - maybesym->first.st_value;
     }
 }
 
@@ -358,7 +357,7 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame, const Process *> &j
     auto &frame =jt.object;
     PstackOptions options;
     options.doargs = true;
-    Dwarf::LocInfo location(*jt.context, frame.scopeIP(*jt.context));
+    Dwarf::LocInfo location = frame.scopeIP(*jt.context);
     PrintableFrame pframe(*jt.context, frame, 0, options);
 
     JObject jo(os);
@@ -371,8 +370,8 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame, const Process *> &j
         ;
 
     const auto &sym = location.symbol();
-    if (sym.first.st_shndx != SHN_UNDEF)
-        jo.field("symbol", sym);
+    if (sym)
+        jo.field("symbol", *sym);
     else
         jo.field("symbol", JsonNull());
 
@@ -563,7 +562,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
 std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
-    Dwarf::LocInfo location(ap.p, ap.pframe.frame.scopeIP(ap.p));
+    Dwarf::LocInfo location = ap.pframe.frame.scopeIP(ap.p);
     if (!location.die() || !ap.pframe.options.doargs)
         return os;
     using namespace Dwarf;
@@ -640,7 +639,7 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, Dwarf::St
 
     IOFlagSave _(os);
 
-    Dwarf::LocInfo location(*this, pframe.frame.scopeIP(pframe.proc));
+    Dwarf::LocInfo location = pframe.frame.scopeIP(pframe.proc);
     auto source = location.source();
     std::pair<std::string, int> src = source.size() ? source[0] : std::make_pair( "", std::numeric_limits<Elf::Addr>::max());
     for (auto i = pframe.inlined.rbegin(); i != pframe.inlined.rend(); ++i) {
@@ -672,17 +671,17 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, Dwarf::St
 
     os << std::dec;
 
-    if (location) {
+    if (location.valid()) {
         std::string name;
         std::string flags = "";
         if (frame.isSignalTrampoline)
             flags += "*";
 
-        auto &[ sym, symName ] = location.symbol();
+        auto sym = location.symbol();
         if (pframe.dieName != "") {
             name = pframe.dieName;
-        } else if (symName != "") {
-            name = symName;
+        } else if (sym) {
+            name = sym->second;
             flags += location.die() ? "%" : "!";
         } else {
             name = "<unknown>";
@@ -694,7 +693,7 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, Dwarf::St
 
         if (pframe.functionOffset != std::numeric_limits<Elf::Addr>::max())
             os << "+" << pframe.functionOffset;
-        os << " in " << stringify(*location.elf->io);
+        os << " in " << stringify(*location.elf()->io);
         if (verbose)
            os << "@0x" << std::hex << frame.rawIP() - location.elfReloc << std::dec;
         if (src.first != "")
@@ -928,9 +927,9 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 auto newRegs = prev.regs; // start with a copy of prev frames regs.
 
                 if (stack.size() == 1 || prev.isSignalTrampoline) {
-                    Dwarf::LocInfo prevlocation(p, prev.scopeIP(p));
+                    Dwarf::LocInfo prevlocation = prev.scopeIP(p);
                     Dwarf::LocInfo location(p, Elf::getReg(newRegs, IPREG));
-                    if (!prevlocation || (location.phdr->p_flags & PF_X) == 0) {
+                    if (!prevlocation.valid() || (location.valid() && (location.codeloc->phdr_->p_flags & PF_X) == 0)) {
 #if defined(__amd64__) || defined(__i386__)
                         // get stack pointer in the current frame, and read content of TOS
                         auto sp = Elf::getReg(prev.regs, SPREG);

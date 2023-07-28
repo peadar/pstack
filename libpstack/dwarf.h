@@ -611,11 +611,14 @@ public:
     // Cached call frames for specific return addresses.
     std::map<Elf::Addr, CallFrame> callFrameForAddr;
 
+
     // Get decoded call frame information from .debug_frame section
     CFI *getDebugFrame() const;
-
     // Get decoded call frame information from .eh_frame section
     CFI *getEhFrame() const;
+
+    // Get best of above.
+    CFI *getCFI() const;
 
     // direct access to various DWARF sections.
     const Elf::Section & debugInfo;

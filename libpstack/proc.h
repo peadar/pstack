@@ -69,32 +69,52 @@ enum class UnwindMechanism {
 
 // Information for a specific location in memory
 // XXX: much of this should be per-ELF file, and cached with the elf object.
-class LocInfo {
-    mutable Dwarf::DIE die_;
-    mutable const CFI *cfi_;
-    mutable const FDE *fde_;
+struct CodeLocation {
+    Elf::Addr location_;
+    Info::sptr dwarf_;
+    const Elf::Phdr *phdr_;
     mutable const CIE *cie_;
+    mutable const FDE *fde_;
+    mutable const CFI *cfi_;
     CallFrame frame_;
-    mutable std::pair<Elf::Sym, std::string> symbol_;
+    mutable Dwarf::DIE die_;
+    mutable std::optional<std::pair<Elf::Sym, std::string>> symbol_;
 
-public:
-    Elf::Addr address;
-    Elf::Addr elfReloc;
-    Elf::Object::sptr elf;
-    const Elf::Phdr *phdr;
-    Info::sptr dwarf;
-
-    void set(const Process &proc, Elf::Addr address);
-    LocInfo();
-    LocInfo(const Process &proc, Elf::Addr address_) : LocInfo() { set(proc, address_); }
     std::vector<std::pair<std::string, int>> source() const;
+    std::optional<std::pair<Elf::Sym, std::string>> symbol() const;
+
     operator bool() const;
     const Dwarf::DIE &die() const;
     const CIE *cie() const;
     const FDE *fde() const;
     const CFI *cfi() const;
-    operator Elf::Addr() { return address; }
-    std::pair<Elf::Sym, std::string> &symbol() const;
+    CodeLocation();
+    CodeLocation(Dwarf::Info::sptr, const Elf::Phdr *, Elf::Addr location);
+
+};
+
+class LocInfo {
+public:
+    Elf::Addr elfReloc;
+    std::shared_ptr<CodeLocation> codeloc;
+
+    void set(const Process &proc, Elf::Addr address);
+    LocInfo();
+    LocInfo(const Process &proc, Elf::Addr address_) : LocInfo() { set(proc, address_); }
+
+    Elf::Addr address() const { return elfReloc + codeloc->location_; }
+
+    // these are proxies or the CodeLocation, adjusted by the elfReloc value.
+    bool valid() const  { return codeloc != nullptr; }
+    const Dwarf::DIE &die() const;
+    const CIE *cie() const;
+    const FDE *fde() const;
+    const CFI *cfi() const;
+    std::optional<std::pair<Elf::Sym, std::string>> symbol() const;
+    std::vector<std::pair<std::string, int>> source() const;
+    Elf::Object::sptr elf() { return codeloc ? codeloc->dwarf_->elf : nullptr; }
+    Dwarf::Info::sptr dwarf() { return codeloc ? codeloc->dwarf_ : nullptr; }
+
 };
 
 class StackFrame {
@@ -109,6 +129,7 @@ public:
     StackFrame &operator = (const StackFrame &) = delete;
     std::optional<Elf::CoreRegisters> unwind(Process &);
     void setCoreRegs(const Elf::CoreRegisters &);
+
     void getCoreRegs(Elf::CoreRegisters &) const;
     void getFrameBase(const Process &, intmax_t, ExpressionStack *) const;
 };

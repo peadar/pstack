@@ -67,7 +67,7 @@ StackFrame::scopeIP(const Process &proc) const
 void
 StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *stack) const
 {
-    LocInfo location( p ,scopeIP(p) );
+    LocInfo location = scopeIP(p);
     auto f = location.die();
     if (f) {
         auto base = f.attribute(DW_AT_frame_base);
@@ -107,7 +107,8 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
 {
     Unit::sptr unit = attr.die.getUnit();
     const Info *dwarf = unit->dwarf;
-    auto ip = frame->scopeIP(proc);
+    auto loc = frame->scopeIP(proc);
+    auto ip = loc.address();
 
     const auto &unitEntry = unit->root();
     auto unitLow = unitEntry.attribute(DW_AT_low_pc);
@@ -135,7 +136,7 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                             auto len = r.getuleb128();
                             if (base + start <= ip && ip < base + end) {
                                DWARFReader exr(r.io, r.getOffset(), r.getOffset() + len);
-                               return eval(proc, exr, frame, ip.elfReloc);
+                               return eval(proc, exr, frame, loc.elfReloc);
                             }
                             r.skip(len);
                             break;
@@ -158,7 +159,7 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                             auto len = r.getuleb128();
                             if (base + start <= ip && ip < base + end) {
                                DWARFReader exr(r.io, r.getOffset(), r.getOffset() + len);
-                               return eval(proc, exr, frame, ip.elfReloc);
+                               return eval(proc, exr, frame, loc.elfReloc);
                             }
                             r.skip(len);
                             break;
@@ -182,7 +183,7 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                     auto len = r.getuint(2);
                     if (ip >= base + start && ip < base + end) {
                         DWARFReader exr(r.io, r.getOffset(), r.getOffset() + Elf::Word(len));
-                        return eval(proc, exr, frame, ip.elfReloc);
+                        return eval(proc, exr, frame, loc.elfReloc);
                     }
                     r.skip(len);
                 }
@@ -421,25 +422,25 @@ StackFrame::StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs
 std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     auto location = scopeIP(p);
     auto cfi = location.cfi();
-    auto fde = cfi->findFDE(location.address - location.elfReloc);
+    auto fde = location.fde();
     auto cie = location.cie();
     if (fde == nullptr || cie == nullptr)
         throw (Exception() << "no FDE/CIE for instruction address "
-              << std::hex << location.address << std::dec << " in " << *location.elf->io);
+              << std::hex << location.address() << std::dec << " in " << *location.elf()->io);
 
     if (cie->isSignalHandler)
        isSignalTrampoline = true;
 
     // relocate from process address to object address
-    Elf::Off objaddr = location.address - location.elfReloc;
+    Elf::Off objaddr = location.address() - location.elfReloc;
 
     DWARFReader r(cfi->io, fde->instructions, fde->end);
 
-    auto iter = location.dwarf->callFrameForAddr.find(objaddr);
-    if (iter == location.dwarf->callFrameForAddr.end())
-        location.dwarf->callFrameForAddr[objaddr] = cie->execInsns(r, fde->iloc, objaddr);
+    auto iter = location.dwarf()->callFrameForAddr.find(objaddr);
+    if (iter == location.dwarf()->callFrameForAddr.end())
+        location.dwarf()->callFrameForAddr[objaddr] = cie->execInsns(r, fde->iloc, objaddr);
 
-    const CallFrame &dcf = location.dwarf->callFrameForAddr[objaddr];
+    const CallFrame &dcf = location.dwarf()->callFrameForAddr[objaddr];
 
     // Given the registers available, and the state of the call unwind data,
     // calculate the CFA at this point.
@@ -519,7 +520,7 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     if (rarInfo == dcf.registers.end() || rarInfo->second.type == UNDEF || cfa == 0) {
         if (verbose > 1) {
            *debug << "DWARF unwinding stopped at "
-              << std::hex << location.address << std::dec
+              << std::hex << location.address() << std::dec
               << ": " <<
               (rarInfo == dcf.registers.end() ? "no RAR register found"
                : rarInfo->second.type == UNDEF ? "RAR register undefined"
@@ -537,42 +538,50 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
 }
 
 
-std::pair<Elf::Sym, std::string> &LocInfo::symbol() const {
-    if (symbol_.second == "" && elf) {
-        auto res = elf->findSymbolByAddress(address - elfReloc, STT_NOTYPE);
-        if (res)
-            symbol_ = *res;
+std::optional<std::pair<Elf::Sym, std::string>> CodeLocation::symbol() const {
+    if (!symbol_ && dwarf_) {
+        symbol_ = dwarf_->elf->findSymbolByAddress(location_, STT_NOTYPE);
     }
     return symbol_;
 }
 
+std::optional<std::pair<Elf::Sym, std::string>> LocInfo::symbol() const {
+    if (codeloc)
+        return codeloc->symbol();
+    return std::nullopt;
+}
 
 const FDE *
-LocInfo::fde() const {
+CodeLocation::fde() const {
     if (fde_ == nullptr) {
-        fde_ = cfi()->findFDE(address - elfReloc);
+        fde_ = cfi()->findFDE(location_);
     }
     return fde_;
 }
 
+const FDE *
+LocInfo::fde() const {
+    return codeloc->fde();
+}
 
 const DIE &
-LocInfo::die() const {
-    if (!die_ && dwarf) {
-        auto objIp = address - elfReloc;
-        Dwarf::Unit::sptr u = dwarf->lookupUnit(objIp);
+CodeLocation::die() const {
+    if (!die_ && dwarf_) {
+        Dwarf::Unit::sptr u = dwarf_->lookupUnit(location_);
         if (u) {
-            die_ = u->root().findEntryForAddr(objIp, Dwarf::DW_TAG_subprogram);
+            die_ = u->root().findEntryForAddr(location_, Dwarf::DW_TAG_subprogram);
         }
     }
     return die_;
 }
 
+const DIE &
+LocInfo::die() const {
+    return codeloc->die();
+}
+
 LocInfo::LocInfo()
-    : address(0)
-    , elfReloc(0)
-    , phdr(0)
-    , dwarf(0)
+    : elfReloc(0)
 {
 }
 
@@ -585,39 +594,54 @@ LocInfo::cie() const {
 }
 
 std::vector<std::pair<std::string, int>>
-LocInfo::source() const
+CodeLocation::source() const
 {
-    if (dwarf)
-        return dwarf->sourceFromAddr(address - elfReloc);
+    if (dwarf_)
+        return dwarf_->sourceFromAddr(location_);
     return {};
 }
 
-void
-LocInfo::set(const Process &proc, Elf::Addr address_)
+std::vector<std::pair<std::string, int>>
+LocInfo::source() const {
+    return codeloc ? codeloc->source() : std::vector<std::pair<std::string, int>>();
+}
+
+CodeLocation::CodeLocation() : location_(0), phdr_(nullptr), cie_(nullptr), fde_(nullptr), cfi_(nullptr) {
+}
+
+CodeLocation::CodeLocation(Dwarf::Info::sptr info, const Elf::Phdr *phdr, Elf::Addr off)
+    : location_(off)
+    , dwarf_(info), phdr_(phdr), cie_(nullptr), fde_(nullptr), cfi_(nullptr)
 {
-    address = address_;
-    std::tie(elfReloc, elf, phdr) = proc.findSegment(address);
-    dwarf = elf ? proc.getDwarf(elf) : nullptr;
-    cie_ = nullptr;
-    fde_ = nullptr;
-    cfi_ = nullptr;
+}
+
+void
+LocInfo::set(const Process &proc, Elf::Addr address)
+{
+    auto [ elfReloc, elf, phdr ] = proc.findSegment(address);
+    auto dwarf = elf ? proc.getDwarf(elf) : nullptr;
+    if (dwarf) {
+        codeloc = std::make_shared<CodeLocation>(dwarf, phdr, address - elfReloc);
+        this->elfReloc = elfReloc;
+    } else {
+        this->codeloc = nullptr;
+    }
+}
+
+const CFI *
+CodeLocation::cfi() const {
+
+    CFI *cfi = dwarf_->getCFI();
+    if (cfi == nullptr)
+        throw (Exception() << "no CFI for " << *dwarf_->elf->io);
+    return cfi;
 }
 
 const CFI *
 LocInfo::cfi() const {
-
-    if (cfi_)
-        return cfi_;
-
-    if (dwarf) {
-        cfi_ = dwarf->getEhFrame();
-        if (cfi_)
-            return cfi_;
-        cfi_ = dwarf->getDebugFrame();
-        if (cfi_)
-            return cfi_;
-        throw (Exception() << "no CFI for " << *dwarf->elf->io);
-    }
-    throw (Exception() << "no CFI for address" << address);
+    if (codeloc == nullptr)
+        throw Exception() << "no object for address";
+    return codeloc->cfi();
 }
+
 }
