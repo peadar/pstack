@@ -69,6 +69,9 @@ enum class UnwindMechanism {
 
 // Information for a specific location in memory
 // XXX: much of this should be per-ELF file, and cached with the elf object.
+using NamedSymbol = std::pair<Elf::Sym, std::string>;
+using MaybeNamedSymbol = std::optional<NamedSymbol>;
+
 struct CodeLocation {
     Elf::Addr location_;
     Info::sptr dwarf_;
@@ -78,10 +81,10 @@ struct CodeLocation {
     mutable const CFI *cfi_;
     CallFrame frame_;
     mutable Dwarf::DIE die_;
-    mutable std::optional<std::pair<Elf::Sym, std::string>> symbol_;
+    mutable MaybeNamedSymbol symbol_;
 
     std::vector<std::pair<std::string, int>> source() const;
-    std::optional<std::pair<Elf::Sym, std::string>> symbol() const;
+    const MaybeNamedSymbol &symbol() const;
 
     operator bool() const;
     const Dwarf::DIE &die() const;
@@ -93,34 +96,32 @@ struct CodeLocation {
 
 };
 
-class LocInfo {
-public:
+// This is a CodeLocation, but relocated for a process address.
+struct ProcessLocation {
     Elf::Addr elfReloc;
+
+    // XXX: can cache these in Dwarf::Info
     std::shared_ptr<CodeLocation> codeloc;
 
     void set(const Process &proc, Elf::Addr address);
-    LocInfo();
-    LocInfo(const Process &proc, Elf::Addr address_) : LocInfo() { set(proc, address_); }
-
+    ProcessLocation(const Process &proc, Elf::Addr address_);
     Elf::Addr address() const { return elfReloc + codeloc->location_; }
-
     // these are proxies or the CodeLocation, adjusted by the elfReloc value.
     bool valid() const  { return codeloc != nullptr; }
     const Dwarf::DIE &die() const;
     const CIE *cie() const;
     const FDE *fde() const;
     const CFI *cfi() const;
-    std::optional<std::pair<Elf::Sym, std::string>> symbol() const;
+    const MaybeNamedSymbol symbol() const;
     std::vector<std::pair<std::string, int>> source() const;
     Elf::Object::sptr elf() { return codeloc ? codeloc->dwarf_->elf : nullptr; }
     Dwarf::Info::sptr dwarf() { return codeloc ? codeloc->dwarf_ : nullptr; }
-
 };
 
 class StackFrame {
 public:
     Elf::Addr rawIP() const;
-    Dwarf::LocInfo scopeIP(const Process &) const;
+    Dwarf::ProcessLocation scopeIP(const Process &) const;
     Elf::CoreRegisters regs;
     Elf::Addr cfa;
     UnwindMechanism mechanism;
@@ -129,7 +130,6 @@ public:
     StackFrame &operator = (const StackFrame &) = delete;
     std::optional<Elf::CoreRegisters> unwind(Process &);
     void setCoreRegs(const Elf::CoreRegisters &);
-
     void getCoreRegs(Elf::CoreRegisters &) const;
     void getFrameBase(const Process &, intmax_t, ExpressionStack *) const;
 };

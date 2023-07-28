@@ -32,7 +32,7 @@ StackFrame::rawIP() const
     return Elf::getReg(regs, IPREG);
 }
 
-Dwarf::LocInfo
+Dwarf::ProcessLocation
 StackFrame::scopeIP(const Process &proc) const
 {
     // For a return address on the stack, it normally represents the next
@@ -56,7 +56,7 @@ StackFrame::scopeIP(const Process &proc) const
        return { proc, raw };
     if (mechanism == UnwindMechanism::MACHINEREGS)
        return { proc, raw };
-    Dwarf::LocInfo location(proc, raw);
+    Dwarf::ProcessLocation location(proc, raw);
 
     auto lcie = location.cie();
     if (lcie != nullptr && lcie->isSignalHandler)
@@ -67,7 +67,7 @@ StackFrame::scopeIP(const Process &proc) const
 void
 StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *stack) const
 {
-    LocInfo location = scopeIP(p);
+    ProcessLocation location = scopeIP(p);
     auto f = location.die();
     if (f) {
         auto base = f.attribute(DW_AT_frame_base);
@@ -538,14 +538,14 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
 }
 
 
-std::optional<std::pair<Elf::Sym, std::string>> CodeLocation::symbol() const {
+const MaybeNamedSymbol &CodeLocation::symbol() const {
     if (!symbol_ && dwarf_) {
         symbol_ = dwarf_->elf->findSymbolByAddress(location_, STT_NOTYPE);
     }
     return symbol_;
 }
 
-std::optional<std::pair<Elf::Sym, std::string>> LocInfo::symbol() const {
+const MaybeNamedSymbol ProcessLocation::symbol() const {
     if (codeloc)
         return codeloc->symbol();
     return std::nullopt;
@@ -560,7 +560,7 @@ CodeLocation::fde() const {
 }
 
 const FDE *
-LocInfo::fde() const {
+ProcessLocation::fde() const {
     return codeloc->fde();
 }
 
@@ -576,17 +576,16 @@ CodeLocation::die() const {
 }
 
 const DIE &
-LocInfo::die() const {
+ProcessLocation::die() const {
     return codeloc->die();
 }
 
-LocInfo::LocInfo()
-    : elfReloc(0)
-{
+ProcessLocation::ProcessLocation(const Process &proc, Elf::Addr address_) {
+    set(proc, address_);
 }
 
 const CIE *
-LocInfo::cie() const {
+ProcessLocation::cie() const {
     auto lfde = fde();
     if (lfde == nullptr)
         return nullptr;
@@ -602,7 +601,7 @@ CodeLocation::source() const
 }
 
 std::vector<std::pair<std::string, int>>
-LocInfo::source() const {
+ProcessLocation::source() const {
     return codeloc ? codeloc->source() : std::vector<std::pair<std::string, int>>();
 }
 
@@ -616,7 +615,7 @@ CodeLocation::CodeLocation(Dwarf::Info::sptr info, const Elf::Phdr *phdr, Elf::A
 }
 
 void
-LocInfo::set(const Process &proc, Elf::Addr address)
+ProcessLocation::set(const Process &proc, Elf::Addr address)
 {
     auto [ elfReloc, elf, phdr ] = proc.findSegment(address);
     auto dwarf = elf ? proc.getDwarf(elf) : nullptr;
@@ -638,7 +637,7 @@ CodeLocation::cfi() const {
 }
 
 const CFI *
-LocInfo::cfi() const {
+ProcessLocation::cfi() const {
     if (codeloc == nullptr)
         throw Exception() << "no object for address";
     return codeloc->cfi();

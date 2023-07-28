@@ -9,10 +9,8 @@ int foobar() {
 }
 
 int
-
 main()
 {
-    /*
     extern int verbose;
     verbose = 0;
     PstackOptions options;
@@ -22,15 +20,11 @@ main()
     p->load();
     getppid();
 
-    Dwarf::StackFrame sf(Dwarf::UnwindMechanism::MACHINEREGS);
-    sf.setReg(IPREG, uintptr_t(foobar));
-    sf.findObjectCode(*p);
-
-    std::cout << json(sf, p.get()) << std::endl;
+    Dwarf::ProcessLocation li(*p, Elf::Addr(foobar));
 
     auto [ lib, addr, sym ]  = p->resolveSymbolDetail("foobar", true);
     std::cout << "found foobar in " << *lib->io << "@" << addr << ", value=" << sym.st_value << ", size=" << sym.st_size << std::endl;
+    std::cout << "match? " << (Elf::Addr(foobar) == addr + sym.st_value) << std::endl;
     
     return foobar();
-    */
 }

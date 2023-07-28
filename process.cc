@@ -346,7 +346,7 @@ operator << (std::ostream &os, const JSON<std::pair<Elf::Sym, std::string>> &js)
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<Dwarf::LocInfo, const Process *> &)
+operator << (std::ostream &os, const JSON<Dwarf::ProcessLocation, const Process *> &)
 {
     return os;
 }
@@ -357,7 +357,7 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame, const Process *> &j
     auto &frame =jt.object;
     PstackOptions options;
     options.doargs = true;
-    Dwarf::LocInfo location = frame.scopeIP(*jt.context);
+    Dwarf::ProcessLocation location = frame.scopeIP(*jt.context);
     PrintableFrame pframe(*jt.context, frame, 0, options);
 
     JObject jo(os);
@@ -562,7 +562,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
 std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
-    Dwarf::LocInfo location = ap.pframe.frame.scopeIP(ap.p);
+    Dwarf::ProcessLocation location = ap.pframe.frame.scopeIP(ap.p);
     if (!location.die() || !ap.pframe.options.doargs)
         return os;
     using namespace Dwarf;
@@ -639,7 +639,7 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, Dwarf::St
 
     IOFlagSave _(os);
 
-    Dwarf::LocInfo location = pframe.frame.scopeIP(pframe.proc);
+    Dwarf::ProcessLocation location = pframe.frame.scopeIP(pframe.proc);
     auto source = location.source();
     std::pair<std::string, int> src = source.size() ? source[0] : std::make_pair( "", std::numeric_limits<Elf::Addr>::max());
     for (auto i = pframe.inlined.rbegin(); i != pframe.inlined.rend(); ++i) {
@@ -927,8 +927,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 auto newRegs = prev.regs; // start with a copy of prev frames regs.
 
                 if (stack.size() == 1 || prev.isSignalTrampoline) {
-                    Dwarf::LocInfo prevlocation = prev.scopeIP(p);
-                    Dwarf::LocInfo location(p, Elf::getReg(newRegs, IPREG));
+                    Dwarf::ProcessLocation prevlocation = prev.scopeIP(p);
+                    Dwarf::ProcessLocation location(p, Elf::getReg(newRegs, IPREG));
                     if (!prevlocation.valid() || (location.valid() && (location.codeloc->phdr_->p_flags & PF_X) == 0)) {
 #if defined(__amd64__) || defined(__i386__)
                         // get stack pointer in the current frame, and read content of TOS
