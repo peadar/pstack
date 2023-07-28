@@ -352,7 +352,7 @@ DIE::getParentOffset() const
         // limit our search a bit, but the easiest thing to do is just walk the
         // tree from the root down. (This also fixes the problem for any other
         // dies in the same unit.)
-        if (verbose)
+        if (verbose > 2)
             *debug << "warning: no parent offset "
                 << "for die " << name()
                 << " at offset " << offset
