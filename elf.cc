@@ -365,13 +365,15 @@ Object::getInterpreter() const
 /*
  * Find the symbol that represents a particular address.
  */
-bool
-Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
+std::optional<std::pair<Sym, string>>
+Object::findSymbolByAddress(Addr addr, int type)
 {
     /* Try to find symbols in these sections */
     bool haveExactZeroSizeMatch = false;
 
-    auto findSym = [type, addr, this, &sym, &name, &haveExactZeroSizeMatch ](auto &table) {
+    Sym sym;
+    std::string name;
+    auto findSym = [&] (auto &table) {
         for (const auto &candidate : table) {
             if (candidate.st_shndx >= sectionHeaders.size())
                 continue;
@@ -398,9 +400,9 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
         return false;
     };
     if (findSym(*debugSymbols()))
-        return true;
+        return std::make_pair( sym, name );
     if (findSym(*dynamicSymbols()))
-        return true;
+        return std::make_pair( sym, name );
     // .gnu_debugdata is a separate LZMA-compressed ELF image with just
     // a symbol table.
     if (debugData == nullptr) {
@@ -419,13 +421,16 @@ Object::findSymbolByAddress(Addr addr, int type, Sym &sym, string &name)
         }
 #endif
     }
-    if (debugData && debugData->findSymbolByAddress(addr, type, sym, name))
-        return true;
+    if (debugData) {
+        auto debugSym = debugData->findSymbolByAddress(addr, type);
+        if (debugSym)
+            return debugSym;
+    }
 
     if (haveExactZeroSizeMatch)
-        return true;
+        return std::make_pair( sym, name );
     sym.st_shndx = SHN_UNDEF;
-    return false;
+    return std::nullopt;
 }
 
 const Section &

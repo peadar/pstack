@@ -5,7 +5,7 @@
 #include "libpstack/proc.h"
 
 #define REGMAP(a, b)
-#include "libpstack/dwarf/archreg.h"
+#include "libpstack/archreg.h"
 #undef REGMAP
 
 #include <iostream>
@@ -140,9 +140,9 @@ LogProcess::loadSharedObjectsFromFileNote() {
         stacks.push_back(ThreadStack());
         auto &procstack = stacks.back();
         for (auto addr : ipStack) {
-           procstack.stack.emplace_back(Dwarf::UnwindMechanism::LOGFILE);
-           procstack.stack.back().setReg(IPREG, addr);
-           procstack.stack.back().findObjectCode(*this);
+           Elf::CoreRegisters core;
+           Elf::setReg(core, IPREG, addr);
+           procstack.stack.emplace_back(Dwarf::UnwindMechanism::LOGFILE, core);
         }
     }
     return true;

@@ -24,7 +24,6 @@
 
 #define XSTR(a) #a
 #define STR(a) XSTR(a)
-extern std::ostream & operator << (std::ostream &os, const JSON<ThreadStack, Process *> &jt);
 
 namespace {
 bool doJson = false;
@@ -36,7 +35,7 @@ pstack(Process &proc, const PstackOptions &options, int maxFrames)
     const auto &threadStacks = proc.getStacks(options, maxFrames);
     auto &os = *options.output;
     if (doJson) {
-        os << json(threadStacks, &proc);
+        os << json(threadStacks, const_cast<const Process*>(&proc));
     } else {
         os << "process: " << *proc.io << "\n";
         for (auto &s : threadStacks) {

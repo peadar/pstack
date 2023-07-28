@@ -122,7 +122,7 @@ CallFrame::CallFrame()
     cfaReg = 0;
     cfaValue.type = UNDEF;
 #define REGMAP(number, field) registers[number].type = UNDEF;
-#include "libpstack/dwarf/archreg.h"
+#include "libpstack/archreg.h"
 #undef REGMAP
 #ifdef CFA_RESTORE_REGNO
     registers[CFA_RESTORE_REGNO].type = ARCH;

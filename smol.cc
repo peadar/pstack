@@ -1,5 +1,5 @@
 #include <libpstack/proc.h>
-#include <libpstack/dwarf/archreg.h>
+#include <libpstack/archreg.h>
 #include <unistd.h>
 
 extern "C" {
@@ -12,6 +12,7 @@ int
 
 main()
 {
+    /*
     extern int verbose;
     verbose = 0;
     PstackOptions options;
@@ -28,6 +29,8 @@ main()
     std::cout << json(sf, p.get()) << std::endl;
 
     auto [ lib, addr, sym ]  = p->resolveSymbolDetail("foobar", true);
+    std::cout << "found foobar in " << *lib->io << "@" << addr << ", value=" << sym.st_value << ", size=" << sym.st_size << std::endl;
     
     return foobar();
+    */
 }

@@ -43,6 +43,9 @@
 #include <map>
 #include <memory>
 #include <limits>
+#include <optional>
+#include <utility>
+
 
 #include "libpstack/json.h"
 #include "libpstack/reader.h"
@@ -277,7 +280,7 @@ public:
     // Accessing segments.
     const ProgramHeaders &getSegments(Word type) const;
 
-    bool findSymbolByAddress(Addr addr, int type, Sym &, std::string &);
+    std::optional<std::pair<Sym, std::string>> findSymbolByAddress(Addr addr, int type);
     VersionedSymbol findDynamicSymbol(const std::string &name);
     Sym findDebugSymbol(const std::string &name);
 
@@ -359,6 +362,24 @@ struct CoreRegisters {
 #else
 typedef struct user_regs_struct CoreRegisters;
 #endif
+
+inline Addr getReg(const CoreRegisters &regs, int reg) {
+#define REGMAP(regno, field) case regno: return regs.field;
+    switch (reg) {
+#include "libpstack/archreg.h"
+    }
+#undef REGMAP
+    return 0;
+};
+
+inline void setReg(CoreRegisters &regs, int reg, Addr val) {
+#define REGMAP(regno, field) case regno: regs.field = val; break;
+    switch (reg) {
+#include "libpstack/archreg.h"
+    }
+#undef REGMAP
+};
+
 /*
  * Describes a note. Notes have a name, a type, and some associated data.
  */
