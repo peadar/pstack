@@ -67,6 +67,8 @@ enum class UnwindMechanism {
    INVALID,
 };
 
+// Information for a specific location in memory
+// XXX: much of this should be per-ELF file, and cached with the elf object.
 class LocInfo {
     mutable Dwarf::DIE die_;
     mutable const CFI *cfi_;

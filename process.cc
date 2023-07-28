@@ -261,20 +261,15 @@ dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
     return printedParent;
 }
 
+// Data useful for both JSON and text printed formats.
 struct PrintableFrame {
     const Process &proc;
     int frameNumber;
     std::string dieName;
-    std::string symName;
-    Elf::Sym symbol_;
-    std::vector<std::pair<std::string, int>> source;
-    bool searchedSym = false;
     const PstackOptions &options;
     Elf::Addr functionOffset;
-    Elf::Addr objIp;
     const Dwarf::StackFrame &frame;
     std::vector<Dwarf::DIE> inlined; // func + inlined.
-    const Elf::Sym &symbol() { return symbol_; }
     PrintableFrame(const Process &, const Dwarf::StackFrame &frame, int frameNo, const PstackOptions &options);
     PrintableFrame(const PrintableFrame &) = delete;
     PrintableFrame() = delete;
@@ -287,13 +282,12 @@ PrintableFrame::PrintableFrame(const Process &proc, const Dwarf::StackFrame &fra
     , functionOffset(std::numeric_limits<Elf::Addr>::max())
     , frame(frame)
 {
-    symbol_.st_shndx = SHN_UNDEF;
     auto scopeIP = frame.scopeIP(proc);
     Dwarf::LocInfo location(proc, scopeIP);
 
     if (location.elf == nullptr)
         return;
-    objIp = scopeIP - location.elfReloc;
+    Elf::Addr objIp = scopeIP - location.elfReloc;
     auto function = location.die();
     if (function) {
         std::ostringstream sos;
@@ -325,12 +319,10 @@ PrintableFrame::PrintableFrame(const Process &proc, const Dwarf::StackFrame &fra
         // enough info to find the first address.
         //
         // Fall back to using the ELF symbol instead.
-        auto &sym = symbol();
+        auto &[sym, _] = location.symbol();
         if (sym.st_shndx != SHN_UNDEF)
-            functionOffset = objIp - symbol().st_value;
+            functionOffset = objIp - sym.st_value;
     }
-    if (!options.nosrc)
-        source = location.source();
 }
 
 std::ostream &
@@ -366,27 +358,18 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame, const Process *> &j
     auto &frame =jt.object;
     PstackOptions options;
     options.doargs = true;
-    PrintableFrame pframe(*jt.context, frame, 0, options);
     Dwarf::LocInfo location(*jt.context, frame.scopeIP(*jt.context));
+    PrintableFrame pframe(*jt.context, frame, 0, options);
 
     JObject jo(os);
     jo
         .field("ip", frame.rawIP())
         .field("offset", pframe.functionOffset)
         .field("trampoline", frame.isSignalTrampoline)
+        .field("die", pframe.dieName)
+        .field("loadaddr", location.elfReloc)
         ;
-    auto &die = location.die();
-    if (location.elf) {
-        jo.field("loadaddr", location.elfReloc);
-    }
 
-    if (die) {
-        std::ostringstream os;
-        dieName(os, die);
-        jo.field("die", os.str(), jt.context);
-    } else {
-        jo.field("die", JsonNull());
-    }
     const auto &sym = location.symbol();
     if (sym.first.st_shndx != SHN_UNDEF)
         jo.field("symbol", sym);
@@ -657,7 +640,9 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, Dwarf::St
 
     IOFlagSave _(os);
 
-    std::pair<std::string, int> src = pframe.source.size() ? pframe.source[0] : std::make_pair( "", std::numeric_limits<Elf::Addr>::max());
+    Dwarf::LocInfo location(*this, pframe.frame.scopeIP(pframe.proc));
+    auto source = location.source();
+    std::pair<std::string, int> src = source.size() ? source[0] : std::make_pair( "", std::numeric_limits<Elf::Addr>::max());
     for (auto i = pframe.inlined.rbegin(); i != pframe.inlined.rend(); ++i) {
        os << "#"
            << std::left << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
@@ -685,7 +670,6 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, Dwarf::St
         << std::right << "0x" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0')
         << frame.rawIP();
 
-    Dwarf::LocInfo location(*this, pframe.frame.scopeIP(pframe.proc));
     os << std::dec;
 
     if (location) {
@@ -693,10 +677,12 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, Dwarf::St
         std::string flags = "";
         if (frame.isSignalTrampoline)
             flags += "*";
+
+        auto &[ sym, symName ] = location.symbol();
         if (pframe.dieName != "") {
             name = pframe.dieName;
-        } else if (pframe.symName != "") {
-            name = pframe.symName;
+        } else if (symName != "") {
+            name = symName;
             flags += location.die() ? "%" : "!";
         } else {
             name = "<unknown>";
