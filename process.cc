@@ -342,16 +342,16 @@ operator << (std::ostream &os, const JSON<std::pair<std::string, int>> &jt)
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<std::pair<const Elf::Sym *, std::string>> &js)
+operator << (std::ostream &os, const JSON<std::pair<Elf::Sym, std::string>> &js)
 {
     const auto &obj = js.object;
     return JObject(os)
         .field("st_name", obj.second)
-        .field("st_value", obj.first->st_value)
-        .field("st_size", obj.first->st_size)
-        .field("st_info", int(obj.first->st_info))
-        .field("st_other", int(obj.first->st_other))
-        .field("st_shndx", obj.first->st_shndx);
+        .field("st_value", obj.first.st_value)
+        .field("st_size", obj.first.st_size)
+        .field("st_info", int(obj.first.st_info))
+        .field("st_other", int(obj.first.st_other))
+        .field("st_shndx", obj.first.st_shndx);
 }
 
 std::ostream &
@@ -372,15 +372,28 @@ operator << (std::ostream &os, const JSON<Dwarf::StackFrame, const Process *> &j
     JObject jo(os);
     jo
         .field("ip", frame.rawIP())
-        .field("location", location, jt.context)
         .field("offset", pframe.functionOffset)
         .field("trampoline", frame.isSignalTrampoline)
         ;
-    const auto &sym = pframe.symbol();
-    if (sym.st_shndx != SHN_UNDEF)
-        jo.field("symbol", std::make_pair(&sym, pframe.symName));
+    auto &die = location.die();
+    if (location.elf) {
+        jo.field("loadaddr", location.elfReloc);
+    }
+
+    if (die) {
+        std::ostringstream os;
+        dieName(os, die);
+        jo.field("die", os.str(), jt.context);
+    } else {
+        jo.field("die", JsonNull());
+    }
+    const auto &sym = location.symbol();
+    if (sym.first.st_shndx != SHN_UNDEF)
+        jo.field("symbol", sym);
     else
         jo.field("symbol", JsonNull());
+
+    jo.field("source", location.source());
 
     return jo;
 }
@@ -673,8 +686,6 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, Dwarf::St
         << frame.rawIP();
 
     Dwarf::LocInfo location(*this, pframe.frame.scopeIP(pframe.proc));
-    if (verbose > 0)
-        os << "/" << "0x" << std::setw(ELF_BITS/4) << std::setfill('0') << frame.cfa;
     os << std::dec;
 
     if (location) {
@@ -893,8 +904,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 if (!maybeNewRegs)
                     break;
                 auto &newRegs = *maybeNewRegs;
-                stack.emplace_back(Dwarf::UnwindMechanism::DWARF, newRegs.first);
-                stack.back().cfa = newRegs.second;
+                stack.emplace_back(Dwarf::UnwindMechanism::DWARF, newRegs);
 #ifdef __aarch64__
                 auto &cur = stack.back();
                 if (Elf::getReg(newRegs, 32) == trampoline)

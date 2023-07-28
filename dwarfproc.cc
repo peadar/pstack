@@ -413,11 +413,12 @@ ExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *fra
 
 StackFrame::StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs_)
     : regs(regs_)
+    , cfa(0)
     , mechanism(mechanism)
     , isSignalTrampoline(false)
 {}
 
-std::optional<std::pair<Elf::CoreRegisters, Elf::Addr>> StackFrame::unwind(Process &p) {
+std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     auto location = scopeIP(p);
     auto cfi = location.cfi();
     auto fde = cfi->findFDE(location.address - location.elfReloc);
@@ -443,7 +444,6 @@ std::optional<std::pair<Elf::CoreRegisters, Elf::Addr>> StackFrame::unwind(Proce
     // Given the registers available, and the state of the call unwind data,
     // calculate the CFA at this point.
     Elf::CoreRegisters out;
-    Elf::Addr cfa;
     switch (dcf.cfaValue.type) {
         case SAME:
         case UNDEF:
@@ -533,8 +533,19 @@ std::optional<std::pair<Elf::CoreRegisters, Elf::Addr>> StackFrame::unwind(Proce
     // new frame.
     if (cie && cie->rar != IPREG)
        Elf::setReg(out, IPREG, Elf::getReg(out, cie->rar));
-    return std::make_pair(out, cfa);
+    return out;
 }
+
+
+std::pair<Elf::Sym, std::string> &LocInfo::symbol() const {
+    if (symbol_.second == "" && elf) {
+        auto res = elf->findSymbolByAddress(address - elfReloc, STT_NOTYPE);
+        if (res)
+            symbol_ = *res;
+    }
+    return symbol_;
+}
+
 
 const FDE *
 LocInfo::fde() const {
@@ -547,7 +558,7 @@ LocInfo::fde() const {
 
 const DIE &
 LocInfo::die() const {
-    if (!die_) {
+    if (!die_ && dwarf) {
         auto objIp = address - elfReloc;
         Dwarf::Unit::sptr u = dwarf->lookupUnit(objIp);
         if (u) {

@@ -73,7 +73,7 @@ class LocInfo {
     mutable const FDE *fde_;
     mutable const CIE *cie_;
     CallFrame frame_;
-    std::pair<Elf::Sym, std::string> symbol_;
+    mutable std::pair<Elf::Sym, std::string> symbol_;
 
 public:
     Elf::Addr address;
@@ -85,7 +85,6 @@ public:
     void set(const Process &proc, Elf::Addr address);
     LocInfo();
     LocInfo(const Process &proc, Elf::Addr address_) : LocInfo() { set(proc, address_); }
-    const std::pair<Elf::Sym, std::string> &symbol() const;
     std::vector<std::pair<std::string, int>> source() const;
     operator bool() const;
     const Dwarf::DIE &die() const;
@@ -93,20 +92,20 @@ public:
     const FDE *fde() const;
     const CFI *cfi() const;
     operator Elf::Addr() { return address; }
+    std::pair<Elf::Sym, std::string> &symbol() const;
 };
 
 class StackFrame {
 public:
-    Elf::Addr cfa;
     Elf::Addr rawIP() const;
     Dwarf::LocInfo scopeIP(const Process &) const;
     Elf::CoreRegisters regs;
+    Elf::Addr cfa;
     UnwindMechanism mechanism;
     bool isSignalTrampoline;
     StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs);
     StackFrame &operator = (const StackFrame &) = delete;
-    // registers, cfa
-    std::optional<std::pair<Elf::CoreRegisters, Elf::Addr>> unwind(Process &);
+    std::optional<Elf::CoreRegisters> unwind(Process &);
     void setCoreRegs(const Elf::CoreRegisters &);
     void getCoreRegs(Elf::CoreRegisters &) const;
     void getFrameBase(const Process &, intmax_t, ExpressionStack *) const;
