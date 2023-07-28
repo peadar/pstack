@@ -27,6 +27,7 @@
 /*
  * convert a gregset_t to an Elf::CoreRegs
  */
+#ifndef __aarch64__
 void
 gregset2core(Elf::CoreRegisters &core, const gregset_t greg) {
 #if defined(__i386__)
@@ -64,6 +65,7 @@ gregset2core(Elf::CoreRegisters &core, const gregset_t greg) {
         core.regs[i] = greg[i];
 #endif
 }
+#endif
 
 
 Process::Process(Elf::Object::sptr exec, Reader::sptr memory,
@@ -942,8 +944,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                             continue;
                         }
 #elif defined(__aarch64__)
-                        setReg(newRegs, IPREG, curFrame.getReg(30)); // pop...
-                        stack.emplace_back(p, Dwarf::UnwindMechanism::BAD_IP_RECOVERY, newRegs);
+			Elf::setReg(newRegs, IPREG, Elf::getReg(prev.regs, 30)); // pop...
+                        stack.emplace_back(Dwarf::UnwindMechanism::BAD_IP_RECOVERY, newRegs);
                         continue;
 #endif
                     }
@@ -957,12 +959,12 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 };
 
                 if (trampoline && trampoline == prev.rawIP()) {
-                    auto sigframe = p.io->readObj<rt_sigframe>(prev.getReg(31));
+                    auto sigframe = p.io->readObj<rt_sigframe>(Elf::getReg(prev.regs, 31));
                     for (int i = 0; i < 31; ++i)
-                       setReg(newRegs, i, sigframe.uc.uc_mcontext.regs[i]);
-                    setReg(newRegs, 31, sigframe.uc.uc_mcontext.sp);
-                    setReg(newRegs, 32, sigframe.uc.uc_mcontext.pc);
-                    stack.emplace_back(p, Dwarf::UnwindMechanism::TRAMPOLINE, newRegs);
+                       Elf::setReg(newRegs, i, sigframe.uc.uc_mcontext.regs[i]);
+		    Elf::setReg(newRegs, 31, sigframe.uc.uc_mcontext.sp);
+		    Elf::setReg(newRegs, 32, sigframe.uc.uc_mcontext.pc);
+                    stack.emplace_back(Dwarf::UnwindMechanism::TRAMPOLINE, newRegs);
                     continue;
                 }
 

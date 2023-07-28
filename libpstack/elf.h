@@ -355,10 +355,6 @@ private:
 // These are the architecture specific types representing the NT_PRSTATUS registers.
 #if defined(__PPC)
 typedef struct pt_regs CoreRegisters;
-#elif defined(__arm__) // 32-bit arm
-struct CoreRegisters {
-    elf_gregset_t regs;
-};
 #else
 typedef struct user_regs_struct CoreRegisters;
 #endif

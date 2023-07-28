@@ -41,7 +41,13 @@ SelfProcess::getRegs(lwpid_t pid, Elf::CoreRegisters *reg)
     ucontext_t context;
     assert(pid == getpid());
     getcontext(&context);
+
+#ifdef __aarch64__
+    assert(sizeof reg->regs == sizeof context.uc_mcontext.regs);
+    memcpy(reg->regs, &context.uc_mcontext.regs, sizeof  reg->regs);
+#else
     gregset2core(*reg, context.uc_mcontext.gregs);
+#endif
     return true;
 }
 
