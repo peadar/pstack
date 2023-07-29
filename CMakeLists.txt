@@ -44,6 +44,7 @@ message(STATUS "Version: ${VERSION_TAG}")
 add_definitions("-DVERSION=${VERSION_TAG}")
 
 set(CMAKE_CXX_STANDARD 17)
+add_definitions("-std=c++17") # the above does not work for clang.
 
 add_definitions("-Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
 # Adding frame pointers makes things easy to run performance measurements with,
