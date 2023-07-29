@@ -5,9 +5,9 @@ project(pstack-tests C CXX)
 # we need
 set(CMAKE_BUILD_TYPE Debug)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 
-add_definitions("-O0 -D_FORTIFY_SOURCE=0 -I${CMAKE_SOURCE_DIR}")
+add_definitions("-std=c++17 -O0 -D_FORTIFY_SOURCE=0 -I${CMAKE_SOURCE_DIR}")
 
 add_library(testhelper STATIC abort.c)
 
@@ -22,6 +22,7 @@ add_executable(inline inline.c)
 add_executable(args args.cc)
 add_executable(noreturn noreturn.c noreturn-ext.c)
 add_executable(cpp cpp.cc)
+add_executable(procself procself.cc)
 
 target_link_libraries(thread pthread testhelper)
 target_link_libraries(badfp testhelper)
@@ -31,6 +32,7 @@ target_link_libraries(segvrt testhelper)
 target_link_libraries(noreturn testhelper)
 target_link_libraries(cpp testhelper)
 target_link_libraries(inline testhelper)
+target_link_libraries(procself dwelf procman)
 SET_TARGET_PROPERTIES(noreturn PROPERTIES COMPILE_FLAGS "-O2 -g")
 
 # Build the basic executable with some options to compress debug sections with
