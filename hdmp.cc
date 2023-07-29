@@ -23,10 +23,11 @@ void printStack(std::ostream &os, Dwarf::ImageCache &ic, std::shared_ptr<Process
 
       os << "\t" << frames[i];
       if (elf) {
-         Elf::Sym sym;
-         std::string name;
-         if (elf->findSymbolByAddress(frameip - elfReloc, STT_FUNC, sym, name))
+         auto found = elf->findSymbolByAddress(frameip - elfReloc, STT_FUNC);
+         if (found) {
+            auto &[ sym, name ] = *found;
             os << "\t" << name << "+" << uintptr_t(frames[i]) - elfReloc - sym.st_value;
+         }
 
          auto dwarf = ic.getDwarf(elf);
          if (dwarf) {

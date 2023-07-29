@@ -12,6 +12,8 @@ extern "C" {
 #include <sstream>
 #include <functional>
 #include <bitset>
+#include <optional>
+#include <ucontext.h> // for gregset_t
 
 #include "libpstack/ps_callback.h"
 #include "libpstack/dwarf.h"
@@ -65,46 +67,71 @@ enum class UnwindMechanism {
    INVALID,
 };
 
-class StackFrame {
-    mutable Dwarf::DIE function_;
-public:
-    Dwarf::DIE &function() const;
-    Elf::Addr rawIP() const;
-    Elf::Addr scopeIP() const;
-    Elf::Addr cfa;
-    std::map<unsigned, cpureg_t> regs;
-    Elf::Object::sptr elf;
+// Information for a specific location in memory
+// XXX: much of this should be per-ELF file, and cached with the elf object.
+
+struct CodeLocation {
+    Elf::Addr location_;
+    Info::sptr dwarf_;
+    const Elf::Phdr *phdr_;
+    mutable const CIE *cie_;
+    mutable const FDE *fde_;
+    mutable const CFI *cfi_;
+    CallFrame frame_;
+    mutable Dwarf::DIE die_;
+    mutable Elf::MaybeNamedSymbol symbol_;
+
+    std::vector<std::pair<std::string, int>> source() const;
+    const Elf::MaybeNamedSymbol &symbol() const;
+
+    operator bool() const;
+    const Dwarf::DIE &die() const;
+    const CIE *cie() const;
+    const FDE *fde() const;
+    const CFI *cfi() const;
+    CodeLocation();
+    CodeLocation(Dwarf::Info::sptr, const Elf::Phdr *, Elf::Addr location);
+
+};
+
+// This is a CodeLocation, but relocated for a process address.
+struct ProcessLocation {
     Elf::Addr elfReloc;
-    const Elf::Phdr *phdr;
-    Info::sptr dwarf;
-    CFI *frameInfo;
-    const FDE *fde;
-    const CIE *cie;
+
+    // XXX: can cache these in Dwarf::Info
+    std::shared_ptr<CodeLocation> codeloc;
+
+    void set(const Process &proc, Elf::Addr address);
+    ProcessLocation(const Process &proc, Elf::Addr address_);
+    Elf::Addr address() const { return elfReloc + codeloc->location_; }
+    // these are proxies or the CodeLocation, adjusted by the elfReloc value.
+    bool valid() const  { return codeloc != nullptr; }
+    const Dwarf::DIE &die() const;
+    const CIE *cie() const;
+    const FDE *fde() const;
+    const CFI *cfi() const;
+    const Elf::MaybeNamedSymbol symbol() const;
+    std::vector<std::pair<std::string, int>> source() const;
+    Elf::Object::sptr elf() { return codeloc ? codeloc->dwarf_->elf : nullptr; }
+    Dwarf::Info::sptr dwarf() { return codeloc ? codeloc->dwarf_ : nullptr; }
+};
+
+class StackFrame {
+public:
+    Elf::Addr rawIP() const;
+    Dwarf::ProcessLocation scopeIP(const Process &) const;
+    Elf::CoreRegisters regs;
+    Elf::Addr cfa;
     UnwindMechanism mechanism;
     bool isSignalTrampoline;
-    StackFrame() : StackFrame(UnwindMechanism::INVALID) {}
-    StackFrame(UnwindMechanism mechanism)
-        : cfa(0)
-        , elfReloc(0)
-        , phdr(0)
-        , dwarf(0)
-        , frameInfo(0)
-        , fde(0)
-        , cie(0)
-        , mechanism(mechanism)
-        , isSignalTrampoline(false)
-    {}
-    StackFrame &operator = (const StackFrame &) = default;
-    StackFrame(const StackFrame &) = default;
-    void setReg(unsigned, cpureg_t);
-    cpureg_t getReg(unsigned regno) const;
-    Elf::Addr getCFA(const Process &, const CallFrame &) const;
-    bool unwind(Process &p, StackFrame &out);
+    StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs);
+    StackFrame &operator = (const StackFrame &) = delete;
+    std::optional<Elf::CoreRegisters> unwind(Process &);
     void setCoreRegs(const Elf::CoreRegisters &);
     void getCoreRegs(Elf::CoreRegisters &) const;
     void getFrameBase(const Process &, intmax_t, ExpressionStack *) const;
-    void findObjectCode(Process &);
 };
+
 }
 
 struct ThreadStack {
@@ -152,7 +179,6 @@ struct AddressRange {
 };
 
 class Process : public ps_prochandle {
-    Elf::Addr findRDebugAddr();
     Elf::Addr entry;
     Elf::Addr interpBase;
     void loadSharedObjects(Elf::Addr);
@@ -160,6 +186,7 @@ public:
     Elf::Addr vdsoBase;
 
 protected:
+    virtual Elf::Addr findRDebugAddr();
     virtual bool loadSharedObjectsFromFileNote() = 0;
     td_thragent_t *agent;
 public:
@@ -181,7 +208,7 @@ public:
     void addElfObject(Elf::Object::sptr obj, Elf::Addr load);
     // Find the the object (and its load address) and segment containing a given address
     std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *> findSegment(Elf::Addr addr) const;
-    Dwarf::Info::sptr getDwarf(Elf::Object::sptr);
+    Dwarf::Info::sptr getDwarf(Elf::Object::sptr) const;
     Process(Elf::Object::sptr exec, Reader::sptr memory, const PstackOptions &prl, Dwarf::ImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
@@ -199,7 +226,7 @@ public:
 
     // find symbol data of named symbol in the process.
     // like resolveSymbol, but return the library and that library's load address as well as the address in the process.
-    std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+    std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Sym>
     resolveSymbolDetail(const char *name, bool includeDebug,
                         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match =
                            [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
@@ -251,6 +278,27 @@ protected:
     bool loadSharedObjectsFromFileNote() override;
     std::vector<AddressRange> addressSpace() const override;
 };
+
+
+class SelfProcess : public Process {
+    pid_t pid;
+public:
+    // attach to existing process.
+    SelfProcess(const Elf::Object::sptr &, const PstackOptions &, Dwarf::ImageCache &);
+
+    virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
+    virtual void stop(pid_t) override;
+    virtual void resume(pid_t) override;
+    void stopProcess() override;
+    void resumeProcess() override;
+    virtual void load() override;
+    virtual pid_t getPID() const override;
+protected:
+    virtual Elf::Addr findRDebugAddr();
+    bool loadSharedObjectsFromFileNote() override;
+    std::vector<AddressRange> addressSpace() const override;
+};
+
 
 class CoreProcess;
 class CoreReader final : public Reader {
@@ -327,5 +375,8 @@ struct WaitStatus {
 };
 
 std::ostream &operator << (std::ostream &os, WaitStatus ws);
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::StackFrame, const Process *> &jt);
+std::ostream & operator << (std::ostream &os, const JSON<ThreadStack, const Process *> &jt);
+void gregset2core(Elf::CoreRegisters &core, const gregset_t greg);
 
 #endif

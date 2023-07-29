@@ -43,6 +43,9 @@
 #include <map>
 #include <memory>
 #include <limits>
+#include <optional>
+#include <utility>
+
 
 #include "libpstack/json.h"
 #include "libpstack/reader.h"
@@ -115,6 +118,9 @@ Type(Vernaux);
 #define ELF_ST_TYPE ELF32_ST_TYPE
 #define IS_ELF(a) true
 #endif
+
+using NamedSymbol = std::pair<Elf::Sym, std::string>;
+using MaybeNamedSymbol = std::optional<NamedSymbol>;
 
 inline size_t
 roundup2(size_t val, size_t align)
@@ -277,7 +283,7 @@ public:
     // Accessing segments.
     const ProgramHeaders &getSegments(Word type) const;
 
-    bool findSymbolByAddress(Addr addr, int type, Sym &, std::string &);
+    std::optional<std::pair<Sym, std::string>> findSymbolByAddress(Addr addr, int type);
     VersionedSymbol findDynamicSymbol(const std::string &name);
     Sym findDebugSymbol(const std::string &name);
 
@@ -352,13 +358,27 @@ private:
 // These are the architecture specific types representing the NT_PRSTATUS registers.
 #if defined(__PPC)
 typedef struct pt_regs CoreRegisters;
-#elif defined(__arm__) // 32-bit arm
-struct CoreRegisters {
-    elf_gregset_t regs;
-};
 #else
 typedef struct user_regs_struct CoreRegisters;
 #endif
+
+inline Addr getReg(const CoreRegisters &regs, int reg) {
+#define REGMAP(regno, field) case regno: return regs.field;
+    switch (reg) {
+#include "libpstack/archreg.h"
+    }
+#undef REGMAP
+    return 0;
+};
+
+inline void setReg(CoreRegisters &regs, int reg, Addr val) {
+#define REGMAP(regno, field) case regno: regs.field = val; break;
+    switch (reg) {
+#include "libpstack/archreg.h"
+    }
+#undef REGMAP
+};
+
 /*
  * Describes a note. Notes have a name, a type, and some associated data.
  */

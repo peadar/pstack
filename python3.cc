@@ -143,9 +143,9 @@ getInterpHead<3>(const Process &proc) {
     Elf::Addr libpythonAddr;
     Elf::Addr _PyRuntime;
 
-    std::tie(libpython, libpythonAddr, _PyRuntime) = proc.resolveSymbolDetail("_PyRuntime", false);
+    std::tie(libpython, libpythonAddr, _PyRuntimeSym) = proc.resolveSymbolDetail("_PyRuntime", false);
 
-    Elf::Addr interpHead = _PyRuntime + pyInterpOffset();
+    Elf::Addr interpHead = libpythonAddr + _PyRuntimeSym.st_value + pyInterpOffset();
 
     if (libpython == nullptr) {
         if (verbose)
