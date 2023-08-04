@@ -917,7 +917,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 // TOS, and the stack pointer adjusted.
                 //
                 // If we're wrong here, it's possible we do worse than we would
-                // have done had we fallen down to frame pointer unwinding, but
+                // have done had we fallen down to rame pointer unwinding, but
                 // we'd need to be executing an instruction in a piece of
                 // runtime-generated code, or something else that wasn't in a
                 // normal ELF phdr, so it seems more likely this is the best
@@ -1020,6 +1020,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                        Elf::setReg(newRegs, BPREG, newBp);
                        Elf::setReg(newRegs, IPREG, newIp);
                        stack.emplace_back(Dwarf::UnwindMechanism::FRAMEPOINTER, newRegs);
+                       stack.back().cfa = newBp;
                        continue;
                    }
                 }

@@ -135,7 +135,7 @@ add_executable(canal canal.cc ${pysrc})
 
 add_executable(${PSTACK_BIN} pstack.cc ${pysrc})
 
-target_link_libraries(procman ${LTHREADDB} dwelf)
+target_link_libraries(procman ${LTHREADDB} dwelf dl)
 target_link_libraries(${PSTACK_BIN} dwelf procman)
 target_link_libraries(canal dwelf procman)
 
