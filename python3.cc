@@ -141,7 +141,7 @@ std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
 getInterpHead<3>(const Process &proc) {
     Elf::Object::sptr libpython;
     Elf::Addr libpythonAddr;
-    Elf::Addr _PyRuntime;
+    Elf::Sym _PyRuntimeSym;
 
     std::tie(libpython, libpythonAddr, _PyRuntimeSym) = proc.resolveSymbolDetail("_PyRuntime", false);
 
