@@ -40,13 +40,10 @@ LiveProcess::LiveProcess(Elf::Object::sptr &ex, pid_t pid_,
        lwps[pid].stopCount = 1;
 }
 
-void
-LiveProcess::load()
-{
-    StopLWP here(this, pid);
-    processAUXV(LiveReader(pid, "auxv"));
-    Process::load();
+Reader::csptr LiveProcess::getAUXV() const {
+    return std::make_shared<LiveReader>(pid, "auxv");
 }
+
 
 bool
 LiveProcess::getRegs(lwpid_t pid, Elf::CoreRegisters *reg)

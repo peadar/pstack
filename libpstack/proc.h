@@ -201,6 +201,7 @@ public:
     std::map<pid_t, Lwp> lwps;
     Dwarf::ImageCache &imageCache;
     std::map<Elf::Addr, Elf::Object::sptr> objects;
+    virtual Reader::csptr getAUXV() const = 0;
     void processAUXV(const Reader &);
     Reader::sptr io;
 
@@ -232,7 +233,7 @@ public:
                            [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
     virtual std::list<ThreadStack> getStacks(const PstackOptions &, unsigned maxFrames);
     virtual ~Process();
-    virtual void load();
+    void load();
     virtual pid_t getPID() const = 0;
     virtual std::vector<AddressRange> addressSpace() const = 0;
     static std::shared_ptr<Process> load(Elf::Object::sptr exe, std::string id, const PstackOptions &options, Dwarf::ImageCache &cache);
@@ -271,7 +272,7 @@ public:
     virtual void resume(pid_t) override;
     void stopProcess() override;
     void resumeProcess() override;
-    virtual void load() override;
+    virtual Reader::csptr getAUXV() const override;
     void findLWPs();
     virtual pid_t getPID() const override;
 protected:
@@ -291,7 +292,7 @@ public:
     virtual void resume(pid_t) override;
     void stopProcess() override;
     void resumeProcess() override;
-    virtual void load() override;
+    virtual Reader::csptr getAUXV() const override;
     virtual pid_t getPID() const override;
 protected:
     virtual Elf::Addr findRDebugAddr();
@@ -323,7 +324,7 @@ public:
     void stopProcess() override;
     void resumeProcess()  override { }
     void findLWPs();
-    virtual void load() override;
+    virtual Reader::csptr getAUXV() const override;
     virtual pid_t getPID() const override;
 protected:
     bool loadSharedObjectsFromFileNote() override;
@@ -357,7 +358,7 @@ class LogProcess final : public Process {
    std::list<ThreadStack> stacks;
 public:
    LogProcess(Elf::Object::sptr exec, const std::vector<std::string> &logs, const PstackOptions &, Dwarf::ImageCache &);
-   void load();
+   Reader::csptr getAUXV() const;
    bool getRegs(lwpid_t, Elf::CoreRegisters *);
    void resume(pid_t);
    void resumeProcess();

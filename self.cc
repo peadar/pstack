@@ -27,12 +27,10 @@ SelfProcess::SelfProcess(const Elf::Object::sptr &ex, const PstackOptions &optio
 {
 }
 
-void
-SelfProcess::load()
+Reader::csptr
+SelfProcess::getAUXV() const
 {
-    StopLWP here(this, pid);
-    processAUXV(*loadFile("/proc/self/auxv"));
-    Process::load();
+    return loadFile("/proc/self/auxv");
 }
 
 bool

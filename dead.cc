@@ -12,18 +12,18 @@ CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
 {
 }
 
-void
-CoreProcess::load()
+Reader::csptr
+CoreProcess::getAUXV() const
 {
 #ifdef __linux__
     for (auto note : coreImage->notes()) {
        if (note.name() == "CORE" && note.type() == NT_AUXV) {
-           processAUXV(*note.data());
+           return note.data();
            break;
        }
     }
 #endif
-    Process::load();
+    return {};
 }
 
 void CoreReader::describe(std::ostream &os) const

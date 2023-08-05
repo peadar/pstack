@@ -16,9 +16,9 @@ LogProcess::LogProcess(Elf::Object::sptr exec, const std::vector<std::string> &l
 {
 }
 
-void
-LogProcess::load() {
-    Process::load();
+Reader::csptr
+LogProcess::getAUXV() const {
+    return {};
 }
 
 bool

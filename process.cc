@@ -94,6 +94,11 @@ Process::load()
      * work while the process is stopped.
      */
 
+    StopProcess here(this);
+    auto auxv = getAUXV();
+    if (auxv)
+        processAUXV(*auxv);
+
     if (!execImage)
         throw (Exception() << "no executable image located for process");
 
