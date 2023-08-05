@@ -184,9 +184,9 @@ class Process : public ps_prochandle {
     void loadSharedObjects(Elf::Addr);
 public:
     Elf::Addr vdsoBase;
+    virtual Elf::Addr findRDebugAddr();
 
 protected:
-    virtual Elf::Addr findRDebugAddr();
     virtual bool loadSharedObjectsFromFileNote() = 0;
     td_thragent_t *agent;
 public:
