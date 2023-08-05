@@ -124,6 +124,7 @@ class FileReader : public Reader {
 public:
     virtual size_t read(Off off, size_t count, char *ptr) const override ;
     FileReader(std::string name_);
+    FileReader(std::string name_, Off minsize);
     ~FileReader();
     void describe(std::ostream &os) const  override { os << name; }
     std::string filename() const override { return name; }
@@ -223,6 +224,7 @@ public:
 };
 
 Reader::csptr loadFile(const std::string &path);
+Reader::csptr loadFile(const std::string &path, Reader::Off minsize);
 
 // This allows a reader to provide an iterator over a sequence of objects of a
 // given type. Given a reader r, we can use 
@@ -233,29 +235,52 @@ template <typename T>
 struct ReaderArray {
    class iterator {
       const Reader *reader;
+      T datum;
+       void getitem();
    public:
       Reader::Off offset;
-      T operator *();
-      iterator(const Reader *reader_, Reader::Off offset_) : reader(reader_),offset(offset_) {}
+      T &operator *();
+      iterator(const Reader *reader_) : reader(reader_),offset(reader->size()) { }
+      iterator(const Reader *reader_, Reader::Off offset_) : reader(reader_),offset(offset_) {
+          getitem();
+      }
       bool operator == (const iterator &rhs) { return offset == rhs.offset && reader == rhs.reader; }
       bool operator != (const iterator &rhs) { return ! (*this == rhs); }
       size_t operator - (const iterator &rhs) { return offset - rhs.offset; }
-      void operator++() { offset += sizeof (T); }
+      iterator & operator++();
    };
    const Reader &reader;
    size_t initialOffset;
    typedef T value_type;
    iterator begin() const { return iterator(&reader, initialOffset); }
-   iterator end() const { return iterator(&reader, reader.size()); }
+   iterator end() const { return iterator(&reader); }
    ReaderArray(const Reader &reader_, size_t offset = 0) : reader(reader_), initialOffset(offset) {
-      assert(reader.size() % sizeof (T) == 0);
+      assert(reader.size() == std::numeric_limits<Reader::Off>::max() || reader.size() % sizeof (T) == 0);
    }
 };
 
-template <typename T> T ReaderArray<T>::iterator::operator *() {
-   T t;
-   reader->readObj(offset, &t);
-   return t;
+template <typename T> void ReaderArray<T>::iterator::getitem() {
+    try {
+        reader->readObj(offset, &datum);
+    }
+    catch (const Exception &ex) {
+        // if we hit an error, just set our size to the reader size. We'll now
+        // compare equal to end()
+        offset = reader->size();
+    }
+
+}
+
+template<typename T>
+typename ReaderArray<T>::iterator &ReaderArray<T>::iterator::operator ++() {
+    offset += sizeof (T);
+    getitem();
+    return *this;
+
+}
+
+template <typename T> T &ReaderArray<T>::iterator::operator *() {
+   return datum;
 }
 
 #endif

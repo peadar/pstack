@@ -26,6 +26,12 @@ FileReader::FileReader(string name_)
     fileSize = buf.st_size;
 }
 
+FileReader::FileReader(string name_, Off minsize)
+    : FileReader(name_)
+{
+    fileSize = std::max(fileSize, minsize);
+}
+
 FileReader::~FileReader()
 {
     ::close(file);
@@ -205,6 +211,14 @@ loadFile(const string &path)
     return std::make_shared<CacheReader>(
         std::make_shared<FileReader>(path));
 }
+
+Reader::csptr
+loadFile(const string &path, Reader::Off minsize)
+{
+    return std::make_shared<CacheReader>(
+        std::make_shared<FileReader>(path, minsize));
+}
+
 
 MmapReader::MmapReader(const string &name_)
    : MemReader(name_, 0, nullptr)
