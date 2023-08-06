@@ -371,6 +371,11 @@ Object::getSegments(Word type) const
     return it->second;
 }
 
+const std::map<Elf::Word, Object::ProgramHeaders> &
+Object::getAllSegments() const {
+    return programHeaders;
+}
+
 string
 Object::getInterpreter() const
 {

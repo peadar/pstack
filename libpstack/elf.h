@@ -282,6 +282,7 @@ public:
 
     // Accessing segments.
     const ProgramHeaders &getSegments(Word type) const;
+    const std::map<Elf::Word, ProgramHeaders> &getAllSegments() const;
 
     std::optional<std::pair<Sym, std::string>> findSymbolByAddress(Addr addr, int type);
     VersionedSymbol findDynamicSymbol(const std::string &name);
