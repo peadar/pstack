@@ -274,7 +274,8 @@ template <typename T> void ReaderArray<T>::iterator::getitem() {
 template<typename T>
 typename ReaderArray<T>::iterator &ReaderArray<T>::iterator::operator ++() {
     offset += sizeof (T);
-    getitem();
+    if (offset != reader->size())
+        getitem();
     return *this;
 
 }
