@@ -3,6 +3,8 @@
 #include "libpstack/elf.h"
 #include "libpstack/proc.h"
 
+#include <cassert>
+
 #include <iostream>
 
 CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
@@ -10,6 +12,18 @@ CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
     : Process(std::move(exec), std::make_shared<CoreReader>(this, core), options, imageCache)
     , coreImage(std::move(core))
 {
+
+#ifdef NT_PRSTATUS
+    for (auto note : coreImage->notes()) {
+        if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
+            tasks.push_back( note.data()->readObj<prstatus_t>(0) );
+            prstatus_t &task = tasks.back();
+            (void)lwps[task.pr_pid];
+            if (verbose)
+               *debug << "task " << task.pr_pid << " current sig is " << task.pr_cursig << "\n";
+        }
+#endif
+    }
 }
 
 Reader::csptr
@@ -115,13 +129,11 @@ bool
 CoreProcess::getRegs(lwpid_t pid, Elf::CoreRegisters *reg)
 {
 #ifdef NT_PRSTATUS
-   for (auto note : coreImage->notes()) {
-        if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
-            const auto &prstatus = note.data()->readObj<prstatus_t>(0);
-            if (prstatus.pr_pid == pid) {
-                memcpy(reg, &prstatus.pr_reg, sizeof(*reg));
-                return true;
-            }
+   for (auto &task : tasks) {
+        static_assert(sizeof task.pr_reg == sizeof *reg);
+        if (task.pr_pid == pid) {
+            memcpy(reg, &task.pr_reg, sizeof(*reg));
+            return true;
         }
    }
 #endif
@@ -143,32 +155,12 @@ CoreProcess::stop(lwpid_t /* unused */)
 void
 CoreProcess::stopProcess()
 {
-    // Find LWPs when we attempt to "stop" the process.
-    findLWPs();
 }
 
 pid_t
 CoreProcess::getPID() const
 {
-    // Return the PID of the first task in the core.
-    for (auto note : coreImage->notes())
-        if (note.name() == "CORE" && note.type() == NT_PRSTATUS)
-            return note.data()->readObj<prstatus_t>(0).pr_pid;
-    return -1;
-}
-
-void
-CoreProcess::findLWPs()
-{
-    for (auto note : coreImage->notes()) {
-        if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
-            auto prstatus = note.data()->readObj<prstatus_t>(0);
-            (void)lwps[prstatus.pr_pid];
-            if (verbose) {
-               *debug << "task " << prstatus.pr_pid << " current sig is " << prstatus.pr_cursig << "\n";
-            }
-        }
-    }
+    return tasks.size() != 0 ? tasks[0].pr_pid : -1;
 }
 
 std::vector<AddressRange>

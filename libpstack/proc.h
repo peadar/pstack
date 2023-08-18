@@ -323,10 +323,10 @@ public:
     virtual void resume(lwpid_t) override;
     void stopProcess() override;
     void resumeProcess()  override { }
-    void findLWPs();
     virtual Reader::csptr getAUXV() const override;
     virtual pid_t getPID() const override;
 protected:
+    std::vector<prstatus_t> tasks;
     bool loadSharedObjectsFromFileNote() override;
     std::vector<AddressRange> addressSpace() const override;
 };
