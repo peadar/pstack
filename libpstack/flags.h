@@ -11,7 +11,11 @@
 namespace {
 template <typename T> void convert(const char *opt, T &to) {
    if constexpr (std::is_integral<T>::value)
-      to = strtol(opt, 0, 0);
+      if constexpr (std::is_signed<T>::value)
+          to = T(strtoll(opt, 0, 0));
+      else
+          to = T(strtoull(opt, 0, 0));
+
    else if constexpr (std::is_floating_point<T>::value)
       to = strtod(opt, 0);
    else
