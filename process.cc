@@ -931,31 +931,41 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 // For ARM, the concept is the same, but we look at the link
                 // register rather than a pushd return address
 
+#if defined(__amd64__)
+#define BP(regs) (regs.rbp)
+#define SP(regs) (regs.rsp)
+#define IP(regs) (regs.rip)
+#elif defined(__i386__)
+#define BP(regs) regs.ebp
+#define SP(regs) regs.esp
+#define IP(regs) (regs.eip)
+#endif
+
                 auto newRegs = prev.regs; // start with a copy of prev frames regs.
 
                 if (stack.size() == 1 || prev.isSignalTrampoline) {
                     Dwarf::ProcessLocation prevlocation = prev.scopeIP(p);
-                    Dwarf::ProcessLocation location(p, Elf::getReg(newRegs, IPREG));
+                    Dwarf::ProcessLocation location(p, IP(newRegs));
                     if (!prevlocation.valid() || (location.valid() && (location.codeloc->phdr_->p_flags & PF_X) == 0)) {
+
 #if defined(__amd64__) || defined(__i386__)
                         // get stack pointer in the current frame, and read content of TOS
-                        auto sp = Elf::getReg(prev.regs, SPREG);
+                        auto sp = SP(prev.regs);
                         Elf::Addr ip;
                         auto in = p.io->read(sp, sizeof ip, (char *)&ip);
                         if (in == sizeof ip) {
-                            Elf::setReg(newRegs, SPREG, sp + sizeof ip); // pop...
-                            Elf::setReg(newRegs, IPREG, ip);             // .. insn pointer.
+                            SP(newRegs) = sp + sizeof ip;
+                            IP(newRegs) = ip;             // .. insn pointer.
                             stack.emplace_back(Dwarf::UnwindMechanism::BAD_IP_RECOVERY, newRegs);
                             continue;
                         }
 #elif defined(__aarch64__)
-			Elf::setReg(newRegs, IPREG, Elf::getReg(prev.regs, 30)); // pop...
+                        newRegs[32] = prev.regs[30]; // Copy old link register into new instruction pointer.
                         stack.emplace_back(Dwarf::UnwindMechanism::BAD_IP_RECOVERY, newRegs);
                         continue;
 #endif
                     }
                 }
-
 #if defined(__aarch64__)
                 // This is as per arch/arm64/kernel/signal.c
                 struct rt_sigframe {
@@ -966,9 +976,9 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 if (trampoline && trampoline == prev.rawIP()) {
                     auto sigframe = p.io->readObj<rt_sigframe>(Elf::getReg(prev.regs, 31));
                     for (int i = 0; i < 31; ++i)
-                       Elf::setReg(newRegs, i, sigframe.uc.uc_mcontext.regs[i]);
-		    Elf::setReg(newRegs, 31, sigframe.uc.uc_mcontext.sp);
-		    Elf::setReg(newRegs, 32, sigframe.uc.uc_mcontext.pc);
+                       newRegs[i] = sigframe.uc.uc_mcontext.regs[i];
+                    newRegs[31] = sigframe.uc.uc_mcontext.sp;
+                    newRegs[32] sigframe.uc.uc_mcontext.pc;
                     stack.emplace_back(Dwarf::UnwindMechanism::TRAMPOLINE, newRegs);
                     continue;
                 }
@@ -984,11 +994,11 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                     auto objip = prev.rawIP() - reloc;
                     auto restoreSym = obj->findDebugSymbol("__restore");
                     if (restoreSym.st_shndx != SHN_UNDEF && objip == restoreSym.st_value)
-                        sigContextAddr = Elf::getReg(prev.regs, SPREG) + 4;
+                        sigContextAddr = SP(prev.regs) + 4;
                     else {
                         auto restoreRtSym = obj->findDebugSymbol("__restore_rt");
                         if (restoreRtSym.st_shndx != SHN_UNDEF && objip == restoreRtSym.st_value)
-                            sigContextAddr = p.io->readObj<Elf::Addr>(Elf::getReg(prev.regs, SPREG) + 8) + 20;
+                            sigContextAddr = p.io->readObj<Elf::Addr>(SP(prev.regs) + 8) + 20;
                     }
                     if (sigContextAddr != 0) {
                        // This mapping is based on DWARF regnos, and ucontext.h
@@ -1013,7 +1023,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 // unwinding is finished.
                 if (prev.rawIP() != 0) {
                    Elf::Addr newBp, newIp, oldBp;
-                   oldBp = Elf::getReg(prev.regs, BPREG);
+                   oldBp = BP(prev.regs);
                    if (oldBp == 0) {
                       // null base pointer means we're done.
                       break;
@@ -1021,9 +1031,9 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                    p.io->readObj(oldBp + ELF_BYTES, &newIp);
                    p.io->readObj(oldBp, &newBp);
                    if (newBp > oldBp && newIp > 4096) {
-                       Elf::setReg(newRegs, SPREG, oldBp + ELF_BYTES * 2);
-                       Elf::setReg(newRegs, BPREG, newBp);
-                       Elf::setReg(newRegs, IPREG, newIp);
+                       SP(newRegs) = oldBp + ELF_BYTES * 2;
+                       BP(newRegs) = newBp;
+                       IP(newRegs) = newIp;
                        stack.emplace_back(Dwarf::UnwindMechanism::FRAMEPOINTER, newRegs);
                        stack.back().cfa = newBp;
                        continue;
