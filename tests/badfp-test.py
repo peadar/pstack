@@ -19,3 +19,7 @@ thread = dump[0]["ti_stack"]
 zeroframe = [ idx for (idx, frame) in enumerate(thread) if frame["ip"] == 0 ]
 assert(len(zeroframe) == 1)
 assert thread[zeroframe[0] - 1]["trampoline"]
+syms = [ frame["symbol"]["st_name"] for frame in thread if frame["symbol"] is not None ]
+
+# Mke sure we unwound past the 0 function.
+assert "main" in syms
