@@ -878,6 +878,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
     stack.reserve(20);
 
 #ifdef __aarch64__
+    // for ARM, if we see __kernel_rt_sigreturn on the stack, we have a signal
+    // stack frame
     auto sigreturnSym = p.vdsoImage->findDynamicSymbol("__kernel_rt_sigreturn");
     Elf::Addr trampoline = sigreturnSym.st_shndx == SHN_UNDEF ? 0 : sigreturnSym.st_value + p.vdsoBase;
 #endif
@@ -899,7 +901,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 stack.emplace_back(Dwarf::UnwindMechanism::DWARF, newRegs);
 #ifdef __aarch64__
                 auto &cur = stack.back();
-                if (Elf::getReg(newRegs, 32) == trampoline)
+                if (newRegs.pc == trampoline)
                     cur.isSignalTrampoline = true;
 #endif
             }
@@ -922,7 +924,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 // TOS, and the stack pointer adjusted.
                 //
                 // If we're wrong here, it's possible we do worse than we would
-                // have done had we fallen down to rame pointer unwinding, but
+                // have done had we fallen down to frame pointer unwinding, but
                 // we'd need to be executing an instruction in a piece of
                 // runtime-generated code, or something else that wasn't in a
                 // normal ELF phdr, so it seems more likely this is the best
@@ -961,22 +963,26 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                             stack.emplace_back(Dwarf::UnwindMechanism::BAD_IP_RECOVERY, newRegs);
                             continue;
                         }
+
 #elif defined(__aarch64__)
                         newRegs.pc = prev.regs.regs[30]; // Copy old link register into new instruction pointer.
                         stack.emplace_back(Dwarf::UnwindMechanism::BAD_IP_RECOVERY, newRegs);
                         continue;
 #endif
+
                     }
                 }
-#if defined(__aarch64__)
-                // This is as per arch/arm64/kernel/signal.c
-                struct rt_sigframe {
-                   siginfo_t si;
-                   ucontext_t uc;
-                };
 
+#if defined(__aarch64__)
+                // Deal with unwinding through an ARM signal handler
                 if (trampoline && trampoline == prev.rawIP()) {
-                    auto sigframe = p.io->readObj<rt_sigframe>(Elf::getReg(prev.regs, 31));
+                    // the stack pointer is pointing directly at rt_sigframe. This is
+                    // as per arch/arm64/kernel/signal.c
+                    struct rt_sigframe {
+                       siginfo_t si;
+                       ucontext_t uc;
+                    };
+                    auto sigframe = p.io->readObj<rt_sigframe>(prev.regs.sp);
                     for (int i = 0; i < 31; ++i)
                        newRegs.regs[i] = sigframe.uc.uc_mcontext.regs[i];
                     newRegs.sp = sigframe.uc.uc_mcontext.sp;
@@ -994,6 +1000,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 if (obj) {
                     Elf::Addr sigContextAddr = 0;
                     auto objip = prev.rawIP() - reloc;
+                    // Find the gregset on the stack - it differs depending on
+                    // whether this is realtime or "classic" frame
                     auto restoreSym = obj->findDebugSymbol("__restore");
                     if (restoreSym.st_shndx != SHN_UNDEF && objip == restoreSym.st_value)
                         sigContextAddr = SP(prev.regs) + 4;
@@ -1042,6 +1050,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                    }
                 }
 #endif
+
                 throw;
             }
         }
@@ -1051,7 +1060,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
     }
 }
 
-std::shared_ptr<Process> Process::load(Elf::Object::sptr exec, std::string id, const PstackOptions &options, Dwarf::ImageCache &imageCache) {
+std::shared_ptr<Process>
+Process::load(Elf::Object::sptr exec, std::string id, const PstackOptions &options, Dwarf::ImageCache &imageCache) {
     pid_t pid;
     std::istringstream(id) >> pid;
     std::shared_ptr<Process> proc;
@@ -1072,7 +1082,6 @@ std::shared_ptr<Process> Process::load(Elf::Object::sptr exec, std::string id, c
     proc->load();
     return proc;
 }
-
 
 std::list<ThreadStack>
 Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
@@ -1132,12 +1141,11 @@ Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
      */
     if (!options.doargs)
         processSuspender.clear();
-
     return threadStacks;
 }
 
-
-std::ostream & operator << (std::ostream &os, WaitStatus ws) {
+std::ostream &
+operator << (std::ostream &os, WaitStatus ws) {
    if (WIFSIGNALED(ws.status)) {
       os << "signal(" << strsignal(WTERMSIG(ws.status)) << ")";
       if (WCOREDUMP(ws.status))
