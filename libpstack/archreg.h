@@ -91,7 +91,6 @@ REGMAP(59, gs_base)
 #if ELF_BITS == 32
 #define IPREG 15
 #define CFA_RESTORE_REGNO 13
-
 REGMAP(0, regs[0])
 REGMAP(1, regs[1])
 REGMAP(2, regs[2])

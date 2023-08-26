@@ -9,7 +9,7 @@
 #include <stack>
 extern std::ostream & operator << (std::ostream &os, const Dwarf::DIE &dieo);
 
-namespace Dwarf {
+namespace Procman {
 void
 StackFrame::setCoreRegs(const Elf::CoreRegisters &sys)
 {
@@ -32,7 +32,7 @@ StackFrame::rawIP() const
     return Elf::getReg(regs, IPREG);
 }
 
-Dwarf::ProcessLocation
+ProcessLocation
 StackFrame::scopeIP(const Process &proc) const
 {
     // For a return address on the stack, it normally represents the next
@@ -56,7 +56,7 @@ StackFrame::scopeIP(const Process &proc) const
        return { proc, raw };
     if (mechanism == UnwindMechanism::MACHINEREGS)
        return { proc, raw };
-    Dwarf::ProcessLocation location(proc, raw);
+    ProcessLocation location(proc, raw);
 
     auto lcie = location.cie();
     if (lcie != nullptr && lcie->isSignalHandler)
@@ -70,7 +70,7 @@ StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *sta
     ProcessLocation location = scopeIP(p);
     auto f = location.die();
     if (f) {
-        auto base = f.attribute(DW_AT_frame_base);
+        auto base = f.attribute(Dwarf::DW_AT_frame_base);
         if (base.valid()) {
             stack->push(stack->eval(p, base, this, location.elfReloc) + offset);
             stack->isReg = false;
@@ -102,27 +102,27 @@ operator <<( std::ostream &os, DW_LLE lle) {
  * Evaluate an expression specified by an exprloc, or as inferred by a location list
  */
 Elf::Addr
-ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
+ExpressionStack::eval(const Process &proc, const Dwarf::DIE::Attribute &attr,
                       const StackFrame *frame, Elf::Addr reloc)
 {
-    Unit::sptr unit = attr.die.getUnit();
-    const Info *dwarf = unit->dwarf;
+    Dwarf::Unit::sptr unit = attr.die.getUnit();
+    const Dwarf::Info *dwarf = unit->dwarf;
     auto loc = frame->scopeIP(proc);
     auto ip = loc.address();
 
     const auto &unitEntry = unit->root();
-    auto unitLow = unitEntry.attribute(DW_AT_low_pc);
+    auto unitLow = unitEntry.attribute(Dwarf::DW_AT_low_pc);
 
     // default base address is relocation of the object + base of unit.
     uint64_t base = reloc + uintmax_t(unitLow);
 
     switch (attr.form()) {
-        case DW_FORM_sec_offset:
+        case Dwarf::DW_FORM_sec_offset:
             if (unit->version >= 5) {
                 // For dwarf 5, this will be a debug_loclists entry.
                 auto &sec = dwarf->elf->getDebugSection(".debug_loclists", SHT_NULL);
                 auto &addrsec = dwarf->elf->getDebugSection(".debug_addr", SHT_NULL);
-                DWARFReader r(sec.io(), uintmax_t(attr));
+                Dwarf::DWARFReader r(sec.io(), uintmax_t(attr));
                 for (;;) {
                     auto lle = DW_LLE(r.getu8());
                     switch (lle) {
@@ -135,7 +135,7 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                             auto end = r.getuleb128();
                             auto len = r.getuleb128();
                             if (base + start <= ip && ip < base + end) {
-                               DWARFReader exr(r.io, r.getOffset(), r.getOffset() + len);
+                                Dwarf::DWARFReader exr(r.io, r.getOffset(), r.getOffset() + len);
                                return eval(proc, exr, frame, loc.elfReloc);
                             }
                             r.skip(len);
@@ -158,7 +158,7 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                             auto end = start + r.getuleb128();
                             auto len = r.getuleb128();
                             if (base + start <= ip && ip < base + end) {
-                               DWARFReader exr(r.io, r.getOffset(), r.getOffset() + len);
+                                Dwarf::DWARFReader exr(r.io, r.getOffset(), r.getOffset() + len);
                                return eval(proc, exr, frame, loc.elfReloc);
                             }
                             r.skip(len);
@@ -174,7 +174,7 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                 auto &sec = dwarf->elf->getDebugSection(".debug_loc", SHT_NULL);
 
                 // convert this object-relative addr to a unit-relative one
-                DWARFReader r(sec.io(), uintmax_t(attr));
+                Dwarf::DWARFReader r(sec.io(), uintmax_t(attr));
                 for (;;) {
                     Elf::Addr start = r.getint(sizeof start);
                     Elf::Addr end = r.getint(sizeof end);
@@ -182,7 +182,7 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
                         return 0;
                     auto len = r.getuint(2);
                     if (ip >= base + start && ip < base + end) {
-                        DWARFReader exr(r.io, r.getOffset(), r.getOffset() + Elf::Word(len));
+                        Dwarf::DWARFReader exr(r.io, r.getOffset(), r.getOffset() + Elf::Word(len));
                         return eval(proc, exr, frame, loc.elfReloc);
                     }
                     r.skip(len);
@@ -190,11 +190,11 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
             }
             abort();
 
-        case DW_FORM_block1:
-        case DW_FORM_block:
-        case DW_FORM_exprloc: {
-            const auto &block = Block(attr);
-            DWARFReader r(dwarf->debugInfo.io(), block.offset, block.offset + block.length);
+        case Dwarf::DW_FORM_block1:
+        case Dwarf::DW_FORM_block:
+        case Dwarf::DW_FORM_exprloc: {
+            const auto &block = Dwarf::Block(attr);
+            Dwarf::DWARFReader r(dwarf->debugInfo.io(), block.offset, block.offset + block.length);
             return eval(proc, r, frame, reloc);
         }
         default:
@@ -203,8 +203,9 @@ ExpressionStack::eval(const Process &proc, const DIE::Attribute &attr,
 }
 
 Elf::Addr
-ExpressionStack::eval(const Process &proc, DWARFReader &r, const StackFrame *frame, Elf::Addr reloc)
+ExpressionStack::eval(const Process &proc, Dwarf::DWARFReader &r, const StackFrame *frame, Elf::Addr reloc)
 {
+    using namespace Dwarf;
     isReg = false;
     while (!r.empty()) {
         auto op = ExpressionOp(r.getu8());
@@ -434,6 +435,9 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     // relocate from process address to object address
     Elf::Off objaddr = location.address() - location.elfReloc;
 
+    using namespace Dwarf;
+
+
     DWARFReader r(cfi->io, fde->instructions, fde->end);
 
     auto iter = location.dwarf()->callFrameForAddr.find(objaddr);
@@ -553,7 +557,7 @@ ProcessLocation::symbol() const {
     return std::nullopt;
 }
 
-const FDE *
+const Dwarf::FDE *
 CodeLocation::fde() const {
     if (fde_ == nullptr) {
         fde_ = cfi()->findFDE(location_);
@@ -561,12 +565,12 @@ CodeLocation::fde() const {
     return fde_;
 }
 
-const FDE *
+const Dwarf::FDE *
 ProcessLocation::fde() const {
     return codeloc->fde();
 }
 
-const DIE &
+const Dwarf::DIE &
 CodeLocation::die() const {
     if (!die_ && dwarf_) {
         Dwarf::Unit::sptr u = dwarf_->lookupUnit(location_);
@@ -577,7 +581,7 @@ CodeLocation::die() const {
     return die_;
 }
 
-const DIE &
+const Dwarf::DIE &
 ProcessLocation::die() const {
     return codeloc->die();
 }
@@ -586,7 +590,7 @@ ProcessLocation::ProcessLocation(const Process &proc, Elf::Addr address_) {
     set(proc, address_);
 }
 
-const CIE *
+const Dwarf::CIE *
 ProcessLocation::cie() const {
     auto lfde = fde();
     if (lfde == nullptr)
@@ -629,16 +633,16 @@ ProcessLocation::set(const Process &proc, Elf::Addr address)
     }
 }
 
-const CFI *
+const Dwarf::CFI *
 CodeLocation::cfi() const {
 
-    CFI *cfi = dwarf_->getCFI();
+    Dwarf::CFI *cfi = dwarf_->getCFI();
     if (cfi == nullptr)
         throw (Exception() << "no CFI for " << *dwarf_->elf->io);
     return cfi;
 }
 
-const CFI *
+const Dwarf::CFI *
 ProcessLocation::cfi() const {
     if (codeloc == nullptr)
         throw Exception() << "no object for address";

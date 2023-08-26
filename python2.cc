@@ -133,7 +133,7 @@ int getKwonlyArgCount<2>(const PyObject *) {
 
 template <>
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
-getInterpHead<2>(const Process &proc) {
+getInterpHead<2>(const Procman::Process &proc) {
     for (auto &o : proc.objects) {
         std::string module = stringify(*o.second->io);
         if (module.find("python") == std::string::npos)

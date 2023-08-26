@@ -5,6 +5,8 @@
 
 #include <cstdarg>
 
+using Procman::Process;
+
 extern "C" {
 
 ps_err_e

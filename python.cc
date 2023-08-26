@@ -8,14 +8,14 @@
 
 static
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
-getInterpHead(const Process &);
+getInterpHead(const Procman::Process &);
 
 PyInterpInfo
-getPyInterpInfo(const Process &proc) {
+getPyInterpInfo(const Procman::Process &proc) {
     Elf::Object::sptr libpython;
     Elf::Addr libpythonAddr;
     Elf::Addr interpreterHead;
-    
+
     std::tie(libpython, libpythonAddr, interpreterHead) = getInterpHead(proc);
 
     if (libpython == nullptr)
@@ -47,7 +47,7 @@ getPyInterpInfo(const Process &proc) {
 }
 
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
-getInterpHead(const Process &proc) {
+getInterpHead(const Procman::Process &proc) {
     // As a local python2 hack, we have a global variable pointing at interp_head
     // We can use that to avoid needing any debug info for the interpreter.
     // (Python3 does not require this hack, because _PyRuntime is exported
@@ -102,7 +102,7 @@ getInterpHead(const Process &proc) {
 // pthread_t. (In Linux's 1:1 modern threadding model, each pthread_t is associated
 // with a single LWP, or Linux task.)
 bool
-pthreadTidOffset(const Process &proc, size_t *offsetp)
+pthreadTidOffset(const Procman::Process &proc, size_t *offsetp)
 {
     static size_t offset;
     static enum { notDone, notFound, found } status;

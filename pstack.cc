@@ -30,12 +30,12 @@ bool doJson = false;
 volatile bool interrupted = false;
 
 void
-pstack(Process &proc, const PstackOptions &options, int maxFrames)
+pstack(Procman::Process &proc, const PstackOptions &options, int maxFrames)
 {
     const auto &threadStacks = proc.getStacks(options, maxFrames);
     auto &os = *options.output;
     if (doJson) {
-        os << json(threadStacks, const_cast<const Process*>(&proc));
+        os << json(threadStacks, const_cast<const Procman::Process*>(&proc));
     } else {
         os << "process: " << *proc.io << "\n";
         for (auto &s : threadStacks) {
@@ -83,7 +83,7 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
          // error
          return -1;
       default:
-         std::shared_ptr<Process> p;
+         std::shared_ptr<Procman::Process> p;
          char statusBuf[PATH_MAX];
          snprintf(statusBuf, sizeof statusBuf, "/proc/%d/status", pid);
          struct closer { void operator()(FILE *f){ fclose(f); }};
@@ -100,7 +100,7 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
                break;
             }
             if (verbose > 2)
-               *debug << getpid() << "... done - rc=" << rc << ", status=" << WaitStatus(status) << "\n";
+               *debug << getpid() << "... done - rc=" << rc << ", status=" << Procman::WaitStatus(status) << "\n";
 
             if (WIFSTOPPED(status)) {
                // Read the content of the process's SigIgn and SigCgt info from procfs.
@@ -121,7 +121,7 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
                int stopsig = WSTOPSIG(status);
                int contsig = stopsig == SIGSTOP || stopsig == SIGTRAP ? 0 : stopsig;
                if (((1 << (stopsig -1)) & handledSigs) == 0) {
-                  p = std::make_shared<LiveProcess>(exe, pid, options, ic, true);
+                  p = std::make_shared<Procman::LiveProcess>(exe, pid, options, ic, true);
                   p->load();
                   pstack(*p, options, 100);
                   rc = ptrace(PTRACE_KILL, pid, 0, contsig);
@@ -145,8 +145,8 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
 
 
 #ifdef WITH_PYTHON
-template<int V> void doPy(Process &proc, const PstackOptions &options, bool showModules, const PyInterpInfo &info) {
-    StopProcess here(&proc);
+template<int V> void doPy(Procman::Process &proc, const PstackOptions &options, bool showModules, const PyInterpInfo &info) {
+    Procman::StopProcess here(&proc);
     PythonPrinter<V> printer(proc, *options.output, options, info);
     if (!printer.interpFound())
         throw Exception() << "no python interpreter found";
@@ -164,7 +164,7 @@ template<int V> void doPy(Process &proc, const PstackOptions &options, bool show
  * @param showModules   Whether to show modules
  * @return              boolean of whether the process was a Python process or not
  */
-bool pystack(Process &proc, const PstackOptions &options, bool showModules) {
+bool pystack(Procman::Process &proc, const PstackOptions &options, bool showModules) {
     PyInterpInfo info = getPyInterpInfo(proc);
 
     if (info.libpython == nullptr) // not a python process or python interpreter not found
@@ -378,7 +378,7 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
     if (optind == argc && btLogs.empty())
         return usage(std::cerr, argv[0], flags);
 
-    auto doStack = [=, &options] (Process &proc) {
+    auto doStack = [=, &options] (Procman::Process &proc) {
         while (!interrupted) {
 #if defined(WITH_PYTHON)
             if (doPython || printAllStacks) {
@@ -399,13 +399,13 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
         }
     };
     if (!btLogs.empty()) {
-       LogProcess lp{exec, btLogs, options, imageCache};
+        Procman::LogProcess lp{exec, btLogs, options, imageCache};
        lp.load();
        doStack(lp);
     } else {
         for (int i = optind; i < argc; i++) {
             try {
-                auto process = Process::load(exec, argv[i], options, imageCache); // this calls the load() instance member.
+                auto process = Procman::Process::load(exec, argv[i], options, imageCache); // this calls the load() instance member.
                 if (process == nullptr)
                     exec = imageCache.getImageForName(argv[i]);
                 else

@@ -20,19 +20,28 @@ extern "C" {
 
 struct ps_prochandle {};
 
+struct PstackOptions {
+   bool nosrc = false;
+   bool doargs = false;
+   bool dolocals = false;
+   bool nothreaddb = false;
+   int maxdepth = std::numeric_limits<int>::max();
+   std::ostream *output = &std::cout;
+};
+
+namespace Procman {
+
 class Process;
 
-namespace Dwarf {
 class StackFrame;
 class ExpressionStack : public std::stack<Elf::Addr> {
 public:
     bool isReg;
     int inReg;
-
     ExpressionStack(): isReg(false) {}
     Elf::Addr poptop() { Elf::Addr tos = top(); pop(); return tos; }
-    Elf::Addr eval(const Process &, DWARFReader &r, const StackFrame*, Elf::Addr);
-    Elf::Addr eval(const Process &, const DIE::Attribute &, const StackFrame*, Elf::Addr);
+    Elf::Addr eval(const Process &, Dwarf::DWARFReader &r, const StackFrame*, Elf::Addr);
+    Elf::Addr eval(const Process &, const Dwarf::DIE::Attribute &, const StackFrame*, Elf::Addr);
 };
 
 // this works for i386 and x86_64 - might need to change for other archs.
@@ -72,12 +81,12 @@ enum class UnwindMechanism {
 
 struct CodeLocation {
     Elf::Addr location_;
-    Info::sptr dwarf_;
+    Dwarf::Info::sptr dwarf_;
     const Elf::Phdr *phdr_;
-    mutable const CIE *cie_;
-    mutable const FDE *fde_;
-    mutable const CFI *cfi_;
-    CallFrame frame_;
+    mutable const Dwarf::CIE *cie_;
+    mutable const Dwarf::FDE *fde_;
+    mutable const Dwarf::CFI *cfi_;
+    Dwarf::CallFrame frame_;
     mutable Dwarf::DIE die_;
     mutable Elf::MaybeNamedSymbol symbol_;
 
@@ -86,9 +95,9 @@ struct CodeLocation {
 
     operator bool() const;
     const Dwarf::DIE &die() const;
-    const CIE *cie() const;
-    const FDE *fde() const;
-    const CFI *cfi() const;
+    const Dwarf::CIE *cie() const;
+    const Dwarf::FDE *fde() const;
+    const Dwarf::CFI *cfi() const;
     CodeLocation();
     CodeLocation(Dwarf::Info::sptr, const Elf::Phdr *, Elf::Addr location);
 
@@ -107,9 +116,9 @@ struct ProcessLocation {
     // these are proxies or the CodeLocation, adjusted by the elfReloc value.
     bool valid() const  { return codeloc != nullptr; }
     const Dwarf::DIE &die() const;
-    const CIE *cie() const;
-    const FDE *fde() const;
-    const CFI *cfi() const;
+    const Dwarf::CIE *cie() const;
+    const Dwarf::FDE *fde() const;
+    const Dwarf::CFI *cfi() const;
     const Elf::MaybeNamedSymbol symbol() const;
     std::vector<std::pair<std::string, int>> source() const;
     Elf::Object::sptr elf() { return codeloc ? codeloc->dwarf_->elf : nullptr; }
@@ -119,7 +128,7 @@ struct ProcessLocation {
 class StackFrame {
 public:
     Elf::Addr rawIP() const;
-    Dwarf::ProcessLocation scopeIP(const Process &) const;
+    ProcessLocation scopeIP(const Process &) const;
     Elf::CoreRegisters regs;
     Elf::Addr cfa;
     UnwindMechanism mechanism;
@@ -132,24 +141,13 @@ public:
     void getFrameBase(const Process &, intmax_t, ExpressionStack *) const;
 };
 
-}
-
 struct ThreadStack {
     td_thrinfo_t info;
-    std::vector<Dwarf::StackFrame> stack;
+    std::vector<StackFrame> stack;
     ThreadStack() {
         memset(&info, 0, sizeof info);
     }
     void unwind(Process &, Elf::CoreRegisters &regs, unsigned maxFrames);
-};
-
-struct PstackOptions {
-   bool nosrc = false;
-   bool doargs = false;
-   bool dolocals = false;
-   bool nothreaddb = false;
-   int maxdepth = std::numeric_limits<int>::max();
-   std::ostream *output = &std::cout;
 };
 
 /*
@@ -164,10 +162,6 @@ struct Lwp {
 };
 
 struct PrintableFrame;
-
-
-struct ProcessLocation {
-};
 
 struct AddressRange {
    Elf::Addr start;
@@ -216,7 +210,7 @@ public:
     virtual void resumeProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
     std::ostream &dumpStackText(std::ostream &, const ThreadStack &, const PstackOptions &) const;
-    std::ostream &dumpFrameText(std::ostream &, const PrintableFrame &, const Dwarf::StackFrame &) const;
+    std::ostream &dumpFrameText(std::ostream &, const PrintableFrame &, const StackFrame &) const;
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &) const;
     template <typename T> void listThreads(const T &);
 
@@ -375,9 +369,11 @@ struct WaitStatus {
    WaitStatus(int status) : status{status}{}
 };
 
-std::ostream &operator << (std::ostream &os, WaitStatus ws);
-std::ostream &operator << (std::ostream &os, const JSON<Dwarf::StackFrame, const Process *> &jt);
-std::ostream & operator << (std::ostream &os, const JSON<ThreadStack, const Process *> &jt);
 void gregset2core(Elf::CoreRegisters &core, const gregset_t greg);
+}
+
+std::ostream &operator << (std::ostream &os, Procman::WaitStatus ws);
+std::ostream &operator << (std::ostream &os, const JSON<Procman::StackFrame, const Procman::Process *> &jt);
+std::ostream &operator << (std::ostream &os, const JSON<Procman::ThreadStack, const Procman::Process *> &jt);
 
 #endif

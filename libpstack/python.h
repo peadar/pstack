@@ -73,13 +73,13 @@ struct PythonPrinter {
     };
     mutable std::map<const _typeobject *, std::unique_ptr<_typeobject, freetype>> types;
 
-    PythonPrinter(Process &proc_, std::ostream &os_, const PstackOptions &, const PyInterpInfo &info_);
+    PythonPrinter(Procman::Process &proc_, std::ostream &os_, const PstackOptions &, const PyInterpInfo &info_);
     const char *prefix() const;
     void printInterpreters(bool withModules);
     Elf::Addr printThread(Elf::Addr);
     Elf::Addr printInterp(Elf::Addr, bool withModules);
 
-    Process &proc;
+    Procman::Process &proc;
     std::ostream &os;
     mutable std::set<Elf::Addr> visited;
     mutable int depth;
@@ -91,12 +91,12 @@ struct PythonPrinter {
     std::map<const _typeobject *, const PythonTypePrinter<PyV> *> printers;
     bool interpFound() const; // returns true if the printer could find the interpreter.
 };
-bool pthreadTidOffset(const Process &proc, size_t *offsetp);
-PyInterpInfo getPyInterpInfo(const Process &proc);
+bool pthreadTidOffset(const Procman::Process &proc, size_t *offsetp);
+PyInterpInfo getPyInterpInfo(const Procman::Process &proc);
 template <int PyV, typename T> ssize_t pyRefcnt(const T *t);
 
 template <int V>
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
-getInterpHead(const Process &);
+getInterpHead(const Procman::Process &);
 
 #endif

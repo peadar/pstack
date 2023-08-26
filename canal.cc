@@ -229,7 +229,7 @@ mainExcept(int argc, char *argv[])
         return 0;
     }
 
-    auto process = Process::load(exec, argv[optind], PstackOptions(), imageCache);
+    auto process = Procman::Process::load(exec, argv[optind], PstackOptions(), imageCache);
     if (searchaddrs.size()) {
         std::clog << "finding references to " << dec << searchaddrs.size() << " addresses\n";
         for (auto &addr : searchaddrs)

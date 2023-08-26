@@ -16,10 +16,10 @@ main()
     PstackOptions options;
     Dwarf::ImageCache cache;
     getppid();
-    std::shared_ptr<Process> p = std::make_shared<SelfProcess>(nullptr, options, cache);
+    std::shared_ptr<Procman::Process> p = std::make_shared<Procman::SelfProcess>(nullptr, options, cache);
     p->load();
 
-    Dwarf::ProcessLocation li(*p, Elf::Addr(foobar));
+    Procman::ProcessLocation li(*p, Elf::Addr(foobar));
 
     auto [ lib, addr, sym ]  = p->resolveSymbolDetail("foobar", true);
 

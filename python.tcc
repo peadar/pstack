@@ -288,7 +288,7 @@ template <int PyV> bool PythonPrinter<PyV>::interpFound() const {
 
 
 template <int PyV>
-PythonPrinter<PyV>::PythonPrinter(Process &proc_, std::ostream &os_, const PstackOptions &options_, const PyInterpInfo &info_)
+PythonPrinter<PyV>::PythonPrinter(Procman::Process &proc_, std::ostream &os_, const PstackOptions &options_, const PyInterpInfo &info_)
     : proc(proc_)
     , os(os_)
     , depth(0)

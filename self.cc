@@ -20,6 +20,7 @@
 #include <ucontext.h>
 #include <dlfcn.h>
 
+namespace Procman {
 SelfProcess::SelfProcess(const Elf::Object::sptr &ex, const PstackOptions &options, Dwarf::ImageCache &imageCache)
     : Process( ex ? ex : imageCache.getImageForName("/proc/self/exe"),
             std::make_shared<MemReader>("me", std::numeric_limits<size_t>::max(), reinterpret_cast<void *>(0)), // the entire of our own address space.
@@ -112,3 +113,4 @@ SelfProcess::findRDebugAddr() {
     return Elf::Addr(dlsym(RTLD_DEFAULT, "_r_debug"));
 }
 
+}

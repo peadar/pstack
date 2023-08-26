@@ -10,6 +10,7 @@
 
 #include <iostream>
 
+namespace Procman {
 LogProcess::LogProcess(Elf::Object::sptr exec, const std::vector<std::string> &logs_, const PstackOptions &options, Dwarf::ImageCache &imageCache)
     : Process(std::move(exec), std::make_shared<CoreReader>(this, nullptr), options, imageCache)
     , logs( logs_ )
@@ -142,8 +143,9 @@ LogProcess::loadSharedObjectsFromFileNote() {
         for (auto addr : ipStack) {
            Elf::CoreRegisters core;
            Elf::setReg(core, IPREG, addr);
-           procstack.stack.emplace_back(Dwarf::UnwindMechanism::LOGFILE, core);
+           procstack.stack.emplace_back(UnwindMechanism::LOGFILE, core);
         }
     }
     return true;
+}
 }

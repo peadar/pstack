@@ -18,6 +18,7 @@
 #include <utility>
 #include <fstream>
 
+namespace Procman {
 std::string
 procname(pid_t pid, const std::string &base)
 {
@@ -212,4 +213,5 @@ LiveProcess::loadSharedObjectsFromFileNote()
     // In theory we can implement this by grovelling in /proc/<pid>/maps, but
     // it mostly exists for truncated core files, so don't bother now.
     return false;
+}
 }

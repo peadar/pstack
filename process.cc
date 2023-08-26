@@ -33,6 +33,68 @@
 #elif defined(__aarch64__)
 #define IP(regs) (regs.pc)
 #endif
+std::ostream &
+operator << (std::ostream &os, const JSON<std::pair<std::string, int>> &jt)
+{
+    return JObject(os)
+        .field("file", jt.object.first)
+        .field("line", jt.object.second);
+}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<std::pair<Elf::Sym, std::string>> &js)
+{
+    const auto &obj = js.object;
+    return JObject(os)
+        .field("st_name", obj.second)
+        .field("st_value", obj.first.st_value)
+        .field("st_size", obj.first.st_size)
+        .field("st_info", int(obj.first.st_info))
+        .field("st_other", int(obj.first.st_other))
+        .field("st_shndx", obj.first.st_shndx);
+}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<Procman::ProcessLocation, const Procman::Process *> &)
+{
+    return os;
+}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<Procman::StackFrame, const Procman::Process *> &jt);
+
+std::ostream &
+operator << (std::ostream &os, const JSON<Procman::ThreadStack, const Procman::Process *> &ts)
+{
+    return JObject(os)
+        .field("ti_tid", ts.object.info.ti_tid)
+        .field("ti_lid", ts.object.info.ti_lid)
+        .field("ti_type", ts.object.info.ti_type)
+        .field("ti_pri", ts.object.info.ti_pri)
+        .field("ti_stack", ts.object.stack, ts.context);
+}
+
+
+namespace std {
+bool
+operator < (const std::pair<Elf::Addr, Elf::Object::sptr> &entry, Elf::Addr addr) {
+   return entry.first < addr;
+}
+}
+
+template <typename ctx>
+std::ostream &
+operator << (std::ostream &os, const JSON<td_thr_type_e, ctx> &jt)
+{
+    switch (jt.object) {
+        case TD_THR_ANY_TYPE: return os << json("TD_THR_ANY_TYPE");
+        case TD_THR_USER: return os << json("TD_THR_USER");
+        case TD_THR_SYSTEM: return os << json("TD_THR_SYSTEM");
+        default: return os << json("unknown type");
+    }
+}
+
+namespace Procman {
 
 /*
  * convert a gregset_t to an Elf::CoreRegs
@@ -235,27 +297,15 @@ Process::processAUXV(const Reader &auxio)
     }
 }
 
-template <typename ctx>
-std::ostream &
-operator << (std::ostream &os, const JSON<td_thr_type_e, ctx> &jt)
-{
-    switch (jt.object) {
-        case TD_THR_ANY_TYPE: return os << json("TD_THR_ANY_TYPE");
-        case TD_THR_USER: return os << json("TD_THR_USER");
-        case TD_THR_SYSTEM: return os << json("TD_THR_SYSTEM");
-        default: return os << json("unknown type");
-    }
-}
-
 static bool
-dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
+buildDIEName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
     // use the specification or abstract origin DIE instead of this if we have one.
     auto spec = die.attribute(Dwarf::DW_AT_specification);
     if (spec.valid())
-        return dieName(os, Dwarf::DIE(spec), first);
+        return buildDIEName(os, Dwarf::DIE(spec), first);
     auto origin = die.attribute(Dwarf::DW_AT_abstract_origin);
     if (origin.valid())
-        return dieName(os, Dwarf::DIE(origin), first);
+        return buildDIEName(os, Dwarf::DIE(origin), first);
 
     // Don't walk up past compile units.
     if (die.tag() == Dwarf::DW_TAG_compile_unit || die.tag() == Dwarf::DW_TAG_partial_unit)
@@ -263,7 +313,7 @@ dieName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
 
     auto parent = die.getParentOffset();
     assert(parent != 0); // because die would have been a unit or partial unit
-    bool printedParent = dieName(os, die.getUnit()->offsetToDIE(Dwarf::DIE(), parent), false);
+    bool printedParent = buildDIEName(os, die.getUnit()->offsetToDIE(Dwarf::DIE(), parent), false);
 
     auto tag = die.tag();
     if (first ||
@@ -285,14 +335,14 @@ struct PrintableFrame {
     std::string dieName;
     const PstackOptions &options;
     Elf::Addr functionOffset;
-    const Dwarf::StackFrame &frame;
+    const StackFrame &frame;
     std::vector<Dwarf::DIE> inlined; // func + inlined.
-    PrintableFrame(const Process &, const Dwarf::StackFrame &frame, int frameNo, const PstackOptions &options);
+    PrintableFrame(const Process &, const StackFrame &frame, int frameNo, const PstackOptions &options);
     PrintableFrame(const PrintableFrame &) = delete;
     PrintableFrame() = delete;
 };
 
-PrintableFrame::PrintableFrame(const Process &proc, const Dwarf::StackFrame &frame, int frameNo, const PstackOptions &options)
+PrintableFrame::PrintableFrame(const Process &proc, const StackFrame &frame, int frameNo, const PstackOptions &options)
     : proc(proc)
     , frameNumber(frameNo)
     , options(options)
@@ -307,7 +357,7 @@ PrintableFrame::PrintableFrame(const Process &proc, const Dwarf::StackFrame &fra
     auto function = location.die();
     if (function) {
         std::ostringstream sos;
-        ::dieName(sos, function);
+        buildDIEName(sos, function);
         this->dieName = sos.str();
         auto lowpc = function.attribute(Dwarf::DW_AT_low_pc);
         if (lowpc.valid()) {
@@ -339,73 +389,6 @@ PrintableFrame::PrintableFrame(const Process &proc, const Dwarf::StackFrame &fra
         if (maybesym)
             functionOffset = objIp - maybesym->first.st_value;
     }
-}
-
-std::ostream &
-operator << (std::ostream &os, const JSON<std::pair<std::string, int>> &jt)
-{
-    return JObject(os)
-        .field("file", jt.object.first)
-        .field("line", jt.object.second);
-}
-
-std::ostream &
-operator << (std::ostream &os, const JSON<std::pair<Elf::Sym, std::string>> &js)
-{
-    const auto &obj = js.object;
-    return JObject(os)
-        .field("st_name", obj.second)
-        .field("st_value", obj.first.st_value)
-        .field("st_size", obj.first.st_size)
-        .field("st_info", int(obj.first.st_info))
-        .field("st_other", int(obj.first.st_other))
-        .field("st_shndx", obj.first.st_shndx);
-}
-
-std::ostream &
-operator << (std::ostream &os, const JSON<Dwarf::ProcessLocation, const Process *> &)
-{
-    return os;
-}
-
-std::ostream &
-operator << (std::ostream &os, const JSON<Dwarf::StackFrame, const Process *> &jt)
-{
-    auto &frame =jt.object;
-    PstackOptions options;
-    options.doargs = true;
-    Dwarf::ProcessLocation location = frame.scopeIP(*jt.context);
-    PrintableFrame pframe(*jt.context, frame, 0, options);
-
-    JObject jo(os);
-    jo
-        .field("ip", frame.rawIP())
-        .field("offset", pframe.functionOffset)
-        .field("trampoline", frame.isSignalTrampoline)
-        .field("die", pframe.dieName)
-        .field("loadaddr", location.elfReloc)
-        ;
-
-    const auto &sym = location.symbol();
-    if (sym)
-        jo.field("symbol", *sym);
-    else
-        jo.field("symbol", JsonNull());
-
-    jo.field("source", location.source());
-
-    return jo;
-}
-
-std::ostream &
-operator << (std::ostream &os, const JSON<ThreadStack, const Process *> &ts)
-{
-    return JObject(os)
-        .field("ti_tid", ts.object.info.ti_tid)
-        .field("ti_lid", ts.object.info.ti_lid)
-        .field("ti_type", ts.object.info.ti_type)
-        .field("ti_pri", ts.object.info.ti_pri)
-        .field("ti_stack", ts.object.stack, ts.context);
 }
 
 struct ArgPrint {
@@ -579,7 +562,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
 std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
-    Dwarf::ProcessLocation location = ap.pframe.frame.scopeIP(ap.p);
+    ProcessLocation location = ap.pframe.frame.scopeIP(ap.p);
     if (!location.die() || !ap.pframe.options.doargs)
         return os;
     using namespace Dwarf;
@@ -595,7 +578,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
                     auto attr = child.attribute(Dwarf::DW_AT_location);
 
                     if (attr.valid()) {
-                        Dwarf::ExpressionStack fbstack;
+                        ExpressionStack fbstack;
                         addr = fbstack.eval(ap.p, attr, &ap.pframe.frame, location.elfReloc);
                         os << "=";
                         try {
@@ -624,15 +607,15 @@ operator << (std::ostream &os, const ArgPrint &ap)
     return os;
 }
 
-std::ostream &operator << (std::ostream &os, Dwarf::UnwindMechanism mech) {
+std::ostream &operator << (std::ostream &os, UnwindMechanism mech) {
    switch (mech) {
-      case Dwarf::UnwindMechanism::MACHINEREGS: return os << "machine registers";
-      case Dwarf::UnwindMechanism::DWARF: return os << "DWARF";
-      case Dwarf::UnwindMechanism::FRAMEPOINTER: return os << "frame pointer";
-      case Dwarf::UnwindMechanism::BAD_IP_RECOVERY: return os << "popped faulting IP";
-      case Dwarf::UnwindMechanism::TRAMPOLINE: return os << "signal trampoline";
-      case Dwarf::UnwindMechanism::LOGFILE: return os << "log file";
-      case Dwarf::UnwindMechanism::INVALID: return os << "invalid";
+      case UnwindMechanism::MACHINEREGS: return os << "machine registers";
+      case UnwindMechanism::DWARF: return os << "DWARF";
+      case UnwindMechanism::FRAMEPOINTER: return os << "frame pointer";
+      case UnwindMechanism::BAD_IP_RECOVERY: return os << "popped faulting IP";
+      case UnwindMechanism::TRAMPOLINE: return os << "signal trampoline";
+      case UnwindMechanism::LOGFILE: return os << "log file";
+      case UnwindMechanism::INVALID: return os << "invalid";
    }
    abort();
 }
@@ -651,12 +634,12 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread,
 }
 
 std::ostream &
-Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, const Dwarf::StackFrame &frame) const
+Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, const StackFrame &frame) const
 {
 
     IOFlagSave _(os);
 
-    Dwarf::ProcessLocation location = pframe.frame.scopeIP(pframe.proc);
+    ProcessLocation location = pframe.frame.scopeIP(pframe.proc);
     auto source = location.source();
     std::pair<std::string, int> src = source.size() ? source[0] : std::make_pair( "", std::numeric_limits<Elf::Addr>::max());
     for (auto i = pframe.inlined.rbegin(); i != pframe.inlined.rend(); ++i) {
@@ -669,7 +652,7 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, const Dwa
            os << " ";
        }
        os << " in ";
-       ::dieName(os, *i);
+       buildDIEName(os, *i);
        auto lineinfo = i->getUnit()->getLines();
        if (lineinfo) {
           os << " at " << src.first << ":" << src.second;
@@ -799,7 +782,7 @@ Process::findRDebugAddr()
         // Read from the process, not the executable - the linker will have updated the content.
         auto dynReader = io->view("PT_DYNAMIC segment", segment.p_vaddr + loadAddr, segment.p_filesz);
         ReaderArray<Elf::Dyn> dynamic(*dynReader);
-        for (auto dyn : dynamic)
+        for (auto &dyn : dynamic)
             if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0)
                 return dyn.d_un.d_ptr;
     }
@@ -821,13 +804,6 @@ Process::findRDebugAddr()
         }
     }
     return 0;
-}
-
-namespace std {
-bool
-operator < (const std::pair<Elf::Addr, Elf::Object::sptr> &entry, Elf::Addr addr) {
-   return entry.first < addr;
-}
 }
 
 std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>
@@ -895,7 +871,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
 #endif
 
     try {
-        stack.emplace_back(Dwarf::UnwindMechanism::MACHINEREGS, regs);
+        stack.emplace_back(UnwindMechanism::MACHINEREGS, regs);
 
         // Set up the first frame using the machine context registers
         stack.front().setCoreRegs(regs);
@@ -908,7 +884,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 if (!maybeNewRegs)
                     break;
                 auto &newRegs = *maybeNewRegs;
-                stack.emplace_back(Dwarf::UnwindMechanism::DWARF, newRegs);
+                stack.emplace_back(UnwindMechanism::DWARF, newRegs);
 #ifdef __aarch64__
                 auto &cur = stack.back();
                 if (newRegs.pc == trampoline)
@@ -945,9 +921,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
 
 
                 if (stack.size() == 1 || stack[stack.size() - 2].isSignalTrampoline) {
-                    Dwarf::ProcessLocation badip = { p, IP(prev.regs) };
+                    ProcessLocation badip = { p, IP(prev.regs) };
                     if (!badip.valid() || (badip.codeloc->phdr_->p_flags & PF_X) == 0) {
-
                         auto newRegs = prev.regs; // start with a copy of prev frames regs.
 #if defined(__amd64__) || defined(__i386__)
                         // get stack pointer in the current frame, and read content of TOS
@@ -957,13 +932,13 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                         if (in == sizeof ip) {
                             SP(newRegs) = sp + sizeof ip;
                             IP(newRegs) = ip;             // .. insn pointer.
-                            stack.emplace_back(Dwarf::UnwindMechanism::BAD_IP_RECOVERY, newRegs);
+                            stack.emplace_back(UnwindMechanism::BAD_IP_RECOVERY, newRegs);
                             continue;
                         }
 
 #elif defined(__aarch64__)
                         newRegs.pc = prev.regs.regs[30]; // Copy old link register into new instruction pointer.
-                        stack.emplace_back(Dwarf::UnwindMechanism::BAD_IP_RECOVERY, newRegs);
+                        stack.emplace_back(UnwindMechanism::BAD_IP_RECOVERY, newRegs);
                         continue;
 #endif
 
@@ -985,7 +960,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                        newRegs.regs[i] = sigframe.uc.uc_mcontext.regs[i];
                     newRegs.sp = sigframe.uc.uc_mcontext.sp;
                     newRegs.pc = sigframe.uc.uc_mcontext.pc;
-                    stack.emplace_back(Dwarf::UnwindMechanism::TRAMPOLINE, newRegs);
+                    stack.emplace_back(UnwindMechanism::TRAMPOLINE, newRegs);
                     continue;
                 }
 
@@ -1014,7 +989,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                        p.io->readObj(sigContextAddr, &regs);
                        Elf::CoreRegisters core;
                        gregset2core(core, regs);
-                       stack.emplace_back(Dwarf::UnwindMechanism::TRAMPOLINE, core);
+                       stack.emplace_back(UnwindMechanism::TRAMPOLINE, core);
                        continue;
                     }
                 }
@@ -1043,7 +1018,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                        SP(newRegs) = oldBp + ELF_BYTES * 2;
                        BP(newRegs) = newBp;
                        IP(newRegs) = newIp;
-                       stack.emplace_back(Dwarf::UnwindMechanism::FRAMEPOINTER, newRegs);
+                       stack.emplace_back(UnwindMechanism::FRAMEPOINTER, newRegs);
                        stack.back().cfa = newBp;
                        continue;
                    }
@@ -1143,8 +1118,10 @@ Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
     return threadStacks;
 }
 
+}
+
 std::ostream &
-operator << (std::ostream &os, WaitStatus ws) {
+operator << (std::ostream &os, Procman::WaitStatus ws) {
    if (WIFSIGNALED(ws.status)) {
       os << "signal(" << strsignal(WTERMSIG(ws.status)) << ")";
       if (WCOREDUMP(ws.status))
@@ -1156,4 +1133,34 @@ operator << (std::ostream &os, WaitStatus ws) {
       os << "exit(" << WEXITSTATUS(ws.status) << ")";
    return os;
 }
+
+std::ostream &
+operator << (std::ostream &os, const JSON<Procman::StackFrame, const Procman::Process *> &jt)
+{
+    auto &frame =jt.object;
+    PstackOptions options;
+    options.doargs = true;
+    Procman::ProcessLocation location = frame.scopeIP(*jt.context);
+    Procman::PrintableFrame pframe(*jt.context, frame, 0, options);
+
+    JObject jo(os);
+    jo
+        .field("ip", frame.rawIP())
+        .field("offset", pframe.functionOffset)
+        .field("trampoline", frame.isSignalTrampoline)
+        .field("die", pframe.dieName)
+        .field("loadaddr", location.elfReloc)
+        ;
+
+    const auto &sym = location.symbol();
+    if (sym)
+        jo.field("symbol", *sym);
+    else
+        jo.field("symbol", JsonNull());
+
+    jo.field("source", location.source());
+
+    return jo;
+}
+
 
