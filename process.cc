@@ -939,6 +939,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
 #define BP(regs) regs.ebp
 #define SP(regs) regs.esp
 #define IP(regs) (regs.eip)
+#elif defined(__aarch64__)
+#define IP(regs) (regs.pc)
 #endif
 
                 auto newRegs = prev.regs; // start with a copy of prev frames regs.
@@ -960,7 +962,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                             continue;
                         }
 #elif defined(__aarch64__)
-                        newRegs[32] = prev.regs[30]; // Copy old link register into new instruction pointer.
+                        newRegs.pc = prev.regs.regs[30]; // Copy old link register into new instruction pointer.
                         stack.emplace_back(Dwarf::UnwindMechanism::BAD_IP_RECOVERY, newRegs);
                         continue;
 #endif
@@ -976,9 +978,9 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                 if (trampoline && trampoline == prev.rawIP()) {
                     auto sigframe = p.io->readObj<rt_sigframe>(Elf::getReg(prev.regs, 31));
                     for (int i = 0; i < 31; ++i)
-                       newRegs[i] = sigframe.uc.uc_mcontext.regs[i];
-                    newRegs[31] = sigframe.uc.uc_mcontext.sp;
-                    newRegs[32] sigframe.uc.uc_mcontext.pc;
+                       newRegs.regs[i] = sigframe.uc.uc_mcontext.regs[i];
+                    newRegs.sp = sigframe.uc.uc_mcontext.sp;
+                    newRegs.pc = sigframe.uc.uc_mcontext.pc;
                     stack.emplace_back(Dwarf::UnwindMechanism::TRAMPOLINE, newRegs);
                     continue;
                 }
