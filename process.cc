@@ -943,7 +943,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
 
                 auto newRegs = prev.regs; // start with a copy of prev frames regs.
 
-                if (stack.size() == 1 || prev.isSignalTrampoline) {
+                if (stack.size() == 1 || stack[stack.size() - 2].isSignalTrampoline) {
                     Dwarf::ProcessLocation prevlocation = prev.scopeIP(p);
                     Dwarf::ProcessLocation location(p, IP(newRegs));
                     if (!prevlocation.valid() || (location.valid() && (location.codeloc->phdr_->p_flags & PF_X) == 0)) {
