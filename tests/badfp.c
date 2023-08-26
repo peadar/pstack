@@ -14,7 +14,7 @@ int
 main(int argc, char *argv[])
 {
    int c;
-   void *addr;
+   void *addr = 0;
    while ((c = getopt(argc, argv, "dh")) != -1) {
       switch (c) {
          case 'h': // handle the fault with a signal handler.

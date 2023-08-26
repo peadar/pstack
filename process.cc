@@ -948,12 +948,12 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                     Dwarf::ProcessLocation badip = { p, IP(prev.regs) };
                     if (!badip.valid() || (badip.codeloc->phdr_->p_flags & PF_X) == 0) {
 
+                        auto newRegs = prev.regs; // start with a copy of prev frames regs.
 #if defined(__amd64__) || defined(__i386__)
                         // get stack pointer in the current frame, and read content of TOS
                         auto sp = SP(prev.regs);
                         Elf::Addr ip;
                         auto in = p.io->read(sp, sizeof ip, (char *)&ip);
-                        auto newRegs = prev.regs; // start with a copy of prev frames regs.
                         if (in == sizeof ip) {
                             SP(newRegs) = sp + sizeof ip;
                             IP(newRegs) = ip;             // .. insn pointer.
@@ -980,7 +980,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
                        ucontext_t uc;
                     };
                     auto sigframe = p.io->readObj<rt_sigframe>(prev.regs.sp);
-                    Elf::CoreRegs newRegs;
+                    Elf::CoreRegisters newRegs;
                     for (int i = 0; i < 31; ++i)
                        newRegs.regs[i] = sigframe.uc.uc_mcontext.regs[i];
                     newRegs.sp = sigframe.uc.uc_mcontext.sp;
