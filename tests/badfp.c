@@ -14,16 +14,20 @@ int
 main(int argc, char *argv[])
 {
    int c;
-   while ((c = getopt(argc, argv, "h")) != -1) {
+   void *addr;
+   while ((c = getopt(argc, argv, "dh")) != -1) {
       switch (c) {
          case 'h': // handle the fault with a signal handler.
             signal(SIGSEGV, sighandle);
+            break;
+         case 'd': // handle the fault with a signal handler.
+            addr = &addr;
             break;
          default:
             abort();
       }
    }
 
-   void (*f)(void) = 0;
+   void (*f)(void) = addr;
    f();
 }
