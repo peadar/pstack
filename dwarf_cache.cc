@@ -3,7 +3,7 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/global.h"
 
-namespace Dwarf {
+namespace pstack::Dwarf {
 Info::sptr
 ImageCache::getDwarf(const std::string &filename)
 {

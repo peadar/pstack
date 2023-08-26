@@ -1,7 +1,7 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/dwarf_reader.h"
 #include "libpstack/global.h"
-namespace Dwarf {
+namespace pstack::Dwarf {
 
 namespace {
 using EntryFormats = std::vector<std::pair<DW_LNCT, Form>>;

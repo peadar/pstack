@@ -6,9 +6,11 @@
 #include "libpstack/stringify.h"
 #include "libpstack/global.h"
 
+
+namespace pstack {
+
 template<> std::set<const PythonTypePrinter<2> *> PythonTypePrinter<2>::all = std::set<const PythonTypePrinter<2> *>();
-template<>
-char PythonTypePrinter<2>::pyBytesType[] = "PyString_Type";
+template<> char PythonTypePrinter<2>::pyBytesType[] = "PyString_Type";
 
 /**
  * @brief Reads a Python2 string
@@ -154,8 +156,9 @@ getInterpHead<2>(const Procman::Process &proc) {
 
     throw Exception() << "No libpython2 found";
 }
-
-
+}
 #include "python.tcc"
 
+namespace pstack {
 template struct PythonPrinter<2>;
+}

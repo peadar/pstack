@@ -29,7 +29,7 @@ struct PstackOptions {
    std::ostream *output = &std::cout;
 };
 
-namespace Procman {
+namespace pstack::Procman {
 
 class Process;
 
@@ -372,8 +372,8 @@ struct WaitStatus {
 void gregset2core(Elf::CoreRegisters &core, const gregset_t greg);
 }
 
-std::ostream &operator << (std::ostream &os, Procman::WaitStatus ws);
-std::ostream &operator << (std::ostream &os, const JSON<Procman::StackFrame, const Procman::Process *> &jt);
-std::ostream &operator << (std::ostream &os, const JSON<Procman::ThreadStack, const Procman::Process *> &jt);
+std::ostream &operator << (std::ostream &os, pstack::Procman::WaitStatus ws);
+std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::StackFrame, const pstack::Procman::Process *> &jt);
+std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::ThreadStack, const pstack::Procman::Process *> &jt);
 
 #endif

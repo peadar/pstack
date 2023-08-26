@@ -19,6 +19,8 @@
 #error "Non-32, non-64-bit platform?"
 #endif
 
+using namespace pstack;
+namespace {
 struct DumpCFAInsns {
     Elf::Off start;
     Elf::Off end;
@@ -39,6 +41,7 @@ std::ostream &operator <<(std::ostream &os, const JSON<Dwarf::CFAInstruction> &j
 #undef DWARF_CFA_INSN
    return os;
 }
+
 
 void
 dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
@@ -203,6 +206,7 @@ dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
         default:
             throw (Exception() << "unknown CFA op " << std::hex << int(op)) << std::dec;
     }
+}
 }
 
 template <typename C>
@@ -530,7 +534,8 @@ operator << (std::ostream &os, const JSON<Dwarf::Info> &di)
     return writer;
 }
 
-std::ostream &operator << (std::ostream &os, const JSON<Elf::NoteDesc> &note)
+std::ostream &
+operator << (std::ostream &os, const JSON<Elf::NoteDesc> &note)
 {
     JObject writer(os);
     writer

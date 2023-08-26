@@ -3,7 +3,7 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/dwarf_reader.h"
 
-namespace Dwarf {
+namespace pstack::Dwarf {
 
 void
 Unit::load()

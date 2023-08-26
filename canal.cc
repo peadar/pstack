@@ -33,6 +33,7 @@
 #undef WITH_PYTHON
 #endif
 using namespace std;
+using namespace pstack;
 
 // does "name" match the glob pattern "pattern"?
 static int

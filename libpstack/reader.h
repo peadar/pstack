@@ -12,6 +12,8 @@
 #include <cassert>
 #include "libpstack/exception.h"
 
+namespace pstack {
+
 // Reader provides the basic random-access IO to a range of bytes.  The most
 // basic reader is a FileReader, which allows you to access the content of a
 // file from offset 0 through to the length of the file.
@@ -282,6 +284,8 @@ typename ReaderArray<T>::iterator &ReaderArray<T>::iterator::operator ++() {
 
 template <typename T> T &ReaderArray<T>::iterator::operator *() {
    return datum;
+}
+
 }
 
 #endif

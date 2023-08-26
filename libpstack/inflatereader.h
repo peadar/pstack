@@ -2,6 +2,7 @@
 #define LIBPSTACK_INFLATEREADER_H
 #include "libpstack/reader.h"
 
+namespace pstack {
 // A Reader that zlib inflates the underlying downstream reader.
 // Currently requires knowing the resulting output size.
 class InflateReader : public MemReader {
@@ -11,5 +12,6 @@ public:
     InflateReader(size_t inflatedSize, const Reader &upstream);
     ~InflateReader();
 };
+}
 
 #endif // LIBPSTACK_INFLATEREADER_H

@@ -7,6 +7,8 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/python.h"
 
+
+namespace pstack {
 // This reimplements PyCode_Addr2Line
 template<int PyV> int
 getLine(const Reader &proc, const PyCodeObject *code, const PyFrameObject *frame)
@@ -479,7 +481,7 @@ void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr
         PyObject *varargName = readPyObj<PyV, PyObject *>(*pc->proc.io, varnamesAddr + (argCount + kwonlyArgCount) * sizeof(PyObject *));
         pc->print(Elf::Addr(varargName));
         pc->os << "=(";
-        
+
         // Varargs tuple pointer is always after all the positional arguments and keyword-only arguments
         const Elf::Addr tupleAddr = localsAddr + (argCount + kwonlyArgCount) * sizeof(PyObject *);
         const PyTupleObject* tuplePtr = readPyObj<PyV, PyTupleObject*>(*pc->proc.io, tupleAddr);
@@ -523,4 +525,6 @@ void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr
         pc->print(Elf::Addr(kwargs));
     }
     pc->os << ")";
+}
+
 }

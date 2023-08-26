@@ -26,6 +26,8 @@
 #define STR(a) XSTR(a)
 
 namespace {
+using namespace pstack;
+
 bool doJson = false;
 volatile bool interrupted = false;
 

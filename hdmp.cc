@@ -6,6 +6,8 @@
 #include <set>
 #include "heap.h"
 
+using namespace pstack;
+
 enum printoption {
    heap_allocated, heap_recentfree, heap_historicbig
 };

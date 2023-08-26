@@ -8,6 +8,7 @@
 #include "libpstack/fs.h"
 #include "libpstack/exception.h"
 
+namespace pstack {
 std::vector<std::pair<std::string,std::string>> pathReplacements;
 
 std::string
@@ -79,4 +80,4 @@ openfile(const std::string &name, int mode, int mask)
     throw (Exception() << "cannot open file '" << name << "': " << strerror(errno));
 }
 
-
+}

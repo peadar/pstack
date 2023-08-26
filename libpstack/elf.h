@@ -71,16 +71,16 @@ typedef struct {
 } Elf64_Chdr;
 #endif
 
-namespace Elf {
+namespace pstack::Elf {
 class Object;
 class ImageCache;
 template <typename SymbolType> struct SymbolSection;
 class NoteDesc;
 };
 
-std::ostream &operator<< (std::ostream &, const JSON<Elf::Object> &);
+std::ostream &operator<< (std::ostream &, const JSON<pstack::Elf::Object> &);
 
-namespace Elf {
+namespace pstack::Elf {
 
 #ifndef __FreeBSD__
 typedef Elf32_Nhdr Elf32_Note;
@@ -119,7 +119,7 @@ Type(Vernaux);
 #define IS_ELF(a) true
 #endif
 
-using NamedSymbol = std::pair<Elf::Sym, std::string>;
+using NamedSymbol = std::pair<Sym, std::string>;
 using MaybeNamedSymbol = std::optional<NamedSymbol>;
 
 inline size_t
@@ -165,7 +165,7 @@ class GnuHash {
         uint32_t bloom_shift;
     };
     Header header;
-    uint32_t bloomoff(size_t idx) const { return sizeof header + idx * sizeof(Elf::Off); }
+    uint32_t bloomoff(size_t idx) const { return sizeof header + idx * sizeof(Off); }
     uint32_t bucketoff(size_t idx) const { return bloomoff(header.bloom_size) + idx * 4; }
     uint32_t chainoff(size_t idx) const { return bucketoff(header.nbuckets) + idx * 4; }
 public:
@@ -282,7 +282,7 @@ public:
 
     // Accessing segments.
     const ProgramHeaders &getSegments(Word type) const;
-    const std::map<Elf::Word, ProgramHeaders> &getAllSegments() const;
+    const std::map<Word, ProgramHeaders> &getAllSegments() const;
 
     std::optional<std::pair<Sym, std::string>> findSymbolByAddress(Addr addr, int type);
     VersionedSymbol findDynamicSymbol(const std::string &name);
@@ -297,7 +297,7 @@ public:
     Notes notes() const { return Notes(this); }
     // symbol table data as extracted from .gnu.debugdata -
     // https://sourceware.org/gdb/current/onlinedocs/gdb/MiniDebugInfo.html
-    Elf::Addr endVA() const;
+    Addr endVA() const;
 
     // find text version from versioned symbol.
     std::string symbolVersion(const VersionedSymbol &) const;
@@ -346,7 +346,7 @@ private:
     GnuHash *gnu_hash() { return get_hash(gnu_hash_); }
 
     Object *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
-    friend std::ostream &::operator<< (std::ostream &, const JSON<Elf::Object> &);
+    friend std::ostream &::operator<< (std::ostream &, const JSON<Object> &);
     struct CachedSymbol {
         enum { SYM_FOUND, SYM_NOTFOUND, SYM_NEW } disposition;
         Sym sym;

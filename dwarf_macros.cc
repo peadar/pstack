@@ -2,7 +2,7 @@
 #include "libpstack/dwarf_reader.h"
 #include "libpstack/global.h"
 
-namespace Dwarf {
+namespace pstack::Dwarf {
 enum DWARF_MACRO_CODE {
 #define DWARF_MACRO(name, value) name = value,
 #include "libpstack/dwarf/macro.h"

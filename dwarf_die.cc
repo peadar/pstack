@@ -6,7 +6,7 @@
 #include <set>
 #include <algorithm>
 
-namespace Dwarf {
+namespace pstack::Dwarf {
 
 class DIE::Raw {
     Raw() = delete;

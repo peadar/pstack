@@ -6,6 +6,7 @@
 #include <lzma.h>
 #include "libpstack/reader.h"
 
+namespace pstack {
 /*
  * Provides an LZMA-decoded view of downstream. LZMA API allows random-access
  * to the data, and we cache each decompressed block as we decode it.
@@ -26,5 +27,6 @@ public:
     Off size() const override;
     std::string filename() const override { return upstream->filename(); }
 };
+}
 
 #endif

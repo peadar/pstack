@@ -4,6 +4,7 @@
 #include <lzma.h>
 #include <string.h>
 
+namespace pstack {
 static auto allocator() {
    static lzma_allocator alloc {
       [] ( void * /* unused */, size_t m, size_t s ) noexcept { return malloc(m * s); },
@@ -94,4 +95,5 @@ LzmaReader::describe(std::ostream &os) const
 LzmaReader::~LzmaReader()
 {
     lzma_index_end(index, allocator());
+}
 }

@@ -6,6 +6,10 @@
 
 // version to hex
 #define V2HEX(major, minor) ((major << 24) | (minor << 16))
+struct _object;
+struct _typeobject;
+
+namespace pstack {
 
 struct PyInterpInfo {
     Elf::Object::sptr libpython;
@@ -25,8 +29,6 @@ struct ArgFlags {
 
 template <int PyV> struct PythonPrinter;
 
-struct _object;
-struct _typeobject;
 /*
  * Because python2 and 3 have the same typenames, but those types are not
  * binary compatible, we can't create multiple instantiations of things like
@@ -98,5 +100,6 @@ template <int PyV, typename T> ssize_t pyRefcnt(const T *t);
 template <int V>
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
 getInterpHead(const Procman::Process &);
+}
 
 #endif

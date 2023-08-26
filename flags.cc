@@ -1,5 +1,6 @@
 #include "libpstack/flags.h"
 
+namespace pstack {
 Flags &
 Flags::add(const char *name, char flag, const char *metavar, const char *help, Cb cb)
 {
@@ -56,4 +57,5 @@ Flags::parse(int argc, char **argv)
     done();
     const Flags &f = *this;
     return f.parse(argc, argv);
+}
 }

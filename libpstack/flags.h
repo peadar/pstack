@@ -8,6 +8,8 @@
 #include <cassert>
 #include <unistd.h>
 
+namespace pstack {
+
 namespace {
 template <typename T> void convert(const char *opt, T &to) {
    if constexpr (std::is_integral<T>::value)
@@ -15,7 +17,6 @@ template <typename T> void convert(const char *opt, T &to) {
           to = T(strtoll(opt, 0, 0));
       else
           to = T(strtoull(opt, 0, 0));
-
    else if constexpr (std::is_floating_point<T>::value)
       to = strtod(opt, 0);
    else
@@ -102,6 +103,7 @@ public:
     template <typename T, typename C> static Cb
     append(C &val) { return [&val] (const char *opt) { val.push_back(convert<T>(opt)); }; }
 };
+}
 
 // Stream a "Flags" to stdout - printing a formatted help text for the options.
-inline std::ostream & operator << (std::ostream &os, const Flags &opts) { return opts.dump(os); }
+inline std::ostream & operator << (std::ostream &os, const pstack::Flags &opts) { return opts.dump(os); }

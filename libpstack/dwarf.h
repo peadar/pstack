@@ -13,7 +13,7 @@
 #include <iterator>
 #include <cassert>
 
-namespace Dwarf {
+namespace pstack::Dwarf {
 
 enum HasChildren { DW_CHILDREN_yes = 1, DW_CHILDREN_no = 0 };
 class DIE;
@@ -60,12 +60,12 @@ enum AttrName {
 
 }
 namespace std {
-   template <> struct hash<Dwarf::AttrName> {
-      size_t operator() (Dwarf::AttrName name) const { return size_t(name); }
+   template <> struct hash<pstack::Dwarf::AttrName> {
+      size_t operator() (pstack::Dwarf::AttrName name) const { return size_t(name); }
    };
 }
 
-namespace Dwarf {
+namespace pstack::Dwarf {
 #undef DWARF_ATTR
 
 #define DWARF_LINE_S(a,b) a = b,
@@ -792,8 +792,8 @@ enum ExceptionHandlingEncoding {
 #undef DWARF_OP
 }
 
-std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Info> &);
-std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Macros> &);
-std::ostream &operator << (std::ostream &os, const JSON<Dwarf::DIE> &);
+std::ostream &operator << (std::ostream &os, const JSON<pstack::Dwarf::Info> &);
+std::ostream &operator << (std::ostream &os, const JSON<pstack::Dwarf::Macros> &);
+std::ostream &operator << (std::ostream &os, const JSON<pstack::Dwarf::DIE> &);
 
 #endif

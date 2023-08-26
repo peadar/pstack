@@ -2,7 +2,7 @@
 #include "libpstack/dwarf_reader.h"
 #include "libpstack/global.h"
 
-namespace Dwarf {
+namespace pstack::Dwarf {
 intmax_t
 CFI::decodeAddress(DWARFReader &f, int encoding) const
 {

@@ -2,7 +2,7 @@
 #include "libpstack/dwarf_reader.h"
 
 
-namespace Dwarf {
+namespace pstack::Dwarf {
 
 void
 DWARFReader::readForm(const Info &info, Unit &unit, Form form)

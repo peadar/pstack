@@ -3,6 +3,7 @@
 #include "libpstack/global.h"
 
 #include <zlib.h>
+namespace pstack {
 
 InflateReader::InflateReader(size_t inflatedSize, const Reader &upstream)
     : MemReader(std::string("inflated content from ") + stringify(upstream),
@@ -53,4 +54,5 @@ InflateReader::InflateReader(size_t inflatedSize, const Reader &upstream)
 InflateReader::~InflateReader()
 {
    delete[] reinterpret_cast<char *>(const_cast<void *>(data));
+}
 }

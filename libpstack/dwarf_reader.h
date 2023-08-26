@@ -3,7 +3,7 @@
 #include "libpstack/reader.h"
 #include <stdint.h>
 
-namespace Dwarf {
+namespace pstack::Dwarf {
 /*
  * A DWARF Reader is a wrapper for a reader that keeps a current position in the
  * underlying reader, and provides operations to read values in DWARF standard
@@ -13,7 +13,7 @@ class DWARFReader {
     Elf::Off off;
     Elf::Off end;
 public:
-    ::Reader::csptr io;
+    Reader::csptr io;
     unsigned addrLen;
     DWARFReader(Reader::csptr io_, Elf::Off off_ = 0, size_t end_ = std::numeric_limits<size_t>::max())
         : off(off_)

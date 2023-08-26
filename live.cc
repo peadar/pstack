@@ -18,7 +18,7 @@
 #include <utility>
 #include <fstream>
 
-namespace Procman {
+namespace pstack::Procman {
 std::string
 procname(pid_t pid, const std::string &base)
 {

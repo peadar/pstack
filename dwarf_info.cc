@@ -6,7 +6,7 @@
 #include <memory>
 #include <algorithm>
 
-namespace Dwarf {
+namespace pstack::Dwarf {
 
 std::unique_ptr<CFI>
 Info::decodeCFI(const Elf::Section &section, FIType ftype) const {

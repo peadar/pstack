@@ -7,7 +7,7 @@
 
 #include <iostream>
 
-namespace Procman {
+namespace pstack::Procman {
 CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
         const PstackOptions &options, Dwarf::ImageCache &imageCache)
     : Process(std::move(exec), std::make_shared<CoreReader>(this, core), options, imageCache)

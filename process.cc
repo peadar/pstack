@@ -33,6 +33,8 @@
 #elif defined(__aarch64__)
 #define IP(regs) (regs.pc)
 #endif
+using namespace pstack;
+
 std::ostream &
 operator << (std::ostream &os, const JSON<std::pair<std::string, int>> &jt)
 {
@@ -94,7 +96,7 @@ operator << (std::ostream &os, const JSON<td_thr_type_e, ctx> &jt)
     }
 }
 
-namespace Procman {
+namespace pstack::Procman {
 
 /*
  * convert a gregset_t to an Elf::CoreRegs

@@ -2,6 +2,7 @@
 #define pstack_stringify_h
 #include <sstream>
 
+namespace pstack {
 template <typename T>
 void
 stringifyImpl(std::ostringstream &os, const T&obj) { os << obj; }
@@ -28,6 +29,7 @@ stringify(const T&obj, More... more)
     std::ostringstream stream;
     stringifyImpl(stream, obj, more...);
     return stream.str();
+}
 }
 
 #endif

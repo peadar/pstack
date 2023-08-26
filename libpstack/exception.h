@@ -1,6 +1,8 @@
 #include <exception>
 #include <sstream>
 
+namespace pstack {
+
 class Exception : public std::exception {
     mutable std::ostringstream str;
     mutable std::string intermediate;
@@ -26,3 +28,5 @@ public:
        return *this;
     }
 };
+
+}

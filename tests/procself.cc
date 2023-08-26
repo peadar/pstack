@@ -1,5 +1,6 @@
-#include <libpstack/proc.h>
-#include <libpstack/archreg.h>
+#include "libpstack/proc.h"
+#include "libpstack/global.h"
+#include "libpstack/archreg.h"
 #include <unistd.h>
 
 extern "C" {
@@ -11,19 +12,18 @@ int foobar() {
 int
 main()
 {
-    extern int verbose;
-    verbose = 0;
+    pstack::verbose = 0;
     PstackOptions options;
-    Dwarf::ImageCache cache;
+    pstack::Dwarf::ImageCache cache;
     getppid();
-    std::shared_ptr<Procman::Process> p = std::make_shared<Procman::SelfProcess>(nullptr, options, cache);
+    std::shared_ptr<pstack::Procman::Process> p = std::make_shared<pstack::Procman::SelfProcess>(nullptr, options, cache);
     p->load();
 
-    Procman::ProcessLocation li(*p, Elf::Addr(foobar));
+    pstack::Procman::ProcessLocation li(*p, pstack::Elf::Addr(foobar));
 
     auto [ lib, addr, sym ]  = p->resolveSymbolDetail("foobar", true);
 
     std::cout << "found foobar in " << *lib->io << "@" << addr << ", value=" << sym.st_value << ", size=" << sym.st_size << std::endl;
-    assert(Elf::Addr(foobar) == addr + sym.st_value);
+    assert(pstack::Elf::Addr(foobar) == addr + sym.st_value);
     exit(0);
 }

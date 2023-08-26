@@ -5,7 +5,8 @@
 
 #include <cstdarg>
 
-using Procman::Process;
+using pstack::Procman::Process;
+using namespace pstack;
 
 extern "C" {
 

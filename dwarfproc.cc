@@ -7,13 +7,13 @@
 #include <cassert>
 #include <limits>
 #include <stack>
-extern std::ostream & operator << (std::ostream &os, const Dwarf::DIE &dieo);
+extern std::ostream & operator << (std::ostream &os, const pstack::Dwarf::DIE &);
 
-namespace Procman {
+namespace pstack::Procman {
 void
 StackFrame::setCoreRegs(const Elf::CoreRegisters &sys)
 {
-#define REGMAP(number, field) ::Elf::setReg(regs, number, sys.field);
+#define REGMAP(number, field) Elf::setReg(regs, number, sys.field);
 #include "libpstack/archreg.h"
 #undef REGMAP
 }

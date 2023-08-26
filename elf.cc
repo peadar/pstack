@@ -1,4 +1,5 @@
 #include "libpstack/elf.h"
+#include "libpstack/global.h"
 #include "libpstack/stringify.h"
 #include "libpstack/ioflag.h"
 #include "libpstack/fs.h"
@@ -16,14 +17,10 @@
 #include <iostream>
 #include <limits>
 
-std::ostream *debug = &std::clog;
-int verbose = 0;
-
-namespace Elf {
+namespace pstack::Elf {
 
 using std::string;
 using std::make_shared;
-using std::make_unique;
 
 static uint32_t elf_hash(const string &text);
 

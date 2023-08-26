@@ -6,10 +6,8 @@
 #include "libpstack/proc.h"
 #include "libpstack/stringify.h"
 
-static
-std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
-getInterpHead(const Procman::Process &);
-
+namespace pstack {
+static std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr> getInterpHead(const Procman::Process &);
 PyInterpInfo
 getPyInterpInfo(const Procman::Process &proc) {
     Elf::Object::sptr libpython;
@@ -126,4 +124,5 @@ pthreadTidOffset(const Procman::Process &proc, size_t *offsetp)
         return true;
     }
     return false;
+}
 }

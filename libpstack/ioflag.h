@@ -1,5 +1,6 @@
 #include <iostream>
 
+namespace pstack {
 // Save iostream formatting so we can restore them later.
 class IOFlagSave {
     std::ios &target;
@@ -15,3 +16,4 @@ public:
         target.copyfmt(saved);
     }
 };
+}

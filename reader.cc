@@ -8,6 +8,7 @@
 #include "libpstack/fs.h"
 #include "libpstack/global.h"
 
+namespace pstack {
 using std::string;
 Reader::Off
 FileReader::size() const
@@ -311,3 +312,4 @@ MemReader::readSLEB128(Off off) const
     return readleb128<intmax_t>(p);
 }
 
+}
