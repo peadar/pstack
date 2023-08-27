@@ -246,11 +246,12 @@ struct ReaderArray {
       iterator(const Reader *reader_, Reader::Off offset_) : reader(reader_),offset(offset_) {
           getitem();
       }
-      bool operator == (const iterator &rhs) { return offset == rhs.offset && reader == rhs.reader; }
-      bool operator != (const iterator &rhs) { return ! (*this == rhs); }
-      size_t operator - (const iterator &rhs) { return offset - rhs.offset; }
+      bool operator == (const iterator &rhs) const { return offset == rhs.offset && reader == rhs.reader; }
+      bool operator != (const iterator &rhs) const { return ! (*this == rhs); }
+      size_t operator - (const iterator &rhs) const { return offset - rhs.offset; }
       iterator & operator++();
    };
+   using const_iterator = iterator;
    const Reader &reader;
    size_t initialOffset;
    typedef T value_type;

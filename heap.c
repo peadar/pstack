@@ -363,13 +363,12 @@ getframe(void ***bp, void  ***ip) {
 #endif
 
 static void getstacktrace(void **ents, int max_ents) {
-   lseek(0, max_ents, 0);
     void **ip, **bp, **newBp;
     getframe(&bp, &ip);
     int frameno;
     for (frameno = 0; frameno < max_ents; ++frameno) {
-        newBp = (void *)bp[0];
-        ip = (void *)bp[1];
+        newBp = (void **)bp[0];
+        ip = (void **)bp[1];
         /*
          * Make sure we are making progress, terminate on massive stack frames,
          * or when IP == 0

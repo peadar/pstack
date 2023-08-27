@@ -35,7 +35,7 @@ SelfProcess::getAUXV() const
 }
 
 bool
-SelfProcess::getRegs(lwpid_t pid, Elf::CoreRegisters *reg)
+SelfProcess::getRegs(lwpid_t, Elf::CoreRegisters *reg) // for now, we just support the current thread.
 {
     ucontext_t context;
     assert(pid == getpid());
