@@ -344,13 +344,7 @@ getframe(void ***bp, void  ***ip) {
          "ret;"
     );
 }
-#elif defined(__aarch64__) || defined(__arm__)
-void
-getframe(void ***bp, void  ***ip) {
-   //XXX: TODO: support aarch64
-}
-#else
-
+#elif defined(__i386__)
 static void __attribute__((naked,noinline,optimize("O0")))
 getframe(void ***bp, void  ***ip) {
     asm("mov (%esp), %ecx;"
@@ -359,6 +353,25 @@ getframe(void ***bp, void  ***ip) {
         "mov 4(%esp), %edx;"
         "mov %ebp, (%edx);"
         "ret;");
+}
+#elif defined(__aarch64__)
+static void __attribute__((noinline,optimize("O0")))
+getframe(void ***bp, void  ***ip) {
+    void *stackp, *framep;
+    asm(
+        "mov %0, sp;"
+        "mov %1, x29;"
+        "str %0, [%2];"
+        "str %1, [%3]"
+        : "=r"(stackp), "=r"(framep)
+        : "r"(ip), "r"(bp)
+	: "memory"
+    );
+}
+#else
+void
+getframe(void ***bp, void  ***ip) {
+   //XXX: TODO: support other relevant archs
 }
 #endif
 
