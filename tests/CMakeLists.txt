@@ -6,8 +6,9 @@ project(pstack-tests C CXX)
 set(CMAKE_BUILD_TYPE Debug)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
 
-add_definitions("-std=c++17 -O0 -D_FORTIFY_SOURCE=0 -I${CMAKE_SOURCE_DIR}")
+add_definitions("-O0 -D_FORTIFY_SOURCE=0 -I${CMAKE_SOURCE_DIR}")
 
 add_library(testhelper STATIC abort.c)
 

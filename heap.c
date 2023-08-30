@@ -355,18 +355,12 @@ getframe(void ***bp, void  ***ip) {
         "ret;");
 }
 #elif defined(__aarch64__)
-static void __attribute__((noinline,optimize("O0")))
+static void __attribute__((naked,noinline,optimize("O0")))
 getframe(void ***bp, void  ***ip) {
-    void *stackp, *framep;
     asm(
-        "mov %0, sp;"
-        "mov %1, x29;"
-        "str %0, [%2];"
-        "str %1, [%3]"
-        : "=r"(stackp), "=r"(framep)
-        : "r"(ip), "r"(bp)
-	: "memory"
-    );
+	"mov x0, x29;"
+	"mov x1, x30;"
+	"ret;");
 }
 #else
 void
