@@ -813,10 +813,10 @@ struct Undef {
         undefSym.st_shndx = SHN_UNDEF;
     }
 };
-static Undef theUndef;
 }
 
 const Sym &undef() {
+    static Undef theUndef;
     return theUndef.undefSym;
 }
 

@@ -1,10 +1,10 @@
 // Copyright (c) 2022 Arista Networks, Inc.  All rights reserved.
 // Arista Networks, Inc. Confidential and Proprietary.
 
-#include <libpstack/proc.h>
+#include "libpstack/proc.h"
+#include "heap.h"
 #include <unistd.h>
 #include <set>
-#include "heap.h"
 
 using namespace pstack;
 

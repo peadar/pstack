@@ -70,14 +70,14 @@ namespace pstack::Dwarf {
 
 #define DWARF_LINE_S(a,b) a = b,
 enum LineSOpcode {
-#include <libpstack/dwarf/line_s.h>
+#include "libpstack/dwarf/line_s.h"
     DW_LNS_none = -1
 };
 #undef DWARF_LINE_S
 
 #define DWARF_LINE_E(a,b) a = b,
 enum LineEOpcode {
-#include <libpstack/dwarf/line_e.h>
+#include "libpstack/dwarf/line_e.h"
     DW_LNE_none = -1
 };
 #undef DWARF_LINE_E
@@ -779,7 +779,7 @@ Info::Units::iterator::iterator(const Info *info_, Elf::Off offset)
 
 #define DWARF_OP(op, value, args) op = value,
 enum ExpressionOp {
-#include <libpstack/dwarf/ops.h>
+#include "libpstack/dwarf/ops.h"
     LASTOP = 0x100
 };
 #undef DWARF_OP
