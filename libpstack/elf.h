@@ -403,6 +403,7 @@ public:
    {
       io->readObj(0, &note);
    }
+   NoteDesc() = default;
    ~NoteDesc() noexcept = default;
 };
 

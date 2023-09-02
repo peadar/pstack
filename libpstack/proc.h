@@ -163,13 +163,22 @@ struct Lwp {
 
 struct PrintableFrame;
 
+
+struct DevNode {
+    int major;
+    int minor;
+    unsigned long inode;
+    std::string path;
+};
+
 struct AddressRange {
    Elf::Addr start;
-   Elf::Addr fileSize;
-   Elf::Addr memSize;
-   AddressRange( Elf::Addr start_, Elf::Addr fileSize_, Elf::Addr memSize_ ) : start(start_), fileSize(fileSize_), memSize(memSize_) {}
-   // std::string map;
-   // long flags; .... add protection flags, etc.
+   Elf::Addr end;
+   off_t offset;
+   DevNode backing;
+
+   enum class Flags { read,write,exec,priv,count };
+   std::set<Flags> permissions; // PROT_READ/PROT_WRITE/PROT_EXEC
 };
 
 class Process : public ps_prochandle {
@@ -189,6 +198,7 @@ public:
 protected:
     std::string abiPrefix;
     PstackOptions options;
+    static std::vector<AddressRange> procAddressSpace(const std::string &fn); //  utility to parse contents of /proc/pid/maps
 
 public:
     Elf::Addr sysent; // for AT_SYSINFO
@@ -364,6 +374,56 @@ public:
    virtual std::list<ThreadStack> getStacks(const PstackOptions &, unsigned maxFrames);
 };
 
+
+// Types for the NT_FILE note.
+struct FileNoteHeader {
+    Elf::Off count;
+    Elf::Off pageSize;
+};
+
+struct FileEntry {
+    Elf::Off start;
+    Elf::Off end;
+    Elf::Off fileOff;
+};
+
+class FileEntries {
+    FileNoteHeader header;
+    Reader::csptr entries;
+    std::unique_ptr<ReaderArray<FileEntry>> entriesArray;
+    Reader::csptr names;
+
+public:
+    class iterator {
+        const FileEntries &entries;
+        void fetch();
+        size_t nameoff = 0;
+        std::pair<std::string, FileEntry> cur;
+        ReaderArray<FileEntry>::iterator entriesIterator;
+    public:
+        iterator(const FileEntries &entries, ReaderArray<FileEntry>::iterator start);
+        iterator &operator++();
+        std::pair<std::string, FileEntry> operator *() { return cur; }
+        bool operator != (const iterator &rhs) const { return entriesIterator != rhs.entriesIterator; }
+    };
+    FileEntries(const Elf::Object &obj) {
+        // find the Notes section.
+        for (auto note : obj.notes()) {
+            if (note.name() == "CORE" && note.type() == NT_FILE) {
+                auto data = note.data();
+                header = data->readObj<FileNoteHeader>(0);
+                entries = data->view("FILE note entries", sizeof header, header.count * sizeof (FileEntry));
+                entriesArray = std::make_unique<ReaderArray<FileEntry>>(*entries);
+                names = data->view("FILE note names", sizeof header + header.count * sizeof (FileEntry));
+                break;
+            }
+        }
+    }
+    iterator begin() const { return iterator(*this, entriesArray->begin()); }
+    iterator end() const { return iterator(*this, entriesArray->end()); }
+};
+
+
 struct WaitStatus {
    int status;
    WaitStatus(int status) : status{status}{}
@@ -375,5 +435,6 @@ void gregset2core(Elf::CoreRegisters &core, const gregset_t greg);
 std::ostream &operator << (std::ostream &os, pstack::Procman::WaitStatus ws);
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::StackFrame, const pstack::Procman::Process *> &jt);
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::ThreadStack, const pstack::Procman::Process *> &jt);
+std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::FileEntry> &);
 
 #endif

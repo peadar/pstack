@@ -164,24 +164,52 @@ CoreProcess::getPID() const
     return tasks.size() != 0 ? tasks[0].pr_pid : -1;
 }
 
-std::vector<AddressRange>
-CoreProcess::addressSpace() const {
-    std::vector<AddressRange> rv;
-    for (const auto &hdr : coreImage->getSegments(PT_LOAD))
-        rv.emplace_back(hdr.p_vaddr, hdr.p_filesz, hdr.p_memsz);
-    return rv;
+FileEntries::iterator::iterator(const FileEntries &entries, ReaderArray<FileEntry>::iterator pos)
+        : entries(entries)
+        , entriesIterator(pos) {
+    fetch();
 }
 
-// Types for the NT_FILE note.
-struct FileNoteHeader {
-    Elf::Off count;
-    Elf::Off pageSize;
+struct NamedEntry {
+    std::pair<std::string, FileEntry> content;
+    int operator < (const NamedEntry &rhs) const {
+        return content.second.start < rhs.content.second.start;
+    }
 };
-struct FileEntry {
-    Elf::Off start;
-    Elf::Off end;
-    Elf::Off fileOff;
-};
+
+void
+FileEntries::iterator::fetch() {
+    cur = std::make_pair(entries.names->readString(nameoff), *entriesIterator);
+}
+
+FileEntries::iterator &FileEntries::iterator::operator++() {
+    ++entriesIterator;
+    nameoff += cur.first.size() + 1;
+    fetch();
+    return *this;
+}
+
+std::vector<AddressRange>
+CoreProcess::addressSpace() const {
+    // First, go through the NT_FILE note if we have one - that gives us filenames
+    std::map<Elf::Off, std::pair<std::string, FileEntry>> entries;
+    for (auto entry : FileEntries(*coreImage))
+        entries[entry.second.start] = entry;
+
+    // Now go through the PT_LOAD segments in the core to generate the result.
+    std::vector<AddressRange> rv;
+    for (const auto &hdr : coreImage->getSegments(PT_LOAD)) {
+        auto ub = entries.upper_bound(hdr.p_vaddr);
+        std::string name;
+        if (ub != entries.begin()) {
+            --ub;
+            if (ub->first >= hdr.p_vaddr && ub->second.second.end <= hdr.p_vaddr + hdr.p_memsz)
+                name = ub->second.first;
+        }
+        rv.push_back({hdr.p_vaddr, hdr.p_vaddr + hdr.p_memsz, 0, {0, 0, 0, name}, {}});
+    }
+    return rv;
+}
 
 bool
 CoreProcess::loadSharedObjectsFromFileNote()
@@ -189,36 +217,31 @@ CoreProcess::loadSharedObjectsFromFileNote()
     // If the core is truncated, and we have no access to the link map, we make
     // a guess at what shared libraries are mapped by looking in the NT_FILE
     // note if present.
-    for (auto note : coreImage->notes()) {
-        if (note.name() == "CORE" && note.type() == NT_FILE) {
-            auto data = note.data();
-            auto header = data->readObj<FileNoteHeader>(0);
-            Elf::Off stroff = 0;
-            auto entries = data->view("FILE note entries", sizeof header, header.count * sizeof (FileEntry));
-            auto fileNames = data->view("FILE note names", sizeof header + header.count * sizeof (FileEntry));
-            uintptr_t totalSize = 0;
-            for (auto entry : ReaderArray<FileEntry>(*entries)) {
-                auto name = fileNames->readString(stroff);
-                stroff += name.size() + 1;
-                uintptr_t size = entry.end - entry.start;
-                totalSize += size;
-                if (verbose > 2)
-                    *debug << "NT_FILE mapping " << name << " " << (void *)entry.start << " " << size << std::endl;
-                if (entry.fileOff == 0) {
-                    try {
-                        // Just try and load it like an ELF object.
-                        addElfObject(imageCache.getImageForName(name), entry.start);
-                    }
-                    catch (...) {
-                    }
-                }
+    unsigned long totalSize = 0;
+    for (auto [name, entry] : FileEntries(*coreImage)) {
+        uintptr_t size = entry.end - entry.start;
+        totalSize += size;
+        if (verbose > 2)
+            *debug << "NT_FILE mapping " << name << " " << (void *)entry.start << " " << size << std::endl;
+        if (entry.fileOff == 0) {
+            try {
+                // Just try and load it like an ELF object.
+                addElfObject(imageCache.getImageForName(name), entry.start);
             }
-            if (verbose)
-                *debug << "total mapped file size: " << totalSize << std::endl;
-            return true; // found an NT_FILE note, so success.
+            catch (...) {
+            }
         }
     }
-    return false;
+    if (verbose)
+        *debug << "total mapped file size: " << totalSize << std::endl;
+    return true; // found an NT_FILE note, so success.
 }
 
+}
+
+std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::FileEntry> &j) {
+    return JObject(os)
+        .field("start", j.object.start)
+        .field("end", j.object.end)
+        .field("fileOff", j.object.fileOff);
 }

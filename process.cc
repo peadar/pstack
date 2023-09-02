@@ -1119,7 +1119,6 @@ Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
         processSuspender.clear();
     return threadStacks;
 }
-
 }
 
 std::ostream &
@@ -1164,5 +1163,7 @@ operator << (std::ostream &os, const JSON<Procman::StackFrame, const Procman::Pr
 
     return jo;
 }
+
+
 
 

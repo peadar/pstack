@@ -78,26 +78,7 @@ SelfProcess::stop(lwpid_t)
 
 std::vector<AddressRange>
 SelfProcess::addressSpace() const {
-    std::vector<AddressRange> rv;
-    std::ifstream input("/proc/self/maps");
-    for (;;) {
-       std::string startS, endS, restS;
-       getline(input, startS, '-');
-       getline(input, endS, ' ');
-       getline(input, restS);
-       if (input.eof() || !input.good())
-          break;
-
-       size_t pos;
-       Elf::Addr start = stoull(startS, &pos, 16);
-       if (startS[pos] != 0)
-          continue;
-       Elf::Addr end = stoull(endS, &pos, 16);
-       if (endS[pos] != 0)
-          continue;
-       rv.emplace_back(start, end - start, end - start);
-    }
-    return rv;
+    return procAddressSpace("/proc/self/maps");
 }
 
 bool

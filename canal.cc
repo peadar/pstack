@@ -276,15 +276,14 @@ mainExcept(int argc, char *argv[])
     for (auto &segment : as ) {
         if (verbose) {
             IOFlagSave _(*debug);
-            *debug << "scan " << hex << segment.start <<  " to " << segment.start + segment.memSize
-                << " (filesiz = " << segment.fileSize  << ", memsiz=" << segment.memSize << ") ";
+            *debug << "scan " << hex << segment.start <<  " to " << segment.start + segment.end;
         }
         if (findstr != "") {
             std::vector<char> corestr;
             corestr.resize(std::max(size_t(4096UL), findstr.size() * 4));
-            for (size_t in, memPos = segment.start, corestrPos = 0; memPos < segment.start + segment.fileSize; memPos += in) {
+            for (size_t in, memPos = segment.start, corestrPos = 0; memPos < segment.end; memPos += in) {
                 size_t freeCorestr = corestr.size() - corestrPos;
-                size_t remainingSegment = segment.fileSize - (memPos - segment.start);
+                size_t remainingSegment = segment.end - memPos;
                 size_t readsize = std::min(remainingSegment, freeCorestr);
                 in = process->io->read(memPos, readsize, corestr.data() + corestrPos);
                 assert(in == readsize);
@@ -308,7 +307,7 @@ mainExcept(int argc, char *argv[])
                 const size_t step = sizeof(Elf::Off);
                 const size_t chunk_size = 1'048'576;
                 Elf::Addr loc=segment.start;
-                const Elf::Addr end_loc = loc + segment.fileSize;
+                const Elf::Addr end_loc = segment.end;
                 while (loc < end_loc) {
                     size_t read_size = std::min(chunk_size, end_loc - loc);
                     data.resize(read_size/step);

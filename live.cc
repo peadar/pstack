@@ -6,6 +6,7 @@
 
 #include <sys/ptrace.h>
 #include <sys/types.h>
+#include <sys/mman.h>
 
 #include <dirent.h>
 #include <err.h>
@@ -183,25 +184,38 @@ LiveProcess::stop(lwpid_t pid)
 }
 
 std::vector<AddressRange>
-LiveProcess::addressSpace() const {
+LiveProcess::addressSpace() const { return procAddressSpace(procname(pid, "maps")); }
+
+std::vector<AddressRange>
+Process::procAddressSpace(const std::string &fn) {
     std::vector<AddressRange> rv;
-    std::ifstream input(procname(pid, "maps"));
+    std::ifstream input(fn);
     for (;;) {
-       std::string startS, endS, restS;
-       getline(input, startS, '-');
-       getline(input, endS, ' ');
-       getline(input, restS);
+       std::string line;
+       std::getline(input, line);
+       std::istringstream lineStream(line);
+
+       uintptr_t start, end;
+       off_t offset;
+       int major, minor;
+       unsigned long inode;
+       std::string perms, path;
+       char colon, minus;
+       lineStream >> std::hex >> start >> minus >> end >> perms >> offset >> major >> colon >> minor >> inode >> path;
        if (input.eof() || !input.good())
           break;
-
-       size_t pos;
-       Elf::Addr start = stoull(startS, &pos, 16);
-       if (startS[pos] != 0)
-          continue;
-       Elf::Addr end = stoull(endS, &pos, 16);
-       if (endS[pos] != 0)
-          continue;
-       rv.emplace_back(start, end - start, end - start);
+       std::set<AddressRange::Flags> flags;
+       for (auto c : perms) {
+           static const std::map<char, AddressRange::Flags> flagmap {
+               { 'r', AddressRange::Flags::read },
+               { 'w', AddressRange::Flags::write },
+               { 'x', AddressRange::Flags::exec },
+               { 'p', AddressRange::Flags::priv },
+           };
+           if (c != '-')
+               flags.insert(flagmap.at(c));
+       }
+       rv.push_back({start, end, offset, {major, minor, inode, path}, flags });
     }
     return rv;
 }
