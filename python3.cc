@@ -18,6 +18,8 @@
 #define DK_ENTRIES(dk) \
     ((PyDictKeyEntry *)(&((int8_t *)((dk)->dk_indices))[DK_SIZE(dk) * DK_IXSIZE(dk)]))
 
+namespace pstack {
+
 template<> std::set<const PythonTypePrinter<3> *> PythonTypePrinter<3>::all = std::set<const PythonTypePrinter<3> *>();
 template <>
 char PythonTypePrinter<3>::pyBytesType[] = "PyUnicode_Type";
@@ -138,7 +140,7 @@ extern "C" size_t pyInterpOffset();
 
 template <>
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
-getInterpHead<3>(const Process &proc) {
+getInterpHead<3>(const Procman::Process &proc) {
     Elf::Object::sptr libpython;
     Elf::Addr libpythonAddr;
     Elf::Sym _PyRuntimeSym;
@@ -159,7 +161,12 @@ getInterpHead<3>(const Process &proc) {
     return std::make_tuple(libpython, libpythonAddr, interpHead);
 }
 
+}
 
 #include "python.tcc"
 
+namespace pstack {
+
 template struct PythonPrinter<3>;
+
+}
