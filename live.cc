@@ -211,6 +211,7 @@ Process::procAddressSpace(const std::string &fn) {
                { 'w', AddressRange::Flags::write },
                { 'x', AddressRange::Flags::exec },
                { 'p', AddressRange::Flags::priv },
+               { 's', AddressRange::Flags::shared },
            };
            if (c != '-')
                flags.insert(flagmap.at(c));

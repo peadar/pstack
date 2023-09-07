@@ -177,7 +177,7 @@ struct AddressRange {
    off_t offset;
    DevNode backing;
 
-   enum class Flags { read,write,exec,priv,count };
+   enum class Flags { read,write,exec,priv,count, shared };
    std::set<Flags> permissions; // PROT_READ/PROT_WRITE/PROT_EXEC
 };
 
