@@ -20,7 +20,6 @@
 #endif
 
 using namespace pstack;
-namespace {
 struct DumpCFAInsns {
     Elf::Off start;
     Elf::Off end;
@@ -206,7 +205,6 @@ dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
         default:
             throw (Exception() << "unknown CFA op " << std::hex << int(op)) << std::dec;
     }
-}
 }
 
 template <typename C>

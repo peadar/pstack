@@ -134,7 +134,8 @@ public:
     UnwindMechanism mechanism;
     bool isSignalTrampoline;
     StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs);
-    StackFrame &operator = (const StackFrame &) = delete;
+    StackFrame &operator = (const StackFrame &) = default;
+    StackFrame(const StackFrame &) = default;
     std::optional<Elf::CoreRegisters> unwind(Process &);
     void setCoreRegs(const Elf::CoreRegisters &);
     void getCoreRegs(Elf::CoreRegisters &) const;
@@ -299,7 +300,7 @@ public:
     virtual Reader::csptr getAUXV() const override;
     virtual pid_t getPID() const override;
 protected:
-    virtual Elf::Addr findRDebugAddr();
+    virtual Elf::Addr findRDebugAddr() override;
     bool loadSharedObjectsFromFileNote() override;
     std::vector<AddressRange> addressSpace() const override;
 };
