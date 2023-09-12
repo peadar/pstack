@@ -45,13 +45,27 @@ MemReader::MemReader(const string &descr, size_t len_, const void *data_)
 {
 }
 
+namespace {
+
+// Clang can add checks to the likes of
+// strcpy((char *)ptr + off);
+// to validate that "ptr" is not a null pointer.
+// In our case, for a memory reader in our own address space, we need to allow
+// that, as the offset will be the raw pointer value. Use this to hide the
+// [cn]astiness.
+const char *ptroff(const void *base, uintptr_t off) {
+    return (char *)((uintptr_t)base + off);
+}
+}
+
+
 size_t
 MemReader::read(Off off, size_t count, char *ptr) const
 {
     if (off > Off(len))
         throw (Exception() << "read past end of memory");
     size_t rc = std::min(count, len - size_t(off));
-    memcpy(ptr, (const char *)data + off, rc);
+    memcpy(ptr, ptroff(data, off), rc);
     return rc;
 }
 
@@ -63,7 +77,7 @@ MemReader::describe(std::ostream &os) const
 
 string
 MemReader::readString(Off offset) const {
-   return string((char *)data + offset);
+   return string(ptroff(data, offset));
 }
 
 
@@ -242,7 +256,7 @@ class MemOffsetReader final : public MemReader {
    Reader::csptr upstream;
 public:
    MemOffsetReader(const std::string &name, const MemReader *upstream_, Off offset, Off size)
-      : MemReader(name, size, (char *)upstream_->data + offset)
+      : MemReader(name, size, ptroff(upstream_->data, offset))
       , upstream(upstream_->shared_from_this())
    {
    }
@@ -301,15 +315,14 @@ Reader::readSLEB128(Off off) const
 std::pair<uintmax_t, size_t>
 MemReader::readULEB128(Off off) const
 {
-    auto p = reinterpret_cast<const char *>(data) + off;
-    return readleb128<uintmax_t>(p);
+    return readleb128<uintmax_t>(ptroff(data, off));
 }
 
 std::pair<intmax_t, size_t>
 MemReader::readSLEB128(Off off) const
 {
     auto p = reinterpret_cast<const char *>(data) + off;
-    return readleb128<intmax_t>(p);
+    return readleb128<intmax_t>(ptroff(data, off));
 }
 
 }
