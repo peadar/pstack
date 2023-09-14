@@ -41,7 +41,7 @@ endif()
 set(VERSION_TAG ${GIT_TAG} CACHE STRING "Version tag (defaults to git commit)")
 message(STATUS "Version: ${VERSION_TAG}")
 
-add_definitions("-DVERSION=${VERSION_TAG}")
+add_definitions(-DVERSION=${VERSION_TAG} -D_FORTIFY_SOURCE=2)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS ON)
@@ -128,13 +128,12 @@ add_library(dwelf ${LIBTYPE}
          ${lzmasrc}
          )
 
+add_library(procman ${LIBTYPE} dead.cc self.cc live.cc process.cc proc_service.cc
+    logproc.cc dwarfproc.cc procdump.cc ${stubsrc} ${pysrc})
 
-add_library(procman ${LIBTYPE} dead.cc self.cc live.cc process.cc proc_service.cc logproc.cc
-   dwarfproc.cc procdump.cc ${stubsrc})
+add_executable(canal canal.cc)
 
-add_executable(canal canal.cc ${pysrc})
-
-add_executable(${PSTACK_BIN} pstack.cc ${pysrc})
+add_executable(${PSTACK_BIN} pstack.cc)
 
 target_link_libraries(procman ${LTHREADDB} dwelf dl)
 target_link_libraries(${PSTACK_BIN} dwelf procman)
@@ -168,7 +167,7 @@ if ((NOT (Python3_Development_FOUND)) AND PYTHON3)
    message(WARNING "no python3 support found")
 endif()
 
-if (NOT (Python2_Development_FOUND))
+if (NOT (Python2_Development_FOUND) AND PYTHON2)
    message(WARNING "no python2 support found")
 endif()
 
