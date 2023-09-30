@@ -321,7 +321,6 @@ MemReader::readULEB128(Off off) const
 std::pair<intmax_t, size_t>
 MemReader::readSLEB128(Off off) const
 {
-    auto p = reinterpret_cast<const char *>(data) + off;
     return readleb128<intmax_t>(ptroff(data, off));
 }
 
