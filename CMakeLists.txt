@@ -41,7 +41,7 @@ endif()
 set(VERSION_TAG ${GIT_TAG} CACHE STRING "Version tag (defaults to git commit)")
 message(STATUS "Version: ${VERSION_TAG}")
 
-add_definitions(-DVERSION=${VERSION_TAG} -D_FORTIFY_SOURCE=2)
+add_definitions(-DVERSION=${VERSION_TAG})
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS ON)

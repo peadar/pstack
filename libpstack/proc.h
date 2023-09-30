@@ -164,12 +164,14 @@ struct Lwp {
 
 struct PrintableFrame;
 
-
 struct DevNode {
     int major;
     int minor;
     unsigned long inode;
     std::string path;
+    bool operator == (const DevNode &rhs) {
+       return major == rhs.major && minor == rhs.minor && inode == rhs.inode;
+    }
 };
 
 struct AddressRange {
@@ -179,7 +181,7 @@ struct AddressRange {
    DevNode backing;
 
    enum class Flags { read,write,exec,priv,count, shared };
-   std::set<Flags> permissions; // PROT_READ/PROT_WRITE/PROT_EXEC
+   std::set<Flags> permissions;
 };
 
 class Process : public ps_prochandle {
