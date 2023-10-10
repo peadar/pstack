@@ -3,31 +3,12 @@
 #include <sstream>
 
 namespace pstack {
-template <typename T>
-void
-stringifyImpl(std::ostringstream &os, const T&obj) { os << obj; }
-
-template <typename T>
+template <typename... Stuff>
 std::string
-stringify(const T&obj) {
-    std::ostringstream os;
-    stringifyImpl(os, obj);
-    return os.str();
-}
-
-template <typename T, typename... More>
-void
-stringifyImpl(std::ostringstream &os, const T&obj, More... more) {
-    os << obj;
-    stringifyImpl(os, more...);
-}
-
-template <typename T, typename... More>
-std::string
-stringify(const T&obj, More... more)
+stringify(Stuff&&... things)
 {
     std::ostringstream stream;
-    stringifyImpl(stream, obj, more...);
+    ( stream <<  ... << things );
     return stream.str();
 }
 }
