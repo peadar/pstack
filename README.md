@@ -139,7 +139,7 @@ by passing the "-l" option. The output will be very verbose.
 
 ## Building
 
-   * To compile, you need CMake, and a compiler that's at least C++14 capable.
+   * To compile, you need CMake, and a compiler that's at least C++17 capable.
 
    * Various ELF compression mechanisms mean that you should have the
      development package for zlib and xz compression libraries installed. Those
