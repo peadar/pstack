@@ -206,7 +206,7 @@ CoreProcess::addressSpace() const {
             if (ub->first >= hdr.p_vaddr && ub->second.second.end <= hdr.p_vaddr + hdr.p_memsz)
                 name = ub->second.first;
         }
-        rv.push_back({hdr.p_vaddr, hdr.p_vaddr + hdr.p_memsz, 0, {0, 0, 0, name}, {}});
+        rv.push_back({hdr.p_vaddr, hdr.p_vaddr + hdr.p_memsz, hdr.p_vaddr + hdr.p_filesz, 0, {0, 0, 0, name}, {}});
     }
     return rv;
 }

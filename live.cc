@@ -216,7 +216,7 @@ Process::procAddressSpace(const std::string &fn) {
            if (c != '-')
                flags.insert(flagmap.at(c));
        }
-       rv.push_back({start, end, offset, {major, minor, inode, path}, flags });
+       rv.push_back({start, end, end, offset, {major, minor, inode, path}, flags });
     }
     return rv;
 }

@@ -276,14 +276,14 @@ mainExcept(int argc, char *argv[])
     for (auto &segment : as ) {
         if (verbose) {
             IOFlagSave _(*debug);
-            *debug << "scan " << hex << segment.start <<  " to " << segment.start + segment.end;
+            *debug << "scan " << hex << segment.start <<  " to " << segment.start + segment.fileEnd;
         }
         if (findstr != "") {
             std::vector<char> corestr;
             corestr.resize(std::max(size_t(4096UL), findstr.size() * 4));
             for (size_t in, memPos = segment.start, corestrPos = 0; memPos < segment.end; memPos += in) {
                 size_t freeCorestr = corestr.size() - corestrPos;
-                size_t remainingSegment = segment.end - memPos;
+                size_t remainingSegment = segment.fileEnd - memPos;
                 size_t readsize = std::min(remainingSegment, freeCorestr);
                 in = process->io->read(memPos, readsize, corestr.data() + corestrPos);
                 assert(in == readsize);
@@ -307,7 +307,7 @@ mainExcept(int argc, char *argv[])
                 const size_t step = sizeof(Elf::Off);
                 const size_t chunk_size = 1'048'576;
                 Elf::Addr loc=segment.start;
-                const Elf::Addr end_loc = segment.end;
+                const Elf::Addr end_loc = segment.fileEnd;
                 while (loc < end_loc) {
                     size_t read_size = std::min(chunk_size, end_loc - loc);
                     data.resize(read_size/step);
@@ -328,7 +328,7 @@ mainExcept(int argc, char *argv[])
                         const auto & p=*it;
                         if (searchaddrs.size()) {
                             for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
-                                if (p >= range->first && p < range->second && (p % 4 == 0)) {
+                                if (p >= range->first && p < range->second) {
                                     IOFlagSave _(cout);
                                     cout << "0x" << hex << loc << dec << "\n";
                                 }
