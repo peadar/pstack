@@ -567,6 +567,8 @@ CodeLocation::fde() const {
 
 const Dwarf::FDE *
 ProcessLocation::fde() const {
+    if (!codeloc)
+        throw Exception() << "no FDE for this location";
     return codeloc->fde();
 }
 
@@ -583,7 +585,8 @@ CodeLocation::die() const {
 
 const Dwarf::DIE &
 ProcessLocation::die() const {
-    return codeloc->die();
+    static Dwarf::DIE empty;
+    return codeloc ? codeloc->die() : empty;
 }
 
 ProcessLocation::ProcessLocation(const Process &proc, Elf::Addr address_) {
