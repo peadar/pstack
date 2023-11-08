@@ -532,6 +532,40 @@ struct CFI {
 
 class ImageCache;
 
+// Iterates over all units in an object. Existing units will be returned from the
+// cache, and new units will be decoded and added.
+struct Units {
+    class iterator {
+        const Info *info;
+        Unit::sptr currentUnit;
+        bool atend() const;
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = Unit::sptr;
+        using difference_type = int;
+        using pointer = Unit::sptr *;
+        using reference = Unit::sptr &;
+        Unit::sptr operator *() { return currentUnit; }
+        iterator operator ++();
+        bool operator == (const iterator &rhs) const {
+            if (atend() || rhs.atend())
+                return atend() == rhs.atend();
+            return info == rhs.info && currentUnit->offset == rhs.currentUnit->offset;
+        }
+        bool operator != (const iterator &rhs) const {
+            return !(*this == rhs);
+        }
+        iterator(const Info *info_, Elf::Off offset);
+        iterator() : info(nullptr), currentUnit(nullptr) {}
+    };
+    using value_type = Unit::sptr;
+    using const_iterator = iterator;
+    const std::shared_ptr<const Info> info;
+    iterator begin() const;
+    iterator end() const { return iterator(); }
+    Units(const std::shared_ptr<const Info> &info_) : info(info_) {}
+};
+
 /*
  * Info represents all the interesting bits of the DWARF data.  Once
  * constructed, you can access DWARF compilation units, CFI information, macro
@@ -541,40 +575,6 @@ class Info : public std::enable_shared_from_this<Info> {
 public:
     using sptr = std::shared_ptr<Info>;
     using csptr = std::shared_ptr<const Info>;
-
-    // Iterates over all units in an object. Existing units will be returned from the
-    // cache, and new units will be decoded and added.
-    struct Units {
-        class iterator {
-            const Info *info;
-            Unit::sptr currentUnit;
-            bool atend() const;
-        public:
-            using iterator_category = std::forward_iterator_tag;
-            using value_type = Unit::sptr;
-            using difference_type = int;
-            using pointer = Unit::sptr *;
-            using reference = Unit::sptr &;
-            Unit::sptr operator *() { return currentUnit; }
-            iterator operator ++();
-            bool operator == (const iterator &rhs) const {
-                if (atend() || rhs.atend())
-                    return atend() == rhs.atend();
-                return info == rhs.info && currentUnit->offset == rhs.currentUnit->offset;
-            }
-            bool operator != (const iterator &rhs) const {
-                return !(*this == rhs);
-            }
-            iterator(const Info *info_, Elf::Off offset);
-            iterator() : info(nullptr), currentUnit(nullptr) {}
-        };
-        using value_type = Unit::sptr;
-        using const_iterator = iterator;
-        const std::shared_ptr<const Info> info;
-        iterator begin() const;
-        iterator end() const { return iterator(); }
-        Units(const std::shared_ptr<const Info> &info_) : info(info_) {}
-    };
 
     Info(Elf::Object::sptr, ImageCache &);
     ~Info() noexcept = default;
@@ -756,7 +756,7 @@ struct MacroVisitor {
 };
 
 inline
-Info::Units::iterator Info::Units::iterator::operator ++() {
+Units::iterator Units::iterator::operator ++() {
     currentUnit = currentUnit->end == info->debugInfo.io()->size()
         ? nullptr
         : info->getUnit( currentUnit->end );
@@ -764,17 +764,17 @@ Info::Units::iterator Info::Units::iterator::operator ++() {
 }
 
 inline
-Info::Units::iterator Info::Units::begin() const {
+Units::iterator Units::begin() const {
     return info->debugInfo ? iterator(info.get(), 0) : iterator();
 }
 
 inline bool
-Info::Units::iterator::atend() const {
+Units::iterator::atend() const {
     return currentUnit == nullptr;
 }
 
 inline
-Info::Units::iterator::iterator(const Info *info_, Elf::Off offset)
+Units::iterator::iterator(const Info *info_, Elf::Off offset)
     : info(info_), currentUnit(info->getUnit(offset)) {}
 
 #define DWARF_OP(op, value, args) op = value,

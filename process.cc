@@ -330,24 +330,8 @@ buildDIEName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
     return printedParent;
 }
 
-// Data useful for both JSON and text printed formats.
-struct PrintableFrame {
-    const Process &proc;
-    int frameNumber;
-    std::string dieName;
-    const PstackOptions &options;
-    Elf::Addr functionOffset;
-    const StackFrame &frame;
-    std::vector<Dwarf::DIE> inlined; // func + inlined.
-    PrintableFrame(const Process &, const StackFrame &frame, int frameNo, const PstackOptions &options);
-    PrintableFrame(const PrintableFrame &) = delete;
-    PrintableFrame() = delete;
-};
-
-PrintableFrame::PrintableFrame(const Process &proc, const StackFrame &frame, int frameNo, const PstackOptions &options)
+PrintableFrame::PrintableFrame(const Process &proc, const StackFrame &frame)
     : proc(proc)
-    , frameNumber(frameNo)
-    , options(options)
     , functionOffset(std::numeric_limits<Elf::Addr>::max())
     , frame(frame)
 {
@@ -356,29 +340,31 @@ PrintableFrame::PrintableFrame(const Process &proc, const StackFrame &frame, int
     if (location.elf() == nullptr)
         return;
     Elf::Addr objIp = location.address() - location.elfReloc;
-    auto function = location.die();
-    if (function) {
-        std::ostringstream sos;
-        buildDIEName(sos, function);
-        this->dieName = sos.str();
-        auto lowpc = function.attribute(Dwarf::DW_AT_low_pc);
-        if (lowpc.valid()) {
-            functionOffset = objIp - uintmax_t(lowpc);
-        } else {
-            auto ranges = function.getRanges();
-            if (ranges) {
-                functionOffset = objIp - (*ranges)[0].first;
+    if (!proc.options.nodienames) {
+        auto function = location.die();
+        if (function) {
+            std::ostringstream sos;
+            buildDIEName(sos, function);
+            this->dieName = sos.str();
+            auto lowpc = function.attribute(Dwarf::DW_AT_low_pc);
+            if (lowpc.valid()) {
+                functionOffset = objIp - uintmax_t(lowpc);
             } else {
-                // no function start address - we'll try and find it
-                // below in the ELF fallback code.
+                auto ranges = function.getRanges();
+                if (ranges) {
+                    functionOffset = objIp - (*ranges)[0].first;
+                } else {
+                    // no function start address - we'll try and find it
+                    // below in the ELF fallback code.
+                }
             }
-        }
-        while (function) {
-            auto inl = function.findEntryForAddr(objIp, Dwarf::DW_TAG_inlined_subroutine);
-            if (!inl)
-                break;
-            inlined.push_back(inl);
-            function = std::move(inl);
+            while (function) {
+                auto inl = function.findEntryForAddr(objIp, Dwarf::DW_TAG_inlined_subroutine);
+                if (!inl)
+                    break;
+                inlined.push_back(inl);
+                function = std::move(inl);
+            }
         }
     }
     if (functionOffset == std::numeric_limits<Elf::Addr>::max()) {
@@ -395,9 +381,9 @@ PrintableFrame::PrintableFrame(const Process &proc, const StackFrame &frame, int
 
 struct ArgPrint {
     const Process &p;
-    const PrintableFrame &pframe;
-    ArgPrint(const Process &p_, const PrintableFrame &pframe_)
-        : p(p_), pframe(pframe_) {}
+    const StackFrame &frame;
+    ArgPrint(const Process &p_, const StackFrame &frame_)
+        : p(p_), frame(frame_) {}
 };
 
 struct RemoteValue {
@@ -564,8 +550,8 @@ operator << (std::ostream &os, const RemoteValue &rv)
 std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
-    ProcessLocation location = ap.pframe.frame.scopeIP(ap.p);
-    if (!location.die() || !ap.pframe.options.doargs)
+    ProcessLocation location = ap.frame.scopeIP(ap.p);
+    if (!location.die() || !ap.p.options.doargs)
         return os;
     using namespace Dwarf;
     const char *sep = "";
@@ -581,7 +567,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
 
                     if (attr.valid()) {
                         ExpressionStack fbstack;
-                        addr = fbstack.eval(ap.p, attr, &ap.pframe.frame, location.elfReloc);
+                        addr = fbstack.eval(ap.p, attr, &ap.frame, location.elfReloc);
                         os << "=";
                         try {
                            if (fbstack.isReg)
@@ -592,7 +578,6 @@ operator << (std::ostream &os, const ArgPrint &ap)
                         catch (const Exception &ex) {
                            os << "<" << ex.what() << ">";
                         }
-
                     } else {
                         auto constVal = child.attribute(Dwarf::DW_AT_const_value);
                         if (constVal.valid())
@@ -623,30 +608,29 @@ std::ostream &operator << (std::ostream &os, UnwindMechanism mech) {
 }
 
 std::ostream &
-Process::dumpStackText(std::ostream &os, const ThreadStack &thread,
-      const PstackOptions &options) const
+Process::dumpStackText(std::ostream &os, const ThreadStack &thread) const
 {
     os << std::dec;
     os << "thread: " << (void *)thread.info.ti_tid << ", lwp: "
        << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
     int frameNo = 0;
     for (auto &frame : thread.stack)
-        dumpFrameText(os, PrintableFrame(*this, frame, frameNo++, options), frame);
+        dumpFrameText(os, frame, frameNo++);
     return os;
 }
 
 std::ostream &
-Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, const StackFrame &frame) const
+Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo) const
 {
-
     IOFlagSave _(os);
+    PrintableFrame pframe(*this, frame);
 
-    ProcessLocation location = pframe.frame.scopeIP(pframe.proc);
+    ProcessLocation location = frame.scopeIP(*this);
     auto source = location.source();
     std::pair<std::string, int> src = source.size() ? source[0] : std::make_pair( "", std::numeric_limits<Elf::Addr>::max());
     for (auto i = pframe.inlined.rbegin(); i != pframe.inlined.rend(); ++i) {
        os << "#"
-           << std::left << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
+           << std::left << std::setw(2) << std::setfill(' ') << frameNo << " "
            << std::setw(ELF_BITS/4 + 2) << std::setfill(' ')
            << "inlined";
        if (verbose > 0) {
@@ -667,11 +651,9 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, const Sta
     }
 
     os << "#"
-        << std::left << std::setw(2) << std::setfill(' ') << pframe.frameNumber << " "
+        << std::left << std::setw(2) << std::setfill(' ') << frameNo << " "
         << std::right << "0x" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0')
-        << frame.rawIP();
-
-    os << std::dec;
+        << frame.rawIP() << std::dec;
 
     if (location.valid()) {
         std::string name;
@@ -691,7 +673,7 @@ Process::dumpFrameText(std::ostream &os, const PrintableFrame &pframe, const Sta
         os << " in "
             << name
             << flags
-            << "(" << ArgPrint(*this, pframe) << ")";
+            << "(" << ArgPrint(*this, frame) << ")";
 
         if (pframe.functionOffset != std::numeric_limits<Elf::Addr>::max())
             os << "+" << pframe.functionOffset;
@@ -860,7 +842,7 @@ Process::~Process()
 }
 
 void
-ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
+ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 {
     stack.clear();
     stack.reserve(20);
@@ -878,7 +860,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs, unsigned maxFrames)
         // Set up the first frame using the machine context registers
         stack.front().setCoreRegs(regs);
 
-        for (size_t frameCount = 0; frameCount < maxFrames; frameCount++) {
+        for (int frameCount = 0; frameCount < p.options.maxdepth; frameCount++) {
             auto &prev = stack.back();
 
             try {
@@ -1060,7 +1042,7 @@ Process::load(Elf::Object::sptr exec, std::string id, const PstackOptions &optio
 }
 
 std::list<ThreadStack>
-Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
+Process::getStacks() {
     std::list<ThreadStack> threadStacks;
     std::set<pid_t> tracedLwps;
     StopProcess processSuspender(this);
@@ -1072,7 +1054,7 @@ Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
      * threading systems where there is not a 1:1 correspondence between
      * userland pthreads and kernel LWPs
      */
-    listThreads([this, &threadStacks, &tracedLwps, maxFrames] (
+    listThreads([this, &threadStacks, &tracedLwps] (
                        const td_thrhandle_t *thr) {
         Elf::CoreRegisters regs;
         td_err_e the;
@@ -1084,7 +1066,7 @@ Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
         if (the == TD_OK) {
             threadStacks.push_back(ThreadStack());
             td_thr_get_info(thr, &threadStacks.back().info);
-            threadStacks.back().unwind(*this, regs, maxFrames);
+            threadStacks.back().unwind(*this, regs);
             tracedLwps.insert(threadStacks.back().info.ti_lid);
         }
     });
@@ -1106,7 +1088,7 @@ Process::getStacks(const PstackOptions &options, unsigned maxFrames) {
             threadStacks.back().info.ti_lid = lwp.first;
             Elf::CoreRegisters regs;
             getRegs(lwp.first,  &regs);
-            threadStacks.back().unwind(*this, regs, maxFrames);
+            threadStacks.back().unwind(*this, regs);
         }
     }
 
@@ -1142,7 +1124,7 @@ operator << (std::ostream &os, const JSON<Procman::StackFrame, const Procman::Pr
     PstackOptions options;
     options.doargs = true;
     Procman::ProcessLocation location = frame.scopeIP(*jt.context);
-    Procman::PrintableFrame pframe(*jt.context, frame, 0, options);
+    Procman::PrintableFrame pframe(*jt.context, frame);
 
     JObject jo(os);
     jo

@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
-#include <set>
 
 #define XSTR(a) #a
 #define STR(a) XSTR(a)
@@ -32,16 +31,16 @@ bool doJson = false;
 volatile bool interrupted = false;
 
 void
-pstack(Procman::Process &proc, const PstackOptions &options, int maxFrames)
+pstack(Procman::Process &proc)
 {
-    const auto &threadStacks = proc.getStacks(options, maxFrames);
-    auto &os = *options.output;
+    const auto &threadStacks = proc.getStacks();
+    auto &os = *proc.options.output;
     if (doJson) {
         os << json(threadStacks, const_cast<const Procman::Process*>(&proc));
     } else {
         os << "process: " << *proc.io << "\n";
         for (auto &s : threadStacks) {
-            proc.dumpStackText(os, s, options);
+            proc.dumpStackText(os, s);
             os << std::endl;
         }
     }
@@ -125,7 +124,7 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
                if (((1 << (stopsig -1)) & handledSigs) == 0) {
                   p = std::make_shared<Procman::LiveProcess>(exe, pid, options, ic, true);
                   p->load();
-                  pstack(*p, options, 100);
+                  pstack(*p);
                   rc = ptrace(PTRACE_KILL, pid, 0, contsig);
                } else {
                   rc = ptrace(PTRACE_CONT, pid, 0, contsig);
@@ -205,7 +204,6 @@ usage(std::ostream &os, const char *name, const Flags &options)
 int
 emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
 {
-    int maxFrames = 1024;
     double sleepTime = 0.0;
     PstackOptions options;
     std::ofstream out;
@@ -273,7 +271,7 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
             'M',
             "max frames",
             "maximum number of stack frames to print for a thread",
-            Flags::set(maxFrames))
+            Flags::set(options.maxdepth))
 
     .add("help",
             'h',
@@ -392,7 +390,7 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
             if (!doPython)
 #endif
             {
-                pstack(proc, options, maxFrames);
+                pstack(proc);
             }
             if (sleepTime != 0.0)
                 usleep(sleepTime * 1000000);

@@ -154,7 +154,7 @@ Info::offsetToDIE(Elf::Off offset) const
     throw Exception() << "DIE not found";
 }
 
-Info::Units
+Units
 Info::getUnits() const
 {
     return Units(shared_from_this());

@@ -25,6 +25,7 @@ struct PstackOptions {
    bool doargs = false;
    bool dolocals = false;
    bool nothreaddb = false;
+   bool nodienames = false; // don't use names from DWARF dies in backtraces.
    int maxdepth = std::numeric_limits<int>::max();
    std::ostream *output = &std::cout;
 };
@@ -142,13 +143,26 @@ public:
     void getFrameBase(const Process &, intmax_t, ExpressionStack *) const;
 };
 
+// Descriptive data useful for formatting frame content.
+struct PrintableFrame {
+    const Process &proc;
+    std::string dieName;
+    Elf::Addr functionOffset;
+    const StackFrame &frame;
+    std::vector<Dwarf::DIE> inlined; // all inlined functions at this address.
+
+    PrintableFrame(const Process &, const StackFrame &frame);
+    PrintableFrame(const PrintableFrame &) = delete;
+    PrintableFrame() = delete;
+};
+
 struct ThreadStack {
     td_thrinfo_t info;
     std::vector<StackFrame> stack;
     ThreadStack() {
         memset(&info, 0, sizeof info);
     }
-    void unwind(Process &, Elf::CoreRegisters &regs, unsigned maxFrames);
+    void unwind(Process &, Elf::CoreRegisters &regs);
 };
 
 /*
@@ -201,10 +215,10 @@ public:
     Elf::Object::sptr vdsoImage;
 protected:
     std::string abiPrefix;
-    PstackOptions options;
     static std::vector<AddressRange> procAddressSpace(const std::string &fn); //  utility to parse contents of /proc/pid/maps
 
 public:
+    PstackOptions options;
     Elf::Addr sysent; // for AT_SYSINFO
     std::map<pid_t, Lwp> lwps;
     Dwarf::ImageCache &imageCache;
@@ -223,8 +237,8 @@ public:
     virtual void stopProcess() = 0;
     virtual void resumeProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
-    std::ostream &dumpStackText(std::ostream &, const ThreadStack &, const PstackOptions &) const;
-    std::ostream &dumpFrameText(std::ostream &, const PrintableFrame &, const StackFrame &) const;
+    std::ostream &dumpStackText(std::ostream &, const ThreadStack &) const;
+    std::ostream &dumpFrameText(std::ostream &, const StackFrame &, int) const;
     std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &) const;
     template <typename T> void listThreads(const T &);
 
@@ -239,7 +253,7 @@ public:
     resolveSymbolDetail(const char *name, bool includeDebug,
                         std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match =
                            [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
-    virtual std::list<ThreadStack> getStacks(const PstackOptions &, unsigned maxFrames);
+    virtual std::list<ThreadStack> getStacks();
     virtual ~Process();
     void load();
     virtual pid_t getPID() const = 0;
