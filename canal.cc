@@ -269,7 +269,7 @@ mainExcept(int argc, char *argv[])
 
     // Now run through the corefile, searching for virtual objects.
 #ifdef WITH_PYTHON
-    PythonPrinter<2> py(*process, std::cout, PstackOptions());
+    PythonPrinter<2> py(*process, std::cout);
 #endif
     std::vector<Elf::Off> data;
     auto as = process->addressSpace();

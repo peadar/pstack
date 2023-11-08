@@ -239,7 +239,6 @@ public:
     virtual void resume(pid_t lwpid) = 0;
     std::ostream &dumpStackText(std::ostream &, const ThreadStack &) const;
     std::ostream &dumpFrameText(std::ostream &, const StackFrame &, int) const;
-    std::ostream &dumpStackJSON(std::ostream &, const ThreadStack &) const;
     template <typename T> void listThreads(const T &);
 
 

@@ -627,7 +627,9 @@ Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo) c
 
     ProcessLocation location = frame.scopeIP(*this);
     auto source = location.source();
-    std::pair<std::string, int> src = source.size() ? source[0] : std::make_pair( "", std::numeric_limits<Elf::Addr>::max());
+    std::pair<std::string, int> src = source.size()
+        ? source[0]
+        : std::make_pair( "", std::numeric_limits<Elf::Addr>::max());
     for (auto i = pframe.inlined.rbegin(); i != pframe.inlined.rend(); ++i) {
        os << "#"
            << std::left << std::setw(2) << std::setfill(' ') << frameNo << " "
@@ -1121,8 +1123,6 @@ std::ostream &
 operator << (std::ostream &os, const JSON<Procman::StackFrame, const Procman::Process *> &jt)
 {
     auto &frame =jt.object;
-    PstackOptions options;
-    options.doargs = true;
     Procman::ProcessLocation location = frame.scopeIP(*jt.context);
     Procman::PrintableFrame pframe(*jt.context, frame);
 

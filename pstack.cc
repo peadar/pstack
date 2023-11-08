@@ -146,9 +146,9 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
 
 
 #ifdef WITH_PYTHON
-template<int V> void doPy(Procman::Process &proc, const PstackOptions &options, bool showModules, const PyInterpInfo &info) {
+template<int V> void doPy(Procman::Process &proc, bool showModules, const PyInterpInfo &info) {
     Procman::StopProcess here(&proc);
-    PythonPrinter<V> printer(proc, *options.output, options, info);
+    PythonPrinter<V> printer(proc, *proc.options.output, info);
     if (!printer.interpFound())
         throw Exception() << "no python interpreter found";
     printer.printInterpreters(showModules);
@@ -165,7 +165,7 @@ template<int V> void doPy(Procman::Process &proc, const PstackOptions &options, 
  * @param showModules   Whether to show modules
  * @return              boolean of whether the process was a Python process or not
  */
-bool pystack(Procman::Process &proc, const PstackOptions &options, bool showModules) {
+bool pystack(Procman::Process &proc, bool showModules) {
     PyInterpInfo info = getPyInterpInfo(proc);
 
     if (info.libpython == nullptr) // not a python process or python interpreter not found
@@ -173,13 +173,13 @@ bool pystack(Procman::Process &proc, const PstackOptions &options, bool showModu
 
     if (info.versionHex < V2HEX(3, 0)) { // Python 2.x
 #ifdef WITH_PYTHON2
-        doPy<2>(proc, options, showModules, info);
+        doPy<2>(proc, showModules, info);
 #else
         throw (Exception() << "no support for discovered python 2 interpreter");
 #endif
     } else { // Python 3.x
 #ifdef WITH_PYTHON3
-        doPy<3>(proc, options, showModules, info);
+        doPy<3>(proc, showModules, info);
 #else
         throw (Exception() << "no support for discovered python 3 interpreter");
 #endif
@@ -382,7 +382,7 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
         while (!interrupted) {
 #if defined(WITH_PYTHON)
             if (doPython || printAllStacks) {
-                bool isPythonProcess = pystack(proc, options, pythonModules);
+                bool isPythonProcess = pystack(proc, pythonModules);
                 // error if -p but not python process
                 if (doPython && !isPythonProcess)
                     throw Exception() << "Couldn't find a Python interpreter";

@@ -56,7 +56,7 @@ class DictPrinter final : public PythonTypePrinter<2> {
             return 0;
         }
         
-        if (pc->depth > pc->options.maxdepth) {
+        if (pc->depth > pc->proc.options.maxdepth) {
             pc->os << "{ ... }";
             return 0;
         }

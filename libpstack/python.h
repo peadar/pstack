@@ -75,7 +75,7 @@ struct PythonPrinter {
     };
     mutable std::map<const _typeobject *, std::unique_ptr<_typeobject, freetype>> types;
 
-    PythonPrinter(Procman::Process &proc_, std::ostream &os_, const PstackOptions &, const PyInterpInfo &info_);
+    PythonPrinter(Procman::Process &proc_, std::ostream &os_, const PyInterpInfo &info_);
     const char *prefix() const;
     void printInterpreters(bool withModules);
     Elf::Addr printThread(Elf::Addr);
@@ -88,7 +88,6 @@ struct PythonPrinter {
     Elf::Addr interp_head;
     Elf::Object::sptr libpython;
     Elf::Addr libpythonAddr;
-    const PstackOptions &options;
     const PyInterpInfo &info;
     std::map<const _typeobject *, const PythonTypePrinter<PyV> *> printers;
     bool interpFound() const; // returns true if the printer could find the interpreter.

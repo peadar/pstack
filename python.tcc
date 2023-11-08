@@ -206,12 +206,12 @@ template <int PyV> class FramePrinter final : public PythonTypePrinter<PyV> {
 
             pc->os << pc->prefix() << func;
 
-            if (pc->options.doargs)
+            if (pc->proc.options.doargs)
                 printArguments<PyV>(pc, pyo, remoteAddr);
 
             pc->os << " in " << file << ":" << lineNo << std::endl;
 
-            if (pc->options.dolocals) {
+            if (pc->proc.options.dolocals) {
 
                 Elf::Addr flocals = remoteAddr + offsetof(PyFrameObject, f_localsplus);
 
@@ -229,7 +229,7 @@ template <int PyV> class FramePrinter final : public PythonTypePrinter<PyV> {
             }
         }
 
-        if (pc->options.dolocals && pfo->f_locals != 0) {
+        if (pc->proc.options.dolocals && pfo->f_locals != 0) {
             pc->depth++;
             pc->os << pc->prefix() << "locals: " << std::endl;
             pc->print(Elf::Addr(pfo->f_locals));
@@ -290,14 +290,13 @@ template <int PyV> bool PythonPrinter<PyV>::interpFound() const {
 
 
 template <int PyV>
-PythonPrinter<PyV>::PythonPrinter(Procman::Process &proc_, std::ostream &os_, const PstackOptions &options_, const PyInterpInfo &info_)
+PythonPrinter<PyV>::PythonPrinter(Procman::Process &proc_, std::ostream &os_, const PyInterpInfo &info_)
     : proc(proc_)
     , os(os_)
     , depth(0)
     , interp_head(info_.interpreterHead)
     , libpython(info_.libpython)
     , libpythonAddr(info_.libpythonAddr)
-    , options(options_)
     , info(info_)
 {
     if (!interpFound())
