@@ -350,7 +350,10 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
     .add("command",
           'x',
           "command line",
-          "execute command line as subprocess, trace when it receives a signal", Flags::set<std::string>(subprocessCmd))
+          "execute command line as subprocess, trace when it receives a signal",
+          Flags::set<std::string>(subprocessCmd))
+    .add("no-die-names", 'Y', "do not use DIE names for functions",
+          Flags::setf(options.nodienames))
     .add("output",
           'o',
           "output file",
