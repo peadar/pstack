@@ -339,7 +339,7 @@ PrintableFrame::PrintableFrame(const Process &proc, const StackFrame &frame)
 
     if (location.elf() == nullptr)
         return;
-    Elf::Addr objIp = location.address() - location.elfReloc;
+    Elf::Addr objIp = location.objLocation();
     if (!proc.options.nodienames) {
         auto function = location.die();
         if (function) {
@@ -567,7 +567,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
 
                     if (attr.valid()) {
                         ExpressionStack fbstack;
-                        addr = fbstack.eval(ap.p, attr, &ap.frame, location.elfReloc);
+                        addr = fbstack.eval(ap.p, attr, &ap.frame, location.elfReloc());
                         os << "=";
                         try {
                            if (fbstack.isReg)
@@ -657,7 +657,7 @@ Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo) c
         << std::right << "0x" << std::hex << std::setw(ELF_BITS/4) << std::setfill('0')
         << frame.rawIP() << std::dec;
 
-    if (location.valid()) {
+    if (location.inObject()) {
         std::string name;
         std::string flags = "";
         if (frame.isSignalTrampoline)
@@ -681,7 +681,7 @@ Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo) c
             os << "+" << pframe.functionOffset;
         os << " in " << stringify(*location.elf()->io);
         if (verbose)
-           os << "@0x" << std::hex << frame.rawIP() - location.elfReloc << std::dec;
+           os << "@0x" << std::hex << frame.rawIP() - location.elfReloc() << std::dec;
         if (src.first != "")
            os << " at " << src.first << ":" << std::dec << src.second;
     } else {
@@ -908,7 +908,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 
                 if (stack.size() == 1 || stack[stack.size() - 2].isSignalTrampoline) {
                     ProcessLocation badip = { p, IP(prev.regs) };
-                    if (!badip.valid() || (badip.codeloc->phdr_->p_flags & PF_X) == 0) {
+                    if (!badip.inObject() || (badip.codeloc->phdr_->p_flags & PF_X) == 0) {
                         auto newRegs = prev.regs; // start with a copy of prev frames regs.
 #if defined(__amd64__) || defined(__i386__)
                         // get stack pointer in the current frame, and read content of TOS
@@ -1132,7 +1132,7 @@ operator << (std::ostream &os, const JSON<Procman::StackFrame, const Procman::Pr
         .field("offset", pframe.functionOffset)
         .field("trampoline", frame.isSignalTrampoline)
         .field("die", pframe.dieName)
-        .field("loadaddr", location.elfReloc)
+        .field("loadaddr", location.elfReloc())
         ;
 
     const auto &sym = location.symbol();

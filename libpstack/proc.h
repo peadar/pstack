@@ -101,29 +101,41 @@ struct CodeLocation {
     const Dwarf::CFI *cfi() const;
     CodeLocation();
     CodeLocation(Dwarf::Info::sptr, const Elf::Phdr *, Elf::Addr location);
-
 };
 
 // This is a CodeLocation, but relocated for a process address.
 struct ProcessLocation {
-    Elf::Addr elfReloc;
+    Elf::Addr location;
 
     // XXX: can cache these in Dwarf::Info
     std::shared_ptr<CodeLocation> codeloc;
 
     void set(const Process &proc, Elf::Addr address);
     ProcessLocation(const Process &proc, Elf::Addr address_);
-    Elf::Addr address() const { return elfReloc + codeloc->location_; }
+
+    // returns true if the location has been located in an ELF object.
+    bool inObject() const  {
+        return codeloc != nullptr;
+    }
     // these are proxies or the CodeLocation, adjusted by the elfReloc value.
-    bool valid() const  { return codeloc != nullptr; }
     const Dwarf::DIE &die() const;
     const Dwarf::CIE *cie() const;
     const Dwarf::FDE *fde() const;
     const Dwarf::CFI *cfi() const;
     const Elf::MaybeNamedSymbol symbol() const;
     std::vector<std::pair<std::string, int>> source() const;
-    Elf::Object::sptr elf() { return codeloc ? codeloc->dwarf_->elf : nullptr; }
-    Dwarf::Info::sptr dwarf() { return codeloc ? codeloc->dwarf_ : nullptr; }
+    Elf::Object::sptr elf() const { return codeloc ? codeloc->dwarf_->elf : nullptr; }
+
+    // Returns the load address of the ELF object that contains this address.
+    // Or zero if there is not ELF object found for this address.
+    Elf::Addr elfReloc() const {
+        if (codeloc == nullptr)
+            return 0;
+        return location - codeloc->location_;
+    }
+    Elf::Addr objLocation() const { return codeloc->location_; }
+    Elf::Addr address() { return location; }
+    Dwarf::Info::sptr dwarf() const { return codeloc ? codeloc->dwarf_ : nullptr; }
 };
 
 class StackFrame {

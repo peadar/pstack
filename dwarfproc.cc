@@ -72,7 +72,7 @@ StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *sta
     if (f) {
         auto base = f.attribute(Dwarf::DW_AT_frame_base);
         if (base.valid()) {
-            stack->push(stack->eval(p, base, this, location.elfReloc) + offset);
+            stack->push(stack->eval(p, base, this, location.elfReloc()) + offset);
             stack->isReg = false;
             return;
         }
@@ -136,7 +136,7 @@ ExpressionStack::eval(const Process &proc, const Dwarf::DIE::Attribute &attr,
                             auto len = r.getuleb128();
                             if (base + start <= ip && ip < base + end) {
                                 Dwarf::DWARFReader exr(r.io, r.getOffset(), r.getOffset() + len);
-                               return eval(proc, exr, frame, loc.elfReloc);
+                               return eval(proc, exr, frame, loc.elfReloc());
                             }
                             r.skip(len);
                             break;
@@ -159,7 +159,7 @@ ExpressionStack::eval(const Process &proc, const Dwarf::DIE::Attribute &attr,
                             auto len = r.getuleb128();
                             if (base + start <= ip && ip < base + end) {
                                 Dwarf::DWARFReader exr(r.io, r.getOffset(), r.getOffset() + len);
-                               return eval(proc, exr, frame, loc.elfReloc);
+                               return eval(proc, exr, frame, loc.elfReloc());
                             }
                             r.skip(len);
                             break;
@@ -183,7 +183,7 @@ ExpressionStack::eval(const Process &proc, const Dwarf::DIE::Attribute &attr,
                     auto len = r.getuint(2);
                     if (ip >= base + start && ip < base + end) {
                         Dwarf::DWARFReader exr(r.io, r.getOffset(), r.getOffset() + Elf::Word(len));
-                        return eval(proc, exr, frame, loc.elfReloc);
+                        return eval(proc, exr, frame, loc.elfReloc());
                     }
                     r.skip(len);
                 }
@@ -425,15 +425,14 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     auto cfi = location.cfi();
     auto fde = location.fde();
     auto cie = location.cie();
-    if (fde == nullptr || cie == nullptr)
-        throw (Exception() << "no FDE/CIE for instruction address "
-              << std::hex << location.address() << std::dec << " in " << *location.elf()->io);
+    if (fde == nullptr || cie == nullptr || cfi == nullptr)
+        throw (Exception() << "no FDE/CIE/CFI for instruction address " << std::hex << location.address());
 
     if (cie->isSignalHandler)
        isSignalTrampoline = true;
 
     // relocate from process address to object address
-    Elf::Off objaddr = location.address() - location.elfReloc;
+    Elf::Off objaddr = location.address() - location.elfReloc();
 
     using namespace Dwarf;
 
@@ -470,7 +469,7 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
             auto start = dcf.cfaValue.u.expression.offset;
             auto end = start + dcf.cfaValue.u.expression.length;
             DWARFReader r(location.cfi()->io, start, end);
-            cfa = stack.eval(p, r, this, location.elfReloc);
+            cfa = stack.eval(p, r, this, location.elfReloc());
             break;
         }
         default:
@@ -507,7 +506,7 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
                 stack.push(cfa);
                 DWARFReader reader(cfi->io, unwind.u.expression.offset,
                       unwind.u.expression.offset + unwind.u.expression.length);
-                auto val = stack.eval(p, reader, this, location.elfReloc);
+                auto val = stack.eval(p, reader, this, location.elfReloc());
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                 if (unwind.type == EXPRESSION)
                     p.io->readObj(val, &val);
@@ -568,7 +567,7 @@ CodeLocation::fde() const {
 const Dwarf::FDE *
 ProcessLocation::fde() const {
     if (!codeloc)
-        throw Exception() << "no FDE for this location";
+        return nullptr;
     return codeloc->fde();
 }
 
@@ -630,25 +629,24 @@ ProcessLocation::set(const Process &proc, Elf::Addr address)
     auto dwarf = elf ? proc.getDwarf(elf) : nullptr;
     if (dwarf) {
         codeloc = std::make_shared<CodeLocation>(dwarf, phdr, address - elfReloc);
-        this->elfReloc = elfReloc;
     } else {
         this->codeloc = nullptr;
     }
+    this->location = address;
 }
 
 const Dwarf::CFI *
 CodeLocation::cfi() const {
-
     Dwarf::CFI *cfi = dwarf_->getCFI();
     if (cfi == nullptr)
-        throw (Exception() << "no CFI for " << *dwarf_->elf->io);
+        return nullptr;
     return cfi;
 }
 
 const Dwarf::CFI *
 ProcessLocation::cfi() const {
     if (codeloc == nullptr)
-        throw Exception() << "no object for address";
+        return nullptr;
     return codeloc->cfi();
 }
 
