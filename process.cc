@@ -862,7 +862,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
         // Set up the first frame using the machine context registers
         stack.front().setCoreRegs(regs);
 
-        for (int frameCount = 0; frameCount < p.options.maxdepth; frameCount++) {
+        for (int frameCount = 0; frameCount < p.options.maxframes; frameCount++) {
             auto &prev = stack.back();
 
             try {

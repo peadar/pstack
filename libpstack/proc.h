@@ -27,6 +27,7 @@ struct PstackOptions {
    bool nothreaddb = false;
    bool nodienames = false; // don't use names from DWARF dies in backtraces.
    int maxdepth = std::numeric_limits<int>::max();
+   int maxframes = 20;
    std::ostream *output = &std::cout;
 };
 

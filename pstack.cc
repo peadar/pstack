@@ -271,7 +271,7 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
             'M',
             "max frames",
             "maximum number of stack frames to print for a thread",
-            Flags::set(options.maxdepth))
+            Flags::set(options.maxframes))
 
     .add("help",
             'h',
