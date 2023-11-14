@@ -626,30 +626,41 @@ Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo) c
     PrintableFrame pframe(*this, frame);
 
     ProcessLocation location = frame.scopeIP(*this);
-    auto source = location.source();
+    std::vector<std::pair<std::string, int>> source;
+
+    if (!options.nosrc)
+        source = location.source();
+
     std::pair<std::string, int> src = source.size()
         ? source[0]
         : std::make_pair( "", std::numeric_limits<Elf::Addr>::max());
-    for (auto i = pframe.inlined.rbegin(); i != pframe.inlined.rend(); ++i) {
-       os << "#"
-           << std::left << std::setw(2) << std::setfill(' ') << frameNo << " "
-           << std::setw(ELF_BITS/4 + 2) << std::setfill(' ')
-           << "inlined";
-       if (verbose > 0) {
-           os << std::setw(ELF_BITS/4 + 2) << std::setfill(' ') << "/";
-           os << " ";
-       }
-       os << " in ";
-       buildDIEName(os, *i);
-       auto lineinfo = i->getUnit()->getLines();
-       if (lineinfo) {
-          os << " at " << src.first << ":" << src.second;
-          auto &fileEnt = lineinfo->files[intmax_t(i->attribute(Dwarf::DW_AT_call_file))];
-          auto &dirname = lineinfo->directories[fileEnt.dirindex];
-          const auto &name = verbose ? dirname + "/" + fileEnt.name : fileEnt.name;
-          src = std::make_pair( name, intmax_t(i->attribute(Dwarf::DW_AT_call_line)));
-          os << "\n";
-       }
+
+    if (!options.nodienames) {
+        // inlining comes from DIEs with DW_TAG_inlined_subroutine - so no
+        // point in trying this without DIE names
+        for (auto i = pframe.inlined.rbegin(); i != pframe.inlined.rend(); ++i) {
+           os << "#"
+               << std::left << std::setw(2) << std::setfill(' ') << frameNo << " "
+               << std::setw(ELF_BITS/4 + 2) << std::setfill(' ')
+               << "inlined";
+           if (verbose > 0) {
+               os << std::setw(ELF_BITS/4 + 2) << std::setfill(' ') << "/";
+               os << " ";
+           }
+           os << " in ";
+           buildDIEName(os, *i);
+           if (!options.nosrc) {
+               auto lineinfo = i->getUnit()->getLines();
+               if (lineinfo) {
+                  os << " at " << src.first << ":" << src.second;
+                  auto &fileEnt = lineinfo->files[intmax_t(i->attribute(Dwarf::DW_AT_call_file))];
+                  auto &dirname = lineinfo->directories[fileEnt.dirindex];
+                  const auto &name = verbose ? dirname + "/" + fileEnt.name : fileEnt.name;
+                  src = std::make_pair( name, intmax_t(i->attribute(Dwarf::DW_AT_call_line)));
+                  os << "\n";
+               }
+           }
+        }
     }
 
     os << "#"
