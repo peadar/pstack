@@ -10,12 +10,11 @@
 #include "libpstack/lzmareader.h"
 #endif
 
-#include <unistd.h>
-
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
-#include <limits>
+
+#include <unistd.h>
 
 namespace pstack::Elf {
 

@@ -6,7 +6,6 @@
 #include "libpstack/stringify.h"
 #include "libpstack/global.h"
 
-
 namespace pstack {
 
 template<> std::set<const PythonTypePrinter<2> *> PythonTypePrinter<2>::all = std::set<const PythonTypePrinter<2> *>();

@@ -1,19 +1,9 @@
 #include <features.h>
 
-#include "libpstack/archreg.h"
-#include "libpstack/dwarf.h"
-#include "libpstack/proc.h"
-#include "libpstack/ps_callback.h"
-#include "libpstack/global.h"
-#include "libpstack/stringify.h"
-#include "libpstack/ioflag.h"
-
 #include <link.h>
 #include <unistd.h>
 
 #include <cassert>
-#include <climits>
-
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -21,6 +11,13 @@
 #include <sys/ucontext.h>
 #include <sys/wait.h>
 #include <signal.h>
+
+#include "libpstack/archreg.h"
+#include "libpstack/dwarf.h"
+#include "libpstack/proc.h"
+#include "libpstack/global.h"
+#include "libpstack/stringify.h"
+#include "libpstack/ioflag.h"
 
 #if defined(__amd64__)
 #define BP(regs) (regs.rbp)

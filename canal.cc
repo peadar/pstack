@@ -7,13 +7,10 @@
  */
 
 #include <unistd.h>
-#include <signal.h>
-#include <fstream>
 #include <assert.h>
 #include <iostream>
 #include <exception>
 #include <algorithm>
-#include <memory>
 #include <sys/types.h>
 #include <map>
 

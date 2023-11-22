@@ -3,6 +3,7 @@
 #ifndef heap_h_guard
 #define heap_h_guard
 #include <sys/queue.h>
+#include <stdlib.h>
 
 enum memstate {
     mem_ignore = 0,

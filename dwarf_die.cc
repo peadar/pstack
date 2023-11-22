@@ -2,7 +2,6 @@
 #include "libpstack/dwarf_reader.h"
 #include "libpstack/global.h"
 #include "libpstack/stringify.h"
-#include "libpstack/fs.h"
 #include <set>
 #include <algorithm>
 

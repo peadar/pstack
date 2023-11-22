@@ -8,8 +8,6 @@
 #include "libpstack/archreg.h"
 #undef REGMAP
 
-#include <iostream>
-
 namespace pstack::Procman {
 LogProcess::LogProcess(Elf::Object::sptr exec, const std::vector<std::string> &logs_, const PstackOptions &options, Dwarf::ImageCache &imageCache)
     : Process(std::move(exec), std::make_shared<CoreReader>(this, nullptr), options, imageCache)

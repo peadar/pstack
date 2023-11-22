@@ -3,8 +3,6 @@
 #include "libpstack/elf.h"
 #include "libpstack/proc.h"
 
-#include <cassert>
-
 #include <iostream>
 
 namespace pstack::Procman {

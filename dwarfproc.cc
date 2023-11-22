@@ -3,10 +3,8 @@
 #include "libpstack/proc.h"
 #include "libpstack/global.h"
 #include "libpstack/dwarf_reader.h"
-
-#include <cassert>
-#include <limits>
 #include <stack>
+
 extern std::ostream & operator << (std::ostream &os, const pstack::Dwarf::DIE &);
 
 namespace pstack::Procman {
