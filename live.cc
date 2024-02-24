@@ -77,6 +77,11 @@ LiveProcess::resume(lwpid_t pid)
     assert(tcb.stopCount != 0); // We can't resume an LWP that is not suspended.
     if (--tcb.stopCount != 0)
         return;
+    if (tcb.ptraceErr != 0) {
+       if (verbose)
+          *debug << "not attempting to resume lwp " << pid << ", as it failed to stop\n";
+       return;
+    }
     if (ptrace(PT_DETACH, pid, caddr_t(1), 0) != 0)
         std::clog << "failed to detach from process " << pid << ": " << strerror(errno) << "\n";
     dynamic_cast<CacheReader&>(*io).flush();
@@ -121,8 +126,17 @@ LiveProcess::stopProcess()
     findLWPs();
 
     /*
-     * suspend any threads that the thread-db knows about.
-     * XXX: This doesn't actually work under linux: If we fail, just stop the LWP
+     * Stop all LWPs/kernel tasks. Do this before we stop the threads. Stopping the
+     * threads with thread_db actually just returns an error in linux, but
+     * stopping everything here ensures that we are not racing the process
+     * threads to read the thread list later.
+     */
+    for (auto &lwp : lwps)
+        stop(lwp.first);
+
+    /*
+     * Attempt to enumerate the threads and suspend with pthread_db. This will
+     * probably just fail, but all the LWPs are suspended now, anyway.
      */
     listThreads([this] (const td_thrhandle_t *thr) {
         td_thrinfo_t info;
@@ -135,12 +149,6 @@ LiveProcess::stopProcess()
         }
     });
 
-    // Stop all LWPS.
-    int i = 0;
-    for (auto &lwp : lwps) {
-        stop(lwp.first);
-        i++;
-    }
     if (verbose >= 2)
         *debug << "stopped process " << pid << "\n";
 }
@@ -171,9 +179,11 @@ LiveProcess::stop(lwpid_t pid)
 
     gettimeofday(&tcb.stoppedAt, nullptr);
     if (ptrace(PT_ATTACH, pid, 0, 0) != 0) {
+        tcb.ptraceErr = errno;
         *debug << "failed to stop LWP " << pid << ": ptrace failed: " << strerror(errno) << "\n";
         return;
     }
+    tcb.ptraceErr = 0;
 
     int status;
     pid_t waitedpid = waitpid(pid, &status, pid == this->pid ? 0 : __WCLONE);

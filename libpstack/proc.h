@@ -185,8 +185,9 @@ struct ThreadStack {
  */
 struct Lwp {
     int stopCount;
+    int ptraceErr; // 0 if ptrace worked, otherwise, errno.
     timeval stoppedAt;
-    Lwp() : stopCount{0}, stoppedAt{0,0} {}
+    Lwp() : stopCount{0}, ptraceErr{0}, stoppedAt{0,0} {}
 };
 
 struct PrintableFrame;
