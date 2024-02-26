@@ -1095,15 +1095,15 @@ Process::getStacks() {
       * There are no extant linux systems that I'm aware of that use a non-1:1
       * thread model, so we can't really test this.
       */
-    for (auto &lwp : lwps) {
-        if (tracedLwps.find(lwp.first) == tracedLwps.end()) {
+    listLWPs([this, &threadStacks, &tracedLwps](lwpid_t lwpid) {
+        if (tracedLwps.find(lwpid) == tracedLwps.end()) {
             threadStacks.push_back(ThreadStack());
-            threadStacks.back().info.ti_lid = lwp.first;
+            threadStacks.back().info.ti_lid = lwpid;
             Elf::CoreRegisters regs;
-            getRegs(lwp.first,  &regs);
+            getRegs(lwpid,  &regs);
             threadStacks.back().unwind(*this, regs);
         }
-    }
+    });
 
     /*
      * if we don't need to print arguments to functions, we now have the full

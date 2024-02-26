@@ -178,18 +178,6 @@ struct ThreadStack {
     void unwind(Process &, Elf::CoreRegisters &regs);
 };
 
-/*
- * This contains information about an LWP.  In linux, since NPTL, this is
- * essentially a thread. Old style, userland threads may have a single LWP for
- * all threads.
- */
-struct Lwp {
-    int stopCount;
-    int ptraceErr; // 0 if ptrace worked, otherwise, errno.
-    timeval stoppedAt;
-    Lwp() : stopCount{0}, ptraceErr{0}, stoppedAt{0,0} {}
-};
-
 struct PrintableFrame;
 
 struct DevNode {
@@ -234,7 +222,6 @@ protected:
 public:
     PstackOptions options;
     Elf::Addr sysent; // for AT_SYSINFO
-    std::map<pid_t, Lwp> lwps;
     Dwarf::ImageCache &imageCache;
     std::map<Elf::Addr, Elf::Object::sptr> objects;
     virtual Reader::csptr getAUXV() const = 0;
@@ -254,6 +241,7 @@ public:
     std::ostream &dumpStackText(std::ostream &, const ThreadStack &) const;
     std::ostream &dumpFrameText(std::ostream &, const StackFrame &, int) const;
     template <typename T> void listThreads(const T &);
+    virtual void listLWPs(std::function<void(lwpid_t)>) {};
 
 
     // find address of named symbol in the process.
@@ -298,17 +286,24 @@ std::string procname(pid_t pid, const std::string &);
 struct LiveThreadList;
 class LiveProcess final : public Process {
     pid_t pid;
+
+    struct Lwp {
+       int stopCount = 0;
+       int ptraceErr = 0; // 0 if ptrace worked, otherwise, errno.
+       timeval stoppedAt { 0, 0 };
+    };
+    std::map<pid_t, Lwp> stoppedLWPs;
 public:
     // attach to existing process.
     LiveProcess(Elf::Object::sptr &, pid_t, const PstackOptions &, Dwarf::ImageCache &, bool alreadyStopped=false);
 
+    void listLWPs(std::function<void(lwpid_t)>) override;
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
     virtual void stop(pid_t) override;
     virtual void resume(pid_t) override;
     void stopProcess() override;
     void resumeProcess() override;
     virtual Reader::csptr getAUXV() const override;
-    void findLWPs();
     virtual pid_t getPID() const override;
 protected:
     bool loadSharedObjectsFromFileNote() override;
@@ -321,7 +316,7 @@ class SelfProcess : public Process {
 public:
     // attach to existing process.
     SelfProcess(const Elf::Object::sptr &, const PstackOptions &, Dwarf::ImageCache &);
-
+    void listLWPs(std::function<void(lwpid_t)>) override;
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
     virtual void stop(pid_t) override;
     virtual void resume(pid_t) override;
@@ -360,6 +355,7 @@ public:
     void resumeProcess()  override { }
     virtual Reader::csptr getAUXV() const override;
     virtual pid_t getPID() const override;
+    void listLWPs(std::function<void(lwpid_t)>) override;
 protected:
     std::vector<prstatus_t> tasks;
     bool loadSharedObjectsFromFileNote() override;

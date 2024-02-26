@@ -34,6 +34,11 @@ SelfProcess::getAUXV() const
     return loadFile("/proc/self/auxv");
 }
 
+void
+SelfProcess::listLWPs(std::function<void(lwpid_t)> cb) {
+   cb(gettid());
+}
+
 bool
 SelfProcess::getRegs(lwpid_t, Elf::CoreRegisters *reg) // for now, we just support the current thread.
 {

@@ -19,12 +19,16 @@ CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
         if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
             tasks.push_back( note.data()->readObj<prstatus_t>(0) );
             prstatus_t &task = tasks.back();
-            (void)lwps[task.pr_pid];
             if (verbose)
                *debug << "task " << task.pr_pid << " current sig is " << task.pr_cursig << "\n";
         }
 #endif
     }
+}
+
+void CoreProcess::listLWPs(std::function<void(lwpid_t)> cb) {
+   for (auto &task : tasks)
+      cb(task.pr_pid);
 }
 
 Reader::csptr

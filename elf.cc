@@ -166,13 +166,8 @@ GnuHash::findSymbol(const char *name) const {
     for (;;) {
         auto sym = syms->readObj<Sym>(idx * sizeof (Sym));
         auto chainhash = hash->readObj<uint32_t>(chainoff(idx - header.symoffset));
-        if ((chainhash | 1)  == (symhash | 1)) {
-           if (strings->readString(sym.st_name) == name) {
-              if (verbose >= 2)
-                 *debug << "found '" << name << "' using GNU hash\n";
+        if ((chainhash | 1)  == (symhash | 1) && strings->readString(sym.st_name) == name)
               return std::make_pair(idx, sym);
-           }
-        }
         if (chainhash & 1) {
            if (verbose >= 2)
                *debug << "failed to find '" << name << "' hit end of hash chain\n";

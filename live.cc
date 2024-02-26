@@ -39,7 +39,7 @@ LiveProcess::LiveProcess(Elf::Object::sptr &ex, pid_t pid_,
 {
     (void)ps_getpid(this);
     if (alreadyStopped)
-       lwps[pid].stopCount = 1;
+       stoppedLWPs[pid].stopCount = 1;
 }
 
 Reader::csptr LiveProcess::getAUXV() const {
@@ -48,69 +48,62 @@ Reader::csptr LiveProcess::getAUXV() const {
 
 
 bool
-LiveProcess::getRegs(lwpid_t pid, Elf::CoreRegisters *reg)
+LiveProcess::getRegs(lwpid_t lwpid, Elf::CoreRegisters *reg)
 {
 #ifdef __FreeBSD__
     int rc;
-    rc = ptrace(PT_GETREGS, pid, (caddr_t)reg, 0);
+    rc = ptrace(PT_GETREGS, lwpid, (caddr_t)reg, 0);
     if (rc == -1) {
-        warn("failed to trace LWP %d", (int)pid);
+        warn("failed to trace LWP %d", (int)lwpid);
         return false;
     }
     return true;
 #endif
 #ifdef __linux__
-    stop(pid);
+    stop(lwpid);
     iovec iov;
     iov.iov_base = reg;
     iov.iov_len = sizeof *reg;
-    int rc = ptrace(PTRACE_GETREGSET, pid, NT_PRSTATUS, &iov);
-    resume(pid);
+    int rc = ptrace(PTRACE_GETREGSET, lwpid, NT_PRSTATUS, &iov);
+    resume(lwpid);
     return rc == 0;
 #endif
 }
 
 void
-LiveProcess::resume(lwpid_t pid)
-{
-    auto &tcb = lwps[pid];
-    assert(tcb.stopCount != 0); // We can't resume an LWP that is not suspended.
-    if (--tcb.stopCount != 0)
-        return;
-    if (tcb.ptraceErr != 0) {
-       if (verbose)
-          *debug << "not attempting to resume lwp " << pid << ", as it failed to stop\n";
-       return;
-    }
-    if (ptrace(PT_DETACH, pid, caddr_t(1), 0) != 0)
-        std::clog << "failed to detach from process " << pid << ": " << strerror(errno) << "\n";
-    dynamic_cast<CacheReader&>(*io).flush();
-    if (verbose >= 1) {
-        timeval tv;
-        gettimeofday(&tv, nullptr);
-        intmax_t usecs = (tv.tv_sec - tcb.stoppedAt.tv_sec) * 1000000;
-        usecs += tv.tv_usec;
-        usecs -= tcb.stoppedAt.tv_usec;
-        *debug << "resumed LWP " << pid << ": was stopped for " << std::dec <<
-           usecs << " microseconds" << std::endl;
-    }
+LiveProcess::resume(lwpid_t lwpid) {
+   auto tcbi = stoppedLWPs.find(lwpid);
+   if (tcbi == stoppedLWPs.end())
+      return;
+   auto &tcb = tcbi->second;
+   assert(tcb.stopCount != 0); // We can't resume an LWP that is not suspended.
+   if (--tcb.stopCount != 0)
+      return;
+   if (tcb.ptraceErr != 0) {
+      if (verbose)
+         *debug << "not attempting to resume lwp " << lwpid << ", as it failed to stop\n";
+      return;
+   }
+   if (ptrace(PT_DETACH, lwpid, caddr_t(1), 0) != 0)
+      std::clog << "failed to detach from process " << lwpid << ": " << strerror(errno) << "\n";
+   dynamic_cast<CacheReader&>(*io).flush();
+   if (verbose >= 1) {
+      timeval tv;
+      gettimeofday(&tv, nullptr);
+      intmax_t usecs = (tv.tv_sec - tcb.stoppedAt.tv_sec) * 1000000;
+      usecs += tv.tv_usec;
+      usecs -= tcb.stoppedAt.tv_usec;
+      *debug << "resumed LWP " << lwpid << ": was stopped for " << std::dec <<
+         usecs << " microseconds" << std::endl;
+   }
 }
 
 void
-LiveProcess::findLWPs()
+LiveProcess::listLWPs(std::function<void(lwpid_t)> cb)
 {
-    std::string dirName = procname(pid, "task");
-    DIR *d = opendir(dirName.c_str());
-    dirent *de;
-    if (d != nullptr) {
-        while ((de = readdir(d)) != nullptr) {
-            char *p;
-            lwpid_t pid = strtol(de->d_name, &p, 0);
-            if (*p == 0)
-                (void)lwps[pid];
-        }
-        closedir(d);
-    }
+   for (auto &lwp : stoppedLWPs)
+      if (lwp.second.ptraceErr == 0)
+         cb(lwp.first);
 }
 
 pid_t
@@ -122,17 +115,43 @@ LiveProcess::getPID() const
 void
 LiveProcess::stopProcess()
 {
-    stop(pid); // suspend the main process itself first.
-    findLWPs();
+    // suspend the main process itself first.
+    // XXX: Note this can actually fail if the main thread exits before the
+    // remaining tasks.  Other things also fail in that case - eg, opening
+    // stuff from /proc/pid/fd, etc. Really those operations should use
+    // /proc/<pid>/task/<tid> of a task we have suspended, rather than the main
+    // process
+    std::set<lwpid_t> suspended;
+    stop(pid);
+    suspended.insert(pid);
 
     /*
-     * Stop all LWPs/kernel tasks. Do this before we stop the threads. Stopping the
-     * threads with thread_db actually just returns an error in linux, but
-     * stopping everything here ensures that we are not racing the process
-     * threads to read the thread list later.
+     * Stop all remaining LWPs/kernel tasks. Do this before we stop the
+     * threads. Stopping the threads with thread_db actually just returns an
+     * error in linux, but stopping everything here ensures that we are not
+     * racing the process threads to read the thread list later.
      */
-    for (auto &lwp : lwps)
-        stop(lwp.first);
+    size_t lastStopCount;
+    do {
+        lastStopCount = suspended.size();
+        std::string dirName = procname(pid, "task");
+        DIR *d = opendir(dirName.c_str());
+        if (d != nullptr) {
+            for (dirent *de; (de = readdir(d)) != nullptr; ) {
+                char *p;
+                lwpid_t tid = strtol(de->d_name, &p, 0);
+                if (*p == 0) {
+                    auto [_, isnew ] = suspended.insert(tid);
+                    if (isnew)
+                        stop(tid);
+                }
+            }
+        }
+        closedir(d);
+        // if we found any threads, log it as debug. If we went around more than once, always log.
+        if (lastStopCount != suspended.size() && (verbose >= 2 || lastStopCount != 1))
+            *debug << "found " << suspended.size() - lastStopCount << " new LWPs after first " << lastStopCount << "\n";
+    } while (lastStopCount != suspended.size());
 
     /*
      * Attempt to enumerate the threads and suspend with pthread_db. This will
@@ -141,13 +160,10 @@ LiveProcess::stopProcess()
     listThreads([this] (const td_thrhandle_t *thr) {
         td_thrinfo_t info;
         td_thr_get_info(thr, &info);
-        (void)lwps[info.ti_lid]; // make sure we have the LWP
-        if (td_thr_dbsuspend(thr) == TD_NOCAPAB) {
-            if (verbose >= 3)
-                *debug << "can't suspend thread "  << thr
-                       << ": will suspend it's LWP " << info.ti_lid << "\n";
-        }
-    });
+        int suspendError = td_thr_dbsuspend(thr);
+        if (suspendError != 0 && suspendError != TD_NOCAPAB)
+            *debug << "can't suspend thread "  << thr << ": will suspend it's LWP " << info.ti_lid << "\n";
+        });
 
     if (verbose >= 2)
         *debug << "stopped process " << pid << "\n";
@@ -161,36 +177,42 @@ LiveProcess::resumeProcess()
             // this doesn't work in general, but it's ok, we'll suspend the LWP
             if (verbose >= 3)
                 *debug << "can't resume thread "  << thr << " (will resume it's LWP)\n";
-        }
-    });
+        }});
 
-    for (auto &lwp : lwps)
+    for (auto &lwp : stoppedLWPs)
         resume(lwp.first);
 
-    resume(pid);
+    /* C++17 - remove all LWPs that are now resumed) */
+    for (auto it = stoppedLWPs.begin(); it != stoppedLWPs.end(); )
+        if (it->second.stopCount == 0)
+            it = stoppedLWPs.erase(it);
+        else
+            ++it;
+    /* C++20:
+       std::erase_if(stoppedLWPs, [](auto &&entry) { return entry.stopCount == 0; } );
+       */
 }
 
 void
-LiveProcess::stop(lwpid_t pid)
-{
-    auto &tcb = lwps[pid];
-    if (tcb.stopCount++ != 0)
-        return;
+LiveProcess::stop(lwpid_t tid) {
+   auto &tcb = stoppedLWPs[tid];
+   if (tcb.stopCount++ != 0)
+      return;
 
-    gettimeofday(&tcb.stoppedAt, nullptr);
-    if (ptrace(PT_ATTACH, pid, 0, 0) != 0) {
-        tcb.ptraceErr = errno;
-        *debug << "failed to stop LWP " << pid << ": ptrace failed: " << strerror(errno) << "\n";
-        return;
-    }
-    tcb.ptraceErr = 0;
+   gettimeofday(&tcb.stoppedAt, nullptr);
+   if (ptrace(PT_ATTACH, tid, 0, 0) != 0) {
+      tcb.ptraceErr = errno;
+      *debug << "failed to stop LWP " << tid << ": ptrace failed: " << strerror(errno) << "\n";
+      return;
+   }
+   tcb.ptraceErr = 0;
 
-    int status;
-    pid_t waitedpid = waitpid(pid, &status, pid == this->pid ? 0 : __WCLONE);
-    if (waitedpid == -1)
-        *debug << "failed to stop LWP " << pid << ": wait failed: " << strerror(errno) << "\n";
-    else if (verbose >= 1)
-        *debug << "suspend LWP " << pid << std::endl;
+   int status;
+   pid_t waitedpid = waitpid(tid, &status, tid == this->pid ? 0 : __WCLONE);
+   if (waitedpid == -1)
+      *debug << "failed to stop LWP " << tid << ": wait failed: " << strerror(errno) << "\n";
+   else if (verbose >= 1)
+      *debug << "suspend LWP " << tid << std::endl;
 }
 
 std::vector<AddressRange>
