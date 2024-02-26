@@ -296,6 +296,7 @@ class LiveProcess final : public Process {
 public:
     // attach to existing process.
     LiveProcess(Elf::Object::sptr &, pid_t, const PstackOptions &, Dwarf::ImageCache &, bool alreadyStopped=false);
+    ~LiveProcess();
 
     void listLWPs(std::function<void(lwpid_t)>) override;
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;

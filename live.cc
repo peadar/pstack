@@ -112,6 +112,15 @@ LiveProcess::getPID() const
     return pid;
 }
 
+LiveProcess::~LiveProcess() {
+   for (auto &lwp : stoppedLWPs) {
+      if (lwp.second.stopCount > 0) {
+         lwp.second.stopCount = 1; // remove all soft "stops".
+         resume(lwp.first);
+      }
+   }
+};
+
 void
 LiveProcess::stopProcess()
 {
@@ -172,17 +181,17 @@ LiveProcess::stopProcess()
 void
 LiveProcess::resumeProcess()
 {
+    // this doesn't work on Linux nptl, but it's ok, we'll resume the LWP below.
     listThreads([] (const td_thrhandle_t *thr) {
-        if (td_thr_dbresume(thr) == TD_NOCAPAB) {
-            // this doesn't work in general, but it's ok, we'll suspend the LWP
-            if (verbose >= 3)
-                *debug << "can't resume thread "  << thr << " (will resume it's LWP)\n";
-        }});
+        int rc = td_thr_dbresume(thr);
+        if (rc != 0 && rc != TD_NOCAPAB)
+            *debug << "can't resume thread "  << thr << " (will resume it's LWP)\n";
+    });
 
     for (auto &lwp : stoppedLWPs)
         resume(lwp.first);
 
-    /* C++17 - remove all LWPs that are now resumed) */
+    // C++17: remove all LWPs that are now resumed)
     for (auto it = stoppedLWPs.begin(); it != stoppedLWPs.end(); )
         if (it->second.stopCount == 0)
             it = stoppedLWPs.erase(it);
