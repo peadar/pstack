@@ -134,17 +134,17 @@ int getKwonlyArgCount<2>(const PyObject *) {
 
 template <>
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
-getInterpHead<2>(const Procman::Process &proc) {
+getInterpHead<2>(Procman::Process &proc) {
     for (auto &o : proc.objects) {
-        std::string module = stringify(*o.second->io);
+        auto image = o.second.object(proc.imageCache);
+        std::string module = stringify(*image->io);
         if (module.find("python") == std::string::npos)
            continue;
-        auto image = o.second;
         auto syms = image->debugSymbols();
         for (auto sym : *syms) {
             if (syms->name(sym).substr(0, 11) != "interp_head")
                 continue;
-            auto libpython = o.second;
+            auto libpython = image;
             auto libpythonAddr = o.first;
             auto interpHead = libpythonAddr + sym.st_value;
             if (verbose)

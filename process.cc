@@ -54,16 +54,16 @@ operator << (std::ostream &os, const JSON<std::pair<Elf::Sym, std::string>> &js)
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<Procman::ProcessLocation, const Procman::Process *> &)
+operator << (std::ostream &os, const JSON<Procman::ProcessLocation, Procman::Process *> &)
 {
     return os;
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<Procman::StackFrame, const Procman::Process *> &jt);
+operator << (std::ostream &os, const JSON<Procman::StackFrame, Procman::Process *> &jt);
 
 std::ostream &
-operator << (std::ostream &os, const JSON<Procman::ThreadStack, const Procman::Process *> &ts)
+operator << (std::ostream &os, const JSON<Procman::ThreadStack, Procman::Process *> &ts)
 {
     return JObject(os)
         .field("ti_tid", ts.object.info.ti_tid)
@@ -178,7 +178,7 @@ Process::load()
         bool isStatic = r_debug_addr == 0 || r_debug_addr == Elf::Addr(-1);
 
         if (isStatic)
-            addElfObject(execImage, 0);
+            addElfObject("", execImage, 0);
         else
             loadSharedObjects(r_debug_addr);
     }
@@ -250,7 +250,7 @@ Process::processAUXV(const Reader &auxio)
                 try {
                     auto elf = std::make_shared<Elf::Object>(imageCache, io->view("(vdso image)", hdr, 65536));
                     vdsoBase = hdr;
-                    addElfObject(elf, hdr);
+                    addElfObject("(vdso image)", elf, hdr);
                     vdsoImage = elf;
                     if (verbose >= 2) {
                         *debug << "auxv: VDSO " << *elf->io
@@ -327,7 +327,7 @@ buildDIEName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
     return printedParent;
 }
 
-PrintableFrame::PrintableFrame(const Process &proc, const StackFrame &frame)
+PrintableFrame::PrintableFrame(Process &proc, const StackFrame &frame)
     : proc(proc)
     , functionOffset(std::numeric_limits<Elf::Addr>::max())
     , frame(frame)
@@ -377,9 +377,9 @@ PrintableFrame::PrintableFrame(const Process &proc, const StackFrame &frame)
 }
 
 struct ArgPrint {
-    const Process &p;
+    Process &p;
     const StackFrame &frame;
-    ArgPrint(const Process &p_, const StackFrame &frame_)
+    ArgPrint(Process &p_, const StackFrame &frame_)
         : p(p_), frame(frame_) {}
 };
 
@@ -605,7 +605,7 @@ std::ostream &operator << (std::ostream &os, UnwindMechanism mech) {
 }
 
 std::ostream &
-Process::dumpStackText(std::ostream &os, const ThreadStack &thread) const
+Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
 {
     os << std::dec;
     os << "thread: " << (void *)thread.info.ti_tid << ", lwp: "
@@ -617,7 +617,7 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread) const
 }
 
 std::ostream &
-Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo) const
+Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo)
 {
     IOFlagSave _(os);
     PrintableFrame pframe(*this, frame);
@@ -702,12 +702,12 @@ Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo) c
 }
 
 void
-Process::addElfObject(Elf::Object::sptr obj, Elf::Addr load)
+Process::addElfObject(std::string_view name, const Elf::Object::sptr &obj, Elf::Addr load)
 {
-    objects[load] = obj;
+    objects.emplace(std::make_pair(load, MappedObject{ name, obj }));
     if (verbose >= 2) {
         IOFlagSave _(*debug);
-        *debug << "object " << *obj->io << " loaded at address "
+        *debug << "object " << name << " loaded at address "
            << std::hex << load << std::dec << std::endl;
     }
 }
@@ -736,7 +736,7 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
                 << std::hex << loadAddr << ") does not match link map (" << map.l_addr
                 << "). Trusting link-map\n" << std::dec;
             }
-            addElfObject(execImage, map.l_addr);
+            addElfObject("(exe)", execImage, map.l_addr);
             continue;
         }
         // If we've loaded the VDSO, and we see it in the link map, just skip it.
@@ -751,7 +751,7 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
         if (path == "")
             continue;
         try {
-            addElfObject(imageCache.getImageForName(path), Elf::Addr(map.l_addr));
+            addElfObject(path, nullptr, Elf::Addr(map.l_addr));
         }
         catch (const std::exception &e) {
             std::clog << "warning: can't load text for '" << path << "' at " <<
@@ -787,10 +787,9 @@ Process::findRDebugAddr()
      */
     if (interpBase && execImage->getInterpreter() != "") {
         try {
-            addElfObject(imageCache.getImageForName(execImage->getInterpreter()), interpBase);
+            addElfObject(execImage->getInterpreter(), nullptr, interpBase);
             return resolveSymbol("_r_debug", false,
-                  [this](const Elf::Addr, const Elf::Object::sptr &o) {
-                      auto name = stringify(*o->io);
+                  [this](const std::string_view name) {
                       return execImage->getInterpreter() == name;
                   });
         }
@@ -801,15 +800,16 @@ Process::findRDebugAddr()
 }
 
 std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>
-Process::findSegment(Elf::Addr addr) const
+Process::findSegment(Elf::Addr addr)
 {
-    auto it = std::lower_bound(objects.begin(), objects.end(), addr);
+    auto it = objects.lower_bound(addr);
     if (it != objects.begin()) {
        --it;
-       if (it->first  + it->second->endVA() >= addr) {
-           auto segment = it->second->getSegmentForAddress(addr - it->first);
+       auto obj = it->second.object(imageCache);
+       if (it->first + obj->endVA() >= addr) {
+           auto segment = obj->getSegmentForAddress(addr - it->first);
            if (segment)
-               return std::make_tuple(it->first, it->second, segment);
+               return std::make_tuple(it->first, obj, segment);
        }
     }
     return std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>();
@@ -817,18 +817,19 @@ Process::findSegment(Elf::Addr addr) const
 
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Sym>
 Process::resolveSymbolDetail(const char *name, bool includeDebug,
-        std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
+        std::function<bool(std::string_view)> match)
 {
     for (auto &loaded : objects) {
-        if (!match(loaded.first, loaded.second))
+        if (!match(loaded.second.name()))
            continue;
-        auto sym = loaded.second->findDynamicSymbol(name);
+        auto obj = loaded.second.object(imageCache);
+        auto sym = obj->findDynamicSymbol(name);
         if (sym.st_shndx != SHN_UNDEF)
-           return std::make_tuple(loaded.second, loaded.first, sym);
+           return std::make_tuple(obj, loaded.first, sym);
         if (includeDebug) {
-           auto sym = loaded.second->findDebugSymbol(name);
+           auto sym = loaded.second.object(imageCache)->findDebugSymbol(name);
            if (sym.st_shndx != SHN_UNDEF)
-              return std::make_tuple(loaded.second, loaded.first, sym);
+              return std::make_tuple(obj, loaded.first, sym);
         }
     }
     throw (Exception() << "symbol " << name << " not found");
@@ -836,7 +837,7 @@ Process::resolveSymbolDetail(const char *name, bool includeDebug,
 
 Elf::Addr
 Process::resolveSymbol(const char *name, bool includeDebug,
-        std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match) const
+        std::function<bool(std::string_view)> match)
 {
     auto info = resolveSymbolDetail(name, includeDebug, match);
     return std::get<1>(info) + std::get<2>(info).st_value;
@@ -1128,7 +1129,7 @@ operator << (std::ostream &os, Procman::WaitStatus ws) {
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<Procman::StackFrame, const Procman::Process *> &jt)
+operator << (std::ostream &os, const JSON<Procman::StackFrame, Procman::Process *> &jt)
 {
     auto &frame =jt.object;
     Procman::ProcessLocation location = frame.scopeIP(*jt.context);

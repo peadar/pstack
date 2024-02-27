@@ -3,9 +3,7 @@
 
 #include <vector>
 #include <fcntl.h>
-#include <memory>
 #include <string>
-#include <string.h>
 
 namespace pstack {
 std::string dirname(const std::string &);

@@ -2,16 +2,13 @@
 #define DWARF_H
 
 #include "libpstack/elf.h"
-#include <limits>
 #include <list>
 #include <map>
 #include <memory>
-#include <stack>
 #include <string>
 #include <unordered_map>
 #include <vector>
 #include <iterator>
-#include <cassert>
 
 namespace pstack::Dwarf {
 

@@ -228,7 +228,7 @@ CoreProcess::loadSharedObjectsFromFileNote()
         if (entry.fileOff == 0) {
             try {
                 // Just try and load it like an ELF object.
-                addElfObject(imageCache.getImageForName(name), entry.start);
+                addElfObject(name, nullptr, entry.start);
             }
             catch (...) {
             }

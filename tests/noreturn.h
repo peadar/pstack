@@ -1,3 +1,2 @@
-int thisFunctionTerminatesTheProcess() __attribute__ ((__noreturn__ )) 
-                                       __attribute__ (( __nothrow__ ));
+void thisFunctionTerminatesTheProcess() __attribute__((noreturn,nothrow));
 

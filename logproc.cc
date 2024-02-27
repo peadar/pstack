@@ -132,9 +132,9 @@ LogProcess::loadSharedObjectsFromFileNote() {
                funcOffset = 0;
             }
             Elf::Addr loadAddr = va - funcOffset - offset;
-            addElfObject(object, loadAddr);
+            addElfObject("", object, loadAddr);
         }
-        addElfObject(execImage, 0);
+        addElfObject("", execImage, 0);
         // Add the stack of virtual addresses to the core.
         stacks.push_back(ThreadStack());
         auto &procstack = stacks.back();

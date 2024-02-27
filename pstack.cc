@@ -35,7 +35,7 @@ pstack(Procman::Process &proc)
     const auto &threadStacks = proc.getStacks();
     auto &os = *proc.options.output;
     if (doJson) {
-        os << json(threadStacks, const_cast<const Procman::Process*>(&proc));
+        os << json(threadStacks, &proc);
     } else {
         os << "process: " << *proc.io << "\n";
         for (auto &s : threadStacks) {

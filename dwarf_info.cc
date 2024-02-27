@@ -45,7 +45,6 @@ CFI *Info::getCFI() const {
     return eh ? eh : getDebugFrame();
 }
 
-
 Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     : elf(obj)
     , debugInfo(obj->getDebugSection(".debug_info", SHT_NULL))

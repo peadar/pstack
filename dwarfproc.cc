@@ -31,7 +31,7 @@ StackFrame::rawIP() const
 }
 
 ProcessLocation
-StackFrame::scopeIP(const Process &proc) const
+StackFrame::scopeIP(Process &proc) const
 {
     // For a return address on the stack, it normally represents the next
     // instruction after a call. For functions that don't return, this might
@@ -63,7 +63,7 @@ StackFrame::scopeIP(const Process &proc) const
 }
 
 void
-StackFrame::getFrameBase(const Process &p, intmax_t offset, ExpressionStack *stack) const
+StackFrame::getFrameBase(Process &p, intmax_t offset, ExpressionStack *stack) const
 {
     ProcessLocation location = scopeIP(p);
     auto f = location.die();
@@ -100,7 +100,7 @@ operator <<( std::ostream &os, DW_LLE lle) {
  * Evaluate an expression specified by an exprloc, or as inferred by a location list
  */
 Elf::Addr
-ExpressionStack::eval(const Process &proc, const Dwarf::DIE::Attribute &attr,
+ExpressionStack::eval(Process &proc, const Dwarf::DIE::Attribute &attr,
                       const StackFrame *frame, Elf::Addr reloc)
 {
     Dwarf::Unit::sptr unit = attr.die.getUnit();
@@ -201,7 +201,7 @@ ExpressionStack::eval(const Process &proc, const Dwarf::DIE::Attribute &attr,
 }
 
 Elf::Addr
-ExpressionStack::eval(const Process &proc, Dwarf::DWARFReader &r, const StackFrame *frame, Elf::Addr reloc)
+ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *frame, Elf::Addr reloc)
 {
     using namespace Dwarf;
     isReg = false;
@@ -586,7 +586,7 @@ ProcessLocation::die() const {
     return codeloc ? codeloc->die() : empty;
 }
 
-ProcessLocation::ProcessLocation(const Process &proc, Elf::Addr address_) {
+ProcessLocation::ProcessLocation(Process &proc, Elf::Addr address_) {
     set(proc, address_);
 }
 
@@ -621,7 +621,7 @@ CodeLocation::CodeLocation(Dwarf::Info::sptr info, const Elf::Phdr *phdr, Elf::A
 }
 
 void
-ProcessLocation::set(const Process &proc, Elf::Addr address)
+ProcessLocation::set(Process &proc, Elf::Addr address)
 {
     auto [ elfReloc, elf, phdr ] = proc.findSegment(address);
     auto dwarf = elf ? proc.getDwarf(elf) : nullptr;

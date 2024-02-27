@@ -7,6 +7,7 @@
 #include "libpstack/reader.h"
 #include "libpstack/fs.h"
 #include "libpstack/global.h"
+#include <cstring>
 
 namespace pstack {
 using std::string;
@@ -23,7 +24,8 @@ FileReader::FileReader(string name_)
     struct stat buf{};
     int rc = fstat(file, &buf);
     if (rc == -1)
-       throw (Exception() << "fstat failed: can't find size of file: " << strerror(errno));
+       throw (Exception() << "fstat failed: can't find size of file: "
+               << std::strerror(errno));
     fileSize = buf.st_size;
 }
 
@@ -271,7 +273,6 @@ MemReader::view(const std::string &name, Off offset, Off size) const {
 OffsetReader::OffsetReader(const std::string& name, Reader::csptr upstream_, Off offset_, Off length_)
     : upstream(upstream_)
     , offset(offset_)
-    , name(name)
 {
     // If we create an offset reader with the upstream being another offset
     // reader, we can just add the offsets, and use the

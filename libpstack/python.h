@@ -92,13 +92,13 @@ struct PythonPrinter {
     std::map<const _typeobject *, const PythonTypePrinter<PyV> *> printers;
     bool interpFound() const; // returns true if the printer could find the interpreter.
 };
-bool pthreadTidOffset(const Procman::Process &proc, size_t *offsetp);
-PyInterpInfo getPyInterpInfo(const Procman::Process &proc);
+bool pthreadTidOffset(Procman::Process &proc, size_t *offsetp);
+PyInterpInfo getPyInterpInfo(Procman::Process &proc);
 template <int PyV, typename T> ssize_t pyRefcnt(const T *t);
 
 template <int V>
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
-getInterpHead(const Procman::Process &);
+getInterpHead(Procman::Process &);
 }
 
 #endif

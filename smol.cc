@@ -20,7 +20,7 @@ main()
     p->load();
     getppid();
 
-    Dwarf::ProcessLocation li(*p, Elf::Addr(foobar));
+    pstack::ProcessLocation li(*p, Elf::Addr(foobar));
 
     auto [ lib, addr, sym ]  = p->resolveSymbolDetail("foobar", true);
     std::cout << "found foobar in " << *lib->io << "@" << addr << ", value=" << sym.st_value << ", size=" << sym.st_size << std::endl;

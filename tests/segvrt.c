@@ -1,10 +1,8 @@
 #define _GNU_SOURCE
 #include <features.h>
-#include <stdlib.h>
 #include <ucontext.h>
 #include <signal.h>
 #include <string.h>
-#include <stdio.h>
 #include <unistd.h>
 #include <sys/user.h>
 

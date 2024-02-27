@@ -8,11 +8,12 @@ extern "C" {
 }
 
 #include <map>
+#include <variant>
 #include <set>
-#include <sstream>
+#include <stack>
 #include <functional>
-#include <bitset>
 #include <optional>
+#include <string_view>
 #include <ucontext.h> // for gregset_t
 
 #include "libpstack/ps_callback.h"
@@ -42,8 +43,8 @@ public:
     int inReg;
     ExpressionStack(): isReg(false) {}
     Elf::Addr poptop() { Elf::Addr tos = top(); pop(); return tos; }
-    Elf::Addr eval(const Process &, Dwarf::DWARFReader &r, const StackFrame*, Elf::Addr);
-    Elf::Addr eval(const Process &, const Dwarf::DIE::Attribute &, const StackFrame*, Elf::Addr);
+    Elf::Addr eval(Process &, Dwarf::DWARFReader &r, const StackFrame*, Elf::Addr);
+    Elf::Addr eval(Process &, const Dwarf::DIE::Attribute &, const StackFrame*, Elf::Addr);
 };
 
 // this works for i386 and x86_64 - might need to change for other archs.
@@ -111,8 +112,8 @@ struct ProcessLocation {
     // XXX: can cache these in Dwarf::Info
     std::shared_ptr<CodeLocation> codeloc;
 
-    void set(const Process &proc, Elf::Addr address);
-    ProcessLocation(const Process &proc, Elf::Addr address_);
+    void set(Process &proc, Elf::Addr address);
+    ProcessLocation(Process &proc, Elf::Addr address_);
 
     // returns true if the location has been located in an ELF object.
     bool inObject() const  {
@@ -142,7 +143,7 @@ struct ProcessLocation {
 class StackFrame {
 public:
     Elf::Addr rawIP() const;
-    ProcessLocation scopeIP(const Process &) const;
+    ProcessLocation scopeIP(Process &) const;
     Elf::CoreRegisters regs;
     Elf::Addr cfa;
     UnwindMechanism mechanism;
@@ -153,18 +154,18 @@ public:
     std::optional<Elf::CoreRegisters> unwind(Process &);
     void setCoreRegs(const Elf::CoreRegisters &);
     void getCoreRegs(Elf::CoreRegisters &) const;
-    void getFrameBase(const Process &, intmax_t, ExpressionStack *) const;
+    void getFrameBase(Process &, intmax_t, ExpressionStack *) const;
 };
 
 // Descriptive data useful for formatting frame content.
 struct PrintableFrame {
-    const Process &proc;
+    Process &proc;
     std::string dieName;
     Elf::Addr functionOffset;
     const StackFrame &frame;
     std::vector<Dwarf::DIE> inlined; // all inlined functions at this address.
 
-    PrintableFrame(const Process &, const StackFrame &frame);
+    PrintableFrame(Process &, const StackFrame &frame);
     PrintableFrame(const PrintableFrame &) = delete;
     PrintableFrame() = delete;
 };
@@ -201,11 +202,33 @@ struct AddressRange {
    std::set<Flags> permissions;
 };
 
+// An ELF object mapped at an address. We don't actually create the Elf::Object
+// until the first time you call "object" here. This avoids needless I/O, esp.
+// on resource constrained systems.
+struct MappedObject {
+   std::string name_;
+   Elf::Object::sptr objptr_;
+public:
+   const std::string &name() { return name_; }
+   bool operator < (const MappedObject &rhs) const {
+       return name_ < rhs.name_; // for comparing pairs.
+   }
+   Elf::Object::sptr object(Dwarf::ImageCache &cache) {
+      if (objptr_ == nullptr) {
+         objptr_ = cache.getImageForName(name_);
+      }
+      return objptr_;
+   }
+   MappedObject(std::string_view name, const Elf::Object::sptr &objptr = {})
+       : name_{name}, objptr_{objptr} {}
+};
+
 class Process : public ps_prochandle {
     Elf::Addr entry;
     Elf::Addr interpBase;
     void loadSharedObjects(Elf::Addr);
 public:
+    std::map<Elf::Addr, MappedObject> objects;
     Elf::Addr vdsoBase;
     virtual Elf::Addr findRDebugAddr();
 
@@ -220,40 +243,39 @@ protected:
     static std::vector<AddressRange> procAddressSpace(const std::string &fn); //  utility to parse contents of /proc/pid/maps
 
 public:
+    std::pair<Elf::Addr, Elf::Object::sptr> getElfObject(Elf::Addr addr);
     PstackOptions options;
     Elf::Addr sysent; // for AT_SYSINFO
     Dwarf::ImageCache &imageCache;
-    std::map<Elf::Addr, Elf::Object::sptr> objects;
     virtual Reader::csptr getAUXV() const = 0;
     void processAUXV(const Reader &);
     Reader::sptr io;
 
     virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) = 0;
-    void addElfObject(Elf::Object::sptr obj, Elf::Addr load);
+    void addElfObject(std::string_view, const Elf::Object::sptr &, Elf::Addr load);
     // Find the the object (and its load address) and segment containing a given address
-    std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *> findSegment(Elf::Addr addr) const;
+    std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *> findSegment(Elf::Addr addr);
     Dwarf::Info::sptr getDwarf(Elf::Object::sptr) const;
     Process(Elf::Object::sptr exec, Reader::sptr memory, const PstackOptions &prl, Dwarf::ImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
     virtual void resumeProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
-    std::ostream &dumpStackText(std::ostream &, const ThreadStack &) const;
-    std::ostream &dumpFrameText(std::ostream &, const StackFrame &, int) const;
+    std::ostream &dumpStackText(std::ostream &, const ThreadStack &);
+    std::ostream &dumpFrameText(std::ostream &, const StackFrame &, int);
     template <typename T> void listThreads(const T &);
     virtual void listLWPs(std::function<void(lwpid_t)>) {};
 
 
     // find address of named symbol in the process.
     Elf::Addr resolveSymbol(const char *symbolName, bool includeDebug,
-          std::function<bool(Elf::Addr, const Elf::Object::sptr &)> matcher = [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
+          std::function<bool(std::string_view)> matcher = [](std::string_view) { return true; });
 
     // find symbol data of named symbol in the process.
     // like resolveSymbol, but return the library and that library's load address as well as the address in the process.
     std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Sym>
     resolveSymbolDetail(const char *name, bool includeDebug,
-                        std::function<bool(Elf::Addr, const Elf::Object::sptr&)> match =
-                           [](Elf::Addr, const Elf::Object::sptr &) { return true; }) const;
+        std::function<bool(std::string_view)> match = [](std::string_view) { return true; });
     virtual std::list<ThreadStack> getStacks();
     virtual ~Process();
     void load();
@@ -460,8 +482,8 @@ void gregset2core(Elf::CoreRegisters &core, const gregset_t greg);
 }
 
 std::ostream &operator << (std::ostream &os, pstack::Procman::WaitStatus ws);
-std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::StackFrame, const pstack::Procman::Process *> &jt);
-std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::ThreadStack, const pstack::Procman::Process *> &jt);
+std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::StackFrame, pstack::Procman::Process *> &jt);
+std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::ThreadStack, pstack::Procman::Process *> &jt);
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::FileEntry> &);
 
 #endif
