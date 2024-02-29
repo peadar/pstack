@@ -100,21 +100,6 @@ NoteDesc::data() const
    return io->view("note descriptor", sizeof note + roundup2(note.n_namesz, 4), note.n_descsz);
 }
 
-template <>
-Sym
-SymbolSection<Sym>::iterator::operator *()
-{
-    return sec->symbols->readObj<Sym>(idx * sizeof(Sym));
-}
-
-template <>
-VersionedSymbol
-SymbolSection<VersionedSymbol>::iterator::operator *()
-{
-    return VersionedSymbol(sec->symbols->readObj<Sym>(idx * sizeof(Sym)),
-                           *sec->elf->gnu_version, idx);
-}
-
 Elf::Addr
 Object::endVA() const
 {
@@ -537,18 +522,23 @@ Object::findDynamicSymbol(const std::string &name)
     return VersionedSymbol(sym, *gnu_version, idx);
 }
 
-// XXX: if we're doing name lookups on symbols, consider caching them all in a
-// hash table, rather than doing linear scans for each symbol we haven't
-// looked-up yet.
 Sym
 Object::findDebugSymbol(const string &name)
 {
-    auto &syment = cachedSymbols[name];
-    if (syment.disposition == CachedSymbol::SYM_NEW) {
-        auto found = debugSymbols()->linearSearch(name, syment.sym);
-        syment.disposition = found ? CachedSymbol::SYM_FOUND : CachedSymbol::SYM_NOTFOUND;
+    // Cache all debug symbols the first time we scan them.
+    //
+    auto syms = debugSymbols();
+    if (!cachedSymbols) {
+       std::clog << "caching symbols for " << io->filename() << "\n";
+       cachedSymbols = std::make_unique<std::map<std::string, size_t>>();
+       size_t idx = 0;
+       for (auto sym : syms->array)
+          (*cachedSymbols)[syms->name(sym)] = idx++;
     }
-    return syment.disposition == CachedSymbol::SYM_FOUND ? syment.sym : undef();
+    auto off = cachedSymbols->find(name);
+    if (off != cachedSymbols->end())
+       return syms->symbols->readObj<Sym>(off->second * sizeof (Sym));
+    return undef();
 }
 
 Object *
@@ -620,18 +610,6 @@ Object::getDebug() const
                 sect.p_vaddr += diff;
     }
     return debugObject.get();
-}
-
-template <typename Symtype> bool
-SymbolSection<Symtype>::linearSearch(const string &desiredName, Sym &sym) const
-{
-    for (const auto &info : *this) {
-        if (desiredName == name(info)) {
-            sym = info;
-            return true;
-        }
-    }
-    return false;
 }
 
 SymHash::SymHash(Reader::csptr hash_,

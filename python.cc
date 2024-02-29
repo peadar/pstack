@@ -106,7 +106,12 @@ pthreadTidOffset(const Procman::Process &proc, size_t *offsetp)
     static enum { notDone, notFound, found } status;
     if (status == notDone) {
         try {
-            auto addr = proc.resolveSymbol("_thread_db_pthread_tid", true);
+            auto addr = proc.resolveSymbol("_thread_db_pthread_tid", true,
+                  [](Elf::Addr ,const Elf::Object::sptr &ob) {
+                     return
+                     ob->io->filename().find("libc." ) != std::string::npos ||
+                     ob->io->filename().find("libpthread" ) != std::string::npos ||
+                     ob->io->filename().find("libthread" ) != std::string::npos; });
             uint32_t desc[3];
             proc.io->readObj(addr, &desc[0], 3);
             offset = desc[2];

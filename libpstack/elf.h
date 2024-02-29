@@ -228,23 +228,16 @@ struct VersionedSymbol : public Sym {
  */
 template <typename SymbolType>
 struct SymbolSection {
-    struct iterator {
-        const SymbolSection<SymbolType> *sec;
-        size_t idx;
-        iterator(const SymbolSection<SymbolType> *sec_, size_t idx_) : sec(sec_), idx(idx_) {}
-        bool operator != (const iterator &rhs) { return rhs.idx != idx; }
-        iterator &operator++ () { ++idx; return *this; }
-        SymbolType operator *();
-    };
     Object *elf;
     Reader::csptr symbols;
     Reader::csptr strings;
-    iterator begin() const { return iterator(this, 0); }
-    iterator end() const { return iterator(this, symbols ? symbols->size() / sizeof(Sym) : 0); }
+    ReaderArray<Sym> array;
+    auto begin() { return array.begin(); }
+    auto end() { return array.end(); }
+
     SymbolSection(Object *elf_, Reader::csptr symbols_, Reader::csptr strings_)
-       : elf(elf_), symbols(symbols_), strings(strings_)
+       : elf(elf_), symbols(symbols_), strings(strings_), array(*symbols)
     {}
-    bool linearSearch(const std::string &name, Sym &) const;
     std::string name(const Sym &sym) const { return strings->readString(sym.st_name); }
 };
 
@@ -347,12 +340,9 @@ private:
 
     Object *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
     friend std::ostream &::operator<< (std::ostream &, const JSON<Object> &);
-    struct CachedSymbol {
-        enum { SYM_FOUND, SYM_NOTFOUND, SYM_NEW } disposition;
-        Sym sym;
-        CachedSymbol() : disposition { SYM_NEW } {}
-    };
-    std::map<std::string, CachedSymbol> cachedSymbols;
+
+    // used to cache the debug symbol table by name. Popualted first time something requests such a symbol
+    std::unique_ptr<std::map<std::string, size_t>> cachedSymbols;
     mutable const Phdr *lastSegmentForAddress; // cache of last segment returned for a specific address.
 };
 
