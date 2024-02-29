@@ -1,6 +1,5 @@
 #include "libpstack/proc.h"
 #include "libpstack/ps_callback.h"
-#include "libpstack/stringify.h"
 #include "libpstack/fs.h"
 
 #include <cstdarg>
@@ -46,11 +45,11 @@ ps_err_e
 ps_pglobal_lookup(struct ps_prochandle *ph, const char *ld_object_name,
                   const char *ld_symbol_name, psaddr_t *ld_symbol_addr)
 {
-    auto p = static_cast<const Process *>(ph);
+    auto p = static_cast<Process *>(ph);
     try {
         *ld_symbol_addr = psaddr_t(intptr_t(p->resolveSymbol(ld_symbol_name, true,
-            [ld_object_name](const Elf::Addr, const Elf::Object::sptr &o) {
-                auto bn = basename(o->io->filename());
+            [ld_object_name](std::string_view name) {
+                auto bn = basename(std::string(name));
                 return bn == ld_object_name || bn == "libc.so.6";
             }
             )));

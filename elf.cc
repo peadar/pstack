@@ -10,12 +10,12 @@
 #include "libpstack/lzmareader.h"
 #endif
 
-#include <unistd.h>
-
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
-#include <limits>
+#include <cstring>
+
+#include <unistd.h>
 
 namespace pstack::Elf {
 
@@ -689,7 +689,7 @@ Reader::csptr Section::io() const {
     } else if (name.rfind(".zdebug_", 0) == 0) {
         unsigned char sig[12];
         rawIo->readObj(0, sig, sizeof sig);
-        if (memcmp((const char *)sig, "ZLIB", 4) == 0) {
+        if (std::memcmp((const char *)sig, "ZLIB", 4) == 0) {
 #ifdef WITH_ZLIB
             uint64_t sz = 0;
             for (size_t i = 4; i < 12; ++i) {

@@ -13,8 +13,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <wait.h>
-
-#include <climits>
 #include <iostream>
 #include <utility>
 #include <fstream>

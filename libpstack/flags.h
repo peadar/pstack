@@ -5,7 +5,6 @@
 #include <vector>
 #include <functional>
 #include <map>
-#include <cassert>
 #include <unistd.h>
 
 namespace pstack {

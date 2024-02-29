@@ -37,27 +37,6 @@ namespace pstack {
 // LzmaReader (to decompress the .gnu_debugdata, and give the plain ELF image)
 // OffsetReader (for .symtab in the nested ELF image)
 
-template <typename T, typename Iter> static inline std::pair<T, size_t> readleb128(Iter start) {
-   static_assert(CHAR_BIT == 8);
-   T result = 0;
-   unsigned shift = 0;
-   unsigned char byte;
-   for (auto it = start;; ++it) {
-      byte = *it;
-      result |= T(byte & 0x7f) << shift;
-      shift += 7;
-      if ((byte & 0x80) == 0) {
-         if constexpr (std::is_signed_v<T>) {
-            using U_T = typename std::make_unsigned<T>::type;
-            if (shift < sizeof(T) * CHAR_BIT && (byte & 0x40))
-               result |= ~U_T(0) << shift;
-         }
-         return { result, it - start + 1 };
-      }
-   };
-}
-
-
 class Reader : public std::enable_shared_from_this<Reader> {
     Reader(const Reader &);
 public:
@@ -212,14 +191,13 @@ class OffsetReader final : public Reader {
     Off offset;
     Off length;
 public:
-    std::string name;
     std::string readString(Off absoff) const override {
         return upstream->readString(absoff + offset);
     }
     virtual size_t read(Off off, size_t count, char *ptr) const override;
     OffsetReader(const std::string &name, Reader::csptr upstream_, Off offset_, Off length_ = std::numeric_limits<Off>::max());
     void describe(std::ostream &os) const override {
-        os << name << "( range " << "[" << offset << "," << offset + length << "]" << " of " << *upstream << " )";
+        os << "range " << "[" << offset << "," << offset + length << "]" << " of " << *upstream;
     }
     Off size() const override { return length; }
     std::string filename() const override { return upstream->filename(); }
@@ -312,6 +290,26 @@ template <typename T, size_t cachesize> const T &ReaderArray<T, cachesize>::geti
 }
 
 
+}
+
+template <typename T, typename Iter> static inline std::pair<T, size_t> readleb128(Iter start) {
+   static_assert(CHAR_BIT == 8);
+   T result = 0;
+   unsigned shift = 0;
+   unsigned char byte;
+   for (auto it = start;; ++it) {
+      byte = *it;
+      result |= T(byte & 0x7f) << shift;
+      shift += 7;
+      if ((byte & 0x80) == 0) {
+         if constexpr (std::is_signed_v<T>) {
+            using U_T = typename std::make_unsigned<T>::type;
+            if (shift < sizeof(T) * CHAR_BIT && (byte & 0x40))
+               result |= ~U_T(0) << shift;
+         }
+         return { result, it - start + 1 };
+      }
+   };
 }
 
 #endif

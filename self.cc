@@ -1,8 +1,4 @@
 #include "libpstack/proc.h"
-#include "libpstack/ps_callback.h"
-#include "libpstack/stringify.h"
-#include "libpstack/global.h"
-#include "libpstack/fs.h"
 
 #include <sys/ptrace.h>
 #include <sys/types.h>
@@ -13,10 +9,6 @@
 #include <unistd.h>
 #include <wait.h>
 
-#include <climits>
-#include <iostream>
-#include <utility>
-#include <fstream>
 #include <ucontext.h>
 #include <dlfcn.h>
 

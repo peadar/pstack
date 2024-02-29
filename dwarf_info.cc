@@ -4,7 +4,6 @@
 #include "libpstack/fs.h"
 #include "libpstack/global.h"
 #include <memory>
-#include <algorithm>
 
 namespace pstack::Dwarf {
 
@@ -45,7 +44,6 @@ CFI *Info::getCFI() const {
     CFI *eh = getEhFrame();
     return eh ? eh : getDebugFrame();
 }
-
 
 Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     : elf(obj)

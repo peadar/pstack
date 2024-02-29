@@ -7,13 +7,10 @@
  */
 
 #include <unistd.h>
-#include <signal.h>
-#include <fstream>
 #include <assert.h>
 #include <iostream>
 #include <exception>
 #include <algorithm>
-#include <memory>
 #include <sys/types.h>
 #include <map>
 
@@ -250,8 +247,7 @@ mainExcept(int argc, char *argv[])
                for (auto &pattern : patterns) {
                    auto name = table->name(sym);
                    if (globmatch(pattern, name)) {
-                       store.add(ListedSymbol(sym, loaded.first,
-                                name, stringify(*loaded.second->io)));
+                       store.add(ListedSymbol(sym, loaded.first, name, loaded.second.name()));
                        if (verbose > 1 || showsyms)
                           std::cout << name << "\n";
                        count++;
@@ -259,10 +255,11 @@ mainExcept(int argc, char *argv[])
                }
            }
         };
-        findSymbols( loaded.second->dynamicSymbols() );
-        findSymbols( loaded.second->debugSymbols() );
+        auto obj = loaded.second.object(process->imageCache);
+        findSymbols( obj->dynamicSymbols() );
+        findSymbols( obj->debugSymbols() );
         if (verbose)
-            *debug << "found " << count << " symbols in " << *loaded.second->io << endl;
+            *debug << "found " << count << " symbols in " << *obj->io << endl;
     }
     if (showsyms)
        exit(0);

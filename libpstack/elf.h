@@ -36,13 +36,10 @@
 
 #include <elf.h>
 
-#include <tuple>
 #include <string>
-#include <list>
 #include <vector>
 #include <map>
 #include <memory>
-#include <limits>
 #include <optional>
 #include <utility>
 

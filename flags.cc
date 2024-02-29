@@ -1,4 +1,5 @@
 #include "libpstack/flags.h"
+#include <cassert>
 
 namespace pstack {
 Flags &

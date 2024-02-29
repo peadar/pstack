@@ -3,7 +3,6 @@
 #include "libpstack/global.h"
 #include "libpstack/proc.h"
 #include "libpstack/fs.h"
-#include "libpstack/ps_callback.h"
 #if defined(WITH_PYTHON2) || defined(WITH_PYTHON3)
 #define WITH_PYTHON
 #include "libpstack/python.h"
@@ -36,7 +35,7 @@ pstack(Procman::Process &proc)
     const auto &threadStacks = proc.getStacks();
     auto &os = *proc.options.output;
     if (doJson) {
-        os << json(threadStacks, const_cast<const Procman::Process*>(&proc));
+        os << json(threadStacks, &proc);
     } else {
         os << "process: " << *proc.io << "\n";
         for (auto &s : threadStacks) {
@@ -51,7 +50,8 @@ pstack(Procman::Process &proc)
 // us to reliably run pstack on a process that will abort or segfault, and
 // doesn't require a readable core file.
 int
-startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &options, Dwarf::ImageCache &ic) {
+startChild(Elf::Object::sptr exe, const std::string &cmd,
+           const PstackOptions &options, Dwarf::ImageCache &ic) {
    std::vector<std::string> args;
    for (size_t off = 0;;) {
       auto pos = cmd.find(' ', off);
@@ -101,7 +101,8 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
                break;
             }
             if (verbose > 2)
-               *debug << getpid() << "... done - rc=" << rc << ", status=" << Procman::WaitStatus(status) << "\n";
+               *debug << getpid() << "... done - rc=" << rc
+                   << ", status=" << Procman::WaitStatus(status) << "\n";
 
             if (WIFSTOPPED(status)) {
                // Read the content of the process's SigIgn and SigCgt info from procfs.
@@ -146,7 +147,8 @@ startChild(Elf::Object::sptr exe, const std::string &cmd, const PstackOptions &o
 
 
 #ifdef WITH_PYTHON
-template<int V> void doPy(Procman::Process &proc, bool showModules, const PyInterpInfo &info) {
+template<int V> void
+doPy(Procman::Process &proc, bool showModules, const PyInterpInfo &info) {
     Procman::StopProcess here(&proc);
     PythonPrinter<V> printer(proc, *proc.options.output, info);
     if (!printer.interpFound())

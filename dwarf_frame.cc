@@ -1,6 +1,7 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/dwarf_reader.h"
 #include "libpstack/global.h"
+#include <stack>
 
 namespace pstack::Dwarf {
 intmax_t

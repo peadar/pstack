@@ -8,8 +8,6 @@
 #include "libpstack/archreg.h"
 #undef REGMAP
 
-#include <iostream>
-
 namespace pstack::Procman {
 LogProcess::LogProcess(Elf::Object::sptr exec, const std::vector<std::string> &logs_, const PstackOptions &options, Dwarf::ImageCache &imageCache)
     : Process(std::move(exec), std::make_shared<CoreReader>(this, nullptr), options, imageCache)
@@ -134,9 +132,9 @@ LogProcess::loadSharedObjectsFromFileNote() {
                funcOffset = 0;
             }
             Elf::Addr loadAddr = va - funcOffset - offset;
-            addElfObject(object, loadAddr);
+            addElfObject("", object, loadAddr);
         }
-        addElfObject(execImage, 0);
+        addElfObject("", execImage, 0);
         // Add the stack of virtual addresses to the core.
         stacks.push_back(ThreadStack());
         auto &procstack = stacks.back();

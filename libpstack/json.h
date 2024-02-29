@@ -2,12 +2,8 @@
 #define _JSON_H_
 #include <iostream>
 #include <functional>
-#include <unordered_map>
 #include <type_traits>
-#include <cstdint>
 #include <cstdlib>
-#include <typeinfo>
-#include <map>
 #include <iomanip>
 
 /*

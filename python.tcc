@@ -1,12 +1,9 @@
 #include <iostream>
 #include <iomanip>
-#include <algorithm>
 #include <stdlib.h>
 #include <stddef.h>
 
-#include "libpstack/dwarf.h"
 #include "libpstack/python.h"
-
 
 namespace pstack {
 // This reimplements PyCode_Addr2Line

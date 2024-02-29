@@ -1,15 +1,16 @@
 #include "libpstack/python.h"
 #include <dlfcn.h>
 #include <string.h>
+#include <string>
 #include <regex.h>
 #include "libpstack/global.h"
 #include "libpstack/proc.h"
 #include "libpstack/stringify.h"
 
 namespace pstack {
-static std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr> getInterpHead(const Procman::Process &);
+static std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr> getInterpHead(Procman::Process &);
 PyInterpInfo
-getPyInterpInfo(const Procman::Process &proc) {
+getPyInterpInfo(Procman::Process &proc) {
     Elf::Object::sptr libpython;
     Elf::Addr libpythonAddr;
     Elf::Addr interpreterHead;
@@ -45,25 +46,21 @@ getPyInterpInfo(const Procman::Process &proc) {
 }
 
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
-getInterpHead(const Procman::Process &proc) {
+getInterpHead(Procman::Process &proc) {
     // As a local python2 hack, we have a global variable pointing at interp_head
     // We can use that to avoid needing any debug info for the interpreter.
     // (Python3 does not require this hack, because _PyRuntime is exported
     // in the dynamic symbols.)
     try {
-        Elf::Object::sptr libpython;
-        Elf::Addr libpythonAddr;
-        Elf::Addr interpHeadp = proc.resolveSymbol("Py_interp_headp", false,
-                [&](Elf::Addr loadAddr, const Elf::Object::sptr &o) mutable {
-                    libpython = o;
-                    libpythonAddr = loadAddr;
-                    auto name = stringify(*o->io);
+        auto [ libpython,  libpythonAddr, interpreterHead ] = 
+           proc.resolveSymbolDetail("Py_interp_headp", false,
+                [&](std::string_view name) {
                     return name.find("python") != std::string::npos;
                 });
         if (verbose)
             *debug << "found interp_headp in ELF syms" << std::endl;
         Elf::Addr interpHead;
-        proc.io->readObj(interpHeadp, &interpHead);
+        proc.io->readObj(libpythonAddr + interpreterHead.st_value, &interpHead);
         return std::make_tuple(libpython, libpythonAddr, interpHead);
     }
     catch (...) {
@@ -100,18 +97,18 @@ getInterpHead(const Procman::Process &proc) {
 // pthread_t. (In Linux's 1:1 modern threadding model, each pthread_t is associated
 // with a single LWP, or Linux task.)
 bool
-pthreadTidOffset(const Procman::Process &proc, size_t *offsetp)
+pthreadTidOffset(Procman::Process &proc, size_t *offsetp)
 {
     static size_t offset;
     static enum { notDone, notFound, found } status;
     if (status == notDone) {
         try {
             auto addr = proc.resolveSymbol("_thread_db_pthread_tid", true,
-                  [](Elf::Addr ,const Elf::Object::sptr &ob) {
+                  [](std::string_view name) {
                      return
-                     ob->io->filename().find("libc." ) != std::string::npos ||
-                     ob->io->filename().find("libpthread" ) != std::string::npos ||
-                     ob->io->filename().find("libthread" ) != std::string::npos; });
+                     name.find("libc." ) != std::string::npos ||
+                     name.find("libpthread" ) != std::string::npos ||
+                     name.find("libthread" ) != std::string::npos; });
             uint32_t desc[3];
             proc.io->readObj(addr, &desc[0], 3);
             offset = desc[2];

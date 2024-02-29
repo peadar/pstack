@@ -1,13 +1,9 @@
 #include "libpstack/json.h"
 #include "libpstack/dwarf.h"
 #include "libpstack/dwarf_reader.h"
-
 #include <sys/procfs.h>
-
-#include <cassert>
 #include <iomanip>
 #include <set>
-#include <unordered_map>
 
 #if ELF_BITS == 64
 #define ELF_R_SYM(a) ELF64_R_SYM(a)

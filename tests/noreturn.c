@@ -1,6 +1,4 @@
-#include <assert.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include "noreturn.h"
 
 // Because assert_fail is marked as noreturn, the call to it is not followed
