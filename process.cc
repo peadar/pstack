@@ -224,15 +224,8 @@ auxtype2str(int auxtype) {
 void
 Process::processAUXV(const Reader &auxio)
 {
-    for (size_t i = 0;; i++) {
-        Elf::auxv_t aux;
-        try {
-            auxio.readObj(i * sizeof aux, &aux);
-        }
-        catch (const Exception &ex) {
-            break;
-        }
 
+    for (auto &aux : ReaderArray<Elf::auxv_t>(auxio)) {
         Elf::Addr hdr = aux.a_un.a_val;
         switch (aux.a_type) {
             case AT_ENTRY: {

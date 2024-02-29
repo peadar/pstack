@@ -233,59 +233,84 @@ Reader::csptr loadFile(const std::string &path, Reader::Off minsize);
 // for (const Foo &foo : ReaderArray<Foo>(r)) {
 //   ...
 // }
-template <typename T>
-struct ReaderArray {
+template <typename T, size_t cachesize = 1024 / sizeof(T) >
+class ReaderArray {
+   const Reader &reader;
+   mutable std::array<T, cachesize> data;
+   mutable Reader::Off dataOff = 0; // offset of data[0]
+   mutable size_t dataCount = 0; // number of valid items in data.
+   size_t initialOffset;
+   mutable Reader::Off eof; // dynamically discovered EOF marker.
+   inline size_t fillcache(Reader::Off) const;
+   inline const T &getitem(Reader::Off) const;
+
+public:
    class iterator {
-      const Reader *reader;
-      T datum;
-       void getitem();
+      const ReaderArray<T, cachesize> *array;
+      Reader::Off offset; // offset of the iterator itself.
    public:
-      Reader::Off offset;
-      T &operator *();
-      iterator(const Reader *reader_) : reader(reader_),offset(reader->size()) { }
-      iterator(const Reader *reader_, Reader::Off offset_) : reader(reader_),offset(offset_) {
-          getitem();
+      const T &operator *();
+      iterator(const ReaderArray<T, cachesize> *array_) : array(array_), offset(array->reader.size()) {
+         // this is the EOF iterator - no cache.
       }
-      bool operator == (const iterator &rhs) const { return offset == rhs.offset && reader == rhs.reader; }
+      iterator(const ReaderArray<T, cachesize> *array_, Reader::Off offset_) : array(array_), offset(offset_) {
+         array->fillcache(offset);
+      }
+      bool operator == (const iterator &rhs) const {
+         return offset == rhs.offset || ( offset >= array->eof && rhs.offset >= rhs.array->eof );
+      }
       bool operator != (const iterator &rhs) const { return ! (*this == rhs); }
       size_t operator - (const iterator &rhs) const { return offset - rhs.offset; }
       iterator & operator++();
    };
+
    using const_iterator = iterator;
-   const Reader &reader;
-   size_t initialOffset;
    typedef T value_type;
-   iterator begin() const { return iterator(&reader, initialOffset); }
-   iterator end() const { return iterator(&reader); }
-   ReaderArray(const Reader &reader_, size_t offset = 0) : reader(reader_), initialOffset(offset) {
+   iterator begin() const { return iterator(this, initialOffset); }
+   iterator end() const { return iterator(this); }
+   ReaderArray(const Reader &reader_, size_t offset = 0) : reader(reader_), initialOffset(offset), eof(reader.size()) {
+      assert(reader.size() == std::numeric_limits<Reader::Off>::max() || reader.size() % sizeof (T) == 0);
       assert(reader.size() == std::numeric_limits<Reader::Off>::max() || reader.size() % sizeof (T) == 0);
    }
 };
 
-template <typename T> void ReaderArray<T>::iterator::getitem() {
-    try {
-        reader->readObj(offset, &datum);
-    }
-    catch (const Exception &ex) {
-        // if we hit an error, just set our size to the reader size. We'll now
-        // compare equal to end()
-        offset = reader->size();
-    }
-
-}
-
-template<typename T>
-typename ReaderArray<T>::iterator &ReaderArray<T>::iterator::operator ++() {
+template<typename T, size_t cachesize>
+typename ReaderArray<T, cachesize>::iterator &ReaderArray<T, cachesize>::iterator::operator ++() {
     offset += sizeof (T);
-    if (offset != reader->size())
-        getitem();
+    array->fillcache(offset);
     return *this;
-
 }
 
-template <typename T> T &ReaderArray<T>::iterator::operator *() {
-   return datum;
+template <typename T, size_t cachesize> const T &ReaderArray<T, cachesize>::iterator::operator *() {
+   return array->getitem(offset);
 }
+
+template <typename T, size_t cachesize> size_t ReaderArray<T, cachesize>::fillcache(Reader::Off offset) const {
+   if (offset >=  eof)
+      return 0;
+   size_t idx = (offset - dataOff) / sizeof (T);
+   if (dataOff > offset || (offset - dataOff) / sizeof (T) >= dataCount) {
+      idx = 0;
+      dataOff = offset;
+      auto rc = reader.read(offset, cachesize * sizeof (T), (char *)&data[0]);
+      dataCount = rc / sizeof(T);
+      if (dataCount == 0) { // short read - consider this EOF.
+         eof = offset;
+         return 0;
+      }
+   }
+   return idx;
+}
+
+template <typename T, size_t cachesize> const T &ReaderArray<T, cachesize>::getitem(Reader::Off offset) const {
+   // If the item is not already in the cache, fill the cache as much as we can starting with this item
+   size_t idx = fillcache(offset);
+
+   if (idx >= dataCount)
+      throw ( Exception() << "end of data while reading array" );
+   return data[idx];
+}
+
 
 }
 

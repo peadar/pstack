@@ -113,12 +113,6 @@ FileReader::read(Off off, size_t count, char *ptr) const
             << " at " << (void *)off
             << " on " << *this
             << " failed: " << strerror(errno));
-    if (rc == 0)
-        throw (Exception()
-            << "read " << count
-            << " at " << (void *)off
-            << " on " << *this
-            << " hit unexpected EOF");
     return rc;
 }
 
