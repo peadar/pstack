@@ -140,7 +140,7 @@ extern "C" size_t pyInterpOffset();
 
 template <>
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
-getInterpHead<3>(const Procman::Process &proc) {
+getInterpHead<3>(Procman::Process &proc) {
     Elf::Object::sptr libpython;
     Elf::Addr libpythonAddr;
     Elf::Sym _PyRuntimeSym;
