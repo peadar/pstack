@@ -799,7 +799,7 @@ Process::findRDebugAddr()
 std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>
 Process::findSegment(Elf::Addr addr) const
 {
-    auto it = std::lower_bound(objects.begin(), objects.end(), addr);
+    auto it = objects.lower_bound(addr);
     if (it != objects.begin()) {
        --it;
        if (it->first  + it->second->endVA() >= addr) {
