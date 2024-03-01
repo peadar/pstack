@@ -8,6 +8,7 @@
 #include <methodobject.h>
 #include "libpstack/python.h"
 #include "libpstack/global.h"
+#include "libpstack/fs.h"
 
 #define DK_SIZE(dk) ((dk)->dk_size)
 #define DK_IXSIZE(dk)                \
@@ -145,7 +146,12 @@ getInterpHead<3>(Procman::Process &proc) {
     Elf::Addr libpythonAddr;
     Elf::Sym _PyRuntimeSym;
 
-    std::tie(libpython, libpythonAddr, _PyRuntimeSym) = proc.resolveSymbolDetail("_PyRuntime", false);
+    std::tie(libpython, libpythonAddr, _PyRuntimeSym) = proc.resolveSymbolDetail(
+          "_PyRuntime", false,
+          [](std::string_view name) {
+             auto base = basename(std::string(name));
+            return base.find("python3") != std::string::npos;
+          });
 
     Elf::Addr interpHead = libpythonAddr + _PyRuntimeSym.st_value + pyInterpOffset();
 
