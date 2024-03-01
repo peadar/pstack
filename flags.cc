@@ -50,7 +50,7 @@ Flags::parse(int argc, char **argv) const
     while ((c = getopt_long(argc, argv, shortOptions.c_str(), &longOptions[0], &optidx)) != -1) {
         if (c == '?') {
            dump(std::clog);
-           throw std::runtime_error(std::string("unknown command line option ");
+           throw std::runtime_error(std::string("unknown command line option "));
         }
         data.at(c).callback(optarg);
     }
