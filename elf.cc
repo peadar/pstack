@@ -108,15 +108,19 @@ Object::endVA() const
     return last.p_vaddr + last.p_memsz;
 }
 
-std::string
-Object::symbolVersion(const VersionedSymbol &sym) const {
+std::optional<std::string>
+Object::symbolVersion(VersionIdx idx) const {
     auto vi = symbolVersions();
 
-    int idx = sym.versionIdx & 0x7fff;
-    if (idx >= 2)
-        return vi->versions.at(idx);
+    int i = idx.idx & 0x7fff;
+    if (i >= 2)
+        return vi->versions.at(i);
     else
-        return "";
+        return std::nullopt;
+}
+
+VersionIdx Object::versionIdxForSymbol(size_t idx) const {
+   return VersionIdx(*gnu_version ? gnu_version->io()->readObj<Half>(idx * 2) : -1);
 }
 
 static uint32_t gnu_hash(const char *s) {
@@ -162,20 +166,19 @@ GnuHash::findSymbol(const char *name) const {
     }
 }
 
-SymbolSection<Sym> *Object::debugSymbols() {
+SymbolSection *Object::debugSymbols() {
     return getSymtab(debugSymbols_, ".symtab", SHT_SYMTAB);
 }
 
-SymbolSection<VersionedSymbol> *Object::dynamicSymbols() {
+SymbolSection *Object::dynamicSymbols() {
     return getSymtab(dynamicSymbols_, ".dynsym", SHT_DYNSYM);
 }
 
-template<typename Symtype>
-SymbolSection<Symtype> *
-Object::getSymtab(std::unique_ptr<SymbolSection<Symtype>> &table, const char *name, int type) {
+SymbolSection *
+Object::getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type) {
     if (table == nullptr) {
         auto &sec {getDebugSection( name, type ) };
-        table.reset(new SymbolSection<Symtype>(this, sec.io(), getLinkedSection(sec).io()));
+        table.reset(new SymbolSection(this, sec.io(), getLinkedSection(sec).io()));
     }
     return table.get();
 }
@@ -255,7 +258,7 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
               for (auto dyn : content)
                  dynamic[dyn.d_tag].push_back(dyn);
           }
-          gnu_version = &getSection(".gnu_version", SHT_GNU_versym);
+          gnu_version = &getSection(".gnu.version", SHT_GNU_versym);
        }
     } else {
         // leave a null section no matter what.
@@ -505,7 +508,7 @@ Object::getLinkedSection(const Section &from) const
  * which provides hash-accellerated access. (via either .hash or .gnu_hash
  * section)
  */
-VersionedSymbol
+std::pair<Sym, size_t>
 Object::findDynamicSymbol(const std::string &name)
 {
     Sym sym;
@@ -516,13 +519,13 @@ Object::findDynamicSymbol(const std::string &name)
              : std::make_pair(uint32_t(0), undef());
 
     if (idx == 0)
-        return VersionedSymbol();
+        return { undef() , 0 };
 
     // We found a symbol in our hash table. Find its version if we can.
-    return VersionedSymbol(sym, *gnu_version, idx);
+    return {sym, idx};
 }
 
-Sym
+std::pair<Sym, size_t>
 Object::findDebugSymbol(const string &name)
 {
     // Cache all debug symbols the first time we scan them.
@@ -537,8 +540,8 @@ Object::findDebugSymbol(const string &name)
     }
     auto off = cachedSymbols->find(name);
     if (off != cachedSymbols->end())
-       return syms->symbols->readObj<Sym>(off->second * sizeof (Sym));
-    return undef();
+       return { syms->symbols->readObj<Sym>(off->second * sizeof (Sym)), off->second };
+    return {undef(), 0};
 }
 
 Object *
@@ -785,11 +788,6 @@ ImageCache::flush(Object::sptr o)
       }
    }
 }
-
-VersionedSymbol::VersionedSymbol(const Sym &sym_, const Section &versionInfo, size_t idx)
-    : Sym(sym_)
-    , versionIdx(versionInfo ? versionInfo.io()->readObj<Half>(idx * sizeof (Half)) : -1)
-{ }
 
 namespace {
 struct Undef {

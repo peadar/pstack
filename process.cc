@@ -816,11 +816,11 @@ Process::resolveSymbolDetail(const char *name, bool includeDebug,
         if (!match(loaded.second.name()))
            continue;
         auto obj = loaded.second.object(imageCache);
-        auto sym = obj->findDynamicSymbol(name);
+        auto [sym,idx] = obj->findDynamicSymbol(name);
         if (sym.st_shndx != SHN_UNDEF)
            return std::make_tuple(obj, loaded.first, sym);
         if (includeDebug) {
-           auto sym = loaded.second.object(imageCache)->findDebugSymbol(name);
+           auto [sym, idx] = loaded.second.object(imageCache)->findDebugSymbol(name);
            if (sym.st_shndx != SHN_UNDEF)
               return std::make_tuple(obj, loaded.first, sym);
         }

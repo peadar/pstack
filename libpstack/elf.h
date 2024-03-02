@@ -71,7 +71,7 @@ typedef struct {
 namespace pstack::Elf {
 class Object;
 class ImageCache;
-template <typename SymbolType> struct SymbolSection;
+class SymbolSection;
 class NoteDesc;
 };
 
@@ -205,17 +205,11 @@ public:
 
 const Sym &undef();
 
-// A potentially versioned symbol.  Debug symbols are not versioned, but those
-// in the .dynamic section are - In GNU ELF, there's an adjunct tables,
-// gnu_version, that has an entry for each symbol in .dynamic, which contains
-// an index into the version table. This is essentially an augmentation of the
-// Elf{32_64}_Sym - store it alongside here for ease of use.
-struct VersionedSymbol : public Sym {
-   int versionIdx;
-   VersionedSymbol() : Sym(undef()), versionIdx(-1) {}
-   VersionedSymbol(const Sym &sym_, const Section &versionInfo, size_t idx);
-   bool isHidden() const { return versionIdx != -1 && ((versionIdx & 0x8000) != 0 || versionIdx == 0); }
-   bool isVersioned() const { return (versionIdx & 0x7fff) > 1; }
+struct VersionIdx {
+   int idx;
+   bool isHidden() const { return idx != -1 && ((idx & 0x8000) != 0 || idx == 0); }
+   bool isVersioned() const { return (idx & 0x7fff) > 1; }
+   explicit VersionIdx( int idx) : idx(idx){};
 };
 
 /*
@@ -223,12 +217,13 @@ struct VersionedSymbol : public Sym {
  * the set of Sym objects, and the section that contains the strings to name
  * those symbols
  */
-template <typename SymbolType>
+
 struct SymbolSection {
     Object *elf;
     Reader::csptr symbols;
     Reader::csptr strings;
     ReaderArray<Sym> array;
+
     auto begin() { return array.begin(); }
     auto end() { return array.end(); }
 
@@ -275,8 +270,8 @@ public:
     const std::map<Word, ProgramHeaders> &getAllSegments() const;
 
     std::optional<std::pair<Sym, std::string>> findSymbolByAddress(Addr addr, int type);
-    VersionedSymbol findDynamicSymbol(const std::string &name);
-    Sym findDebugSymbol(const std::string &name);
+    std::pair<Sym, size_t> findDynamicSymbol(const std::string &name);
+    std::pair<Sym, size_t> findDebugSymbol(const std::string &name);
 
     Reader::csptr io;
 
@@ -289,12 +284,13 @@ public:
     // https://sourceware.org/gdb/current/onlinedocs/gdb/MiniDebugInfo.html
     Addr endVA() const;
 
-    // find text version from versioned symbol.
-    std::string symbolVersion(const VersionedSymbol &) const;
-    SymbolSection<Sym> *debugSymbols();
-    SymbolSection<VersionedSymbol> * dynamicSymbols();
+    // find text version for a symbol.
+    std::optional<std::string> symbolVersion(VersionIdx) const;
+    SymbolSection *debugSymbols();
+    SymbolSection *dynamicSymbols();
     const SymbolVersioning *symbolVersions() const;
     const Section *gnu_version;
+    VersionIdx versionIdxForSymbol( size_t symbolIdx ) const;
 private:
     mutable std::unique_ptr<SymbolVersioning> symbolVersions_;
     // Elf header, section headers, program headers.
@@ -305,12 +301,10 @@ private:
     std::map<std::string, size_t> namedSection;
     std::map<Word, ProgramHeaders> programHeaders;
 
-    std::unique_ptr<SymbolSection<Sym>> debugSymbols_;
+    std::unique_ptr<SymbolSection> debugSymbols_;
+    std::unique_ptr<SymbolSection> dynamicSymbols_;
 
-    std::unique_ptr<SymbolSection<VersionedSymbol>> dynamicSymbols_;
-
-    template<typename Symtype>
-    SymbolSection<Symtype> *getSymtab(std::unique_ptr<SymbolSection<Symtype>> &table, const char *name, int type);
+    SymbolSection *getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type);
 
     mutable bool debugLoaded; // We've at least attempted to load debugObject: don't try again
     mutable Object::sptr debugObject; // debug object as per .gnu_debuglink/other.

@@ -312,7 +312,7 @@ PythonPrinter<PyV>::PythonPrinter(Procman::Process &proc_, std::ostream &os_, co
     for (auto ps : PythonTypePrinter<PyV>::all) {
         if (ps->type() == nullptr)
             continue; // heapPrinter is used specially.
-        auto sym = libpython->findDynamicSymbol(ps->type());
+        auto [sym, idx] = libpython->findDynamicSymbol(ps->type());
         if (sym.st_shndx == SHN_UNDEF)
             throw Exception() << "failed to find python symbol " << ps->type();
         printers[(const _typeobject *)(libpythonAddr + sym.st_value)] = ps;

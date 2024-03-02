@@ -264,9 +264,10 @@ MemReader::view(const std::string &name, Off offset, Off size) const {
 }
 
 
-OffsetReader::OffsetReader(const std::string& name, Reader::csptr upstream_, Off offset_, Off length_)
+OffsetReader::OffsetReader(std::string name_, Reader::csptr upstream_, Off offset_, Off length_)
     : upstream(upstream_)
     , offset(offset_)
+    , name(std::move(name_))
 {
     // If we create an offset reader with the upstream being another offset
     // reader, we can just add the offsets, and use the

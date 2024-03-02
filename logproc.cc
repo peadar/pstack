@@ -118,10 +118,9 @@ LogProcess::loadSharedObjectsFromFileNote() {
 
             Elf::Addr funcOffset;
             if (function != "") {
-                Elf::Sym sym;
-                sym = object->findDynamicSymbol(function);
+                auto[sym, idx] = object->findDynamicSymbol(function);
                 if (sym.st_shndx == SHN_UNDEF) {
-                    sym = object->findDebugSymbol(function);
+                    std::tie(sym,idx) = object->findDebugSymbol(function);
                     if (sym.st_shndx == SHN_UNDEF) {
                        *debug << "no symbol for " << function << " in " << lib << "\n";
                        continue;

@@ -190,14 +190,15 @@ class OffsetReader final : public Reader {
     Reader::csptr upstream;
     Off offset;
     Off length;
+    std::string name;
 public:
     std::string readString(Off absoff) const override {
         return upstream->readString(absoff + offset);
     }
     virtual size_t read(Off off, size_t count, char *ptr) const override;
-    OffsetReader(const std::string &name, Reader::csptr upstream_, Off offset_, Off length_ = std::numeric_limits<Off>::max());
+    OffsetReader(std::string, Reader::csptr upstream_, Off offset_, Off length_ = std::numeric_limits<Off>::max());
     void describe(std::ostream &os) const override {
-        os << "range " << "[" << offset << "," << offset + length << "]" << " of " << *upstream;
+        os << name << " [" << offset << "," << offset + length << "] of " << *upstream;
     }
     Off size() const override { return length; }
     std::string filename() const override { return upstream->filename(); }
@@ -238,7 +239,7 @@ public:
          return offset == rhs.offset || ( offset >= array->eof && rhs.offset >= rhs.array->eof );
       }
       bool operator != (const iterator &rhs) const { return ! (*this == rhs); }
-      size_t operator - (const iterator &rhs) const { return offset - rhs.offset; }
+      size_t operator - (const iterator &rhs) const { return (offset - rhs.offset) / sizeof(T); }
       iterator & operator++();
    };
 
