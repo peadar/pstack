@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.7)
 include (GNUInstallDirs)
-set( CMAKE_INSTALL_LIBDIR lib64)
 
 set(PSTACK_SOVERSION 2.5)
 set(PSTACK_VERSION 2.5.1)
