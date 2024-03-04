@@ -557,7 +557,9 @@ ProcessLocation::symbol() const {
 const Dwarf::FDE *
 CodeLocation::fde() const {
     if (fde_ == nullptr) {
-        fde_ = cfi()->findFDE(location_);
+	auto cfip = cfi();
+	if (cfip)
+	    fde_ = cfi()->findFDE(location_);
     }
     return fde_;
 }

@@ -854,7 +854,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 #ifdef __aarch64__
     // for ARM, if we see __kernel_rt_sigreturn on the stack, we have a signal
     // stack frame
-    auto sigreturnSym = p.vdsoImage->findDynamicSymbol("__kernel_rt_sigreturn");
+    auto [sigreturnSym,idx] = p.vdsoImage->findDynamicSymbol("__kernel_rt_sigreturn");
     Elf::Addr trampoline = sigreturnSym.st_shndx == SHN_UNDEF ? 0 : sigreturnSym.st_value + p.vdsoBase;
 #endif
 
@@ -963,11 +963,11 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                     auto objip = prev.rawIP() - reloc;
                     // Find the gregset on the stack - it differs depending on
                     // whether this is realtime or "classic" frame
-                    auto restoreSym = obj->findDebugSymbol("__restore");
+                    auto [restoreSym,idx] = obj->findDebugSymbol("__restore");
                     if (restoreSym.st_shndx != SHN_UNDEF && objip == restoreSym.st_value)
                         sigContextAddr = SP(prev.regs) + 4;
                     else {
-                        auto restoreRtSym = obj->findDebugSymbol("__restore_rt");
+                        auto [restoreRtSym,idx] = obj->findDebugSymbol("__restore_rt");
                         if (restoreRtSym.st_shndx != SHN_UNDEF && objip == restoreRtSym.st_value)
                             sigContextAddr = p.io->readObj<Elf::Addr>(SP(prev.regs) + 8) + 20;
                     }
