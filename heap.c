@@ -337,6 +337,8 @@ static void assertheap() {
 #if defined(__x86_64__)
 static void __attribute__((naked,optimize("O0")))
 getframe(void ***bp, void  ***ip) {
+    (void)ip;
+    (void)bp;
     asm( "mov (%rsp), %rax;"
          "mov %rax, (%rsi);"
          "mov %rbp, (%rdi);"
@@ -352,6 +354,8 @@ getframe(void ***bp, void  ***ip) {
 
 static void __attribute__((naked,noinline,optimize("O0")))
 getframe(void ***bp, void  ***ip) {
+    (void)ip;
+    (void)bp;
     asm("mov (%esp), %ecx;"
         "mov 8(%esp), %edx;"
         "mov %ecx, (%edx);"

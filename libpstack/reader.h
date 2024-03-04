@@ -10,6 +10,7 @@
 #include <limits>
 #include <list>
 #include <cassert>
+#include <array>
 #include "libpstack/exception.h"
 
 namespace pstack {

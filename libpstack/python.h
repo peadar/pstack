@@ -19,14 +19,6 @@ struct PyInterpInfo {
     int versionHex;
 };
 
-// See PyCodeObject.co_flags in <code.h>
-struct ArgFlags {
-    unsigned int         :  2; // Don't care
-    unsigned int varargs :  1; // If var args are used
-    unsigned int kwargs  :  1; // If kwargs are used
-    unsigned int         : 14; // Don't care
-};
-
 template <int PyV> struct PythonPrinter;
 
 /*

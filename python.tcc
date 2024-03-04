@@ -453,10 +453,14 @@ void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr
 
     const PyCodeObject &code = readPyObj<PyV, PyCodeObject>(*pc->proc.io, Elf::Addr(pfo->f_code));
 
-    ArgFlags flags = *(ArgFlags*)&code.co_flags;
+    auto flags = code.co_flags;
     int argCount = code.co_argcount;
     int kwonlyArgCount = getKwonlyArgCount<PyV>((PyObject*)&code);
-    int totalArgCount = argCount + kwonlyArgCount + flags.varargs + flags.kwargs;
+    int totalArgCount = argCount + kwonlyArgCount;
+    if (flags & CO_VARARGS)
+        totalArgCount++;
+    if (flags & CO_VARKEYWORDS)
+        totalArgCount++;
 
     Elf::Addr varnamesAddr = Elf::Addr(code.co_varnames) + offsetof(PyTupleObject, ob_item);
     Elf::Addr localsAddr = remoteAddr + offsetof(PyFrameObject, f_localsplus);
@@ -473,7 +477,7 @@ void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr
     }
 
     // *args if present
-    if (flags.varargs) {
+    if (flags & CO_VARARGS) {
         PyObject *varargName = readPyObj<PyV, PyObject *>(*pc->proc.io, varnamesAddr + (argCount + kwonlyArgCount) * sizeof(PyObject *));
         pc->print(Elf::Addr(varargName));
         pc->os << "=(";
@@ -481,9 +485,9 @@ void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr
         // Varargs tuple pointer is always after all the positional arguments and keyword-only arguments
         const Elf::Addr tupleAddr = localsAddr + (argCount + kwonlyArgCount) * sizeof(PyObject *);
         const PyTupleObject* tuplePtr = readPyObj<PyV, PyTupleObject*>(*pc->proc.io, tupleAddr);
-        const PyTupleObject varargs = readPyObj<PyV, PyTupleObject>(*pc->proc.io, Elf::Addr(tuplePtr));
+        const PyVarObject varargs = readPyObj<PyV, PyVarObject>(*pc->proc.io, Elf::Addr(tuplePtr));
 
-        auto varargCount = ((PyVarObject *)&varargs)->ob_size;
+        auto varargCount = varargs.ob_size;
 
         PyObject *objects[varargCount];
         pc->proc.io->readObj(Elf::Addr(tuplePtr) + offsetof(PyTupleObject, ob_item), objects, varargCount);
@@ -494,7 +498,7 @@ void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr
         }
 
         pc->os << ")";
-        if (kwonlyArgCount > 0 || flags.kwargs) pc->os << ", ";
+        if (kwonlyArgCount > 0 || (flags & CO_VARKEYWORDS)) pc->os << ", ";
     }
 
     // keyword-only arguments
@@ -510,13 +514,13 @@ void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr
             if (i < kwonlyArgCount - 1) pc->os << ", ";
         }
 
-        if (flags.kwargs) pc->os << ", ";
+        if (flags & CO_VARKEYWORDS) pc->os << ", ";
     }
 
     // **kwargs if present
-    if (flags.kwargs) {
-        PyObject *kwargsVarname = readPyObj<PyV, PyObject *>(*pc->proc.io, varnamesAddr + sizeof(PyObject *) * (argCount + kwonlyArgCount + flags.varargs));
-        PyObject *kwargs = readPyObj<PyV, PyObject *>(*pc->proc.io, localsAddr + sizeof(PyObject *) * (argCount + kwonlyArgCount + flags.varargs));
+    if (flags & CO_VARKEYWORDS) {
+        PyObject *kwargsVarname = readPyObj<PyV, PyObject *>(*pc->proc.io, varnamesAddr + sizeof(PyObject *) * (argCount + kwonlyArgCount + (flags & CO_VARARGS ? 1 : 0) ));
+        PyObject *kwargs = readPyObj<PyV, PyObject *>(*pc->proc.io, localsAddr + sizeof(PyObject *) * (argCount + kwonlyArgCount + (flags & CO_VARARGS ? 1 : 0)));
         pc->os << readString<PyV>(*pc->proc.io, Elf::Addr(kwargsVarname)) << "=";
         pc->print(Elf::Addr(kwargs));
     }

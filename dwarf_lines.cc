@@ -55,7 +55,7 @@ LineInfo::build(DWARFReader &r, Unit &unit)
         /* segment_selector_size = */ r.getu8();
     } else {
         address_size = ELF_BYTES;
-        /* segment_selector_size = */ ELF_BYTES;
+        /* segment_selector_size = ELF_BYTES */;
     }
 
     Elf::Off header_length = r.getuint(version > 2 ? dwarfLen : 4);
