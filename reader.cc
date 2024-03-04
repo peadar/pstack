@@ -293,6 +293,11 @@ OffsetReader::read(Off off, size_t count, char *ptr) const {
     return upstream->read(off + offset, count, ptr);
 }
 
+Reader::Off
+OffsetReader::size() const {
+   return length;
+}
+
 std::pair<uintmax_t, size_t>
 Reader::readULEB128(Off off) const
 {

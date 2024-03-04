@@ -1,11 +1,10 @@
 cmake_minimum_required(VERSION 3.7)
-include (GNUInstallDirs)
-
 set(PSTACK_SOVERSION 2.5)
 set(PSTACK_VERSION 2.5.1)
 project(pstack LANGUAGES C CXX VERSION "${PSTACK_VERSION}" )
-enable_testing()
 
+include (GNUInstallDirs)
+enable_testing()
 add_subdirectory(tests)
 
 option(PYTHON3 "Compile with experimental python 3 support" OFF)
@@ -152,8 +151,8 @@ add_definitions("-DNDEBUG")
 set_target_properties(procman PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
 endif()
 
-set_target_properties(dwelf PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION ${PSTACK_SOVERSION})
-set_target_properties(procman PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION ${PSTACK_SOVERSION})
+set_target_properties(dwelf PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "${PSTACK_SOVERSION}" )
+set_target_properties(procman PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "${PSTACK_SOVERSION}" )
 
 if (ZLIB_FOUND)
    target_link_libraries(dwelf ${ZLIB_LIBRARIES})

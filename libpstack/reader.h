@@ -200,7 +200,7 @@ public:
     void describe(std::ostream &os) const override {
         os << name << " [" << offset << "," << offset + length << "] of " << *upstream;
     }
-    Off size() const override { return length; }
+    Off size() const override;
     std::string filename() const override { return upstream->filename(); }
 };
 
