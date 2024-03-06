@@ -32,11 +32,16 @@ std::string
 linkResolve(std::string name)
 {
     char buf[1024];
+    std::string orig = name;
     int rc;
     for (;;) {
         rc = readlink(name.c_str(), buf, sizeof buf - 1);
-        if (rc == -1)
-            break;
+        // some files in /proc are links, but report "(deleted)" in the name if
+        // the original has gone away. Opening such files works, and uses the
+        // in-core inode, so use that if we can
+        if (rc == -1) {
+            return errno == EINVAL ? name : orig;
+        }
         buf[rc] = 0;
         if (buf[0] != '/') {
             auto lastSlash = name.rfind('/');

@@ -532,7 +532,6 @@ Object::findDebugSymbol(const string &name)
     //
     auto syms = debugSymbols();
     if (!cachedSymbols) {
-       std::clog << "caching symbols for " << io->filename() << "\n";
        cachedSymbols = std::make_unique<std::map<std::string, size_t>>();
        size_t idx = 0;
        for (auto sym : syms->array)
