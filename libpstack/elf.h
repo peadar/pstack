@@ -218,17 +218,19 @@ struct VersionIdx {
  * those symbols
  */
 
-struct SymbolSection {
-    Object *elf;
+class SymbolSection {
     Reader::csptr symbols;
     Reader::csptr strings;
     ReaderArray<Sym> array;
-
+public:
     auto begin() { return array.begin(); }
     auto end() { return array.end(); }
+    Elf::Sym operator [] (size_t idx) const {
+        return symbols->readObj<Sym>(idx * sizeof (Sym));
+    }
 
-    SymbolSection(Object *elf_, Reader::csptr symbols_, Reader::csptr strings_)
-       : elf(elf_), symbols(symbols_), strings(strings_), array(*symbols)
+    SymbolSection(Reader::csptr symbols_, Reader::csptr strings_)
+       : symbols(symbols_), strings(strings_), array(*symbols)
     {}
     std::string name(const Sym &sym) const { return strings->readString(sym.st_name); }
 };

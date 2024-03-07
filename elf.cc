@@ -178,7 +178,7 @@ SymbolSection *
 Object::getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type) {
     if (table == nullptr) {
         auto &sec {getDebugSection( name, type ) };
-        table.reset(new SymbolSection(this, sec.io(), getLinkedSection(sec).io()));
+        table = std::make_unique<SymbolSection>(sec.io(), getLinkedSection(sec).io());
     }
     return table.get();
 }
@@ -530,16 +530,16 @@ Object::findDebugSymbol(const string &name)
 {
     // Cache all debug symbols the first time we scan them.
     //
-    auto syms = debugSymbols();
+    auto &syms = *debugSymbols();
     if (!cachedSymbols) {
        cachedSymbols = std::make_unique<std::map<std::string, size_t>>();
        size_t idx = 0;
-       for (auto sym : syms->array)
-          (*cachedSymbols)[syms->name(sym)] = idx++;
+       for (auto sym : syms)
+          (*cachedSymbols)[syms.name(sym)] = idx++;
     }
-    auto off = cachedSymbols->find(name);
-    if (off != cachedSymbols->end())
-       return { syms->symbols->readObj<Sym>(off->second * sizeof (Sym)), off->second };
+    auto iter = cachedSymbols->find(name);
+    if (iter != cachedSymbols->end())
+       return { syms[iter->second], iter->second };
     return {undef(), 0};
 }
 

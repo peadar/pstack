@@ -421,7 +421,7 @@ public:
    std::vector<AddressRange> addressSpace() const;
    pid_t getPID() const;
    bool loadSharedObjectsFromFileNote();
-   virtual std::list<ThreadStack> getStacks(const PstackOptions &, unsigned maxFrames);
+   virtual std::list<ThreadStack> getStacks();
 };
 
 

@@ -57,7 +57,7 @@ LogProcess::addressSpace() const {
 }
 
 std::list<ThreadStack>
-LogProcess::getStacks(const PstackOptions &, unsigned) {
+LogProcess::getStacks() {
    return stacks;
 }
 

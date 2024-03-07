@@ -164,7 +164,7 @@ LiveProcess::stopProcess()
      * Attempt to enumerate the threads and suspend with pthread_db. This will
      * probably just fail, but all the LWPs are suspended now, anyway.
      */
-    listThreads([this] (const td_thrhandle_t *thr) {
+    listThreads([] (const td_thrhandle_t *thr) {
         td_thrinfo_t info;
         td_thr_get_info(thr, &info);
         int suspendError = td_thr_dbsuspend(thr);

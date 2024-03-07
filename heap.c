@@ -337,8 +337,10 @@ static void assertheap() {
 #if defined(__x86_64__)
 static void __attribute__((naked,optimize("O0")))
 getframe(void ***bp, void  ***ip) {
+#ifndef __clang__
     (void)ip;
     (void)bp;
+#endif
     asm( "mov (%rsp), %rax;"
          "mov %rax, (%rsi);"
          "mov %rbp, (%rdi);"

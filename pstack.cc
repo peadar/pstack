@@ -383,7 +383,7 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
     if (optind == argc && btLogs.empty())
         return usage(std::cerr, argv[0], flags);
 
-    auto doStack = [=, &options] (Procman::Process &proc) {
+    auto doStack = [=] (Procman::Process &proc) {
         while (!interrupted) {
 #if defined(WITH_PYTHON)
             if (doPython || printAllStacks) {
