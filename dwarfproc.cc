@@ -449,12 +449,12 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     switch (dcf.cfaValue.type) {
         case SAME:
         case UNDEF:
+        case ARCH:
             cfa = Elf::getReg(regs, dcf.cfaReg);
             break;
         case VAL_OFFSET:
         case VAL_EXPRESSION:
         case REG:
-        case ARCH:
             abort();
             break;
 
@@ -475,16 +475,19 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     }
     auto rarInfo = dcf.registers.find(cie->rar);
 
-#ifdef CFA_RESTORE_REGNO
-    // "The CFA is defined to be the stack pointer in the calling frame."
-    // This could get updated if there's a rule for CFA_RESTORE_REGNO, but
-    // that's the stack pointer, and it's unlikely there will be an encoding for this
-    Elf::setReg(out, CFA_RESTORE_REGNO, cfa);
-#endif
     for (auto &entry : dcf.registers) {
         const auto &unwind = entry.second;
         const int regno = entry.first;
         switch (unwind.type) {
+            case ARCH:
+#ifdef CFA_RESTORE_REGNO
+                // "The CFA is defined to be the stack pointer in the calling frame."
+                if (regno == CFA_RESTORE_REGNO)
+                   Elf::setReg(out, regno, cfa);
+                else
+                   Elf::setReg(out, regno, Elf::getReg(regs, regno));
+                break;
+#endif
             case UNDEF:
             case SAME:
                 Elf::setReg(out, regno, Elf::getReg(regs, regno));
@@ -512,7 +515,6 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
                 break;
             }
             default:
-            case ARCH:
                 break;
         }
     }
