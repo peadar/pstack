@@ -576,8 +576,8 @@ operator << (std::ostream &os, const ArgPrint &ap)
                         addr = fbstack.eval(ap.p, attr, &ap.frame, location.elfReloc());
                         os << "=";
                         try {
-                           if (fbstack.isReg)
-                              os << ProcPtr(ap.p, type, addr) << "{r" << fbstack.inReg << "}";
+                           if (fbstack.isValue)
+                              os << ProcPtr(ap.p, type, addr) << "{r" << fbstack.inReg << "}"; // note the value may be in *multiple* registers.
                            else
                               os << RemoteValue(ap.p, addr, type);
                         }

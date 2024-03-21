@@ -4,6 +4,7 @@
 #include "libpstack/global.h"
 #include "libpstack/dwarf_reader.h"
 #include <stack>
+#include <unistd.h>
 
 extern std::ostream & operator << (std::ostream &os, const pstack::Dwarf::DIE &);
 
@@ -62,20 +63,19 @@ StackFrame::scopeIP(Process &proc) const
     return {proc, raw - 1};
 }
 
-void
-StackFrame::getFrameBase(Process &p, intmax_t offset, ExpressionStack *stack) const
+uintptr_t
+StackFrame::getFrameBase(Process &p) const
 {
     ProcessLocation location = scopeIP(p);
     auto f = location.die();
     if (f) {
         auto base = f.attribute(Dwarf::DW_AT_frame_base);
         if (base.valid()) {
-            stack->push(stack->eval(p, base, this, location.elfReloc()) + offset);
-            stack->isReg = false;
-            return;
+            ExpressionStack stack;
+            return stack.eval(p, base, this, location.elfReloc());
         }
     }
-    stack->push(0);
+    return 0;
 }
 
 enum DW_LLE : uint8_t {
@@ -99,7 +99,7 @@ operator <<( std::ostream &os, DW_LLE lle) {
 /*
  * Evaluate an expression specified by an exprloc, or as inferred by a location list
  */
-Elf::Addr
+uintmax_t
 ExpressionStack::eval(Process &proc, const Dwarf::DIE::Attribute &attr,
                       const StackFrame *frame, Elf::Addr reloc)
 {
@@ -200,16 +200,17 @@ ExpressionStack::eval(Process &proc, const Dwarf::DIE::Attribute &attr,
     }
 }
 
-Elf::Addr
+uintmax_t
 ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *frame, Elf::Addr reloc)
 {
     using namespace Dwarf;
-    isReg = false;
+    int piece = 0;
+    isValue = false;
     while (!r.empty()) {
         auto op = ExpressionOp(r.getu8());
         switch (op) {
             case DW_OP_deref: {
-                intmax_t addr = poptop();
+                uintmax_t addr = poptop();
                 Elf::Addr value;
                 proc.io->readObj(addr, &value);
                 push(intptr_t(value));
@@ -242,15 +243,15 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
             }
 
             case DW_OP_minus: {
-                Elf::Addr tos = poptop();
-                Elf::Addr second = poptop();
+                auto tos = poptop();
+                auto second = poptop();
                 push(second - tos);
                 break;
             }
 
             case DW_OP_plus: {
-                Elf::Addr tos = poptop();
-                Elf::Addr second = poptop();
+                auto tos = poptop();
+                auto second = poptop();
                 push(second + tos);
                 break;
             }
@@ -263,7 +264,7 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
             case DW_OP_breg20: case DW_OP_breg21: case DW_OP_breg22: case DW_OP_breg23:
             case DW_OP_breg24: case DW_OP_breg25: case DW_OP_breg26: case DW_OP_breg27:
             case DW_OP_breg28: case DW_OP_breg29: case DW_OP_breg30: case DW_OP_breg31: {
-                Elf::Off offset = r.getsleb128();
+                auto offset = r.getsleb128();
                 push(Elf::getReg(frame->regs, op - DW_OP_breg0) + offset);
                 break;
             }
@@ -279,71 +280,71 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                 break;
 
             case DW_OP_and: {
-                Elf::Addr lhs = poptop();
-                Elf::Addr rhs = poptop();
+                auto lhs = poptop();
+                auto rhs = poptop();
                 push(lhs & rhs);
                 break;
             }
 
             case DW_OP_or: {
-                Elf::Addr lhs = poptop();
-                Elf::Addr rhs = poptop();
+                auto lhs = poptop();
+                auto rhs = poptop();
                 push(lhs | rhs);
                 break;
             }
 
             case DW_OP_le: {
-                Elf::Addr rhs = poptop();
-                Elf::Addr lhs = poptop();
+                auto rhs = poptop();
+                auto lhs = poptop();
                 push(value_type(lhs <= rhs));
                 break;
             }
 
             case DW_OP_ge: {
-                Elf::Addr rhs = poptop();
-                Elf::Addr lhs = poptop();
+                auto rhs = poptop();
+                auto lhs = poptop();
                 push(value_type(lhs >= rhs));
                 break;
             }
 
             case DW_OP_eq: {
-                Elf::Addr rhs = poptop();
-                Elf::Addr lhs = poptop();
+                auto rhs = poptop();
+                auto lhs = poptop();
                 push(value_type(lhs == rhs));
                 break;
             }
 
             case DW_OP_lt: {
-                Elf::Addr rhs = poptop();
-                Elf::Addr lhs = poptop();
+                auto rhs = poptop();
+                auto lhs = poptop();
                 push(value_type(lhs < rhs));
                 break;
             }
 
             case DW_OP_gt: {
-                Elf::Addr rhs = poptop();
-                Elf::Addr lhs = poptop();
+                auto rhs = poptop();
+                auto lhs = poptop();
                 push(value_type(lhs > rhs));
                 break;
             }
 
             case DW_OP_ne: {
-                Elf::Addr rhs = poptop();
-                Elf::Addr lhs = poptop();
+                auto rhs = poptop();
+                auto lhs = poptop();
                 push(value_type(lhs != rhs));
                 break;
             }
 
             case DW_OP_shl: {
-                Elf::Addr rhs = poptop();
-                Elf::Addr lhs = poptop();
+                auto rhs = poptop();
+                auto lhs = poptop();
                 push(lhs << rhs);
                 break;
             }
 
             case DW_OP_shr: {
-                Elf::Addr rhs = poptop();
-                Elf::Addr lhs = poptop();
+                auto rhs = poptop();
+                auto lhs = poptop();
                 push(lhs >> rhs);
                 break;
             }
@@ -357,7 +358,7 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                break;
             case DW_OP_fbreg:
                // Yuk - find DW_AT_frame_base, and offset from that.
-               frame->getFrameBase(proc, r.getsleb128(), this);
+               push(frame->getFrameBase(proc) + r.getsleb128());
                break;
 
             case DW_OP_reg0: case DW_OP_reg1: case DW_OP_reg2: case DW_OP_reg3:
@@ -368,7 +369,7 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
             case DW_OP_reg20: case DW_OP_reg21: case DW_OP_reg22: case DW_OP_reg23:
             case DW_OP_reg24: case DW_OP_reg25: case DW_OP_reg26: case DW_OP_reg27:
             case DW_OP_reg28: case DW_OP_reg29: case DW_OP_reg30: case DW_OP_reg31:
-                isReg = true;
+                isValue = true;
                 inReg = op - DW_OP_reg0;
                 push(Elf::getReg(frame->regs, op - DW_OP_reg0));
                 break;
@@ -384,10 +385,27 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                 break;
             }
 
+            case DW_OP_piece: {
+                getppid();
+                auto bytes = r.getuleb128();
+                auto value = poptop();
+                uintmax_t mask = bytes < sizeof mask ? std::numeric_limits<uintmax_t>::max() << 8 * bytes : 0;
+                value &= ~mask;
+                if (piece++ != 0) {
+                   // This is not the first piece - pop the existing piece off the top of the stack, and fold this in.
+                   auto existing = poptop();
+                   existing <<= (8 * bytes);
+                   value |= existing;
+                }
+                push(value);
+                break;
+                              }
+
             case DW_OP_stack_value:
                 break; // XXX: the returned value is not a location, but the underlying value itself.
             case DW_OP_GNU_parameter_ref:
                 {
+                  std::clog << "can't handle DW_OP_GNU_parameter_ref: ";
                   auto loc = frame->scopeIP(proc);
                   auto unit = loc.die().getUnit();
                   auto off = r.getuint(4);
@@ -398,6 +416,8 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                      auto typeDie = DIE(attr);
                      std::clog << typeDie << "\n";
                   }
+                  std::clog << "\n";
+                  return -1;
                 }
                 // FALLTHROUGH
 

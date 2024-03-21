@@ -37,14 +37,14 @@ namespace pstack::Procman {
 class Process;
 
 class StackFrame;
-class ExpressionStack : public std::stack<Elf::Addr> {
+class ExpressionStack : public std::stack<uintmax_t> {
 public:
-    bool isReg;
+    bool isValue;
     int inReg;
-    ExpressionStack(): isReg(false) {}
-    Elf::Addr poptop() { Elf::Addr tos = top(); pop(); return tos; }
-    Elf::Addr eval(Process &, Dwarf::DWARFReader &r, const StackFrame*, Elf::Addr);
-    Elf::Addr eval(Process &, const Dwarf::DIE::Attribute &, const StackFrame*, Elf::Addr);
+    ExpressionStack(): isValue(false) {}
+    uintmax_t poptop() { auto tos = top(); pop(); return tos; }
+    uintmax_t eval(Process &, Dwarf::DWARFReader &r, const StackFrame*, Elf::Addr);
+    uintmax_t eval(Process &, const Dwarf::DIE::Attribute &, const StackFrame*, Elf::Addr);
 };
 
 // this works for i386 and x86_64 - might need to change for other archs.
@@ -154,7 +154,7 @@ public:
     std::optional<Elf::CoreRegisters> unwind(Process &);
     void setCoreRegs(const Elf::CoreRegisters &);
     void getCoreRegs(Elf::CoreRegisters &) const;
-    void getFrameBase(Process &, intmax_t, ExpressionStack *) const;
+    uintptr_t getFrameBase(Process &) const;
 };
 
 // Descriptive data useful for formatting frame content.
