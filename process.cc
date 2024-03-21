@@ -457,6 +457,8 @@ operator << (std::ostream &os, const RemoteValue &rv)
                int16_t *int16;
                int32_t *int32;
                int64_t *int64;
+               float *float_;
+               double *double_;
                void **voidp;
                char *cp;
             } u;
@@ -494,6 +496,8 @@ operator << (std::ostream &os, const RemoteValue &rv)
                         case sizeof (int64_t):
                             os << *u.int64;
                             break;
+                        default:
+                            goto unknown;
                     }
                     break;
 
@@ -513,12 +517,24 @@ operator << (std::ostream &os, const RemoteValue &rv)
                             os << *u.int64;
                             break;
                         default:
-                            abort();
+                            goto unknown;
+                    }
+                    break;
+                case DW_ATE_float:
+                    switch (size) {
+                       case sizeof(double):
+                          os << *u.double_;
+                          break;
+                       case sizeof(float):
+                          os << *u.float_;
+                          break;
                     }
                     break;
 
+                unknown:
                 default:
-                    abort();
+                    os << "<unknown value type>";
+                    break;
             }
             break;
         }
