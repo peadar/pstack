@@ -11,6 +11,7 @@
 
 #include <ucontext.h>
 #include <dlfcn.h>
+#include <syscall.h> // gettid is still relatively new - use syscall instead.
 
 namespace pstack::Procman {
 SelfProcess::SelfProcess(const Elf::Object::sptr &ex, const PstackOptions &options, Dwarf::ImageCache &imageCache)
@@ -28,7 +29,7 @@ SelfProcess::getAUXV() const
 
 void
 SelfProcess::listLWPs(std::function<void(lwpid_t)> cb) {
-   cb(gettid());
+   cb(syscall(SYS_gettid));
 }
 
 bool
