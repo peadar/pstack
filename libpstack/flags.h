@@ -43,26 +43,31 @@ class Flags {
         const char *metavar;
         Cb callback;
     };
-    std::map<char, Data> data; // per-flag data, indexed by short-form option.
+    std::map<int, Data> data; // per-flag data, indexed by short-form option.
     std::string shortOptions; // String for short-form options, calculated from longOptions + data.
 
+    // next "val" to use for long a long option with no corresponding short
+    // option. (Otherwise, short option is 'val'
+    int longVal = 0;
+
 public:
+    static constexpr int LONGONLY = 0;
     /**
      * Add a flag to the set of parsed flags.
      * name: the long-form name
-     * flag: the short-form, single character version
+     * flag: the short-form, single character version. If there is no short-form, use LONGONLY.
      * metavar: if non-null, indicates this flag takes an argument, and provides
      *          a textual description of that argument in the help output.
      * help: descriptive text describing option
      * cb: callback invoked when the argument is encountered.
      */
-    Flags & add(const char *name, char flag, const char *metavar, const char *help, Cb cb);
+    Flags & add(const char *name, int flag, const char *metavar, const char *help, Cb cb);
 
     /**
      * Add a flag to the set of parsed flags - shorter helper for flags that
      * take no arguments.
      */
-    Flags & add(const char *name, char flag, const char *help, VCb cb) {
+    Flags & add(const char *name, int flag, const char *help, VCb cb) {
         return add(name, flag, nullptr, help, [cb](const char *) { cb(); });
     }
 

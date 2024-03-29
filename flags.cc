@@ -3,8 +3,10 @@
 
 namespace pstack {
 Flags &
-Flags::add(const char *name, char flag, const char *metavar, const char *help, Cb cb)
+Flags::add(const char *name, int flag, const char *metavar, const char *help, Cb cb)
 {
+    if (flag == LONGONLY)
+       flag = --longVal;
     longOptions.push_back({name, metavar != nullptr, nullptr, int(flag)});
     assert(data.find(flag) == data.end());
     auto &datum = data[flag];
@@ -19,9 +21,11 @@ Flags::done()
 {
     shortOptions = "";
     for (auto &opt : longOptions) {
-        shortOptions += char(opt.val);
-        if (opt.has_arg)
-            shortOptions += ':';
+        if (opt.val != '\0') {
+           shortOptions += char(opt.val);
+           if (opt.has_arg)
+               shortOptions += ':';
+        }
     }
     longOptions.push_back({0, false, nullptr, 0});
     return *this;
@@ -35,7 +39,10 @@ Flags::dump(std::ostream &os) const
         if (opt.name == 0)
             continue;
         const auto &datum = data.at(opt.val);
-        os << "    [-" << char(opt.val) << "|--" << opt.name;
+        os << "    [";
+        if (opt.val > 0)
+           os << "-" << char(opt.val) << "|";
+        os << "--" << opt.name;
         if (opt.has_arg)
             os << " <" << datum.metavar << ">";
         os << "]\n        " << datum.helptext << "\n";

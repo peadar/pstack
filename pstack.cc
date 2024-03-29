@@ -27,6 +27,7 @@ namespace {
 using namespace pstack;
 
 bool doJson = false;
+bool freeres = 0; // free things on exit (for debugging/valgrind/heapcheck)
 volatile bool interrupted = false;
 
 void
@@ -356,6 +357,8 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
           Flags::set<std::string>(subprocessCmd))
     .add("no-die-names", 'Y', "do not use DIE names for functions",
           Flags::setf(options.nodienames))
+    .add("freeres", Flags::LONGONLY, "free all memory at exit (useful for valgrind/heapcheck)",
+          Flags::setf(freeres))
     .add("output",
           'o',
           "output file",
@@ -436,7 +439,11 @@ main(int argc, char **argv)
         sa.sa_flags = SA_RESETHAND;
         sigaction(SIGINT, &sa, nullptr);
         emain(argc, argv, imageCache);
-        exit(0);
+
+        // Normally, exit without free'ing imagecache - don't waste effort
+        // moving pointers around in a terminating process
+        if (!freeres)
+           exit(0);
     }
     catch (std::exception &ex) {
         std::clog << "error: " << ex.what() << std::endl;
