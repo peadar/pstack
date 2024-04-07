@@ -48,7 +48,7 @@ class Flags {
 
     // next "val" to use for long a long option with no corresponding short
     // option. (Otherwise, short option is 'val'
-    int longVal = 0;
+    int longVal = -2;
 
 public:
     static constexpr int LONGONLY = 0;
