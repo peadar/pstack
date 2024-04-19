@@ -3,7 +3,7 @@
 #include <elf.h>
 #include <memory.h>
 extern "C" {
-// Some thread_db headers are not safe to include unwrapped in extern "C"
+    // Some thread_db headers are not safe to include unwrapped in extern "C"
 #include <thread_db.h>
 }
 
@@ -22,14 +22,14 @@ extern "C" {
 struct ps_prochandle {};
 
 struct PstackOptions {
-   bool nosrc = false;
-   bool doargs = false;
-   bool dolocals = false;
-   bool nothreaddb = false;
-   bool nodienames = false; // don't use names from DWARF dies in backtraces.
-   int maxdepth = std::numeric_limits<int>::max();
-   int maxframes = 20;
-   std::ostream *output = &std::cout;
+    bool nosrc = false;
+    bool doargs = false;
+    bool dolocals = false;
+    bool nothreaddb = false;
+    bool nodienames = false; // don't use names from DWARF dies in backtraces.
+    int maxdepth = std::numeric_limits<int>::max();
+    int maxframes = 20;
+    std::ostream *output = &std::cout;
 };
 
 namespace pstack::Procman {
@@ -54,29 +54,29 @@ typedef unsigned long cpureg_t;
  * The unwind mechanism tells us how this stack frame was created
  */
 enum class UnwindMechanism {
-   // this frame was created from machine state - it's the "top of stack".
-   MACHINEREGS,
+    // this frame was created from machine state - it's the "top of stack".
+    MACHINEREGS,
 
-   // created by using DWARF unwinding information from previous.
-   DWARF,
+    // created by using DWARF unwinding information from previous.
+    DWARF,
 
-   // frame pointer register in previous frame.
-   FRAMEPOINTER,
+    // frame pointer register in previous frame.
+    FRAMEPOINTER,
 
-   // attempt was made to recover stack state by assuming the previous frame
-   // was target of a call to a bad address
-   BAD_IP_RECOVERY,
+    // attempt was made to recover stack state by assuming the previous frame
+    // was target of a call to a bad address
+    BAD_IP_RECOVERY,
 
-   // The previous frame was a signal "trampoline" - On receipt of a signal,
-   // the kernel saved the processor state on the stack, and arranged for the
-   // previous frame to be invoked. Unwinding requires decoding the register
-   // state stored by the kernel on the stack.
-   TRAMPOLINE,
+    // The previous frame was a signal "trampoline" - On receipt of a signal,
+    // the kernel saved the processor state on the stack, and arranged for the
+    // previous frame to be invoked. Unwinding requires decoding the register
+    // state stored by the kernel on the stack.
+    TRAMPOLINE,
 
-   // The stack frame was built up by scanning a log file.
-   LOGFILE,
+    // The stack frame was built up by scanning a log file.
+    LOGFILE,
 
-   INVALID,
+    INVALID,
 };
 
 // Information for a specific location in memory
@@ -187,40 +187,40 @@ struct DevNode {
     unsigned long inode = -1;
     std::string path;
     bool operator == (const DevNode &rhs) const {
-       return major == rhs.major && minor == rhs.minor && inode == rhs.inode;
+        return major == rhs.major && minor == rhs.minor && inode == rhs.inode;
     }
 };
 
 struct AddressRange {
-   Elf::Addr start;
-   Elf::Addr end;
-   Elf::Addr fileEnd;
-   off_t offset;
-   DevNode backing;
+    Elf::Addr start;
+    Elf::Addr end;
+    Elf::Addr fileEnd;
+    off_t offset;
+    DevNode backing;
 
-   enum class Flags { read,write,exec,priv,count, shared };
-   std::set<Flags> permissions;
+    enum class Flags { read,write,exec,priv,count, shared };
+    std::set<Flags> permissions;
 };
 
 // An ELF object mapped at an address. We don't actually create the Elf::Object
 // until the first time you call "object" here. This avoids needless I/O, esp.
 // on resource constrained systems.
 struct MappedObject {
-   std::string name_;
-   Elf::Object::sptr objptr_;
+    std::string name_;
+    Elf::Object::sptr objptr_;
 public:
-   const std::string &name() { return name_; }
-   bool operator < (const MappedObject &rhs) const {
-       return name_ < rhs.name_; // for comparing pairs.
-   }
-   Elf::Object::sptr object(Dwarf::ImageCache &cache) {
-      if (objptr_ == nullptr) {
-         objptr_ = cache.getImageForName(name_);
-      }
-      return objptr_;
-   }
-   MappedObject(std::string_view name, const Elf::Object::sptr &objptr = {})
-       : name_{name}, objptr_{objptr} {}
+    const std::string &name() { return name_; }
+    bool operator < (const MappedObject &rhs) const {
+        return name_ < rhs.name_; // for comparing pairs.
+    }
+    Elf::Object::sptr object(Dwarf::ImageCache &cache) {
+        if (objptr_ == nullptr) {
+            objptr_ = cache.getImageForName(name_);
+        }
+        return objptr_;
+    }
+    MappedObject(std::string_view name, const Elf::Object::sptr &objptr = {})
+        : name_{name}, objptr_{objptr} {}
 };
 
 class Process : public ps_prochandle {
@@ -254,7 +254,7 @@ public:
     virtual size_t getRegs(lwpid_t pid, int code, size_t size, void *data) = 0;
 
     template <typename T, int code> size_t getRegset(lwpid_t pid, T &reg) {
-       return getRegs(pid, code, sizeof (T), reinterpret_cast<void *>( &reg ) );
+        return getRegs(pid, code, sizeof (T), reinterpret_cast<void *>( &reg ) );
     }
 
 
@@ -275,13 +275,13 @@ public:
 
     // find address of named symbol in the process.
     Elf::Addr resolveSymbol(const char *symbolName, bool includeDebug,
-          std::function<bool(std::string_view)> matcher = [](std::string_view) { return true; });
+            std::function<bool(std::string_view)> matcher = [](std::string_view) { return true; });
 
     // find symbol data of named symbol in the process.
     // like resolveSymbol, but return the library and that library's load address as well as the address in the process.
     std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Sym>
-    resolveSymbolDetail(const char *name, bool includeDebug,
-        std::function<bool(std::string_view)> match = [](std::string_view) { return true; });
+        resolveSymbolDetail(const char *name, bool includeDebug,
+                std::function<bool(std::string_view)> match = [](std::string_view) { return true; });
     virtual std::list<ThreadStack> getStacks();
     virtual ~Process();
     void load();
@@ -290,11 +290,11 @@ public:
     static std::shared_ptr<Process> load(Elf::Object::sptr exe, std::string id, const PstackOptions &options, Dwarf::ImageCache &cache);
 };
 
-template <typename T> int
+    template <typename T> int
 threadListCb(const td_thrhandle_t *thr, void *v)
 { T &callback = *(T *)v; callback(thr); return 0; }
 
-template <typename T> void
+    template <typename T> void
 Process::listThreads(const T &callback)
 {
     td_ta_thr_iter(agent,
@@ -316,9 +316,9 @@ class LiveProcess final : public Process {
     pid_t pid;
 
     struct Lwp {
-       int stopCount = 0;
-       int ptraceErr = 0; // 0 if ptrace worked, otherwise, errno.
-       timeval stoppedAt { 0, 0 };
+        int stopCount = 0;
+        int ptraceErr = 0; // 0 if ptrace worked, otherwise, errno.
+        timeval stoppedAt { 0, 0 };
     };
     std::map<pid_t, Lwp> stoppedLWPs;
 public:
@@ -440,7 +440,7 @@ public:
         size_t nameoff = 0;
         std::pair<std::string, FileEntry> cur;
         ReaderArray<FileEntry>::iterator entriesIterator;
-    public:
+   public:
         iterator(const FileEntries &entries, ReaderArray<FileEntry>::iterator start);
         iterator &operator++();
         std::pair<std::string, FileEntry> operator *() { return cur; }
@@ -465,8 +465,8 @@ public:
 
 
 struct WaitStatus {
-   int status;
-   WaitStatus(int status) : status{status}{}
+    int status;
+    WaitStatus(int status) : status{status}{}
 };
 
 void gregset2core(Elf::CoreRegisters &core, const gregset_t greg);
