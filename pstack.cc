@@ -215,7 +215,6 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
     bool doPython = false;
     bool pythonModules = false;
 #endif
-    std::vector<std::string> btLogs;
     std::string execName;
     bool printAllStacks = false;
     int exitCode = -1; // used for options that exit immediately to signal exit.
@@ -339,13 +338,6 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
             "print local variables (just python for now)",
             Flags::setf(options.dolocals))
 #endif
-    .add("from-log",
-            'L',
-            "log-file",
-            "print stack trace given log file including instruction pointers",
-            [&](const char *log) {
-               btLogs.push_back(log);
-            })
     .add("executable",
           'e',
           "executable",
@@ -383,7 +375,7 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
         return 0;
     }
 
-    if (optind == argc && btLogs.empty())
+    if (optind == argc)
         return usage(std::cerr, argv[0], flags);
 
     auto doStack = [=] (Procman::Process &proc) {
@@ -406,23 +398,17 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
                 break;
         }
     };
-    if (!btLogs.empty()) {
-        Procman::LogProcess lp{exec, btLogs, options, imageCache};
-       lp.load();
-       doStack(lp);
-    } else {
-        for (int i = optind; i < argc; i++) {
-            try {
-                auto process = Procman::Process::load(exec, argv[i], options, imageCache); // this calls the load() instance member.
-                if (process == nullptr)
-                    exec = imageCache.getImageForName(argv[i]);
-                else
-                    doStack(*process);
-            } catch (const std::exception &e) {
-                std::cerr << "trace of " << argv[i] << " failed: " << e.what() << "\n";
-            }
-        }
-    }
+     for (int i = optind; i < argc; i++) {
+         try {
+             auto process = Procman::Process::load(exec, argv[i], options, imageCache); // this calls the load() instance member.
+             if (process == nullptr)
+                 exec = imageCache.getImageForName(argv[i]);
+             else
+                 doStack(*process);
+         } catch (const std::exception &e) {
+             std::cerr << "trace of " << argv[i] << " failed: " << e.what() << "\n";
+         }
+     }
     return 0;
 }
 }

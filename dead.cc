@@ -6,34 +6,44 @@
 #include <iostream>
 
 namespace pstack::Procman {
-CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
-        const PstackOptions &options, Dwarf::ImageCache &imageCache)
-    : Process(std::move(exec), std::make_shared<CoreReader>(this, core), options, imageCache)
-    , coreImage(std::move(core))
-{
 
-#ifdef NT_PRSTATUS
-    for (auto note : coreImage->notes()) {
-        if (note.name() == "CORE" && note.type() == NT_PRSTATUS) {
-            tasks.push_back( note.data()->readObj<prstatus_t>(0) );
-            prstatus_t &task = tasks.back();
-            if (verbose)
-               *debug << "task " << task.pr_pid << " current sig is " << task.pr_cursig << "\n";
-        }
-#endif
-    }
+CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
+      const PstackOptions &options, Dwarf::ImageCache &imageCache)
+   : Process(std::move(exec), std::make_shared<CoreReader>(this, core), options, imageCache)
+     , coreImage(std::move(core))
+{
+   for (auto note : coreImage->notes()) {
+      if (note.name() == "CORE") {
+         switch  (note.type() ) {
+            case NT_PRSTATUS: {
+               // for NT_PRSTATUS notes, mark the index of the current note in our
+               // vector as the start of the notes for that LWP. When looking
+               // for an LWP-related note, we start at the index for that LWPs
+               // NT_PRSTATUS, and consider it a failure if we reach another
+               // NT_PRSTATUS or the end of the list.
+               prstatus_t task = note.data()->readObj<prstatus_t>(0);
+               lwpToPrStatusIdx[task.pr_pid] = notes.size();
+               break;
+            }
+            case NT_PRPSINFO: {
+               note.data()->readObj(0, &prpsinfo); // hold on to a copy of this
+            }
+         }
+      }
+      notes.push_back( note );
+   }
 }
 
 void CoreProcess::listLWPs(std::function<void(lwpid_t)> cb) {
-   for (auto &task : tasks)
-      cb(task.pr_pid);
+   for (auto &task : lwpToPrStatusIdx)
+      cb(task.first);
 }
 
 Reader::csptr
 CoreProcess::getAUXV() const
 {
 #ifdef __linux__
-    for (auto note : coreImage->notes()) {
+    for (auto &note : notes) {
        if (note.name() == "CORE" && note.type() == NT_AUXV) {
            return note.data();
            break;
@@ -128,19 +138,32 @@ CoreReader::read(Off remoteAddr, size_t size, char *ptr) const
 
 CoreReader::CoreReader(Process *p_, Elf::Object::sptr core_) : p(p_), core(core_) { }
 
-bool
-CoreProcess::getRegs(lwpid_t pid, Elf::CoreRegisters *reg)
+size_t
+CoreProcess::getRegs(lwpid_t lwpid, int code, size_t size, void *data)
 {
-#ifdef NT_PRSTATUS
-   for (auto &task : tasks) {
-        static_assert(sizeof task.pr_reg == sizeof *reg);
-        if (task.pr_pid == pid) {
-            memcpy(reg, &task.pr_reg, sizeof(*reg));
-            return true;
-        }
+   auto idx = lwpToPrStatusIdx.find( lwpid );
+   if ( idx == lwpToPrStatusIdx.end() ) {
+      return 0;
    }
-#endif
-   return false;
+   for (size_t i = idx->second;;) {
+      if (notes[i].type() == code) {
+         if (code == NT_PRSTATUS) {
+            prstatus_t prstatus = notes[i].data()->readObj<prstatus_t>(0);
+            size = std::min(size, sizeof prstatus.pr_reg);
+            memcpy(data, &prstatus.pr_reg, size);
+         } else {
+            size = std::min(size, notes[i].data()->size());
+            notes[i].data()->read(0, size, (char *)data);
+         }
+         return size;
+      }
+      ++i;
+      if (i == notes.size() || ( notes[i].type() == NT_PRSTATUS && notes[i].name() == "CORE") ) {
+         // We're done if that's all the notes, or the next note is the start of a new LWP.
+         break;
+      }
+   }
+   return 0;
 }
 
 void
@@ -163,7 +186,7 @@ CoreProcess::stopProcess()
 pid_t
 CoreProcess::getPID() const
 {
-    return tasks.size() != 0 ? tasks[0].pr_pid : -1;
+    return prpsinfo.pr_pid;
 }
 
 FileEntries::iterator::iterator(const FileEntries &entries, ReaderArray<FileEntry>::iterator pos)

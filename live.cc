@@ -44,28 +44,14 @@ Reader::csptr LiveProcess::getAUXV() const {
     return std::make_shared<LiveReader>(pid, "auxv");
 }
 
-
-bool
-LiveProcess::getRegs(lwpid_t lwpid, Elf::CoreRegisters *reg)
-{
-#ifdef __FreeBSD__
-    int rc;
-    rc = ptrace(PT_GETREGS, lwpid, (caddr_t)reg, 0);
-    if (rc == -1) {
-        warn("failed to trace LWP %d", (int)lwpid);
-        return false;
-    }
-    return true;
-#endif
-#ifdef __linux__
-    stop(lwpid);
+size_t
+LiveProcess::getRegs(lwpid_t lwpid, int code, size_t sz, void *reg) {
+    StopLWP here( this, lwpid );
     iovec iov;
     iov.iov_base = reg;
-    iov.iov_len = sizeof *reg;
-    int rc = ptrace(PTRACE_GETREGSET, lwpid, NT_PRSTATUS, &iov);
-    resume(lwpid);
-    return rc == 0;
-#endif
+    iov.iov_len = sz;
+    int rc = ptrace(PTRACE_GETREGSET, lwpid, code, &iov);
+    return rc == 0 ? iov.iov_len : 0;
 }
 
 void

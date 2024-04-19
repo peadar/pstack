@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.7)
 set(PSTACK_SOVERSION 2.5)
-set(PSTACK_VERSION 2.5.3)
+set(PSTACK_VERSION 2.5.4)
 project(pstack LANGUAGES C CXX VERSION "${PSTACK_VERSION}" )
 
 include (GNUInstallDirs)
@@ -132,7 +132,7 @@ add_library(dwelf ${LIBTYPE}
          )
 
 add_library(procman ${LIBTYPE} dead.cc self.cc live.cc process.cc proc_service.cc
-    logproc.cc dwarfproc.cc procdump.cc ${stubsrc} ${pysrc})
+    dwarfproc.cc procdump.cc ${stubsrc} ${pysrc})
 
 add_executable(canal canal.cc)
 

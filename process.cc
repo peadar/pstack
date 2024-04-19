@@ -1112,7 +1112,7 @@ Process::getStacks() {
             threadStacks.push_back(ThreadStack());
             threadStacks.back().info.ti_lid = lwpid;
             Elf::CoreRegisters regs;
-            getRegs(lwpid,  &regs);
+            this->getRegset<Elf::CoreRegisters, NT_PRSTATUS>(lwpid,  regs);
             threadStacks.back().unwind(*this, regs);
         }
     });

@@ -251,7 +251,13 @@ public:
     void processAUXV(const Reader &);
     Reader::sptr io;
 
-    virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) = 0;
+    virtual size_t getRegs(lwpid_t pid, int code, size_t size, void *data) = 0;
+
+    template <typename T, int code> size_t getRegset(lwpid_t pid, T &reg) {
+       return getRegs(pid, code, sizeof (T), reinterpret_cast<void *>( &reg ) );
+    }
+
+
     void addElfObject(std::string_view, const Elf::Object::sptr &, Elf::Addr load);
     // Find the the object (and its load address) and segment containing a given address
     std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *> findSegment(Elf::Addr addr);
@@ -321,7 +327,7 @@ public:
     ~LiveProcess();
 
     void listLWPs(std::function<void(lwpid_t)>) override;
-    virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
+    virtual size_t getRegs(lwpid_t pid, int code, size_t sz, void *reg) override;
     virtual void stop(pid_t) override;
     virtual void resume(pid_t) override;
     void stopProcess() override;
@@ -340,7 +346,7 @@ public:
     // attach to existing process.
     SelfProcess(const Elf::Object::sptr &, const PstackOptions &, Dwarf::ImageCache &);
     void listLWPs(std::function<void(lwpid_t)>) override;
-    virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
+    virtual size_t getRegs(lwpid_t pid, int code, size_t sz, void *reg) override;
     virtual void stop(pid_t) override;
     virtual void resume(pid_t) override;
     void stopProcess() override;
@@ -352,7 +358,6 @@ protected:
     bool loadSharedObjectsFromFileNote() override;
     std::vector<AddressRange> addressSpace() const override;
 };
-
 
 class CoreProcess;
 class CoreReader final : public Reader {
@@ -368,10 +373,13 @@ public:
 };
 
 class CoreProcess final : public Process {
+    std::vector<Elf::NoteDesc> notes;
+    std::map<lwpid_t, size_t> lwpToPrStatusIdx;
+    prpsinfo_t prpsinfo;
 public:
     Elf::Object::sptr coreImage;
     CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core, const PstackOptions &, Dwarf::ImageCache &);
-    virtual bool getRegs(lwpid_t pid, Elf::CoreRegisters *reg) override;
+    virtual size_t getRegs(lwpid_t pid, int code, size_t sz, void *regs) override;
     virtual void stop(lwpid_t) override;
     virtual void resume(lwpid_t) override;
     void stopProcess() override;
@@ -380,7 +388,6 @@ public:
     virtual pid_t getPID() const override;
     void listLWPs(std::function<void(lwpid_t)>) override;
 protected:
-    std::vector<prstatus_t> tasks;
     bool loadSharedObjectsFromFileNote() override;
     std::vector<AddressRange> addressSpace() const override;
 };
@@ -407,23 +414,6 @@ public:
     StopLWP(Process *proc_, lwpid_t lwp_) : proc(proc_), lwp(lwp_) { proc->stop(lwp); }
     ~StopLWP() { proc->resume(lwp); }
 };
-class LogProcess final : public Process {
-   const std::vector<std::string> &logs;
-   std::list<ThreadStack> stacks;
-public:
-   LogProcess(Elf::Object::sptr exec, const std::vector<std::string> &logs, const PstackOptions &, Dwarf::ImageCache &);
-   Reader::csptr getAUXV() const;
-   bool getRegs(lwpid_t, Elf::CoreRegisters *);
-   void resume(pid_t);
-   void resumeProcess();
-   void stop(lwpid_t);
-   void stopProcess();
-   std::vector<AddressRange> addressSpace() const;
-   pid_t getPID() const;
-   bool loadSharedObjectsFromFileNote();
-   virtual std::list<ThreadStack> getStacks();
-};
-
 
 // Types for the NT_FILE note.
 struct FileNoteHeader {

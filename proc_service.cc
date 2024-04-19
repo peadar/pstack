@@ -171,7 +171,7 @@ ps_err_e ps_lgetfpregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */
 ps_err_e ps_lgetregs(struct ps_prochandle *ph, lwpid_t pid, prgregset_t gregset)
 {
     auto p = static_cast<Process *>(ph);
-    return p->getRegs(pid, (Elf::CoreRegisters *)gregset) ? PS_OK : PS_ERR;
+    return p->getRegset<Elf::CoreRegisters, NT_PRSTATUS>(pid, *(user_regs_struct *)gregset) ? PS_OK : PS_ERR;
 }
 
 ps_err_e ps_lsetfpregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */,

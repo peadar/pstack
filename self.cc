@@ -32,20 +32,28 @@ SelfProcess::listLWPs(std::function<void(lwpid_t)> cb) {
    cb(syscall(SYS_gettid));
 }
 
-bool
-SelfProcess::getRegs(lwpid_t, Elf::CoreRegisters *reg) // for now, we just support the current thread.
+size_t
+SelfProcess::getRegs(lwpid_t, int code, size_t size, void *regs) // for now, we just support the current thread.
 {
     ucontext_t context;
     assert(pid == getpid());
     getcontext(&context);
 
+    switch (code) {
+       case NT_PRSTATUS:
 #ifdef __aarch64__
-    assert(sizeof reg->regs == sizeof context.uc_mcontext.regs);
-    memcpy(reg->regs, &context.uc_mcontext.regs, sizeof  reg->regs);
+          assert(size == sizeof context.uc_mcontext.regs);
+          memcpy(regs, &context.uc_mcontext.regs, size);
 #else
-    gregset2core(*reg, context.uc_mcontext.gregs);
+          assert(size == sizeof (user_regs_struct));
+          gregset2core(*reinterpret_cast<user_regs_struct *>(regs), context.uc_mcontext.gregs);
 #endif
-    return true;
+          return size;
+       case NT_FPREGSET:
+          memcpy(regs, context.uc_mcontext.fpregs, size);
+          return size;
+    }
+    return 0;
 }
 
 void
