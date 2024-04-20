@@ -290,11 +290,11 @@ public:
     static std::shared_ptr<Process> load(Elf::Object::sptr exe, std::string id, const PstackOptions &options, Dwarf::ImageCache &cache);
 };
 
-    template <typename T> int
+template <typename T> int
 threadListCb(const td_thrhandle_t *thr, void *v)
 { T &callback = *(T *)v; callback(thr); return 0; }
 
-    template <typename T> void
+template <typename T> void
 Process::listThreads(const T &callback)
 {
     td_ta_thr_iter(agent,

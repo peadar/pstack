@@ -4,6 +4,7 @@
 #include <sys/procfs.h>
 #include <iomanip>
 #include <set>
+#include <string.h>
 
 #if ELF_BITS == 64
 #define ELF_R_SYM(a) ELF64_R_SYM(a)
@@ -539,12 +540,14 @@ operator << (std::ostream &os, const JSON<Elf::NoteDesc> &note)
     // need to switch on type and name for notes.
     auto data = note.object.data();
     if (note.object.name() == "CORE") {
-        prstatus_t prstatus{};
         switch (note.object.type()) {
             case NT_PRSTATUS:
-                data->readObj(0, &prstatus);
-                writer.field("prstatus", prstatus);
+                writer.field("prstatus", data->readObj<prstatus_t>(0));
                 break;
+            case NT_PRPSINFO:
+                writer.field("prpsinfo", data->readObj<prpsinfo_t>(0) );
+                break;
+
             case NT_AUXV:
                 writer.field("auxv", ReaderArray<Elf::auxv_t>(*data));
                 break;
@@ -961,4 +964,29 @@ operator <<(std::ostream &os, const JSON<prstatus_t> &jo)
         .field("pr_cstime", prstatus.pr_cstime)
         .field("pr_reg", intptr_t(prstatus.pr_reg))
         .field("pr_fpvalid", prstatus.pr_fpvalid);
+}
+
+std::ostream &
+operator <<(std::ostream &os, const JSON<prpsinfo_t> &jo)
+{
+    auto &pr = jo.object;
+
+    std::string fname = { pr.pr_fname, strnlen( pr.pr_fname, sizeof pr.pr_fname ) };
+    std::string args = { pr.pr_psargs, strnlen( pr.pr_psargs, sizeof pr.pr_psargs ) };
+
+    return JObject(os)
+        .field("pr_state", int( pr.pr_state ) )
+        .field("pr_sname", std::string(&pr.pr_sname, 1))
+        .field("pr_zomb", bool(pr.pr_zomb))
+        .field("pr_nice", int (pr.pr_nice))
+        .field("pr_flag", int(pr.pr_flag))
+        .field("pr_uid", pr.pr_uid )
+        .field("pr_gid", pr.pr_gid )
+        .field("pr_pid", pr.pr_pid )
+        .field("pr_ppid", pr.pr_ppid )
+        .field("pr_pgrp", pr.pr_pgrp )
+        .field("pr_sid", pr.pr_sid )
+        .field("pr_fname", fname )
+        .field("pr_args", args )
+              ;
 }
