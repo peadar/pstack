@@ -49,9 +49,11 @@ SelfProcess::getRegs(lwpid_t, int code, size_t size, void *regs) // for now, we 
           gregset2core(*reinterpret_cast<user_regs_struct *>(regs), context.uc_mcontext.gregs);
 #endif
           return size;
+#ifndef __aarch64__ // TODO
        case NT_FPREGSET:
           memcpy(regs, context.uc_mcontext.fpregs, size);
           return size;
+#endif
     }
     return 0;
 }
