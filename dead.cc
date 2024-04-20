@@ -152,7 +152,7 @@ CoreProcess::getRegs(lwpid_t lwpid, int code, size_t size, void *data)
             size = std::min(size, sizeof prstatus.pr_reg);
             memcpy(data, &prstatus.pr_reg, size);
          } else {
-            size = std::min(size, notes[i].data()->size());
+            size = std::min(size, size_t(notes[i].data()->size()));
             notes[i].data()->read(0, size, (char *)data);
          }
          return size;
