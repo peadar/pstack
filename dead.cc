@@ -204,7 +204,8 @@ struct NamedEntry {
 
 void
 FileEntries::iterator::fetch() {
-    cur = std::make_pair(entries.names->readString(nameoff), *entriesIterator);
+   if (entries.names)
+       cur = std::make_pair(entries.names->readString(nameoff), *entriesIterator);
 }
 
 FileEntries::iterator &FileEntries::iterator::operator++() {

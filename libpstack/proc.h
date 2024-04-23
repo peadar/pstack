@@ -453,11 +453,13 @@ public:
                 auto data = note.data();
                 header = data->readObj<FileNoteHeader>(0);
                 entries = data->view("FILE note entries", sizeof header, header.count * sizeof (FileEntry));
-                entriesArray = std::make_unique<ReaderArray<FileEntry>>(*entries);
                 names = data->view("FILE note names", sizeof header + header.count * sizeof (FileEntry));
                 break;
             }
         }
+        if (!entries)
+           entries = std::make_shared<NullReader>();
+        entriesArray = std::make_unique<ReaderArray<FileEntry>>(*entries);
     }
     iterator begin() const { return iterator(*this, entriesArray->begin()); }
     iterator end() const { return iterator(*this, entriesArray->end()); }
