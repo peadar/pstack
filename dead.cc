@@ -232,7 +232,14 @@ CoreProcess::addressSpace() const {
             if (ub->first >= hdr.p_vaddr && ub->second.second.end <= hdr.p_vaddr + hdr.p_memsz)
                 name = ub->second.first;
         }
-        rv.push_back({hdr.p_vaddr, hdr.p_vaddr + hdr.p_memsz, hdr.p_vaddr + hdr.p_filesz, 0, {0, 0, 0, name}, {}});
+        std::set<AddressRange::Flags> flags;
+        if (hdr.p_flags & PF_W)
+           flags.insert(AddressRange::Flags::write);
+        if (hdr.p_flags & PF_R)
+           flags.insert(AddressRange::Flags::read);
+        if (hdr.p_flags & PF_X)
+           flags.insert(AddressRange::Flags::exec);
+        rv.push_back({hdr.p_vaddr, hdr.p_vaddr + hdr.p_memsz, hdr.p_vaddr + hdr.p_filesz, 0, {0, 0, 0, name}, flags});
     }
     return rv;
 }
