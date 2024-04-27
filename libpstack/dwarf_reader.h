@@ -50,22 +50,20 @@ public:
         off += 1;
         return q;
     }
-    uintmax_t getuint(int len) {
+    uintmax_t getuint(size_t len) {
         uintmax_t rc = 0;
-        int i;
         uint8_t bytes[16];
         if (len > 16)
             throw Exception() << "can't deal with ints of size " << len;
         io->readObj(off, bytes, len);
         off += len;
         uint8_t *p = bytes + len;
-        for (i = 1; i <= len; i++)
+        for (size_t i = 1; i <= len; i++)
             rc = rc << 8 | p[-i];
         return rc;
     }
-    intmax_t getint(int len) {
+    intmax_t getint(size_t len) {
         intmax_t rc;
-        int i;
         uint8_t bytes[16];
         if (len > 16 || len < 1)
             throw Exception() << "can't deal with ints of size " << len;
@@ -73,7 +71,7 @@ public:
         off += len;
         uint8_t *p = bytes + len;
         rc = (p[-1] & 0x80) ? -1 : 0;
-        for (i = 1; i <= len; i++)
+        for (size_t i = 1; i <= len; i++)
             rc = rc << 8 | p[-i];
         return rc;
     }
@@ -91,8 +89,8 @@ public:
 
     std::string readFormString(const Info &, Unit &, Form f);
     void readForm(const Info &, Unit &, Form f);
-    uintmax_t readFormUnsigned(Unit &, Form f);
-    intmax_t readFormSigned(Unit &, Form f);
+    uintmax_t readFormUnsigned(Form f);
+    intmax_t readFormSigned(Form f);
 
     std::string getstring() {
         std::string s = io->readString(off);
@@ -108,7 +106,7 @@ public:
     bool empty() const {
        return off == end;
     }
-    Elf::Off getlength(size_t *dwarfLen); // sets "dwarfLen"
+    std::pair<Elf::Off, Elf::Off> getlength(); // sets "dwarfLen"
     void skip(Elf::Off amount) { off += amount; }
 };
 

@@ -4,12 +4,12 @@
 #include <stack>
 
 namespace pstack::Dwarf {
-intmax_t
-CFI::decodeAddress(DWARFReader &f, int encoding) const
+std::pair<intmax_t, bool>
+CFI::decodeAddress(DWARFReader &f, uint8_t encoding, Elf::Addr va) const
 {
     intmax_t base;
     Elf::Off offset = f.getOffset();
-    switch (encoding & 0xf) {
+    switch (encoding & 0xfU) {
     case DW_EH_PE_sdata2:
         base = f.getint(2);
         break;
@@ -38,25 +38,51 @@ CFI::decodeAddress(DWARFReader &f, int encoding) const
         base = f.getint(sizeof (Elf::Word));
         break;
     default:
+        __builtin_unreachable();
+    }
+
+    switch (encoding & 0xf0U & ~unsigned(DW_EH_PE_indirect)) {
+    case 0:
+        break;
+    case DW_EH_PE_pcrel: {
+        // relative to location of the base indicator itself. So, the offset
+        // inside the eh_frame section + the VA of the eh_frame section.
+        base += offset;
+
+        // If this is PC relative, then this unwind information must be in a
+        // mapped section, so it's the EH frame. Get the GNU_EH_FRAME segment,
+        // and vind its virtaddr.
+        if (va == std::numeric_limits<Elf::Addr>::max()) {
+            for (const auto &sect : dwarf->elf->getSegments( PT_GNU_EH_FRAME ) ) {
+                // the segment points to the eh_frame_hdr. Decode it
+                // https://refspecs.linuxfoundation.org/LSB_1.3.0/gLSB/gLSB/ehframehdr.html
+                DWARFReader ehFrameHdr( dwarf->elf->io->view( "eh_frame_hdr", sect.p_offset, sect.p_filesz ) );
+                /* auto version = */ ehFrameHdr.getu8();
+                auto ptr_encoding = ehFrameHdr.getu8();
+                /* auto fde_count_encoding = */ ehFrameHdr.getu8();
+                /* auto table_enc = */ ehFrameHdr.getu8();
+                auto [ ptr, indirect ] = decodeAddress( ehFrameHdr, ptr_encoding, sect.p_vaddr ); // yay recursion.0
+                if (indirect) {
+                    // XXX: this should not happen.
+                    std::clog << "warning: nested indirect address encoding\n";
+                }
+                va = ptr;
+            }
+        }
+        base += va;
+        break;
+    }
+    default:
         abort();
         break;
     }
-
-    switch (encoding & 0xf0) {
-    case 0:
-        break;
-    case DW_EH_PE_pcrel:
-        base += offset + sectionAddr;
-        break;
-    }
-    return base;
+    return { base, (encoding & DW_EH_PE_indirect ) != 0 };
 }
 
 Elf::Off
 CFI::decodeCIEFDEHdr(DWARFReader &r, enum FIType type, Elf::Off *cieOff)
 {
-    size_t addrLen;
-    Elf::Off length = r.getlength(&addrLen);
+    auto [ length, addrLen ] = r.getlength();
     if (length == 0)
         return 0;
     Elf::Off idoff = r.getOffset();
@@ -135,9 +161,6 @@ CIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
     std::stack<CallFrame> stack;
     CallFrame frame;
 
-    uintmax_t offset;
-    int reg, reg2;
-
     // default frame for this CIE.
     CallFrame dframe;
     if (addr != 0 || wantAddr != 0) {
@@ -149,18 +172,19 @@ CIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
         if (r.empty())
             return frame;
         uint8_t rawOp = r.getu8();
-        reg = rawOp &0x3f;
+        int reg = rawOp &0x3f;
         auto op = CFAInstruction(rawOp & ~0x3f);
         switch (op) {
         case DW_CFA_advance_loc:
             addr += reg * codeAlign;
             break;
 
-        case DW_CFA_offset:
-            offset = r.getuleb128();
+        case DW_CFA_offset: {
+            uintmax_t offset = r.getuleb128();
             frame.registers[reg].type = OFFSET;
             frame.registers[reg].u.offset = offset * dataAlign;
             break;
+        }
 
         case DW_CFA_restore: {
             frame.registers[reg] = dframe.registers[reg];
@@ -189,12 +213,13 @@ CIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
                 addr += r.getu32() * codeAlign;
                 break;
 
-            case DW_CFA_offset_extended:
-                reg = r.getuleb128();
-                offset = r.getuleb128();
+            case DW_CFA_offset_extended: {
+                auto reg = r.getuleb128();
+                auto offset = r.getuleb128();
                 frame.registers[reg].type = OFFSET;
                 frame.registers[reg].u.offset = offset * dataAlign;
                 break;
+            }
 
             case DW_CFA_restore_extended:
                 reg = r.getuleb128();
@@ -211,12 +236,13 @@ CIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
                 frame.registers[reg].type = SAME;
                 break;
 
-            case DW_CFA_register:
-                reg = r.getuleb128();
-                reg2 = r.getuleb128();
-                frame.registers[reg].type = REG;
-                frame.registers[reg].u.reg = reg2;
+            case DW_CFA_register: {
+                auto reg1 = r.getuleb128();
+                auto reg2 = r.getuleb128();
+                frame.registers[reg1].type = REG;
+                frame.registers[reg1].u.reg = reg2;
                 break;
+            }
 
             case DW_CFA_remember_state:
                 stack.push(frame);
@@ -266,7 +292,7 @@ CIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
 
             case DW_CFA_expression: {
                 reg = r.getuleb128();
-                offset = r.getuleb128();
+                auto offset = r.getuleb128();
                 auto &unwind = frame.registers[reg];
                 unwind.type = EXPRESSION;
                 unwind.u.expression.offset = r.getOffset();
@@ -277,7 +303,7 @@ CIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
 
             case DW_CFA_def_cfa_expression: {
                 frame.cfaValue.type = EXPRESSION;
-                offset = r.getuleb128();
+                auto offset = r.getuleb128();
                 frame.cfaValue.u.expression.length = offset;
                 frame.cfaValue.u.expression.offset = r.getOffset();
                 r.skip(frame.cfaValue.u.expression.length);
@@ -311,8 +337,12 @@ FDE::FDE(CFI *fi, DWARFReader &reader, Elf::Off cieOff_, Elf::Off endOff_)
     , cieOff(cieOff_)
 {
     auto &cie = fi->cies[cieOff];
-    iloc = fi->decodeAddress(reader, cie.addressEncoding);
-    irange = fi->decodeAddress(reader, cie.addressEncoding & 0xf);
+    bool indirect;
+    std::tie(iloc, indirect) = fi->decodeAddress(reader, cie.addressEncoding);
+    if (indirect)
+        throw (Exception() << "FDE has indirect encoding for location");
+    std::tie(irange, indirect) = fi->decodeAddress(reader, cie.addressEncoding & 0xf);
+    assert(!indirect); // we've anded out the indirect encoding flag.
     if (!cie.augmentation.empty() && cie.augmentation[0] == 'z') {
         size_t alen = reader.getuleb128();
         while (alen-- != 0)
@@ -329,7 +359,7 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
     , lsdaEncoding(0)
     , isSignalHandler(false)
     , end(end_)
-    , personality(0)
+    , personality{}
 {
     version = r.getu8();
     augmentation = r.getstring();

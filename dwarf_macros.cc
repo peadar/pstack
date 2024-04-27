@@ -94,7 +94,7 @@ Macros::visit(Unit &u, MacroVisitor *visitor) const
 bool
 Macros::visit4(Unit &u, MacroVisitor *visitor) const
 {
-    auto lineinfo = u.getLines();
+    const auto &lineinfo = u.getLines();
     DWARFReader dr(io);
     for (bool done = false; !done; ) {
         auto code = DWARF_MACINFO_CODE(dr.getu8());

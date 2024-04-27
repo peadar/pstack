@@ -394,10 +394,10 @@ public:
 
     // header fields
     UnitType unitType;
-    const Elf::Off offset; // offset into debug_info
-    const uint32_t length; // unit length
-    const Elf::Off end; // a.k.a. start of next unit.
-    const uint16_t version; // DWARF version
+    Elf::Off offset; // offset into debug_info
+    uint32_t length; // unit length
+    Elf::Off end; // a.k.a. start of next unit.
+    uint16_t version; // DWARF version
 
     size_t dwarfLen; // Size, as reported by DWARF length header.
     uint8_t addrlen; // size of addresses in this unit.
@@ -421,7 +421,7 @@ public:
     std::string name(); // name from the root DIE.
 
     // Get line- and macro- information for this unit.
-    const LineInfo *getLines();
+    const std::unique_ptr<LineInfo> &getLines();
     const Macros *getMacros();
 
     bool sourceFromAddr(Elf::Addr addr, std::vector<std::pair<std::string, int>> &info);
@@ -501,7 +501,7 @@ struct CIE {
     int rar;
     Elf::Off instructions;
     Elf::Off end;
-    uintmax_t personality;
+    std::pair<uintmax_t,bool> personality;
     std::string augmentation;
     CIE(const CFI *, DWARFReader &, Elf::Off);
     CIE() {}
@@ -524,7 +524,10 @@ struct CFI {
     Elf::Addr decodeCIEFDEHdr(DWARFReader &, FIType, Elf::Off *cieOff); // cieOFF set to -1 if this is CIE, set to offset of associated CIE for an FDE
     const FDE *findFDE(Elf::Addr) const;
     bool isCIE(Elf::Addr);
-    intmax_t decodeAddress(DWARFReader &, int encoding) const;
+
+    // If we know the VA of the byte addressed by the start of the dwarf reader, psas it in "va".
+    std::pair<intmax_t, bool> decodeAddress(DWARFReader &, uint8_t encoding,
+            Elf::Addr va = std::numeric_limits<Elf::Addr>::max()) const;
 };
 
 class ImageCache;
@@ -600,7 +603,7 @@ public:
     // address.
     std::vector<std::pair<std::string, int>> sourceFromAddr(uintmax_t addr) const;
 
-    LineInfo *linesAt(intmax_t, Unit &) const;
+    std::unique_ptr<LineInfo> linesAt(intmax_t, Unit &) const;
 
     // The ELF object this DWARF data is associated with
     const Elf::Object::sptr elf;

@@ -124,7 +124,7 @@ struct ProcessLocation {
     const Dwarf::CIE *cie() const;
     const Dwarf::FDE *fde() const;
     const Dwarf::CFI *cfi() const;
-    const Elf::MaybeNamedSymbol symbol() const;
+    Elf::MaybeNamedSymbol symbol() const;
     std::vector<std::pair<std::string, int>> source() const;
     Elf::Object::sptr elf() const { return codeloc ? codeloc->dwarf_->elf : nullptr; }
 

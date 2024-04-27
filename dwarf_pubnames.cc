@@ -19,8 +19,7 @@ PubnameUnit::PubnameUnit(DWARFReader &r)
     infoLength = r.getu32();
 
     while (r.getOffset() < next) {
-        uint32_t offset;
-        offset = r.getu32();
+        uint32_t offset = r.getu32();
         if (offset == 0)
             break;
         pubnames.emplace_back(r, offset);

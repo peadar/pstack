@@ -15,14 +15,14 @@ Info::decodeCFI(const Elf::Section &section, FIType ftype) const {
     catch (const Exception &ex) {
         *debug << "can't decode " << section.name << " for " << *elf->io << ": " << ex.what() << "\n";
     }
-    return std::unique_ptr<CFI>();
+    return {};
 };
 
 CFI *
 Info::getEhFrame() const {
     if (!ehFrameLoaded) {
         ehFrameLoaded = true;
-        auto &sec = elf->getDebugSection(".eh_frame", SHT_PROGBITS);
+        const Elf::Section &sec = elf->getDebugSection(".eh_frame", SHT_PROGBITS);
         if (sec)
            ehFrame = decodeCFI(sec, FI_EH_FRAME);
     }
@@ -33,7 +33,7 @@ CFI *
 Info::getDebugFrame() const {
     if (!debugFrameLoaded) {
         debugFrameLoaded = true;
-        auto &sec = elf->getSection(".debug_frame", SHT_PROGBITS);
+        const Elf::Section &sec = elf->getSection(".debug_frame", SHT_PROGBITS);
         if (sec)
            debugFrame = decodeCFI(sec, FI_DEBUG_FRAME);
     }
@@ -42,7 +42,9 @@ Info::getDebugFrame() const {
 
 CFI *Info::getCFI() const {
     CFI *eh = getEhFrame();
-    return eh ? eh : getDebugFrame();
+    if (eh != nullptr)
+        return eh;
+    return getDebugFrame();
 }
 
 Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
@@ -73,8 +75,8 @@ const std::list<PubnameUnit> &
 Info::pubnames() const
 {
     if (pubnameUnits == nullptr) {
-        pubnameUnits.reset( new std::list<PubnameUnit> );
-        auto &pubnamesh = elf->getDebugSection(".debug_pubnames", SHT_NULL);
+        pubnameUnits = std::make_unique<std::list<PubnameUnit>>();
+        const Elf::Section &pubnamesh = elf->getDebugSection(".debug_pubnames", SHT_NULL);
         if (pubnamesh) {
             DWARFReader r(pubnamesh.io());
             while (!r.empty())
@@ -149,21 +151,20 @@ Info::offsetToDIE(Elf::Off offset) const
             break;
         }
     }
-    throw Exception() << "DIE not found";
+    throw (Exception() << "DIE not found");
 }
 
 Units
 Info::getUnits() const
 {
-    return Units(shared_from_this());
+    return { shared_from_this() };
 }
 
 void
 Info::decodeARangeSet(DWARFReader &r) const {
     Elf::Off start = r.getOffset();
-    size_t dwarfLen;
 
-    uint32_t length = r.getlength(&dwarfLen);
+    auto [ length, dwarfLen ] = r.getlength();
     Elf::Off next = r.getOffset() + length;
     uint16_t version = r.getu16();
     (void)version;
@@ -192,8 +193,8 @@ Info::decodeARangeSet(DWARFReader &r) const {
 Unit::sptr
 Info::lookupUnit(Elf::Addr addr) const {
     if (aranges == nullptr) {
-        aranges.reset(new ARanges());
-        auto &arangesh = elf->getDebugSection(".debug_aranges", SHT_NULL);
+        aranges = std::make_unique<ARanges>();
+        const Elf::Section &arangesh = elf->getDebugSection(".debug_aranges", SHT_NULL);
         if (arangesh) {
             DWARFReader r(arangesh.io());
             while (!r.empty())
@@ -214,15 +215,15 @@ Info::lookupUnit(Elf::Addr addr) const {
             auto lowpc = root.attribute(DW_AT_low_pc);
             auto highpc = root.attribute(DW_AT_high_pc);
             if (lowpc.valid() && highpc.valid()) {
-               uintmax_t low = uintmax_t(lowpc);
-               uintmax_t high = uintmax_t(highpc);
+               auto low = uintmax_t(lowpc);
+               auto high = uintmax_t(highpc);
                if (highpc.form() != DW_FORM_addr)
                   high += low;
                (*aranges)[high] = std::make_pair(high - low, u->offset);
             }
             // do we have ranges for this DIE?
-            auto ranges = root.getRanges();
-            if (ranges)
+            const Ranges *ranges = root.getRanges();
+            if (ranges != nullptr)
                 for (auto r : *ranges)
                     (*aranges)[r.second] = { r.first, u->offset };
         }
@@ -254,10 +255,10 @@ Abbreviation::Abbreviation(DWARFReader &r)
     }
 }
 
-LineInfo *
+std::unique_ptr<LineInfo>
 Info::linesAt(intmax_t offset, Unit &unit) const
 {
-    auto lines = new LineInfo();
+    auto lines = std::make_unique<LineInfo>();
     auto &lineshdr = elf->getDebugSection(".debug_line", SHT_NULL);
     if (lineshdr) {
         DWARFReader r(lineshdr.io(), offset);

@@ -142,15 +142,6 @@ target_link_libraries(procman ${LTHREADDB} dwelf dl)
 target_link_libraries(${PSTACK_BIN} dwelf procman)
 target_link_libraries(canal dwelf procman)
 
-if (TIDY)
-set (CLANG_TIDY "clang-tidy;-checks=*,-*readability-braces-around-statements,-fuchsia*,-hicpp-braces-around-statements,-*llvmlibc*")
-set_target_properties(canal PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
-set_target_properties(${PSTACK_BIN} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
-set_target_properties(dwelf PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
-add_definitions("-DNDEBUG")
-set_target_properties(procman PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY}")
-endif()
-
 set_target_properties(dwelf PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "${PSTACK_SOVERSION}" )
 set_target_properties(procman PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "${PSTACK_SOVERSION}" )
 

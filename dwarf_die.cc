@@ -8,8 +8,6 @@
 namespace pstack::Dwarf {
 
 class DIE::Raw {
-    Raw() = delete;
-    Raw(const Raw &) = delete;
     const Abbreviation *type;
     std::vector<DIE::Attribute::Value> values;
     Elf::Off parent; // 0 implies we do not yet know the parent's offset.
@@ -21,6 +19,11 @@ public:
     // Mostly, Raw DIEs are hidden from everything. DIE needs access though
     friend class DIE;
     static std::shared_ptr<Raw> decode(Unit *unit, const DIE &parent, Elf::Off offset);
+
+    // rule-of-three
+    Raw() = delete;
+    Raw(const Raw &) = delete;
+    Raw &operator = (const Raw &) = delete;
 };
 
 DIE
@@ -96,10 +99,10 @@ DIE::containsAddress(Elf::Addr addr) const
     // DW_AT_ranges attr.
     auto rangeattr = attribute(DW_AT_ranges);
     if (rangeattr.valid()) {
-        auto ranges = unit->getRanges(*this, low.valid() ? uintmax_t(low) : 0);
-        if (ranges) {
+        const Ranges *ranges = unit->getRanges(*this, low.valid() ? uintmax_t(low) : 0);
+        if (ranges != nullptr) {
             // Iterate over the ranges, and see if the address lies inside.
-            for (auto &range : *ranges)
+            for (const Ranges::value_type &range : *ranges)
                 if (range.first <= addr && addr <= range.second)
                     return ContainsAddr::YES;
             return ContainsAddr::NO;
@@ -125,7 +128,7 @@ DIE::attribute(AttrName name, bool local) const
           name, cmp());
 
     if (loc != raw->type->attrName2Idx.end() && loc->first == name)
-        return Attribute(*this, &raw->type->forms.at(loc->second));
+        return { *this, &raw->type->forms.at(loc->second) };
 
     // If we have attributes of any of these types, we can look for other
     // attributes in the referenced entry.
@@ -142,7 +145,7 @@ DIE::attribute(AttrName name, bool local) const
                 return ao.attribute(name);
         }
     }
-    return Attribute();
+    return {};
 }
 
 std::string

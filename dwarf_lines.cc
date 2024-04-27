@@ -42,8 +42,7 @@ dwarfStateAddRow(LineInfo *li, const LineState &state)
 void
 LineInfo::build(DWARFReader &r, Unit &unit)
 {
-    size_t dwarfLen;
-    uint32_t total_length = r.getlength(&dwarfLen);
+    auto [ total_length, dwarfLen ] = r.getlength();
     Elf::Off end = r.getOffset() + total_length;
 
     uint16_t version = r.getu16();
@@ -109,7 +108,7 @@ LineInfo::build(DWARFReader &r, Unit &unit)
                         entry.name = r.readFormString(*unit.dwarf, unit, ent.second);
                         break;
                     case DW_LNCT_directory_index:
-                        entry.dirindex = r.readFormUnsigned(unit, ent.second);
+                        entry.dirindex = r.readFormUnsigned(ent.second);
                         break;
                     default:
                         r.readForm(*unit.dwarf, unit, ent.second);

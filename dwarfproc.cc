@@ -57,7 +57,7 @@ StackFrame::scopeIP(Process &proc) const
        return { proc, raw };
     ProcessLocation location(proc, raw);
 
-    auto lcie = location.cie();
+    const auto *lcie = location.cie();
     if (lcie != nullptr && lcie->isSignalHandler)
        return location;
     return {proc, raw - 1};
@@ -67,7 +67,7 @@ uintptr_t
 StackFrame::getFrameBase(Process &p) const
 {
     ProcessLocation location = scopeIP(p);
-    auto f = location.die();
+    const Dwarf::DIE &f = location.die();
     if (f) {
         auto base = f.attribute(Dwarf::DW_AT_frame_base);
         if (base.valid()) {
@@ -118,8 +118,8 @@ ExpressionStack::eval(Process &proc, const Dwarf::DIE::Attribute &attr,
         case Dwarf::DW_FORM_sec_offset:
             if (unit->version >= 5) {
                 // For dwarf 5, this will be a debug_loclists entry.
-                auto &sec = dwarf->elf->getDebugSection(".debug_loclists", SHT_NULL);
-                auto &addrsec = dwarf->elf->getDebugSection(".debug_addr", SHT_NULL);
+                const Elf::Section &sec = dwarf->elf->getDebugSection(".debug_loclists", SHT_NULL);
+                const Elf::Section &addrsec = dwarf->elf->getDebugSection(".debug_addr", SHT_NULL);
                 Dwarf::DWARFReader r(sec.io(), uintmax_t(attr));
                 for (;;) {
                     auto lle = DW_LLE(r.getu8());
@@ -211,8 +211,7 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
         switch (op) {
             case DW_OP_deref: {
                 uintmax_t addr = poptop();
-                Elf::Addr value;
-                proc.io->readObj(addr, &value);
+                auto value = proc.io->readObj<Elf::Addr>(addr);
                 push(intptr_t(value));
                 break;
             }
@@ -374,7 +373,7 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                 push(Elf::getReg(frame->regs, op - DW_OP_reg0));
                 break;
             case DW_OP_regx:
-                push(Elf::getReg(frame->regs, r.getsleb128()));
+                push(Elf::getReg(frame->regs, int(r.getsleb128())));
                 break;
 
             case DW_OP_entry_value:
@@ -439,10 +438,12 @@ StackFrame::StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs
 {}
 
 std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
-    auto location = scopeIP(p);
-    auto cfi = location.cfi();
-    auto fde = location.fde();
-    auto cie = location.cie();
+    ProcessLocation location = scopeIP(p);
+
+    const Dwarf::CFI *cfi = location.cfi();
+    const Dwarf::FDE *fde = location.fde();
+    const Dwarf::CIE *cie = location.cie();
+
     if (fde == nullptr || cie == nullptr || cfi == nullptr)
         throw (Exception() << "no FDE/CIE/CFI for instruction address " << std::hex << location.address());
 
@@ -495,9 +496,9 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     }
     auto rarInfo = dcf.registers.find(cie->rar);
 
-    for (auto &entry : dcf.registers) {
-        const auto &unwind = entry.second;
-        const int regno = entry.first;
+    for (const auto &entry : dcf.registers) {
+        const RegisterUnwind &unwind = entry.second;
+        int regno = entry.first;
         switch (unwind.type) {
             case ARCH:
 #ifdef CFA_RESTORE_REGNO
@@ -512,12 +513,9 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
             case SAME:
                 Elf::setReg(out, regno, Elf::getReg(regs, regno));
                 break;
-            case OFFSET: {
-                Elf::Addr reg; // XXX: assume addrLen = sizeof Elf_Addr
-                p.io->readObj(cfa + unwind.u.offset, &reg);
-                Elf::setReg(out, regno, reg);
+            case OFFSET: // XXX: assume addrLen = sizeof Elf_Addr
+                Elf::setReg(out, regno, p.io->readObj<Elf::Addr>(cfa + unwind.u.offset));
                 break;
-            }
             case REG:
                 Elf::setReg(out, regno, Elf::getReg(out,unwind.u.reg));
                 break;
@@ -569,7 +567,7 @@ CodeLocation::symbol() const {
     return symbol_;
 }
 
-const Elf::MaybeNamedSymbol
+Elf::MaybeNamedSymbol
 ProcessLocation::symbol() const {
     if (codeloc)
         return codeloc->symbol();
@@ -579,9 +577,9 @@ ProcessLocation::symbol() const {
 const Dwarf::FDE *
 CodeLocation::fde() const {
     if (fde_ == nullptr) {
-	auto cfip = cfi();
-	if (cfip)
-	    fde_ = cfi()->findFDE(location_);
+        const Dwarf::CFI *cfip = cfi();
+        if (cfip != nullptr)
+            fde_ = cfi()->findFDE(location_);
     }
     return fde_;
 }
@@ -616,7 +614,7 @@ ProcessLocation::ProcessLocation(Process &proc, Elf::Addr address_) {
 
 const Dwarf::CIE *
 ProcessLocation::cie() const {
-    auto lfde = fde();
+    const Dwarf::FDE *lfde = fde();
     if (lfde == nullptr)
         return nullptr;
     return &cfi()->cies.at(lfde->cieOff);
@@ -640,7 +638,7 @@ CodeLocation::CodeLocation() : location_(0), phdr_(nullptr), cie_(nullptr), fde_
 
 CodeLocation::CodeLocation(Dwarf::Info::sptr info, const Elf::Phdr *phdr, Elf::Addr off)
     : location_(off)
-    , dwarf_(info), phdr_(phdr), cie_(nullptr), fde_(nullptr), cfi_(nullptr)
+    , dwarf_(std::move(info)), phdr_(phdr), cie_(nullptr), fde_(nullptr), cfi_(nullptr)
 {
 }
 

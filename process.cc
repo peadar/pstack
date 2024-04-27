@@ -656,7 +656,7 @@ Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo)
            os << " in ";
            buildDIEName(os, *i);
            if (!options.nosrc) {
-               auto lineinfo = i->getUnit()->getLines();
+               const auto &lineinfo = i->getUnit()->getLines();
                if (lineinfo) {
                   os << " at " << src.first << ":" << src.second;
                   auto &fileEnt = lineinfo->files[intmax_t(i->attribute(Dwarf::DW_AT_call_file))];

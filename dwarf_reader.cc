@@ -45,7 +45,7 @@ DWARFReader::readFormString(const Info &dwarf, Unit &unit, Form form)
 }
 
 uintmax_t
-DWARFReader::readFormUnsigned(Unit &, Form form)
+DWARFReader::readFormUnsigned(Form form)
 {
     switch (form) {
         case DW_FORM_udata:
@@ -62,7 +62,7 @@ DWARFReader::readFormUnsigned(Unit &, Form form)
 }
 
 intmax_t
-DWARFReader::readFormSigned(Unit &, Form form)
+DWARFReader::readFormSigned(Form form)
 {
     switch (form) {
         default:
@@ -70,24 +70,16 @@ DWARFReader::readFormSigned(Unit &, Form form)
     }
 }
 
-Elf::Off
-DWARFReader::getlength(size_t *dwarflen)
-{
+std::pair <Elf::Off, Elf::Off>
+DWARFReader::getlength() {
     size_t length = getu32();
-    if (length >= 0xfffffff0) {
-        switch (length) {
-            case 0xffffffff:
-                if (dwarflen != nullptr)
-                    *dwarflen = 8;
-                return getuint(8);
-            default:
-                return 0;
-        }
-    } else {
-        if (dwarflen != nullptr)
-            *dwarflen = 4;
-        return length;
+    if (length == 0xffffffff) {
+        return { getuint(8), 8 };
     }
+    if (length >= 0xfffffff0) {
+        return { 0, 0 };
+    }
+    return { length, 4 };
 }
 
 }

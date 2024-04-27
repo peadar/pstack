@@ -46,9 +46,7 @@ Unit::rnglistx(size_t slot) {
 
     // We need to parse the first part of the header to get the size of the
     // entries in the table.
-    size_t dwarflen;
-    auto len = r.getlength(&dwarflen);
-    (void)len;
+    auto [ _, dwarflen ] = r.getlength();
     /*
      * We don't need the rest of the fields:
     auto version = r.getuint(2);
@@ -64,18 +62,17 @@ Unit::rnglistx(size_t slot) {
     return base + r.getuint(dwarflen);
 }
 
-
-
 Unit::Unit(const Info *di, DWARFReader &r)
     : abbrevOffset{ 0 }
     , dwarf(di)
     , unitType(DW_UT_compile)
-    , offset(r.getOffset())
-    , length(r.getlength(&dwarfLen))
-    , end(r.getOffset() + length)
-    , version(r.getu16())
     , id{}
 {
+    offset = r.getOffset();
+    std::tie(length, dwarfLen) = r.getlength();
+    end = r.getOffset() + length;
+    version = r.getu16();
+
     if (version <= 2) // DWARF Version 2 uses the architecture's address size.
        dwarfLen = ELF_BYTES;
     if (version >= 5) {
@@ -92,7 +89,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
         case DW_UT_split_type:
             r.addrLen = addrlen = r.getu8();
             abbrevOffset = r.getuint(dwarfLen);
-            r.getBytes(sizeof id, id);
+            r.getBytes(sizeof id, &id[0]);
             break;
         default:
             abort();
@@ -137,7 +134,7 @@ DIE
 Unit::offsetToDIE(const DIE &parent, Elf::Off offset) {
     if (abbreviations.empty())
         load();
-    return DIE(shared_from_this(), offset, offsetToRawDIE(parent, offset));
+    return {shared_from_this(), offset, offsetToRawDIE(parent, offset)};
 }
 
 DIE Unit::root() {
@@ -171,15 +168,15 @@ Unit::sourceFromAddr(Elf::Addr addr, std::vector<std::pair<std::string, int>> &i
     DIE d = root();
     if (d.containsAddress(addr) == ContainsAddr::NO)
         return false;
-    auto lines = getLines();
-    if (lines) {
+    const auto &lines = getLines();
+    if (lines != nullptr) {
         for (auto i = lines->matrix.begin(); i != lines->matrix.end(); ++i) {
             if (i->end_sequence)
                 continue;
             auto next = i+1;
             if (i->addr <= addr && next->addr > addr) {
-                auto &dirname = lines->directories[i->file->dirindex];
-                info.emplace_back(verbose ? dirname + "/" + i->file->name : i->file->name, i->line);
+                const std::string &dirname = lines->directories[i->file->dirindex];
+                info.emplace_back(verbose != 0 ? dirname + "/" + i->file->name : i->file->name, i->line);
                 return true;
             }
         }
@@ -187,22 +184,22 @@ Unit::sourceFromAddr(Elf::Addr addr, std::vector<std::pair<std::string, int>> &i
     return false;
 }
 
-const LineInfo *
+const std::unique_ptr<LineInfo> &
 Unit::getLines()
 {
     if (lines != nullptr)
-        return lines.get();
+        return lines;
 
     const auto &r = root();
     if (r.tag() != DW_TAG_partial_unit && r.tag() != DW_TAG_compile_unit)
-        return nullptr; // XXX: assert?
+        return lines;
 
     auto attr = r.attribute(DW_AT_stmt_list);
     if (!attr.valid())
-        return nullptr;
+        return lines;
 
-    lines.reset(dwarf->linesAt(intmax_t(attr), *this));
-    return lines.get();
+    lines = dwarf->linesAt(intmax_t(attr), *this);
+    return lines;
 }
 
 const Abbreviation *
@@ -216,7 +213,7 @@ const Ranges *
 Unit::getRanges(const DIE &die, uintmax_t base) {
     auto &ptr = rangesForOffset[die.offset];
     if (ptr == nullptr)
-        ptr.reset(new Ranges(die, base));
+        ptr = std::make_unique<Ranges>(die, base);
     return ptr.get();
 }
 
