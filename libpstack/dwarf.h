@@ -21,35 +21,35 @@ class Unit;
 struct CFI;
 struct CIE;
 
-#define DWARF_TAG(a,b) a = b,
+#define DWARF_TAG(a,b) a = (b),
 enum Tag {
 #include "libpstack/dwarf/tags.h"
     DW_TAG_none = 0x0
 };
 #undef DWARF_TAG
 
-#define DWARF_ATE(a,b) a = b,
+#define DWARF_ATE(a,b) a = (b),
 enum Encoding {
 #include "libpstack/dwarf/encodings.h"
     DW_ATE_none = 0x0
 };
 #undef DWARF_ATE
 
-#define DWARF_UNIT_TYPE(a,b) a = b,
+#define DWARF_UNIT_TYPE(a,b) a = (b),
 enum UnitType {
 #include "libpstack/dwarf/unittype.h"
     DW_UT_none
 };
 #undef DWARF_UNIT_TYPE
 
-#define DWARF_FORM(a,b) a = b,
+#define DWARF_FORM(a,b) a = (b),
 enum Form {
 #include "libpstack/dwarf/forms.h"
     DW_FORM_none = 0x0
 };
 #undef DWARF_FORM
 
-#define DWARF_ATTR(a,b) a = b,
+#define DWARF_ATTR(a,b) a = (b),
 enum AttrName {
 #include "libpstack/dwarf/attr.h"
     DW_AT_none = 0x0
@@ -65,14 +65,14 @@ namespace std {
 namespace pstack::Dwarf {
 #undef DWARF_ATTR
 
-#define DWARF_LINE_S(a,b) a = b,
+#define DWARF_LINE_S(a,b) a = (b),
 enum LineSOpcode {
 #include "libpstack/dwarf/line_s.h"
     DW_LNS_none = -1
 };
 #undef DWARF_LINE_S
 
-#define DWARF_LINE_E(a,b) a = b,
+#define DWARF_LINE_E(a,b) a = (b),
 enum LineEOpcode {
 #include "libpstack/dwarf/line_e.h"
     DW_LNE_none = -1
@@ -105,8 +105,7 @@ struct Abbreviation {
     using AttrNameMap = std::vector<AttrNameEnt>;
     int nextSibIdx;
     mutable AttrNameMap attrName2Idx; // mutable so we can sort on demand
-    Abbreviation(DWARFReader &);
-    Abbreviation() {}
+    explicit Abbreviation(DWARFReader &);
 };
 
 // An entry from a pubnames unit
@@ -123,7 +122,7 @@ struct PubnameUnit {
     uint32_t infoOffset;
     uint32_t infoLength;
     std::list<Pubname> pubnames;
-    PubnameUnit(DWARFReader &r);
+    explicit PubnameUnit(DWARFReader &r);
 };
 
 // Data stored in a BLOCK form attribute.
@@ -133,7 +132,6 @@ struct Block {
 };
 
 enum class ContainsAddr { YES, NO, UNKNOWN };
-
 
 // Ranges represents a sequence of addresses. The main use is to check if a text
 // address exists in the range, and is therefore associated with some information,
@@ -157,7 +155,7 @@ class DIE {
     // DIEs are only constructed by units: hide constructors from everyone else.
     friend Unit;
 
-    Elf::Off offset;
+    Elf::Off offset{};
     class Raw;
 
     std::shared_ptr<Raw> raw;
@@ -175,14 +173,13 @@ class DIE {
     static std::shared_ptr<Raw> decode(Unit *unit, const DIE &parent, Elf::Off offset);
 
     // Return the first child of this DIE (used by iterator implementation)
-    DIE firstChild() const;
+    [[nodiscard]] DIE firstChild() const;
 
     // Return the next sibling of this DIE (used by iterator implementation
-    DIE nextSibling(const DIE &parent) const;
+    [[nodiscard]] DIE nextSibling(const DIE &parent) const;
 
 
 public:
-    // An attribute of a DIE.
     class Attribute;
 
     // A collection of attributes for a DIE, as returned by DIE::attributes
@@ -209,59 +206,51 @@ public:
                 return rawIter != rhs.rawIter;
             }
         };
-        const_iterator begin() const;
-        const_iterator end() const;
-        Attributes(const DIE &die) : die(die) {}
+        [[nodiscard]] const_iterator begin() const;
+        [[nodiscard]] const_iterator end() const;
+        explicit Attributes(const DIE &die) : die(die) {}
     };
-
 
     // Iterable object for children of a DIE - as returned by children()
     class Children {
         const DIE &parent;
     public:
         class const_iterator;
-        Children(const DIE &parent_) : parent(parent_) {}
-        const_iterator begin() const;
-        const_iterator end() const;
+        explicit Children(const DIE &parent_) : parent(parent_) {}
+        [[nodiscard]] const_iterator begin() const;
+        [[nodiscard]] const_iterator end() const;
         using value_type = DIE;
     };
 
     // Indicate if the passed DIE contains code covering the passed address.
     // The result can be yes, no, or unknown.
-    ContainsAddr containsAddress(Elf::Addr addr) const;
+    [[nodiscard]] ContainsAddr containsAddress(Elf::Addr addr) const;
 
     // Return the offset (relative to the .debug_info section) of the parent DIE.
-    Elf::Off getParentOffset() const;
+    [[nodiscard]] Elf::Off getParentOffset() const;
 
     // Return the offset (relative to the .debug_info section) of this DIE
-    Elf::Off getOffset() const { return offset; }
+    [[nodiscard]] Elf::Off getOffset() const { return offset; }
 
-    const std::shared_ptr<Unit> &getUnit() const { return unit; }
-
-    // Construct a "null" DIE.
-    DIE()
-        : offset(0)
-        , raw(nullptr)
-        , unit(nullptr)
-        {}
+    [[nodiscard]] const std::shared_ptr<Unit> &getUnit() const { return unit; }
 
     // The null die is false in a boolean context.
-    operator bool() const { return raw != nullptr; }
+    explicit operator bool() const { return raw != nullptr; }
 
     // Get the named attribute from thie DIE.
-    Attribute attribute(AttrName name, bool local = false) const;
+    [[nodiscard]] Attribute attribute(AttrName name, bool local = false) const;
 
-    std::string name() const;
-    Attributes attributes() const { return Attributes(*this); }
+    [[nodiscard]] std::string name() const;
+    [[nodiscard]] Attributes attributes() const { return Attributes(*this); }
 
     // Get the DIE's type tag.
-    Tag tag() const;
+    [[nodiscard]] Tag tag() const;
 
     // Indicate if this DIE has any children.
-    bool hasChildren() const;
+    [[nodiscard]] bool hasChildren() const;
 
     // Get an iterator for all the children of this DIE.
-    Children children() const { return Children(*this); }
+    [[nodiscard]] Children children() const { return Children(*this); }
 
     // Find the DIE covering a particular code address. If "skipInitial" is
     // false, then this DIE itself is not considered, only its decendents.  The
@@ -272,9 +261,15 @@ public:
 
     // Get a human-readable name for a type die - ascends through namespaces
     // that contain this DIE, walks through pointers and references, etc.
-    std::string typeName(const DIE &);
+    [[nodiscard]] std::string typeName();
+    [[nodiscard]] const std::unique_ptr<Ranges> &getRanges() const;
 
-    const Ranges *getRanges() const;
+    DIE() = default;
+    DIE(const DIE &) = default;
+    DIE(DIE &&) = default;
+    DIE &operator = (const DIE &) = default;
+    DIE &operator = (DIE &&) = default;
+    ~DIE() = default;
 };
 
 // ARanges provides a fast way of finding the compilation unit associatd with a
@@ -294,19 +289,26 @@ enum FIType {
 // for the directory containing the file.
 class FileEntry {
 public:
+
     FileEntry() = default;
+
     FileEntry(const FileEntry &) = default;
+    FileEntry(FileEntry &&) = default;
+    FileEntry &operator = (const FileEntry &) = default;
+    FileEntry &operator = (FileEntry &&) = default;
+    ~FileEntry() = default;
+
     std::string name;
-    unsigned dirindex;
-    unsigned lastMod;
-    unsigned length;
+    unsigned dirindex{};
+    unsigned lastMod{};
+    unsigned length{};
     FileEntry(std::string name_, unsigned dirindex, unsigned lastMod_, unsigned length_);
-    FileEntry(DWARFReader &r);
+    explicit FileEntry(DWARFReader &r);
 };
 
 class LineState {
-    LineState() = delete;
 public:
+    LineState() = delete;
     FileEntry *file;
     uintmax_t addr;
     unsigned line;
@@ -318,15 +320,20 @@ public:
     bool epilogue_begin:1;
     unsigned isa;
     unsigned discriminator;
-    LineState(LineInfo *);
+    explicit LineState(LineInfo *);
 };
 
 class LineInfo {
-    LineInfo(const LineInfo &) = delete;
 public:
-    LineInfo() {}
-    bool default_is_stmt;
-    uint8_t opcode_base;
+    LineInfo(const LineInfo &) = delete;
+    LineInfo(LineInfo &&) = delete;
+    LineInfo &operator = (const LineInfo &) = delete;
+    LineInfo &operator = (LineInfo &&) = delete;
+    LineInfo() = default;
+    ~LineInfo() = default;
+
+    bool default_is_stmt = false;
+    uint8_t opcode_base = 0;
     std::vector<int> opcode_lengths;
     std::vector<std::string> directories;
     std::vector<FileEntry> files;
@@ -364,9 +371,6 @@ class Unit : public std::enable_shared_from_this<Unit> {
     // the unit - this makes the offsets unique within the Info.
     using AllEntries = std::map<Elf::Off, std::shared_ptr<DIE::Raw>>;
 
-    Unit() = delete;
-    Unit(const Unit &) = delete;
-
     std::shared_ptr<DIE::Raw> offsetToRawDIE(const DIE &parent, Elf::Off offset);
     // Used to ensure abbreviations and other potentially expensive data is
     // parsed. Internals will call this to undo a "purge()"
@@ -385,10 +389,17 @@ class Unit : public std::enable_shared_from_this<Unit> {
 
 public:
 
+    Unit() = delete;
+    Unit(const Unit &) = delete;
+    Unit(Unit &&) = delete;
+    Unit &operator = (const Unit &) = delete;
+    Unit &operator = (Unit &&) = delete;
+    ~Unit() noexcept = default;
+
     using sptr = std::shared_ptr<Unit>;
     using csptr = std::shared_ptr<const Unit>;
 
-    const Ranges *getRanges(const DIE &die, uintmax_t base);
+    const std::unique_ptr<Ranges> &getRanges(const DIE &die, uintmax_t base);
 
     const Info *const dwarf; // back pointer to DWARF info
 
@@ -401,15 +412,16 @@ public:
 
     size_t dwarfLen; // Size, as reported by DWARF length header.
     uint8_t addrlen; // size of addresses in this unit.
-    unsigned char id[8]; // Unit ID for DWO.
+    std::array<unsigned char, 8> id; // Unit ID for DWO.
 
     Unit(const Info *, DWARFReader &);
-    ~Unit() noexcept = default;
 
     void purge(); // Remove all "raw" DIEs from allEntries, potentially freeing memory.
 
     // Is a given DIE the root for this unit?
-    bool isRoot(const DIE &die) { return die.getOffset() == rootOffset; }
+    [[nodiscard]] bool isRoot(const DIE &die) const {
+        return die.getOffset() == rootOffset;
+    }
 
     // Get the root DIE for this unit
     DIE root();
@@ -504,7 +516,7 @@ struct CIE {
     std::pair<uintmax_t,bool> personality;
     std::string augmentation;
     CIE(const CFI *, DWARFReader &, Elf::Off);
-    CIE() {}
+    CIE() = default;
     CallFrame execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const;
 };
 
@@ -519,10 +531,18 @@ struct CFI {
     std::map<Elf::Addr, CIE> cies;
     std::list<FDE> fdeList;
     CFI(const Info *, Elf::Addr addr, Reader::csptr io, FIType);
+
     CFI() = delete;
     CFI(const CFI &) = delete;
-    Elf::Addr decodeCIEFDEHdr(DWARFReader &, FIType, Elf::Off *cieOff); // cieOFF set to -1 if this is CIE, set to offset of associated CIE for an FDE
-    const FDE *findFDE(Elf::Addr) const;
+    CFI(CFI &&) = delete;
+    CFI &operator = (const CFI &) = delete;
+    CFI &operator = (CFI &&) = delete;
+    ~CFI() = default;
+
+    // cieOFF set to -1 if this is CIE, set to offset of associated CIE for an FDE
+    Elf::Addr decodeCIEFDEHdr(DWARFReader &, FIType, Elf::Off *cieOff);
+
+    [[nodiscard]] const FDE *findFDE(Elf::Addr) const;
     bool isCIE(Elf::Addr);
 
     // If we know the VA of the byte addressed by the start of the dwarf reader, psas it in "va".
@@ -538,7 +558,7 @@ struct Units {
     class iterator {
         const Info *info;
         Unit::sptr currentUnit;
-        bool atend() const;
+        [[nodiscard]] bool atend() const;
     public:
         using iterator_category = std::forward_iterator_tag;
         using value_type = Unit::sptr;
@@ -561,9 +581,10 @@ struct Units {
     using value_type = Unit::sptr;
     using const_iterator = iterator;
     const std::shared_ptr<const Info> info;
-    iterator begin() const;
-    iterator end() const { return iterator(); }
-    Units(const std::shared_ptr<const Info> &info_) : info(info_) {}
+    [[nodiscard]] iterator begin() const;
+    [[nodiscard]] iterator end() const { (void)this; return {}; }
+    explicit Units(const std::shared_ptr<const Info> &info_) : info(info_) {
+    }
 };
 
 /*
@@ -577,6 +598,13 @@ public:
     using csptr = std::shared_ptr<const Info>;
 
     Info(Elf::Object::sptr, ImageCache &);
+
+    Info() = delete;
+    Info(const Info &) = delete;
+    Info(Info &&) = delete;
+    Info &operator = (Info && ) = delete;
+    Info &operator = (const Info & ) = delete;
+
     ~Info() noexcept = default;
 
     // Get a reference the the "alt" DWARF image, as pointed to by
@@ -663,9 +691,15 @@ class ImageCache : public Elf::ImageCache {
 public:
     Info::sptr getDwarf(const std::string &);
     Info::sptr getDwarf(Elf::Object::sptr);
-    void flush(Elf::Object::sptr);
+    void flush(Elf::Object::sptr o) override;
     ImageCache();
-    ~ImageCache() noexcept;
+
+    ImageCache(const ImageCache &) = delete;
+    ImageCache(ImageCache &&) = delete;
+    ImageCache &operator = (const ImageCache &) = delete;
+    ImageCache &operator = (ImageCache &&) = delete;
+
+    ~ImageCache() noexcept override;
 };
 
 // An attribute within a DIE. A value that you can convert to one of a number
@@ -685,21 +719,25 @@ class DIE::Attribute {
         bool flag;
     };
 public:
-    const Value &value() const;
-    Form form() const { return formp->form; }
-    Attribute(const DIE &dieref_, const FormEntry *formp_)
-       : die{dieref_}, formp{formp_} {}
-    Attribute() : die(), formp(nullptr) {}
+    [[nodiscard]] const Value &value() const;
+    [[nodiscard]] Form form() const { return formp->form; }
+    explicit Attribute(DIE dieref_, const FormEntry *formp_)
+       : die{std::move(dieref_)}, formp{formp_} {}
+    Attribute() noexcept : die(), formp(nullptr) {}
     ~Attribute() noexcept = default;
+    Attribute(const Attribute &) = delete;
+    Attribute(Attribute &&) = default;
+    Attribute &operator = (const Attribute &) = default;
+    Attribute &operator = (Attribute &&) = delete;
 
-    bool valid() const { return formp != nullptr; }
+    [[nodiscard]] bool valid() const { return formp != nullptr; }
     explicit operator std::string() const;
     explicit operator intmax_t() const;
     explicit operator uintmax_t() const;
     explicit operator bool() const { return valid() && value().flag; }
     explicit operator DIE() const;
     explicit operator const Block &() const { return *value().block; }
-    AttrName name() const;
+    [[nodiscard]] AttrName name() const;
     const DIE die;
 
 private:
@@ -729,30 +767,38 @@ public:
 };
 
 enum CFAInstruction {
-#define DWARF_CFA_INSN(name, value) name = value,
+#define DWARF_CFA_INSN(name, value) name = (value),
 #include "libpstack/dwarf/cfainsns.h"
 #undef DWARF_CFA_INSN
     DW_CFA_max = 0xff
 };
 
 enum DW_LNCT {
-#define DW_LNCT(name, value) name = value,
+#define DW_LNCT(name, value) name = (value),
 #include "libpstack/dwarf/line_ct.h"
 #undef DW_LNCT
     DW_LNCT_max = 0xffff
 };
 
 enum DW_RLE {
-#define DW_RLE(name, value) name = value,
+#define DW_RLE(name, value) name = (value),
 #include "libpstack/dwarf/rle.h"
    DW_RLE_LAST
 #undef DW_RLE
 };
+
 struct MacroVisitor {
-   virtual bool define(int, const std::string &) { return true; }
-   virtual bool undef(int, const std::string &) { return true; }
-   virtual bool startFile(int, const std::string &, const FileEntry &) { return true; }
+   virtual bool define([[maybe_unused]] int line, [[maybe_unused]] const std::string &text) { return true; }
+   virtual bool undef([[maybe_unused]] int line, [[maybe_unused]] const std::string &text) { return true; }
+   virtual bool startFile([[maybe_unused]] int line, [[maybe_unused]] const std::string &directory, [[maybe_unused]] const FileEntry &fileInfo) { return true; }
    virtual bool endFile() { return true; }
+
+   MacroVisitor() = default;
+   MacroVisitor(const MacroVisitor &) = default;
+   MacroVisitor(MacroVisitor &&) = default;
+   MacroVisitor &operator = (const MacroVisitor &) = default;
+   MacroVisitor &operator = (MacroVisitor &&) = default;
+   virtual ~MacroVisitor() = default;
 };
 
 inline
@@ -777,14 +823,14 @@ inline
 Units::iterator::iterator(const Info *info_, Elf::Off offset)
     : info(info_), currentUnit(info->getUnit(offset)) {}
 
-#define DWARF_OP(op, value, args) op = value,
+#define DWARF_OP(op, value, args) op = (value),
 enum ExpressionOp {
 #include "libpstack/dwarf/ops.h"
     LASTOP = 0x100
 };
 #undef DWARF_OP
 
-#define DWARF_EH_PE(op, value) op = value,
+#define DWARF_EH_PE(op, value) op = (value),
 enum ExceptionHandlingEncoding {
 #include "libpstack/dwarf/ehpe.h"
     DW_EH_PE_max

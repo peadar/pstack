@@ -156,16 +156,16 @@ protected:
     std::string descr;
 public:
     size_t len;
-    const void *data;
-    virtual size_t read(Off off, size_t count, char *ptr) const override;
-    MemReader(const std::string &, size_t, const void *);
-    void describe(std::ostream &) const override;
+    const char *data;
+    size_t read(Off off, size_t count, char *ptr) const override;
+    MemReader(const std::string &, size_t, const char *);
+    void describe(std::ostream &os) const override;
     Off size() const override { return len; }
     std::string filename() const override { return "in-memory"; }
     std::string readString(Off offset) const override;
-    virtual csptr view(const std::string &name, Off start, Off length=std::numeric_limits<Off>::max()) const override;
-    virtual std::pair<uintmax_t, size_t> readULEB128(Off off) const override;
-    virtual std::pair<intmax_t, size_t> readSLEB128(Off off) const override;
+    csptr view(const std::string &name, Off start, Off length=std::numeric_limits<Off>::max()) const override;
+    std::pair<uintmax_t, size_t> readULEB128(Off off) const override;
+    std::pair<intmax_t, size_t> readSLEB128(Off off) const override;
 };
 
 class MmapReader final : public MemReader {

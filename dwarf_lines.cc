@@ -11,7 +11,7 @@ readEntryFormats(DWARFReader &r) {
     auto format_count = r.getu8();
     std::vector<std::pair<DW_LNCT, Form>> entry_formats;
     for (int i = 0; i < format_count; ++i) {
-        DW_LNCT typeCode = DW_LNCT(r.getuleb128());
+        auto typeCode = DW_LNCT(r.getuleb128());
         auto formCode = Form(r.getuleb128());
         rv.emplace_back(typeCode, formCode);
     }
@@ -33,7 +33,7 @@ LineState::LineState(LineInfo *li)
     , discriminator{ 0 }
 {}
 
-static void
+void
 dwarfStateAddRow(LineInfo *li, const LineState &state)
 {
     li->matrix.push_back(state);
@@ -187,7 +187,6 @@ LineInfo::build(DWARFReader &r, Unit &unit)
         } else {
             /* Standard opcode. */
             auto opcode = LineSOpcode(c);
-            int argCount, i;
             switch (opcode) {
             case DW_LNS_const_add_pc:
                 state.addr += ((255 - opcode_base) / line_range) * min_insn_length;
@@ -226,12 +225,13 @@ LineInfo::build(DWARFReader &r, Unit &unit)
             case DW_LNS_set_isa:
                 state.isa = r.getuleb128();
                 break;
-            default:
+            default: {
                 abort();
-                argCount = opcode_lengths[opcode - 1];
-                for (i = 0; i < argCount; i++)
+                int argCount = opcode_lengths[opcode - 1];
+                for (int i = 0; i < argCount; i++)
                     r.getuleb128();
                 break;
+            }
             case DW_LNS_none:
                 break;
             }

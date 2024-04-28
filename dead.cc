@@ -10,6 +10,7 @@ namespace pstack::Procman {
 CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
       const PstackOptions &options, Dwarf::ImageCache &imageCache)
    : Process(std::move(exec), std::make_shared<CoreReader>(this, core), options, imageCache)
+     , prpsinfo{}
      , coreImage(std::move(core))
 {
    for (auto note : coreImage->notes()) {
@@ -21,13 +22,16 @@ CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
                // for an LWP-related note, we start at the index for that LWPs
                // NT_PRSTATUS, and consider it a failure if we reach another
                // NT_PRSTATUS or the end of the list.
-               prstatus_t task = note.data()->readObj<prstatus_t>(0);
+               auto task = note.data()->readObj<prstatus_t>(0);
                lwpToPrStatusIdx[task.pr_pid] = notes.size();
                break;
             }
             case NT_PRPSINFO: {
                note.data()->readObj(0, &prpsinfo); // hold on to a copy of this
+               break;
             }
+            default:
+               break;
          }
       }
       notes.push_back( note );
@@ -43,7 +47,7 @@ Reader::csptr
 CoreProcess::getAUXV() const
 {
 #ifdef __linux__
-    for (auto &note : notes) {
+    for (const auto &note : notes) {
        if (note.name() == "CORE" && note.type() == NT_AUXV) {
            return note.data();
            break;
@@ -61,7 +65,7 @@ void CoreReader::describe(std::ostream &os) const
         os << "no backing core file";
 }
 
-static size_t
+size_t
 readFromHdr(const Elf::Object &obj, const Elf::Phdr *hdr, Elf::Off addr,
             char *ptr, Elf::Off size, Elf::Off *toClear)
 {
@@ -111,10 +115,7 @@ CoreReader::read(Off remoteAddr, size_t size, char *ptr) const
            }
         }
         // Either no data in core, or it was incomplete to this point: search loaded objects.
-        Elf::Off loadAddr;
-        const Elf::Phdr *hdr;
-        Elf::Object::sptr obj;
-        std::tie(loadAddr, obj, hdr) = p->findSegment(remoteAddr);
+        auto [loadAddr, obj, hdr] = p->findSegment(remoteAddr);
         if (hdr != nullptr) {
             // header in an object - try reading from here.
             size_t rc = readFromHdr(*obj, hdr, remoteAddr - loadAddr, ptr, size, &zeroes);
@@ -136,7 +137,7 @@ CoreReader::read(Off remoteAddr, size_t size, char *ptr) const
     return remoteAddr - start;
 }
 
-CoreReader::CoreReader(Process *p_, Elf::Object::sptr core_) : p(p_), core(core_) { }
+CoreReader::CoreReader(Process *p_, Elf::Object::sptr core_) : p(p_), core(std::move( core_ ) ) { }
 
 size_t
 CoreProcess::getRegs(lwpid_t lwpid, int code, size_t size, void *data)
@@ -148,12 +149,12 @@ CoreProcess::getRegs(lwpid_t lwpid, int code, size_t size, void *data)
    for (size_t i = idx->second;;) {
       if (notes[i].type() == code) {
          if (code == NT_PRSTATUS) {
-            prstatus_t prstatus = notes[i].data()->readObj<prstatus_t>(0);
+            auto prstatus = notes[i].data()->readObj<prstatus_t>(0);
             size = std::min(size, sizeof prstatus.pr_reg);
             memcpy(data, &prstatus.pr_reg, size);
          } else {
             size = std::min(size, size_t(notes[i].data()->size()));
-            notes[i].data()->read(0, size, (char *)data);
+            notes[i].data()->read(0, size, reinterpret_cast<char *>(data));
          }
          return size;
       }
@@ -197,7 +198,7 @@ FileEntries::iterator::iterator(const FileEntries &entries, ReaderArray<FileEntr
 
 struct NamedEntry {
     std::pair<std::string, FileEntry> content;
-    int operator < (const NamedEntry &rhs) const {
+    bool operator < (const NamedEntry &rhs) const {
         return content.second.start < rhs.content.second.start;
     }
 };
@@ -233,13 +234,14 @@ CoreProcess::addressSpace() const {
                 name = ub->second.first;
         }
         std::set<AddressRange::Flags> flags;
-        if (hdr.p_flags & PF_W)
+        if ((hdr.p_flags & PF_W) != 0)
            flags.insert(AddressRange::Flags::write);
-        if (hdr.p_flags & PF_R)
+        if ((hdr.p_flags & PF_R) != 0)
            flags.insert(AddressRange::Flags::read);
-        if (hdr.p_flags & PF_X)
+        if ((hdr.p_flags & PF_X) != 0)
            flags.insert(AddressRange::Flags::exec);
-        rv.push_back({hdr.p_vaddr, hdr.p_vaddr + hdr.p_memsz, hdr.p_vaddr + hdr.p_filesz, 0, {0, 0, 0, name}, flags});
+        rv.push_back( { hdr.p_vaddr, hdr.p_vaddr + hdr.p_memsz,
+                hdr.p_vaddr + hdr.p_filesz, 0, {0, 0, 0, name}, {}});
     }
     return rv;
 }
@@ -255,18 +257,20 @@ CoreProcess::loadSharedObjectsFromFileNote()
         uintptr_t size = entry.end - entry.start;
         totalSize += size;
         if (verbose > 2)
-            *debug << "NT_FILE mapping " << name << " " << (void *)entry.start << " " << size << std::endl;
+            *debug << "NT_FILE mapping " << name << " "
+                << (void *)entry.start << " " << size << "\n";
         if (entry.fileOff == 0) {
             try {
                 // Just try and load it like an ELF object.
                 addElfObject(name, nullptr, entry.start);
             }
-            catch (...) {
+            catch (const std::exception &ex) {
+               *debug << "failed to add ELF object " << name << ": " << ex.what() << "\n";
             }
         }
     }
-    if (verbose)
-        *debug << "total mapped file size: " << totalSize << std::endl;
+    if (verbose > 0)
+        *debug << "total mapped file size: " << totalSize << "\n";
     return true; // found an NT_FILE note, so success.
 }
 

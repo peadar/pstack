@@ -409,11 +409,11 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                   auto unit = loc.die().getUnit();
                   auto off = r.getuint(4);
                   auto die = unit->offsetToDIE(DIE(), off + unit->offset);
-                  std::clog << die << "\n";
+                  std::clog << json(die) << "\n";
                   auto attr = die.attribute(DW_AT_type);
                   if (attr) {
                      auto typeDie = DIE(attr);
-                     std::clog << typeDie << "\n";
+                     std::clog << json(typeDie) << "\n";
                   }
                   std::clog << "\n";
                   return -1;

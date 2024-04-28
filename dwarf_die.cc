@@ -14,7 +14,7 @@ class DIE::Raw {
     Elf::Off firstChild;
     Elf::Off nextSibling;
 public:
-    Raw(Unit *, DWARFReader &, size_t, Elf::Off parent);
+    Raw(Unit *unit, DWARFReader &r, size_t abbr, Elf::Off parent);
     ~Raw();
     // Mostly, Raw DIEs are hidden from everything. DIE needs access though
     friend class DIE;
@@ -99,7 +99,7 @@ DIE::containsAddress(Elf::Addr addr) const
     // DW_AT_ranges attr.
     auto rangeattr = attribute(DW_AT_ranges);
     if (rangeattr.valid()) {
-        const Ranges *ranges = unit->getRanges(*this, low.valid() ? uintmax_t(low) : 0);
+        const auto &ranges = unit->getRanges(*this, low.valid() ? uintmax_t(low) : 0);
         if (ranges != nullptr) {
             // Iterate over the ranges, and see if the address lies inside.
             for (const Ranges::value_type &range : *ranges)
@@ -128,7 +128,7 @@ DIE::attribute(AttrName name, bool local) const
           name, cmp());
 
     if (loc != raw->type->attrName2Idx.end() && loc->first == name)
-        return { *this, &raw->type->forms.at(loc->second) };
+        return Attribute{ *this, &raw->type->forms.at(loc->second) };
 
     // If we have attributes of any of these types, we can look for other
     // attributes in the referenced entry.
@@ -344,7 +344,8 @@ DIE::Raw::~Raw()
     }
 }
 
-static void walk(const DIE & die) { for (auto c : die.children()) { walk(c); } };
+void walk(const DIE & die) { for (auto c : die.children()) { walk(c); } };
+
 Elf::Off
 DIE::getParentOffset() const
 {
@@ -661,7 +662,7 @@ std::pair<AttrName, DIE::Attribute>
 DIE::Attributes::const_iterator::operator *() const {
     return std::make_pair(
             rawIter->first,
-            Attribute(die, &die.raw->type->forms[rawIter->second]));
+            Attribute{ die, &die.raw->type->forms[rawIter->second] } );
 }
 
 DIE::Attributes::const_iterator
@@ -687,47 +688,47 @@ bool DIE::hasChildren() const {
 }
 
 std::string
-DIE::typeName(const DIE &type)
+DIE::typeName()
 {
     if (!*this)
         return "void";
-
-    const auto &name = type.name();
-    if (name != "")
-        return name;
-    auto base = DIE(type.attribute(DW_AT_type));
+    const auto &selfname = name();
+    if (selfname != "")
+        return selfname;
+    auto base = DIE(attribute(DW_AT_type));
     std::string s, sep;
-    switch (type.tag()) {
+    switch (tag()) {
         case DW_TAG_pointer_type:
-            return typeName(base) + " *";
+            return base.typeName() + " *";
         case DW_TAG_const_type:
-            return typeName(base) + " const";
+            return base.typeName() + " const";
         case DW_TAG_volatile_type:
-            return typeName(base) + " volatile";
+            return base.typeName() + " volatile";
         case DW_TAG_subroutine_type:
-            s = typeName(base) + "(";
+            s = base.typeName() + "(";
             sep = "";
-            for (auto arg : type.children()) {
+            for (auto arg : children()) {
                 if (arg.tag() != DW_TAG_formal_parameter)
                     continue;
                 s += sep;
-                s += typeName(DIE(arg.attribute(DW_AT_type)));
+                s += DIE(arg.attribute(DW_AT_type)).typeName();
                 sep = ", ";
             }
             s += ")";
             return s;
         case DW_TAG_reference_type:
-            return typeName(base) + "&";
+            return base.typeName() + "&";
         default: {
-            return stringify("(unhandled tag ", type.tag(), ")");
+            return stringify("(unhandled tag ", tag(), ")");
         }
     }
 }
 
-const Ranges * DIE::getRanges() const {
+const std::unique_ptr<Ranges> &DIE::getRanges() const {
     auto ranges = attribute(DW_AT_ranges);
+    static std::unique_ptr<Ranges> none;
     if (!ranges.valid())
-        return nullptr;
+        return none;
     auto lowpc = attribute(DW_AT_low_pc);
     return unit->getRanges(*this, lowpc.valid() ? uintmax_t(lowpc) : 0);
 }

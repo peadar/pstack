@@ -48,14 +48,14 @@ CFI *Info::getCFI() const {
 }
 
 Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
-    : elf(obj)
-    , debugInfo(obj->getDebugSection(".debug_info", SHT_NULL))
-    , debugStrings(obj->getDebugSection(".debug_str", SHT_NULL))
-    , debugLineStrings(obj->getDebugSection(".debug_line_str", SHT_NULL))
-    , debugRanges(obj->getDebugSection(".debug_ranges", SHT_NULL))
-    , debugStrOffsets(obj->getDebugSection(".debug_str_offsets", SHT_NULL))
-    , debugAddr(obj->getDebugSection(".debug_addr", SHT_NULL))
-    , debugRangelists(obj->getDebugSection(".debug_rnglists", SHT_NULL))
+    : elf(std::move(obj))
+    , debugInfo(elf->getDebugSection(".debug_info", SHT_NULL))
+    , debugStrings(elf->getDebugSection(".debug_str", SHT_NULL))
+    , debugLineStrings(elf->getDebugSection(".debug_line_str", SHT_NULL))
+    , debugRanges(elf->getDebugSection(".debug_ranges", SHT_NULL))
+    , debugStrOffsets(elf->getDebugSection(".debug_str_offsets", SHT_NULL))
+    , debugAddr(elf->getDebugSection(".debug_addr", SHT_NULL))
+    , debugRangelists(elf->getDebugSection(".debug_rnglists", SHT_NULL))
     , imageCache(cache_)
 {
 }
@@ -157,7 +157,7 @@ Info::offsetToDIE(Elf::Off offset) const
 Units
 Info::getUnits() const
 {
-    return { shared_from_this() };
+    return Units{ shared_from_this() };
 }
 
 void
@@ -222,7 +222,7 @@ Info::lookupUnit(Elf::Addr addr) const {
                (*aranges)[high] = std::make_pair(high - low, u->offset);
             }
             // do we have ranges for this DIE?
-            const Ranges *ranges = root.getRanges();
+            const auto &ranges = root.getRanges();
             if (ranges != nullptr)
                 for (auto r : *ranges)
                     (*aranges)[r.second] = { r.first, u->offset };
@@ -259,7 +259,7 @@ std::unique_ptr<LineInfo>
 Info::linesAt(intmax_t offset, Unit &unit) const
 {
     auto lines = std::make_unique<LineInfo>();
-    auto &lineshdr = elf->getDebugSection(".debug_line", SHT_NULL);
+    const Elf::Section &lineshdr = elf->getDebugSection(".debug_line", SHT_NULL);
     if (lineshdr) {
         DWARFReader r(lineshdr.io(), offset);
         lines->build(r, unit);
@@ -270,7 +270,7 @@ Info::linesAt(intmax_t offset, Unit &unit) const
 std::string
 Info::getAltImageName() const
 {
-    auto &section = elf->getDebugSection(".gnu_debugaltlink", SHT_NULL);
+    const Elf::Section &section = elf->getDebugSection(".gnu_debugaltlink", SHT_NULL);
     const auto &name = section.io()->readString(0);
     if (name[0] == '/')
         return name;

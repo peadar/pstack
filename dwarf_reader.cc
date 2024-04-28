@@ -64,6 +64,7 @@ DWARFReader::readFormUnsigned(Form form)
 intmax_t
 DWARFReader::readFormSigned(Form form)
 {
+    (void)this; // avoid warnings about making this static.
     switch (form) {
         default:
             abort();

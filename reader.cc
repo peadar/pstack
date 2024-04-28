@@ -40,7 +40,7 @@ FileReader::~FileReader()
     ::close(file);
 }
 
-MemReader::MemReader(const string &descr, size_t len_, const void *data_)
+MemReader::MemReader(const string &descr, size_t len_, const char *data_)
     : descr(descr)
     , len(len_)
     , data(data_)
@@ -238,10 +238,11 @@ MmapReader::MmapReader(const string &name_)
    struct stat s;
    fstat(fd, &s);
    len = s.st_size;
-   data = mmap(0, len, PROT_READ, MAP_PRIVATE, fd, 0);
+   void *p = mmap(nullptr, len, PROT_READ, MAP_PRIVATE, fd, 0);
    close(fd);
-   if (data == MAP_FAILED)
+   if (p == MAP_FAILED)
       throw (Exception() << "mmap failed: " << strerror(errno));
+   data = static_cast<char *>(p);
 }
 
 MmapReader::~MmapReader() {

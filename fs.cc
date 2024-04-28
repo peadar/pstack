@@ -55,17 +55,19 @@ linkResolve(std::string name)
     return name;
 }
 
-static int
+namespace {
+int
 openFileDirect(const std::string &name_, int mode, int mask)
 {
-    auto fd = open(name_.c_str(), mode, mask);
+    auto fd = ::open(name_.c_str(), mode, mask);
     if (verbose > 2) {
        if (fd != -1)
-          *debug << "opened " << name_ << ", fd=" << fd << std::endl;
+          *debug << "opened " << name_ << ", fd=" << fd << "\n";
        else
-          *debug << "failed to open " << name_ << ": " << strerror(errno) << std::endl;
+          *debug << "failed to open " << name_ << ": " << strerror(errno) << "\n";
     }
     return fd;
+}
 }
 
 int

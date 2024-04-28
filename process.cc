@@ -10,7 +10,7 @@
 #include <set>
 #include <sys/ucontext.h>
 #include <sys/wait.h>
-#include <signal.h>
+#include <csignal>
 
 #include "libpstack/archreg.h"
 #include "libpstack/dwarf.h"
@@ -340,7 +340,7 @@ PrintableFrame::PrintableFrame(Process &proc, const StackFrame &frame)
             if (lowpc.valid()) {
                 functionOffset = objIp - uintmax_t(lowpc);
             } else {
-                auto ranges = function.getRanges();
+                const auto &ranges = function.getRanges();
                 if (ranges) {
                     functionOffset = objIp - (*ranges)[0].first;
                 } else {

@@ -15,9 +15,11 @@
 
 namespace pstack::Procman {
 SelfProcess::SelfProcess(const Elf::Object::sptr &ex, const PstackOptions &options, Dwarf::ImageCache &imageCache)
-    : Process( ex ? ex : imageCache.getImageForName("/proc/self/exe"),
-            std::make_shared<MemReader>("me", std::numeric_limits<size_t>::max(), reinterpret_cast<void *>(0)), // the entire of our own address space.
+    : Process(
+            ex ? ex : imageCache.getImageForName("/proc/self/exe"),
+            std::make_shared<MemReader>("me", std::numeric_limits<size_t>::max(), nullptr),
             options, imageCache)
+    , pid( getpid() )
 {
 }
 
@@ -29,7 +31,7 @@ SelfProcess::getAUXV() const
 
 void
 SelfProcess::listLWPs(std::function<void(lwpid_t)> cb) {
-   cb(syscall(SYS_gettid));
+   cb(int(syscall(SYS_gettid)));
 }
 
 size_t

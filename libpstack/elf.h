@@ -80,8 +80,8 @@ std::ostream &operator<< (std::ostream &, const JSON<pstack::Elf::Object> &);
 namespace pstack::Elf {
 
 #ifndef __FreeBSD__
-typedef Elf32_Nhdr Elf32_Note;
-typedef Elf64_Nhdr Elf64_Note;
+using Elf32_Note = Elf32_Nhdr;
+using Elf64_Note =  Elf64_Nhdr;
 
 #define TypeForBits(type, bits, uscore) typedef Elf##bits##uscore##type type
 #define Type2(type, bits) TypeForBits(type, bits, _)
@@ -162,16 +162,22 @@ class GnuHash {
         uint32_t bloom_shift;
     };
     Header header;
-    uint32_t bloomoff(size_t idx) const { return sizeof header + idx * sizeof(Off); }
-    uint32_t bucketoff(size_t idx) const { return bloomoff(header.bloom_size) + idx * 4; }
-    uint32_t chainoff(size_t idx) const { return bucketoff(header.nbuckets) + idx * 4; }
+    [[nodiscard]] uint32_t bloomoff(size_t idx) const noexcept { return sizeof header + idx * sizeof(Off); }
+    [[nodiscard]] uint32_t bucketoff(size_t idx) const noexcept { return bloomoff(header.bloom_size) + idx * 4; }
+    [[nodiscard]] uint32_t chainoff(size_t idx) const noexcept { return bucketoff(header.nbuckets) + idx * 4; }
 public:
-    static const char *tablename() { return ".gnu.hash"; }
+    static const char *tablename() noexcept { return ".gnu.hash"; }
     static int sectiontype() { return SHT_GNU_HASH; }
-    GnuHash(const Reader::csptr &hash_, const Reader::csptr &syms_, const Reader::csptr &strings_) :
-        hash(hash_), syms(syms_), strings(strings_), header(hash->readObj<Header>(0)) { }
+
+    GnuHash(Reader::csptr hash_, Reader::csptr syms_, Reader::csptr strings_)
+        : hash(std::move(hash_))
+        , syms(std::move(syms_))
+        , strings(std::move(strings_))
+        , header(hash->readObj<Header>(0))
+        {}
+
     std::pair<uint32_t, Sym> findSymbol(const char *) const;
-    std::pair<uint32_t, Sym> findSymbol(const std::string &name) const {
+    [[nodiscard]] std::pair<uint32_t, Sym> findSymbol(const std::string &name) const {
        return findSymbol(name.c_str());
     }
 };
@@ -186,10 +192,11 @@ public:
     Object *elf; // the image in which the section resides.
     std::string name;
     Shdr shdr;
-    operator bool() const { return shdr.sh_type != SHT_NULL; }
+    explicit operator bool() const { return shdr.sh_type != SHT_NULL; }
     Section(Object *io, Off off);
-    Section(const Section &) = delete;
-    Section() { shdr.sh_type = SHT_NULL; }
+    Section() : elf( nullptr ), name("null"), shdr { } {
+        shdr.sh_type = SHT_NULL;
+    }
     Reader::csptr io() const;
 };
 
@@ -197,19 +204,21 @@ class Notes {
    const Object *object;
 public:
    class iterator;
-   iterator begin() const;
-   iterator end() const;
-   Notes(const Object *object_) : object(object_) {}
-   typedef NoteDesc value_type;
+   [[nodiscard]] iterator begin() const;
+   [[nodiscard]] iterator end() const;
+   explicit Notes(const Object *object_) : object(object_) {}
+   using value_type = NoteDesc;
 };
 
 const Sym &undef();
 
 struct VersionIdx {
-   int idx;
-   bool isHidden() const { return idx != -1 && ((idx & 0x8000) != 0 || idx == 0); }
-   bool isVersioned() const { return (idx & 0x7fff) > 1; }
-   explicit VersionIdx( int idx) : idx(idx){};
+   Half idx;
+   [[nodiscard]] bool isHidden() const {
+       return idx != std::numeric_limits<Half>::max() && ((idx & 0x8000U) != 0 || idx == 0);
+   }
+   [[nodiscard]] bool isVersioned() const { return (idx & 0x7fffU) > 1; }
+   explicit VersionIdx(Half idx) : idx(idx){};
 };
 
 /*
@@ -236,7 +245,7 @@ public:
 };
 
 struct SymbolVersioning {
-    std::map<int, std::string> versions;
+    std::map<unsigned, std::string> versions;
     std::map<std::string, std::vector<int>> files;
 };
 
@@ -306,7 +315,7 @@ private:
     std::unique_ptr<SymbolSection> debugSymbols_;
     std::unique_ptr<SymbolSection> dynamicSymbols_;
 
-    SymbolSection *getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type);
+    SymbolSection *getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type) const;
 
     mutable bool debugLoaded; // We've at least attempted to load debugObject: don't try again
     mutable Object::sptr debugObject; // debug object as per .gnu_debuglink/other.
@@ -371,23 +380,16 @@ class NoteDesc {
    Reader::csptr io;
 public:
 
-   NoteDesc(const NoteDesc &rhs)
-      : note(rhs.note)
-      , io(rhs.io)
-   {
-   }
+   NoteDesc(const NoteDesc &rhs) = default;
 
-   std::string name() const;
+   [[nodiscard]] std::string name() const;
    Reader::csptr data() const;
    int type()  const { return note.n_type; }
    NoteDesc(const Note &note_, Reader::csptr io_)
       : note(note_)
       , io(io_)
    {
-      io->readObj(0, &note);
    }
-   NoteDesc() = default;
-   ~NoteDesc() noexcept = default;
 };
 
 class Notes::iterator {

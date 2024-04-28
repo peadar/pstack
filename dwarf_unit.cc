@@ -209,12 +209,12 @@ Unit::findAbbreviation(size_t code) const
     return it != abbreviations.end() ? &it->second : nullptr;
 }
 
-const Ranges *
+const std::unique_ptr<Ranges> &
 Unit::getRanges(const DIE &die, uintmax_t base) {
     auto &ptr = rangesForOffset[die.offset];
     if (ptr == nullptr)
         ptr = std::make_unique<Ranges>(die, base);
-    return ptr.get();
+    return ptr;
 }
 
 void

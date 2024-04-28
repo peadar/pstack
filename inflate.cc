@@ -53,6 +53,6 @@ InflateReader::InflateReader(size_t inflatedSize, const Reader &upstream)
 
 InflateReader::~InflateReader()
 {
-   delete[] reinterpret_cast<char *>(const_cast<void *>(data));
+   delete[] data;
 }
 }

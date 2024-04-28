@@ -29,7 +29,7 @@ ImageCache::ImageCache() : dwarfHits(0), dwarfLookups(0) { }
 ImageCache::~ImageCache() noexcept {
     if (verbose >= 2)
         *debug << "DWARF image cache: lookups: " << dwarfLookups << ", hits="
-            << dwarfHits << std::endl;
+            << dwarfHits << "\n";
 }
 
 void

@@ -22,33 +22,52 @@ namespace pstack::Elf {
 using std::string;
 using std::make_shared;
 
-static uint32_t elf_hash(const string &text);
-
 bool noExtDebug;
 
-std::vector<string> globalDebugDirectories;
+std::vector<string> globalDebugDirectories = {
+    "/usr/lib/debug", 
+    "/usr/lib/debug/usr"
+};
 
 namespace {
-bool setupGDD()
+
+/*
+ * Culled from System V Application Binary Interface
+ */
+uint32_t
+elf_hash(const string &text)
 {
-   // Add as a hack for when linker loads from /lib, but package has /usr/lib
-   globalDebugDirectories.push_back("/usr/lib/debug");
-   globalDebugDirectories.push_back("/usr/lib/debug/usr");
-   return false;
+    uint32_t h = 0;
+    for (auto c : text) {
+        h = (h << 4U) + c;
+        uint32_t g = h & 0xf0000000;
+        if (g != 0)
+            h ^= g >> 24U;
+        h &= ~g;
+    }
+    return (h);
 }
-bool _gdd_init = setupGDD();
+
+uint32_t gnu_hash(const char *s) {
+    const  auto * name = reinterpret_cast<const uint8_t *>(s);
+    uint32_t h = 5381;
+    while (*name != 0)
+        h = (h << 5U) + h + *name++;
+    return h;
+}
+
 }
 
 Notes::iterator
 Notes::begin() const
 {
-   return iterator(object, true);
+   return { object, true };
 }
 
 Notes::iterator
 Notes::end() const
 {
-   return iterator(object, false);
+   return { object, false };
 }
 
 Notes::iterator::iterator(const Object *object_, bool begin)
@@ -110,9 +129,9 @@ Object::endVA() const
 
 std::optional<std::string>
 Object::symbolVersion(VersionIdx idx) const {
-    auto vi = symbolVersions();
+    const SymbolVersioning *vi = symbolVersions();
 
-    int i = idx.idx & 0x7fff;
+    unsigned i = idx.idx & 0x7fffU;
     if (i >= 2)
         return vi->versions.at(i);
     else
@@ -120,15 +139,9 @@ Object::symbolVersion(VersionIdx idx) const {
 }
 
 VersionIdx Object::versionIdxForSymbol(size_t idx) const {
-   return VersionIdx(*gnu_version ? gnu_version->io()->readObj<Half>(idx * 2) : -1);
-}
-
-static uint32_t gnu_hash(const char *s) {
-    auto name = (const uint8_t *)s;
-    uint32_t h = 5381;
-    while (*name)
-        h = (h << 5) + h + *name++;
-    return h;
+   return VersionIdx(*gnu_version ?
+           gnu_version->io()->readObj<Half>(idx * 2) :
+           std::numeric_limits<Half>::max());
 }
 
 std::pair<uint32_t, Sym>
@@ -155,9 +168,9 @@ GnuHash::findSymbol(const char *name) const {
     for (;;) {
         auto sym = syms->readObj<Sym>(idx * sizeof (Sym));
         auto chainhash = hash->readObj<uint32_t>(chainoff(idx - header.symoffset));
-        if ((chainhash | 1)  == (symhash | 1) && strings->readString(sym.st_name) == name)
+        if ((chainhash | 1U)  == (symhash | 1U) && strings->readString(sym.st_name) == name)
               return std::make_pair(idx, sym);
-        if (chainhash & 1) {
+        if ((chainhash & 1U) != 0) {
            if (verbose >= 2)
                *debug << "failed to find '" << name << "' hit end of hash chain\n";
            return std::make_pair(0, undef());
@@ -175,9 +188,9 @@ SymbolSection *Object::dynamicSymbols() {
 }
 
 SymbolSection *
-Object::getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type) {
+Object::getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type) const {
     if (table == nullptr) {
-        auto &sec {getDebugSection( name, type ) };
+        const Section &sec {getDebugSection( name, type )};
         table = std::make_unique<SymbolSection>(sec.io(), getLinkedSection(sec).io());
     }
     return table.get();
@@ -194,17 +207,14 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
     if (!IS_ELF(elfHeader) || elfHeader.e_ident[EI_VERSION] != EV_CURRENT)
         throw (Exception() << *io << ": content is not an ELF image");
 
-    auto headers = io->view("program headers", elfHeader.e_phoff, elfHeader.e_phnum * sizeof (Phdr));
-    for (auto hdr : ReaderArray<Phdr>(*headers))
+    Reader::csptr headers = io->view("program headers", elfHeader.e_phoff, elfHeader.e_phnum * sizeof (Phdr));
+    for (const auto &hdr : ReaderArray<Phdr>(*headers))
         programHeaders[hdr.p_type].push_back(hdr);
     // Sort program headers by VA.
     for (auto &phdrs : programHeaders)
         std::sort(phdrs.second.begin(), phdrs.second.end(),
                 [] (const Phdr &lhs, const Phdr &rhs) {
                     return lhs.p_vaddr < rhs.p_vaddr; });
-
-    Elf::Off off;
-    int i;
 
     // Make sure the header sections are present in the reader, otherwise, skip.
     if (elfHeader.e_shoff < io->size()) {
@@ -219,7 +229,8 @@ Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
           sectionHeaders.reserve(headerCount);
        }
 
-       for (off = elfHeader.e_shoff, i = 0; i < headerCount; i++) {
+       int i = 0;
+       for (Elf::Off off = elfHeader.e_shoff; i < headerCount; i++) {
            sectionHeaders.emplace_back(std::make_unique<Section>(this, off));
            if (i == 0 && elfHeader.e_shnum == 0) {
                headerCount = sectionHeaders[0]->shdr.sh_size;
@@ -436,6 +447,7 @@ Object::findSymbolByAddress(Addr addr, int type)
         }
 #endif
     }
+
     if (debugData) {
         auto debugSym = debugData->findSymbolByAddress(addr, type);
         if (debugSym)
@@ -641,22 +653,6 @@ SymHash::findSymbol(const string &name)
             return std::make_pair(i, candidate);
     }
     return std::make_pair(0, undef());
-}
-
-/*
- * Culled from System V Application Binary Interface
- */
-static uint32_t
-elf_hash(const string &text)
-{
-    uint32_t h = 0, g;
-    for (auto c : text) {
-        h = (h << 4) + c;
-        if ((g = h & 0xf0000000) != 0)
-            h ^= g >> 24;
-        h &= ~g;
-    }
-    return (h);
 }
 
 Section::Section(Object *elf, Off off) : elf(elf) {
