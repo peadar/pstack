@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <sys/types.h>
 #include <map>
+#include <err.h>
 
 #include "libpstack/proc.h"
 #include "libpstack/elf.h"
@@ -31,6 +32,8 @@
 #endif
 using namespace std;
 using namespace pstack;
+
+using AddressRanges = std::vector<std::pair<Elf::Off, Elf::Off>>;
 
 // does "name" match the glob pattern "pattern"?
 static int
@@ -161,6 +164,104 @@ options:
 
 }
 
+
+static void findString(const Procman::Process &process,
+      const Procman::AddressRange &segment,
+      const std::string &findstr) {
+   std::vector<char> corestr;
+   corestr.resize(std::max(size_t(4096UL), findstr.size() * 4));
+   for (size_t in, memPos = segment.start, corestrPos = 0; memPos < segment.end; memPos += in) {
+      size_t freeCorestr = corestr.size() - corestrPos;
+      size_t remainingSegment = segment.fileEnd - memPos;
+      size_t readsize = std::min(remainingSegment, freeCorestr);
+      in = process.io->read(memPos, readsize, corestr.data() + corestrPos);
+      assert(in == readsize);
+      corestrPos += in;
+      for (auto found = corestr.begin();; ++found) {
+         found = std::search(corestr.begin(), corestr.begin() + corestrPos, findstr.begin(), findstr.end());
+         if (found == corestr.end())
+            break;
+         IOFlagSave _(cout);
+         std::cout << "0x" << hex << memPos + (found - corestr.begin()) << "\n";
+      }
+      if (corestrPos >= findstr.size()) {
+         memmove(corestr.data(),
+               corestr.data() + corestrPos - findstr.size() + 1,
+               findstr.size() - 1);
+      }
+      memPos += in;
+   }
+}
+
+template <typename Matcher, typename Word> void search(Procman::Process &process,
+      const Matcher & m, const Procman::AddressRange &segment,
+      const AddressRanges &searchaddrs, SymbolStore &store, bool showaddrs) {
+   const size_t step = sizeof(Word);
+   const size_t chunk_size = 1'048'576;
+   Elf::Addr loc=segment.start;
+   const Elf::Addr end_loc = segment.fileEnd;
+   std::vector<Word> data;
+   while (loc < end_loc) {
+      size_t read_size = std::min(chunk_size, end_loc - loc);
+      data.resize(read_size/step);
+      try {
+         read_size = process.io->read(loc, read_size, reinterpret_cast<char*>(data.data()));
+      }
+      catch (const std::exception &ex) {
+         std::cerr << "error reading chunk from core: " << ex.what() << std::endl;
+         loc = end_loc;
+         continue;
+      }
+      data.resize(read_size / step);
+      if (verbose) {
+         // log a '.' every megabyte.
+         clog << '.';
+      }
+      for (auto it=data.begin(); it != data.end(); ++it, loc+=step) {
+         const auto & p=*it;
+         if (searchaddrs.size()) {
+            for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
+               if (p >= range->first && p < range->second) {
+                  IOFlagSave _(cout);
+                  cout << "0x" << hex << loc << dec << "\n";
+               }
+            }
+         } else {
+            auto [ found, sym ] = store.find(p, m);
+            if (found) {
+               if (showaddrs)
+                  cout
+                     << sym->name << " 0x" << std::hex << loc
+                     << std::dec <<  " ... size=" << sym->sym.st_size
+                     << ", diff=" << p - sym->memaddr() << endl;
+#if 0 && WITH_PYTHON
+               if (doPython) {
+                  std::cout << "pyo " << Elf::Addr(loc) << " ";
+                  py.print(Elf::Addr(loc) - sizeof (PyObject) +
+                        sizeof (struct _typeobject *));
+                  std::cout << "\n";
+               }
+#endif
+               sym->count++;
+            }
+         }
+      }
+   }
+}
+
+template <typename Matcher> void search(int wordsize,
+      Procman::Process &process,
+      const Matcher & m, const Procman::AddressRange &segment,
+      const AddressRanges &searchaddrs, SymbolStore &store, bool showaddrs) {
+   if (wordsize == 32) {
+      return search<Matcher, uint32_t>(process, m, segment, searchaddrs, store, showaddrs);
+   } else if (wordsize == 64) {
+      return search<Matcher, uint64_t>(process, m, segment, searchaddrs, store, showaddrs);
+   } else {
+      errx(1, "invalid word size %d, must be 32 or 64", wordsize);
+   }
+}
+
 int
 mainExcept(int argc, char *argv[])
 {
@@ -170,11 +271,12 @@ mainExcept(int argc, char *argv[])
     Dwarf::ImageCache imageCache;
     std::vector<std::string> patterns;
     Elf::Object::sptr exec;
+    int wordsize = sizeof (Elf::Off) * 8;
     Elf::Object::sptr core;
     bool showaddrs = false;
     bool showsyms = false;
 
-    std::vector<std::pair<Elf::Off, Elf::Off>> searchaddrs;
+    AddressRanges searchaddrs;
     std::string findstr;
     int symOffset = -1;
 
@@ -214,6 +316,7 @@ mainExcept(int argc, char *argv[])
     .add("end-location", 'e', "end-address",
           "change previous 'f' option to include all addresses in range ['f' addr, 'e' addr)",
           [&](const char *p) { searchaddrs.back().second = strtoul(p, 0, 0); })
+    .add("wordsize", 'w', "wordsize(16 or 32)", "consider address ranges as wordsize-bit values", Flags::set( wordsize ) )
     .add("string", 'S', "text", "search the core for the text string <text>, and print it's address", Flags::set(findstr))
     .parse(argc, argv);
 
@@ -268,7 +371,6 @@ mainExcept(int argc, char *argv[])
 #ifdef WITH_PYTHON
     PythonPrinter<2> py(*process, std::cout);
 #endif
-    std::vector<Elf::Off> data;
     auto as = process->addressSpace();
     for (auto &segment : as ) {
         if (verbose) {
@@ -276,88 +378,16 @@ mainExcept(int argc, char *argv[])
             *debug << "scan " << hex << segment.start <<  " to " << segment.start + segment.fileEnd;
         }
         if (findstr != "") {
-            std::vector<char> corestr;
-            corestr.resize(std::max(size_t(4096UL), findstr.size() * 4));
-            for (size_t in, memPos = segment.start, corestrPos = 0; memPos < segment.end; memPos += in) {
-                size_t freeCorestr = corestr.size() - corestrPos;
-                size_t remainingSegment = segment.fileEnd - memPos;
-                size_t readsize = std::min(remainingSegment, freeCorestr);
-                in = process->io->read(memPos, readsize, corestr.data() + corestrPos);
-                assert(in == readsize);
-                corestrPos += in;
-                for (auto found = corestr.begin();; ++found) {
-                    found = std::search(corestr.begin(), corestr.begin() + corestrPos, findstr.begin(), findstr.end());
-                    if (found == corestr.end())
-                        break;
-                    IOFlagSave _(cout);
-                    std::cout << "0x" << hex << memPos + (found - corestr.begin()) << "\n";
-                }
-                if (corestrPos >= findstr.size()) {
-                    memmove(corestr.data(),
-                            corestr.data() + corestrPos - findstr.size() + 1,
-                            findstr.size() - 1);
-                }
-                memPos += in;
-            }
+           findString( *process, segment, findstr );
         } else {
-            auto search = [&](auto m) {
-                const size_t step = sizeof(Elf::Off);
-                const size_t chunk_size = 1'048'576;
-                Elf::Addr loc=segment.start;
-                const Elf::Addr end_loc = segment.fileEnd;
-                while (loc < end_loc) {
-                    size_t read_size = std::min(chunk_size, end_loc - loc);
-                    data.resize(read_size/step);
-                    try {
-                        read_size = process->io->read(loc, read_size, reinterpret_cast<char*>(data.data()));
-                    }
-                    catch (const std::exception &ex) {
-                        std::cerr << "error reading chunk from core: " << ex.what() << std::endl;
-                        loc = end_loc;
-                        continue;
-                    }
-                    data.resize(read_size / step);
-                    if (verbose) {
-                        // log a '.' every megabyte.
-                        clog << '.';
-                    }
-                    for (auto it=data.begin(); it != data.end(); ++it, loc+=step) {
-                        const auto & p=*it;
-                        if (searchaddrs.size()) {
-                            for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
-                                if (p >= range->first && p < range->second) {
-                                    IOFlagSave _(cout);
-                                    cout << "0x" << hex << loc << dec << "\n";
-                                }
-                            }
-                        } else {
-                            bool found;
-                            ListedSymbol * sym;
-                            std::tie(found, sym) = store.find(p, m);
-                            if (found) {
-                                if (showaddrs)
-                                    cout
-                                        << sym->name << " 0x" << std::hex << loc
-                                        << std::dec <<  " ... size=" << sym->sym.st_size
-                                        << ", diff=" << p - sym->memaddr() << endl;
-#if 0 && WITH_PYTHON
-                                if (doPython) {
-                                    std::cout << "pyo " << Elf::Addr(loc) << " ";
-                                    py.print(Elf::Addr(loc) - sizeof (PyObject) +
-                                        sizeof (struct _typeobject *));
-                                    std::cout << "\n";
-                                }
-#endif
-                                sym->count++;
-                            }
-                        }
-                    }
-                }
-            };
             if (symOffset > 0)
-                search(OffsetBoundSymbolMatcher(symOffset));
+                search<OffsetBoundSymbolMatcher>(wordsize, *process,
+                      OffsetBoundSymbolMatcher(symOffset),
+                      segment, searchaddrs, store, showaddrs);
             else
-                search(OffsetFreeSymbolMatcher());
+                search<OffsetFreeSymbolMatcher>(wordsize, *process,
+                      OffsetFreeSymbolMatcher(),
+                      segment, searchaddrs, store, showaddrs);
         }
     }
     auto histogram = store.flatten();
