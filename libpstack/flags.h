@@ -9,18 +9,16 @@
 
 namespace pstack {
 
-namespace {
 template <typename T> void convert(const char *opt, T &to) {
-   if constexpr (std::is_integral<T>::value)
-      if constexpr (std::is_signed<T>::value)
-          to = T(strtoll(opt, 0, 0));
+   if constexpr (std::is_integral_v<T>)
+      if constexpr (std::is_signed_v<T>)
+          to = T(strtoll(opt, nullptr, 0));
       else
-          to = T(strtoull(opt, 0, 0));
-   else if constexpr (std::is_floating_point<T>::value)
-      to = strtod(opt, 0);
+          to = T(strtoull(opt, nullptr, 0));
+   else if constexpr (std::is_floating_point_v<T>)
+      to = strtod(opt, nullptr);
    else
       to = opt;
-}
 }
 
 /*
@@ -67,7 +65,7 @@ public:
      * Add a flag to the set of parsed flags - shorter helper for flags that
      * take no arguments.
      */
-    Flags & add(const char *name, int flag, const char *help, VCb cb) {
+    Flags & add(const char *name, int flag, const char *help, const VCb &cb) {
         return add(name, flag, nullptr, help, [cb](const char *) { cb(); });
     }
 
@@ -82,12 +80,6 @@ public:
      */
     std::ostream & dump(std::ostream &os) const;
 
-
-    // Allow move- but not copy-construction.
-    Flags(Flags &&rhs) = default;
-    Flags(const Flags &rhs) = delete;
-    Flags() = default;
-
     // parse argc/argv, calling the correct callbacks. (non-const version will
     // call "done" before calling const version)
     const Flags & parse(int argc, char **argv) const;
@@ -96,7 +88,6 @@ public:
     // Helper to get a VCb to just set a bool to true/false.
     template <typename T> static VCb
     setf(T &val, T to=true) { return [&val, to] () { val = to; }; }
-
 
     // Helper to set a value from a string, using convert to convert from
     // string to whatever type is required.

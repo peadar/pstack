@@ -3,16 +3,15 @@
 
 namespace pstack {
 Flags &
-Flags::add(const char *name, int flag, const char *metavar, const char *help, Cb cb)
-{
+Flags::add( const char *name, int flag, const char *metavar, const char *help, Cb cb) {
     if (flag == LONGONLY)
        flag = --longVal;
-    longOptions.push_back({name, metavar != nullptr, nullptr, int(flag)});
+    longOptions.push_back({name, metavar != nullptr ? 0 : 1, nullptr, int(flag)});
     assert(data.find(flag) == data.end());
     auto &datum = data[flag];
     datum.helptext = help;
     datum.metavar = metavar;
-    datum.callback = cb;
+    datum.callback = std::move(cb);
     return *this;
 }
 
@@ -23,27 +22,26 @@ Flags::done()
     for (auto &opt : longOptions) {
         if (opt.val != '\0') {
            shortOptions += char(opt.val);
-           if (opt.has_arg)
+           if (opt.has_arg != 0)
                shortOptions += ':';
         }
     }
-    longOptions.push_back({0, false, nullptr, 0});
+    longOptions.push_back({nullptr, 0, nullptr, 0});
     return *this;
 }
 
 std::ostream &
 Flags::dump(std::ostream &os) const
 {
-    for (size_t i = 0; i < longOptions.size(); ++i) {
-        const auto &opt = longOptions[i];
-        if (opt.name == 0)
+    for (const auto &opt  : longOptions) {
+        if (opt.name == nullptr)
             continue;
         const auto &datum = data.at(opt.val);
         os << "    [";
         if (opt.val > 0)
            os << "-" << char(opt.val) << "|";
         os << "--" << opt.name;
-        if (opt.has_arg)
+        if (opt.has_arg != 0)
             os << " <" << datum.metavar << ">";
         os << "]\n        " << datum.helptext << "\n";
     }
@@ -53,8 +51,12 @@ Flags::dump(std::ostream &os) const
 const Flags &
 Flags::parse(int argc, char **argv) const
 {
-    int c, optidx;
-    while ((c = getopt_long(argc, argv, shortOptions.c_str(), &longOptions[0], &optidx)) != -1) {
+    for (;;) {
+       int optidx = 0;
+       int c = getopt_long(argc, argv, shortOptions.c_str(), longOptions.data(), &optidx);
+       if (c == -1)
+          break;
+
         if (c == '?') {
            dump(std::clog);
            throw std::runtime_error(std::string("unknown command line option "));
