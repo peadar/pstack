@@ -6,7 +6,7 @@ Flags &
 Flags::add( const char *name, int flag, const char *metavar, const char *help, Cb cb) {
     if (flag == LONGONLY)
        flag = --longVal;
-    longOptions.push_back({name, metavar != nullptr ? 0 : 1, nullptr, int(flag)});
+    longOptions.push_back({name, metavar != nullptr ? 1 : 0, nullptr, int(flag)});
     assert(data.find(flag) == data.end());
     auto &datum = data[flag];
     datum.helptext = help;
@@ -20,7 +20,7 @@ Flags::done()
 {
     shortOptions = "";
     for (auto &opt : longOptions) {
-        if (opt.val != '\0') {
+        if (opt.val > 0) {
            shortOptions += char(opt.val);
            if (opt.has_arg != 0)
                shortOptions += ':';
