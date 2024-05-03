@@ -164,7 +164,6 @@ options:
 
 }
 
-
 static void findString(const Procman::Process &process,
       const Procman::AddressRange &segment,
       const std::string &findstr) {
@@ -196,70 +195,53 @@ static void findString(const Procman::Process &process,
 template <typename Matcher, typename Word> void search(Procman::Process &process,
       const Matcher & m, const Procman::AddressRange &segment,
       const AddressRanges &searchaddrs, SymbolStore &store, bool showaddrs) {
-   const size_t step = sizeof(Word);
-   const size_t chunk_size = 1'048'576;
-   Elf::Addr loc=segment.start;
-   const Elf::Addr end_loc = segment.fileEnd;
-   std::vector<Word> data;
-   while (loc < end_loc) {
-      size_t read_size = std::min(chunk_size, end_loc - loc);
-      data.resize(read_size/step);
-      try {
-         read_size = process.io->read(loc, read_size, reinterpret_cast<char*>(data.data()));
-      }
-      catch (const std::exception &ex) {
-         std::cerr << "error reading chunk from core: " << ex.what() << std::endl;
-         loc = end_loc;
-         continue;
-      }
-      data.resize(read_size / step);
-      if (verbose) {
-         // log a '.' every megabyte.
-         clog << '.';
-      }
-      for (auto it=data.begin(); it != data.end(); ++it, loc+=step) {
-         const auto & p=*it;
-         if (searchaddrs.size()) {
-            for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
-               if (p >= range->first && p < range->second) {
-                  IOFlagSave _(cout);
-                  cout << "0x" << hex << loc << dec << "\n";
-               }
-            }
-         } else {
-            auto [ found, sym ] = store.find(p, m);
-            if (found) {
-               if (showaddrs)
-                  cout
-                     << sym->name << " 0x" << std::hex << loc
-                     << std::dec <<  " ... size=" << sym->sym.st_size
-                     << ", diff=" << p - sym->memaddr() << endl;
+    Elf::Addr loc=segment.start;
+    auto view = process.io->view( "segment view", loc, segment.fileEnd - loc );
+    try {
+        for (auto p : ReaderArray<Word, 131072>(*view, 0)) {
+            if (searchaddrs.size()) {
+                for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
+                    if (p >= range->first && p < range->second) {
+                        IOFlagSave _(cout);
+                        cout << "0x" << hex << loc << dec << "\n";
+                    }
+                }
+            } else {
+                if ( auto [ found, sym ] = store.find(p, m); found) {
+                    if (showaddrs)
+                        cout
+                            << sym->name << " 0x" << std::hex << loc
+                            << std::dec <<  " ... size=" << sym->sym.st_size
+                            << ", diff=" << p - sym->memaddr() << endl;
 #if 0 && WITH_PYTHON
-               if (doPython) {
-                  std::cout << "pyo " << Elf::Addr(loc) << " ";
-                  py.print(Elf::Addr(loc) - sizeof (PyObject) +
-                        sizeof (struct _typeobject *));
-                  std::cout << "\n";
-               }
+                    if (doPython) {
+                        std::cout << "pyo " << Elf::Addr(loc) << " ";
+                        py.print(Elf::Addr(loc) - sizeof (PyObject) +
+                                sizeof (struct _typeobject *));
+                        std::cout << "\n";
+                    }
 #endif
-               sym->count++;
+                    sym->count++;
+                }
             }
-         }
-      }
-   }
+            loc += sizeof( Word );
+        }
+    } catch (const std::exception &ex) {
+        std::clog << "warning: error reading data at " << std::hex << loc << std::dec << ": " << ex.what() << "\n";
+    }
 }
 
 template <typename Matcher> void search(int wordsize,
-      Procman::Process &process,
-      const Matcher & m, const Procman::AddressRange &segment,
-      const AddressRanges &searchaddrs, SymbolStore &store, bool showaddrs) {
-   if (wordsize == 32) {
-      return search<Matcher, uint32_t>(process, m, segment, searchaddrs, store, showaddrs);
-   } else if (wordsize == 64) {
-      return search<Matcher, uint64_t>(process, m, segment, searchaddrs, store, showaddrs);
-   } else {
-      errx(1, "invalid word size %d, must be 32 or 64", wordsize);
-   }
+        Procman::Process &process,
+        const Matcher & m, const Procman::AddressRange &segment,
+        const AddressRanges &searchaddrs, SymbolStore &store, bool showaddrs) {
+    if (wordsize == 32) {
+        return search<Matcher, uint32_t>(process, m, segment, searchaddrs, store, showaddrs);
+    } else if (wordsize == 64) {
+        return search<Matcher, uint64_t>(process, m, segment, searchaddrs, store, showaddrs);
+    } else {
+        errx(1, "invalid word size %d, must be 32 or 64", wordsize);
+    }
 }
 
 int
