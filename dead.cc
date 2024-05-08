@@ -193,7 +193,6 @@ CoreProcess::getPID() const
 FileEntries::iterator::iterator(const FileEntries &entries, ReaderArray<FileEntry>::iterator pos)
         : entries(entries)
         , entriesIterator(pos) {
-    fetch();
 }
 
 struct NamedEntry {
@@ -205,14 +204,17 @@ struct NamedEntry {
 
 void
 FileEntries::iterator::fetch() {
-   if (entries.names)
+   if (!fetched && entries.names) {
        cur = std::make_pair(entries.names->readString(nameoff), *entriesIterator);
+       fetched = true;
+   }
 }
 
 FileEntries::iterator &FileEntries::iterator::operator++() {
+    fetch();
     ++entriesIterator;
     nameoff += cur.first.size() + 1;
-    fetch();
+    fetched = false;
     return *this;
 }
 

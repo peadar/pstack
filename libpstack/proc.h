@@ -435,15 +435,17 @@ class FileEntries {
 
 public:
     class iterator {
+        friend class FileEntries;
         const FileEntries &entries;
         void fetch();
+        bool fetched = false;
         size_t nameoff = 0;
         std::pair<std::string, FileEntry> cur;
         ReaderArray<FileEntry>::iterator entriesIterator;
    public:
         iterator(const FileEntries &entries, ReaderArray<FileEntry>::iterator start);
         iterator &operator++();
-        std::pair<std::string, FileEntry> operator *() { return cur; }
+        std::pair<std::string, FileEntry> operator *() { fetch(); return cur; }
         bool operator != (const iterator &rhs) const { return entriesIterator != rhs.entriesIterator; }
     };
     FileEntries(const Elf::Object &obj) {
@@ -461,8 +463,12 @@ public:
            entries = std::make_shared<NullReader>();
         entriesArray = std::make_unique<ReaderArray<FileEntry>>(*entries);
     }
-    iterator begin() const { return iterator(*this, entriesArray->begin()); }
-    iterator end() const { return iterator(*this, entriesArray->end()); }
+    iterator begin() const {
+       return iterator(*this, entriesArray->begin());
+    }
+    iterator end() const {
+       return iterator(*this, entriesArray->end());
+    }
 };
 
 
