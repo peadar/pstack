@@ -239,8 +239,8 @@ public:
       bool operator == (const iterator &rhs) const {
          return offset == rhs.offset || ( offset >= array->eof && rhs.offset >= rhs.array->eof );
       }
-      bool operator != (const iterator &rhs) const { return ! (*this == rhs); }
-      size_t operator - (const iterator &rhs) const { return (offset - rhs.offset) / sizeof(T); }
+      bool operator != (const iterator &rhs) const noexcept { return ! (*this == rhs); }
+      size_t operator - (const iterator &rhs) const noexcept { return (offset - rhs.offset) / sizeof(T); }
       iterator & operator++();
    };
 
@@ -248,8 +248,8 @@ public:
    typedef T value_type;
    iterator begin() const { return iterator(this, initialOffset); }
    iterator end() const { return iterator(this); }
+
    ReaderArray(const Reader &reader_, size_t offset = 0) : reader(reader_), initialOffset(offset), eof(reader.size()) {
-      assert(reader.size() == std::numeric_limits<Reader::Off>::max() || reader.size() % sizeof (T) == 0);
       assert(reader.size() == std::numeric_limits<Reader::Off>::max() || reader.size() % sizeof (T) == 0);
    }
 };

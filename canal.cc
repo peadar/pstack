@@ -27,13 +27,13 @@
 #include "libpstack/python.h"
 #endif
 
-#ifdef WITH_PYTHON
-#undef WITH_PYTHON
-#endif
 using namespace std;
 using namespace pstack;
 
 using AddressRanges = std::vector<std::pair<Elf::Off, Elf::Off>>;
+#ifdef WITH_PYTHON
+bool doPython = false;
+#endif
 
 // does "name" match the glob pattern "pattern"?
 static int
@@ -192,28 +192,34 @@ static void findString(const Procman::Process &process,
    }
 }
 
-template <typename Matcher, typename Word> void search(Procman::Process &process,
-      const Matcher & m, const Procman::AddressRange &segment,
-      const AddressRanges &searchaddrs, SymbolStore &store, bool showaddrs) {
-    Elf::Addr loc=segment.start;
-    auto view = process.io->view( "segment view", loc, segment.fileEnd - loc );
+template <typename Matcher, typename Word> inline void search(
+        const Reader::csptr &view,
+        const Matcher & m,
+        Elf::Addr loc,
+        const AddressRanges &searchaddrs,
+        SymbolStore &store,
+        bool showaddrs) {
     try {
-        for (auto p : ReaderArray<Word, 131072>(*view, 0)) {
-            if (searchaddrs.size()) {
-                for (auto range = searchaddrs.begin(); range != searchaddrs.end(); ++range) {
-                    if (p >= range->first && p < range->second) {
-                        IOFlagSave _(cout);
-                        cout << "0x" << hex << loc << dec << "\n";
-                    }
-                }
-            } else {
+        IOFlagSave _(cout);
+        ReaderArray<Word, 131072> r(*view, 0);
+        auto start = r.begin();
+        if (searchaddrs.size()) {
+            for (auto cur = start; cur != r.end(); ++cur) {
+                Word p = *cur;
+                for (const auto &range : searchaddrs )
+                    if (p >= range.first && p < range.second)
+                        cout << "0x" << hex << loc + (cur - start) << dec << "\n";
+            }
+        } else {
+            for (auto cur = start; cur != r.end(); ++cur) {
+                Word p = *cur;
                 if ( auto [ found, sym ] = store.find(p, m); found) {
                     if (showaddrs)
                         cout
-                            << sym->name << " 0x" << std::hex << loc
+                            << sym->name << " 0x" << std::hex << loc + (cur - start)
                             << std::dec <<  " ... size=" << sym->sym.st_size
                             << ", diff=" << p - sym->memaddr() << endl;
-#if 0 && WITH_PYTHON
+#ifdef WITH_PYTHON
                     if (doPython) {
                         std::cout << "pyo " << Elf::Addr(loc) << " ";
                         py.print(Elf::Addr(loc) - sizeof (PyObject) +
@@ -224,7 +230,6 @@ template <typename Matcher, typename Word> void search(Procman::Process &process
                     sym->count++;
                 }
             }
-            loc += sizeof( Word );
         }
     } catch (const std::exception &ex) {
         std::clog << "warning: error reading data at " << std::hex << loc << std::dec << ": " << ex.what() << "\n";
@@ -235,10 +240,11 @@ template <typename Matcher> void search(int wordsize,
         Procman::Process &process,
         const Matcher & m, const Procman::AddressRange &segment,
         const AddressRanges &searchaddrs, SymbolStore &store, bool showaddrs) {
+    auto view = process.io->view( "segment view", segment.start, segment.fileEnd - segment.start );
     if (wordsize == 32) {
-        return search<Matcher, uint32_t>(process, m, segment, searchaddrs, store, showaddrs);
+        return search<Matcher, uint32_t>(view, m, segment.start, searchaddrs, store, showaddrs);
     } else if (wordsize == 64) {
-        return search<Matcher, uint64_t>(process, m, segment, searchaddrs, store, showaddrs);
+        return search<Matcher, uint64_t>(view, m, segment.start, searchaddrs, store, showaddrs);
     } else {
         errx(1, "invalid word size %d, must be 32 or 64", wordsize);
     }
@@ -247,9 +253,6 @@ template <typename Matcher> void search(int wordsize,
 int
 mainExcept(int argc, char *argv[])
 {
-#ifdef WITH_PYTHON
-    bool doPython = false;
-#endif
     Dwarf::ImageCache imageCache;
     std::vector<std::string> patterns;
     Elf::Object::sptr exec;
