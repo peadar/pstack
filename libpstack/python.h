@@ -80,7 +80,6 @@ struct PythonPrinter {
     Elf::Addr interp_head;
     Elf::Object::sptr libpython;
     Elf::Addr libpythonAddr;
-    const PyInterpInfo &info;
     std::map<const _typeobject *, const PythonTypePrinter<PyV> *> printers;
     bool interpFound() const; // returns true if the printer could find the interpreter.
 };

@@ -294,7 +294,6 @@ PythonPrinter<PyV>::PythonPrinter(Procman::Process &proc_, std::ostream &os_, co
     , interp_head(info_.interpreterHead)
     , libpython(info_.libpython)
     , libpythonAddr(info_.libpythonAddr)
-    , info(info_)
 {
     if (!interpFound())
         return;

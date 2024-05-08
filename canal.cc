@@ -23,8 +23,12 @@
 #include "libpstack/fs.h"
 #include "libpstack/ioflag.h"
 #include "libpstack/flags.h"
+#if defined( WITH_PYTHON3 ) ||  defined( WITH_PYTHON2 )
+#define WITH_PYTHON
+#endif
 #ifdef WITH_PYTHON
 #include "libpstack/python.h"
+#include <Python.h>
 #endif
 
 using namespace std;
@@ -32,7 +36,7 @@ using namespace pstack;
 
 using AddressRanges = std::vector<std::pair<Elf::Off, Elf::Off>>;
 #ifdef WITH_PYTHON
-bool doPython = false;
+std::unique_ptr<PythonPrinter<3>> py = nullptr;
 #endif
 
 // does "name" match the glob pattern "pattern"?
@@ -220,9 +224,9 @@ template <typename Matcher, typename Word> inline void search(
                             << std::dec <<  " ... size=" << sym->sym.st_size
                             << ", diff=" << p - sym->memaddr() << endl;
 #ifdef WITH_PYTHON
-                    if (doPython) {
+                    if (py) {
                         std::cout << "pyo " << Elf::Addr(loc) << " ";
-                        py.print(Elf::Addr(loc) - sizeof (PyObject) +
+                        py->print(Elf::Addr(loc) - sizeof (PyObject) +
                                 sizeof (struct _typeobject *));
                         std::cout << "\n";
                     }
@@ -264,12 +268,13 @@ mainExcept(int argc, char *argv[])
     AddressRanges searchaddrs;
     std::string findstr;
     int symOffset = -1;
+    bool doPython = false;
 
     Flags flags;
 
     flags
 #ifdef WITH_PYTHON
-    .add("python", 'P', "try to find python objects", setf(doPython))
+    .add("python", 'P', "try to find python objects", Flags::setf(doPython))
 #endif
     .add("show-syms", 'V', "show symbols matching search pattern", Flags::setf(showsyms))
     .add("show-addrs", 's', "show adddress of references found in core", Flags::setf(showaddrs))
@@ -310,12 +315,19 @@ mainExcept(int argc, char *argv[])
         optind++;
     }
 
+
     if (argc - optind < 1) {
         clog << Usage(flags);
         return 0;
     }
 
     auto process = Procman::Process::load(exec, argv[optind], PstackOptions(), imageCache);
+
+    PyInterpInfo info;
+    if (doPython) {
+       info = getPyInterpInfo(*process);
+       py = make_unique<PythonPrinter<3>>(*process, std::cout, info);
+    }
     if (searchaddrs.size()) {
         std::clog << "finding references to " << dec << searchaddrs.size() << " addresses\n";
         for (auto &addr : searchaddrs)
@@ -353,9 +365,6 @@ mainExcept(int argc, char *argv[])
        exit(0);
 
     // Now run through the corefile, searching for virtual objects.
-#ifdef WITH_PYTHON
-    PythonPrinter<2> py(*process, std::cout);
-#endif
     auto as = process->addressSpace();
     for (auto &segment : as ) {
         if (verbose) {
