@@ -212,7 +212,7 @@ template <typename Matcher, typename Word> inline void search(
                 Word p = *cur;
                 for (const auto &range : searchaddrs )
                     if (p >= range.first && p < range.second)
-                        cout << "0x" << hex << loc + (cur - start) << dec << "\n";
+                        cout << "0x" << hex << loc + (cur - start) * sizeof( Word) << dec << "\n";
             }
         } else {
             for (auto cur = start; cur != r.end(); ++cur) {
