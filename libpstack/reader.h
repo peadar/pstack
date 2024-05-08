@@ -102,11 +102,11 @@ Reader::readObj(Off offset) const
 class FileReader : public Reader {
     std::string name;
     int file;
+protected:
     mutable Off fileSize;
 public:
     virtual size_t read(Off off, size_t count, char *ptr) const override ;
     FileReader(std::string name_);
-    FileReader(std::string name_, Off minsize);
     ~FileReader();
     void describe(std::ostream &os) const  override { os << name; }
     std::string filename() const override { return name; }
@@ -206,7 +206,6 @@ public:
 };
 
 Reader::csptr loadFile(const std::string &path);
-Reader::csptr loadFile(const std::string &path, Reader::Off minsize);
 
 // This allows a reader to provide an iterator over a sequence of objects of a
 // given type. Given a reader r, we can use 
@@ -216,82 +215,64 @@ Reader::csptr loadFile(const std::string &path, Reader::Off minsize);
 template <typename T, size_t cachesize = 1024 / sizeof(T) >
 class ReaderArray {
    const Reader &reader;
-   mutable std::array<T, cachesize> data;
-   mutable Reader::Off dataOff = 0; // offset of data[0]
-   mutable size_t dataCount = 0; // number of valid items in data.
-   size_t initialOffset;
-   mutable Reader::Off eof; // dynamically discovered EOF marker.
-   inline size_t fillcache(Reader::Off) const;
-   inline const T &getitem(Reader::Off) const;
+   size_t base; // All offsets are relative to this in the underlying reader, and are scaled by size
+
+   mutable size_t cacheStart = 0; // index of cache[0] in the array from offset base in the reader.
+   mutable size_t cacheEnd = 0; // after last valid item in cache.
+   mutable size_t eof;
+   mutable std::array<T, cachesize> cache;
 
 public:
    class iterator {
-      const ReaderArray<T, cachesize> *array;
-      Reader::Off offset; // offset of the iterator itself.
+      const ReaderArray<T, cachesize> &array;
+      size_t idx; // Index of current item
    public:
-      const T &operator *();
-      iterator(const ReaderArray<T, cachesize> *array_) : array(array_), offset(array->reader.size()) {
-         // this is the EOF iterator - no cache.
+      const T &operator *() const {
+         return array.getitem( idx );
       }
-      iterator(const ReaderArray<T, cachesize> *array_, Reader::Off offset_) : array(array_), offset(offset_) {
-         array->fillcache(offset);
-      }
-      bool operator == (const iterator &rhs) const {
-         return offset == rhs.offset || ( offset >= array->eof && rhs.offset >= rhs.array->eof );
+      iterator(const ReaderArray<T, cachesize> &array_, size_t idx_) noexcept : array(array_), idx(idx_) { }
+      iterator(const ReaderArray<T, cachesize> &array_) noexcept : array(array_), idx(array.eof) { }
+      bool operator == (const iterator &rhs) const noexcept {
+         return idx == rhs.idx || ( idx >= array.eof && rhs.idx >= rhs.array.eof );
       }
       bool operator != (const iterator &rhs) const noexcept { return ! (*this == rhs); }
-      size_t operator - (const iterator &rhs) const noexcept { return (offset - rhs.offset) / sizeof(T); }
-      iterator & operator++();
+      size_t operator - (const iterator &rhs) const noexcept { return idx - rhs.idx; }
+      iterator & operator++() noexcept;
    };
 
    using const_iterator = iterator;
    typedef T value_type;
-   iterator begin() const { return iterator(this, initialOffset); }
-   iterator end() const { return iterator(this); }
+   iterator begin() const { return iterator(*this, 0); }
+   iterator end() const { return iterator(*this); }
+   const inline T &getitem(size_t) const;
 
-   ReaderArray(const Reader &reader_, size_t offset = 0) : reader(reader_), initialOffset(offset), eof(reader.size()) {
-      assert(reader.size() == std::numeric_limits<Reader::Off>::max() || reader.size() % sizeof (T) == 0);
+   ReaderArray(const Reader &reader_, size_t offset = 0) :
+         reader(reader_),
+         base(offset),
+         eof( ( reader.size() - base ) / sizeof(T) ) {
+      assert(reader.size() == std::numeric_limits<size_t>::max() || reader.size() % sizeof (T) == 0);
    }
 };
 
 template<typename T, size_t cachesize>
-typename ReaderArray<T, cachesize>::iterator &ReaderArray<T, cachesize>::iterator::operator ++() {
-    offset += sizeof (T);
-    array->fillcache(offset);
+typename ReaderArray<T, cachesize>::iterator &ReaderArray<T, cachesize>::iterator::operator ++() noexcept {
+    ++idx;
     return *this;
 }
 
-template <typename T, size_t cachesize> const T &ReaderArray<T, cachesize>::iterator::operator *() {
-   return array->getitem(offset);
-}
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
 
-template <typename T, size_t cachesize> size_t ReaderArray<T, cachesize>::fillcache(Reader::Off offset) const {
-   if (offset >=  eof)
-      return 0;
-   size_t idx = (offset - dataOff) / sizeof (T);
-   if (dataOff > offset || (offset - dataOff) / sizeof (T) >= dataCount) {
-      idx = 0;
-      dataOff = offset;
-      auto rc = reader.read(offset, cachesize * sizeof (T), (char *)&data[0]);
-      dataCount = rc / sizeof(T);
-      if (dataCount == 0) { // short read - consider this EOF.
-         eof = offset;
-         return 0;
+template <typename T, size_t cachesize> const T &ReaderArray<T, cachesize>::getitem(size_t idx) const {
+   if (unlikely(cacheStart > idx || idx >= cacheEnd)) {
+      size_t rc = reader.read(idx * sizeof(T) + base, cachesize * sizeof (T), reinterpret_cast<char *>(cache.data()));
+      cacheStart = idx;
+      cacheEnd = cacheStart + rc / sizeof(T);
+      if (unlikely(rc < sizeof(T))) { // short read - consider this EOF.
+         throw ( Exception() << "end of data while reading array" );
       }
    }
-   return idx;
-}
-
-template <typename T, size_t cachesize> const T &ReaderArray<T, cachesize>::getitem(Reader::Off offset) const {
-   // If the item is not already in the cache, fill the cache as much as we can starting with this item
-   size_t idx = fillcache(offset);
-
-   if (idx >= dataCount)
-      throw ( Exception() << "end of data while reading array" );
-   return data[idx];
-}
-
-
+   return cache[idx - cacheStart];
 }
 
 template <typename T, typename Iter> static inline std::pair<T, size_t> readleb128(Iter start) {
@@ -313,5 +294,5 @@ template <typename T, typename Iter> static inline std::pair<T, size_t> readleb1
       }
    };
 }
-
+}
 #endif

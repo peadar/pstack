@@ -24,8 +24,9 @@ procname(pid_t pid, const std::string &base)
     return linkResolve(stringify("/proc/", pid, "/", base));
 }
 
-LiveReader::LiveReader(pid_t pid, const std::string &base)
-   : FileReader(procname(pid, base), std::numeric_limits<Reader::Off>::max()) {}
+LiveReader::LiveReader(pid_t pid, const std::string &base) : FileReader(procname(pid, base)) {
+   fileSize = std::numeric_limits<Reader::Off>::max();
+}
 
 LiveProcess::LiveProcess(Elf::Object::sptr &ex, pid_t pid_,
             const PstackOptions &options, Dwarf::ImageCache &imageCache, bool alreadyStopped)

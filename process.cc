@@ -221,72 +221,77 @@ auxtype2str(int auxtype) {
 void
 Process::processAUXV(const Reader &auxio)
 {
+    try {
+        for (auto &aux : ReaderArray<Elf::auxv_t>(auxio)) {
+            Elf::Addr hdr = aux.a_un.a_val;
+            switch (aux.a_type) {
+                case AT_ENTRY: {
+                    if (verbose > 2)
+                        *debug << "auxv: AT_ENTRY=" << hdr << std::endl;
+                    // this provides a reference for relocating the executable when
+                    // compared to the entrypoint there.
+                    entry = hdr;
+                    break;
+                }
+                case AT_SYSINFO: {
+                    if (verbose > 2)
+                        *debug << "auxv:AT_SYSINFO=" << hdr << std::endl;
+                    sysent = hdr;
+                    break;
+                }
+                case AT_SYSINFO_EHDR: {
+                    try {
+                        auto elf = std::make_shared<Elf::Object>(imageCache, io->view("(vdso image)", hdr, 65536));
+                        vdsoBase = hdr;
+                        addElfObject("(vdso image)", elf, hdr);
+                        vdsoImage = elf;
+                        if (verbose >= 2) {
+                            *debug << "auxv: VDSO " << *elf->io
+                                << " loaded at " << std::hex << hdr << std::dec << "\n";
+                        }
 
-    for (auto &aux : ReaderArray<Elf::auxv_t>(auxio)) {
-        Elf::Addr hdr = aux.a_un.a_val;
-        switch (aux.a_type) {
-            case AT_ENTRY: {
-                if (verbose > 2)
-                   *debug << "auxv: AT_ENTRY=" << hdr << std::endl;
-                // this provides a reference for relocating the executable when
-                // compared to the entrypoint there.
-                entry = hdr;
-                break;
-            }
-            case AT_SYSINFO: {
-                if (verbose > 2)
-                   *debug << "auxv:AT_SYSINFO=" << hdr << std::endl;
-                sysent = hdr;
-                break;
-            }
-            case AT_SYSINFO_EHDR: {
-                try {
-                    auto elf = std::make_shared<Elf::Object>(imageCache, io->view("(vdso image)", hdr, 65536));
-                    vdsoBase = hdr;
-                    addElfObject("(vdso image)", elf, hdr);
-                    vdsoImage = elf;
-                    if (verbose >= 2) {
-                        *debug << "auxv: VDSO " << *elf->io
-                           << " loaded at " << std::hex << hdr << std::dec << "\n";
                     }
-
+                    catch (const std::exception &ex) {
+                        std::clog << "auxv: warning: failed to load DSO: " << ex.what() << "\n";
+                    }
+                    break;
                 }
-                catch (const std::exception &ex) {
-                    std::clog << "auxv: warning: failed to load DSO: " << ex.what() << "\n";
-                }
-                break;
-            }
-            case AT_BASE:
-                if (verbose > 2)
-                   *debug << "auxv: AT_BASE=" << hdr << std::endl;
-                interpBase = hdr;
-                break;
+                case AT_BASE:
+                    if (verbose > 2)
+                        *debug << "auxv: AT_BASE=" << hdr << std::endl;
+                    interpBase = hdr;
+                    break;
 #ifdef AT_EXECFN
-            case AT_EXECFN: {
-                if (verbose > 2)
-                   *debug << "auxv: AT_EXECFN=" << hdr << std::endl;
-                try {
-                    auto exeName = io->readString(hdr);
-                    if (verbose >= 2)
-                        *debug << "filename from auxv: " << exeName << "\n";
-                    if (!execImage) {
-                        execImage = imageCache.getImageForName(exeName);
-                        if (entry == 0)
-                           entry = execImage->getHeader().e_entry;
+                case AT_EXECFN: {
+                    if (verbose > 2)
+                        *debug << "auxv: AT_EXECFN=" << hdr << std::endl;
+                    try {
+                        auto exeName = io->readString(hdr);
+                        if (verbose >= 2)
+                            *debug << "filename from auxv: " << exeName << "\n";
+                        if (!execImage) {
+                            execImage = imageCache.getImageForName(exeName);
+                            if (entry == 0)
+                                entry = execImage->getHeader().e_entry;
+                        }
                     }
-                }
-                catch (const Exception &ex) {
-                    *debug << "failed to read AT_EXECFN: " << ex.what() << std::endl;
-                }
+                    catch (const Exception &ex) {
+                        *debug << "failed to read AT_EXECFN: " << ex.what() << std::endl;
+                    }
 
-                break;
-            }
+                    break;
+                }
 #endif
-            default:
-                if (verbose > 2)
-                   *debug << "auxv: " << auxtype2str( aux.a_type) << ": " << hdr << std::endl;
+                default:
+                    if (verbose > 2)
+                        *debug << "auxv: " << auxtype2str( aux.a_type) << ": " << hdr << std::endl;
+            }
         }
+    } catch (const std::exception &ex) {
+        if (verbose)
+            std::clog << "exception while reading auxv: " << ex.what() << "\n";
     }
+
 }
 
 static bool
