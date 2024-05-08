@@ -23,7 +23,7 @@
 #include "libpstack/fs.h"
 #include "libpstack/ioflag.h"
 #include "libpstack/flags.h"
-#if defined( WITH_PYTHON3 ) ||  defined( WITH_PYTHON2 )
+#if defined( WITH_PYTHON3 )
 #define WITH_PYTHON
 #endif
 #ifdef WITH_PYTHON
