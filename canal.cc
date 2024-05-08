@@ -268,7 +268,9 @@ mainExcept(int argc, char *argv[])
     AddressRanges searchaddrs;
     std::string findstr;
     int symOffset = -1;
+#ifdef WITH_PYTHON
     bool doPython = false;
+#endif
 
     Flags flags;
 
@@ -323,11 +325,13 @@ mainExcept(int argc, char *argv[])
 
     auto process = Procman::Process::load(exec, argv[optind], PstackOptions(), imageCache);
 
+#ifdef WITH_PYTHON
     PyInterpInfo info;
     if (doPython) {
        info = getPyInterpInfo(*process);
        py = make_unique<PythonPrinter<3>>(*process, std::cout, info);
     }
+#endif
     if (searchaddrs.size()) {
         std::clog << "finding references to " << dec << searchaddrs.size() << " addresses\n";
         for (auto &addr : searchaddrs)
