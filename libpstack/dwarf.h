@@ -18,8 +18,13 @@ class DWARFReader;
 class Info;
 class LineInfo;
 class Unit;
-struct CFI;
+class CFI;
 struct CIE;
+} 
+
+std::ostream & operator << (std::ostream &os, const JSON<pstack::Dwarf::CFI> &);
+
+namespace pstack::Dwarf {
 
 #define DWARF_TAG(a,b) a = (b),
 enum Tag {
@@ -63,6 +68,20 @@ namespace std {
 }
 
 namespace pstack::Dwarf {
+
+#define DWARF_OP(op, value, args) op = (value),
+enum ExpressionOp {
+#include "libpstack/dwarf/ops.h"
+    LASTOP = 0x100
+};
+#undef DWARF_OP
+
+#define DWARF_EH_PE(op, value) op = (value),
+enum ExceptionHandlingEncoding {
+#include "libpstack/dwarf/ehpe.h"
+    DW_EH_PE_max
+};
+
 #undef DWARF_ATTR
 
 #define DWARF_LINE_S(a,b) a = (b),
@@ -282,7 +301,8 @@ using ARanges = std::map<Elf::Addr, std::pair<Elf::Addr, Elf::Off>>;
 // identical For when we need to discriminate, this is what we use.
 enum FIType {
     FI_DEBUG_FRAME,
-    FI_EH_FRAME
+    FI_EH_FRAME,
+    FI_BEST,
 };
 
 // A file entry associated with line number info. Mostly a name, and an index
@@ -523,15 +543,44 @@ struct CIE {
 /*
  * CFI represents call frame information (generally contents of .debug_frame or .eh_frame)
  */
-struct CFI {
+class CFI {
     const Info *dwarf;
-    Elf::Addr sectionAddr; // virtual address of this section  (may need to be offset by load address)
-    Reader::csptr io;
+    Elf::Addr sectionAddr; // virtual address of section (either eh_frame or debug_frame.
+    Elf::Addr ehFrameHdrAddr; // virtual address of eh_frame_hdr
     FIType type;
     std::map<Elf::Addr, CIE> cies;
-    std::list<FDE> fdeList;
-    CFI(const Info *, Elf::Addr addr, Reader::csptr io, FIType);
 
+    // FDEs are sorted by their iloc field. If we have an fdeTable, then the
+    // table starts out with the correct size, but unpopulated, and searching
+    // for an FDE will lazily populate it from the fdeTable If the ELF object
+    // contains no eh_frame_hdr section, then we read the entire eh_frame
+    // section when we first construct the CFI object, and prepopulate this
+    // with al the FDEs. Currently, this happens for the VDSO in aarch64
+    // platforms (where there are just a handful of FDEs), and pretty much
+    // everything else has an eh_frame_hdr.
+    std::vector<std::unique_ptr<FDE>> fdes;
+
+    ExceptionHandlingEncoding fdeTableEnc; // the encoding format of the entries in fdeTable.
+    Reader::csptr fdeTable; // the start of the table in the eh_frame_hdr section.
+    std::pair<bool, std::unique_ptr<FDE>> putFDEorCIE( DWARFReader &reader );
+
+    // cieOFF set to -1 if this is CIE, set to offset of associated CIE for an FDE
+    Elf::Addr decodeCIEFDEHdr(DWARFReader &, FIType, Elf::Off *cieOff) const;
+    bool isCIE(Elf::Addr) const noexcept;
+    //void putCIE(DWARFReader &r); // Put CIE from current offset.
+    void putCIE(Elf::Addr offset, DWARFReader &r, Elf::Addr end); // put CIE who's header we already decoded.
+
+    std::pair<uintmax_t, bool> decodeAddress(DWARFReader &, uint8_t encoding, uintptr_t sectionVa) const;
+    friend std::ostream & ::operator << (std::ostream &os, const JSON<CFI> &);
+    friend struct FDE;
+    friend struct CIE;
+
+public:
+    const CIE &getCIE(Elf::Addr off) const {
+       return cies.at(off);
+    }
+    Reader::csptr io;
+    CFI(const Info *, FIType);
     CFI() = delete;
     CFI(const CFI &) = delete;
     CFI(CFI &&) = delete;
@@ -539,14 +588,9 @@ struct CFI {
     CFI &operator = (CFI &&) = delete;
     ~CFI() = default;
 
-    // cieOFF set to -1 if this is CIE, set to offset of associated CIE for an FDE
-    Elf::Addr decodeCIEFDEHdr(DWARFReader &, FIType, Elf::Off *cieOff);
-
-    [[nodiscard]] const FDE *findFDE(Elf::Addr) const;
-    bool isCIE(Elf::Addr);
-
+    [[nodiscard]] const FDE *findFDE(Elf::Addr);
+    operator bool() const noexcept { return io != nullptr; }
     // If we know the VA of the byte addressed by the start of the dwarf reader, psas it in "va".
-    std::pair<intmax_t, bool> decodeAddress(DWARFReader &, uint8_t encoding) const;
 };
 
 class ImageCache;
@@ -638,14 +682,7 @@ public:
     // Cached call frames for specific return addresses.
     std::map<Elf::Addr, CallFrame> callFrameForAddr;
 
-
-    // Get decoded call frame information from .debug_frame section
-    CFI *getDebugFrame() const;
-    // Get decoded call frame information from .eh_frame section
-    CFI *getEhFrame() const;
-
-    // Get best of above.
-    CFI *getCFI() const;
+    CFI *getCFI(FIType = FI_BEST) const;
 
     // direct access to various DWARF sections.
     const Elf::Section & debugInfo;
@@ -658,7 +695,7 @@ public:
 
 private:
     ImageCache &imageCache;
-    std::unique_ptr<CFI> decodeCFI(const Elf::Section &, FIType ftype) const;
+    std::unique_ptr<CFI> decodeCFI(const Elf::Section &, FIType ftype, Reader::csptr) const;
 
     // These are mutable so we can lazy-eval them when getters are called, and
     // maintain logical constness.
@@ -667,13 +704,10 @@ private:
     mutable Info::sptr altDwarf;
     mutable std::unique_ptr<ARanges> aranges; // maps starting address to length + unit offset.
     mutable std::unique_ptr<Macros> macros;
-    mutable std::unique_ptr<CFI> debugFrame;
-    mutable std::unique_ptr<CFI> ehFrame;
+    mutable std::map<FIType, std::unique_ptr<CFI>> cfi;
 
     mutable bool altImageLoaded { false };
     mutable bool unitRangesCached { false };
-    mutable bool debugFrameLoaded { false };
-    mutable bool ehFrameLoaded = { false };
 
     void decodeARangeSet(DWARFReader &) const;
     std::string getAltImageName() const;
@@ -726,7 +760,7 @@ public:
     ~Attribute() noexcept = default;
     Attribute(const Attribute &) = delete;
     Attribute(Attribute &&) = default;
-    Attribute &operator = (const Attribute &) = default;
+    Attribute &operator = (const Attribute &) = delete;
     Attribute &operator = (Attribute &&) = delete;
 
     [[nodiscard]] bool valid() const { return formp != nullptr; }
@@ -821,20 +855,6 @@ Units::iterator::atend() const {
 inline
 Units::iterator::iterator(const Info *info_, Elf::Off offset)
     : info(info_), currentUnit(info->getUnit(offset)) {}
-
-#define DWARF_OP(op, value, args) op = (value),
-enum ExpressionOp {
-#include "libpstack/dwarf/ops.h"
-    LASTOP = 0x100
-};
-#undef DWARF_OP
-
-#define DWARF_EH_PE(op, value) op = (value),
-enum ExceptionHandlingEncoding {
-#include "libpstack/dwarf/ehpe.h"
-    DW_EH_PE_max
-};
-#undef DWARF_OP
 }
 
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Dwarf::Info> &);

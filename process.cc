@@ -875,7 +875,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 #ifdef __aarch64__
     // for ARM, if we see __kernel_rt_sigreturn on the stack, we have a signal
     // stack frame
-    Elf::Addr trampoline;
+    Elf::Addr trampoline = 0;
     if (p.vdsoImage) {
        auto [sigreturnSym,idx] = p.vdsoImage->findDynamicSymbol("__kernel_rt_sigreturn");
        if (sigreturnSym.st_shndx != SHN_UNDEF) {

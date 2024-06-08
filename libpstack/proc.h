@@ -100,7 +100,7 @@ struct CodeLocation {
     const Dwarf::DIE &die() const;
     const Dwarf::CIE *cie() const;
     const Dwarf::FDE *fde() const;
-    const Dwarf::CFI *cfi() const;
+    Dwarf::CFI *cfi() const;
     CodeLocation();
     CodeLocation(Dwarf::Info::sptr, const Elf::Phdr *, Elf::Addr location);
 };

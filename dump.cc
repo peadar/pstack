@@ -474,14 +474,13 @@ operator <<(std::ostream &os, const JSON<Dwarf::CIE, const Dwarf::CFI *> &dcie)
 }
 
 std::ostream &
-operator << (std::ostream &os, const JSON<Dwarf::FDE, const Dwarf::CFI*> &dfi)
+operator << (std::ostream &os, const JSON<std::unique_ptr<Dwarf::FDE>, const Dwarf::CFI*> &dfi)
 {
-    Dwarf::DWARFReader r(dfi.context->io, dfi.object.instructions, dfi.object.end);
     return JObject(os)
-        .field("cie", dfi.object.cieOff)
-        .field( "loc", dfi.object.iloc)
-        .field("range", dfi.object.irange)
-        .field("instructions", DumpCFAInsns(dfi.object.instructions, dfi.object.end), dfi.context);
+        .field("cie", dfi.object->cieOff)
+        .field( "loc", dfi.object->iloc)
+        .field("range", dfi.object->irange)
+        .field("instructions", DumpCFAInsns(dfi.object->instructions, dfi.object->end), dfi.context);
 }
 
 struct AddrStr {
@@ -502,7 +501,9 @@ operator << (std::ostream &os, const JSON<Dwarf::CFI> &info)
        ciesByString(info.object.cies);
     return JObject(os)
         .field("cielist", ciesByString, &info.object)
-        .field("fdelist", info.object.fdeList, &info.object);
+        .field("fdelist", info.object.fdes, &info.object)
+        ;
+   return os;
 }
 
 std::ostream &
@@ -522,10 +523,12 @@ operator << (std::ostream &os, const JSON<Dwarf::Info> &di)
     writer.field("units", di.object.getUnits())
         .field("pubnameUnits", di.object.pubnames())
         ; // XXX .field("aranges", di->getARanges());
-    if (di.object.getDebugFrame())
-        writer.field("debugframe", *di.object.getDebugFrame());
-    if (di.object.getEhFrame())
-        writer.field("ehFrame", *di.object.getEhFrame());
+
+    auto debugFrame = di.object.getCFI( Dwarf::FI_DEBUG_FRAME );
+    if (debugFrame)
+        writer.field("debugframe", *debugFrame);
+    auto ehFrame = di.object.getCFI( Dwarf::FI_EH_FRAME );
+        writer.field("ehFrame", *ehFrame);
     return writer;
 }
 
