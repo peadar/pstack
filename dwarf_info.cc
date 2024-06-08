@@ -8,9 +8,9 @@
 namespace pstack::Dwarf {
 
 std::unique_ptr<CFI>
-Info::decodeCFI(const Elf::Section &section, FIType ftype) const {
+Info::decodeCFI(const Elf::Section &section, FIType ftype, Reader::csptr hdr) const {
     try {
-        return std::make_unique<CFI>(this, section.shdr.sh_addr, section.io(), ftype);
+        return std::make_unique<CFI>(this, section.shdr.sh_addr, section.io(), ftype, hdr);
     }
     catch (const Exception &ex) {
         *debug << "can't decode " << section.name << " for " << *elf->io << ": " << ex.what() << "\n";
@@ -23,8 +23,9 @@ Info::getEhFrame() const {
     if (!ehFrameLoaded) {
         ehFrameLoaded = true;
         const Elf::Section &sec = elf->getDebugSection(".eh_frame", SHT_PROGBITS);
+        const Elf::Section &hdrsec = elf->getDebugSection(".eh_frame_hdr", SHT_PROGBITS);
         if (sec)
-           ehFrame = decodeCFI(sec, FI_EH_FRAME);
+           ehFrame = decodeCFI(sec, FI_EH_FRAME, hdrsec ? hdrsec.io() : nullptr);
     }
     return ehFrame.get();
 }
@@ -35,7 +36,7 @@ Info::getDebugFrame() const {
         debugFrameLoaded = true;
         const Elf::Section &sec = elf->getSection(".debug_frame", SHT_PROGBITS);
         if (sec)
-           debugFrame = decodeCFI(sec, FI_DEBUG_FRAME);
+           debugFrame = decodeCFI(sec, FI_DEBUG_FRAME, nullptr);
     }
     return debugFrame.get();
 }

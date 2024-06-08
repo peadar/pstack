@@ -529,8 +529,11 @@ struct CFI {
     Reader::csptr io;
     FIType type;
     std::map<Elf::Addr, CIE> cies;
-    std::list<FDE> fdeList;
-    CFI(const Info *, Elf::Addr addr, Reader::csptr io, FIType);
+    std::map<Elf::Addr, std::unique_ptr<FDE>> fdes;
+    CFI(const Info *, Elf::Addr addr, Reader::csptr io, FIType, Reader::csptr hdrio);
+
+    Reader::csptr fdeTable;
+    size_t fdeTableSize;
 
     CFI() = delete;
     CFI(const CFI &) = delete;
@@ -658,7 +661,7 @@ public:
 
 private:
     ImageCache &imageCache;
-    std::unique_ptr<CFI> decodeCFI(const Elf::Section &, FIType ftype) const;
+    std::unique_ptr<CFI> decodeCFI(const Elf::Section &, FIType ftype, Reader::csptr) const;
 
     // These are mutable so we can lazy-eval them when getters are called, and
     // maintain logical constness.

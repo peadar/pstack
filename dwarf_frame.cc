@@ -78,14 +78,40 @@ CFI::isCIE(Elf::Addr cieid)
     return (type == FI_DEBUG_FRAME && cieid == 0xffffffff) || (type == FI_EH_FRAME && cieid == 0);
 }
 
-CFI::CFI(const Info *info, Elf::Addr addr, Reader::csptr io_, enum FIType type_)
+CFI::CFI(const Info *info, Elf::Addr addr, Reader::csptr io_, enum FIType type_, Reader::csptr hdrio)
     : dwarf(info)
     , sectionAddr(addr)
     , io(std::move(io_))
     , type(type_)
 {
     DWARFReader reader(io);
-    // decode in 2 passes: first for CIE, then for FDE
+
+    do { // just so I can "break" below.
+       if (true || hdrio == nullptr)
+          break;
+       DWARFReader ehFrameHdr( hdrio );
+       /* auto version = */ ehFrameHdr.getu8();
+       auto ptr_enc = ehFrameHdr.getu8();
+       auto fde_count_enc = ehFrameHdr.getu8();
+       auto table_enc = ehFrameHdr.getu8();
+
+       // We are mostly interested in the FDE search table. return if it's not there.
+       if ( table_enc == DW_EH_PE_omit || fde_count_enc == DW_EH_PE_omit )
+          break;
+
+       // We don't really care about this - it sjould be just a pointer to the
+       // eh_frame header we just decoded.
+       decodeAddress( ehFrameHdr, ptr_enc );
+       bool indirectTable;
+       std::tie( fdeTableSize, indirectTable )= decodeAddress( ehFrameHdr, fde_count_enc);
+       fdeTable = hdrio->view("FDE search table", reader.getOffset(), hdrio->size() - reader.getOffset());
+       return;
+
+    } while( false );
+
+
+    // Walk the entire CIE/FDE sequence, populating the fdes and cies sets as
+    // we go
     Elf::Off nextoff;
     for (; !reader.empty();  reader.setOffset(nextoff)) {
         size_t startOffset = reader.getOffset();
@@ -106,7 +132,8 @@ CFI::CFI(const Info *info, Elf::Addr addr, Reader::csptr io_, enum FIType type_)
         } else {
             // Make sure we have the associated CIE.
             ensureCIE(associatedCIE);
-            fdeList.emplace_back(this, reader, associatedCIE, nextoff);
+            std::unique_ptr<FDE> fde = std::make_unique<FDE>(this, reader, associatedCIE, nextoff);
+            fdes.emplace(fde->iloc, std::move(fde));
         }
     }
 }
@@ -114,9 +141,18 @@ CFI::CFI(const Info *info, Elf::Addr addr, Reader::csptr io_, enum FIType type_)
 const FDE *
 CFI::findFDE(Elf::Addr addr) const
 {
-    for (const auto &fde : fdeList)
-        if (fde.iloc <= addr && fde.iloc + fde.irange > addr)
-            return &fde;
+   auto bigger = fdes.upper_bound(addr);
+   if (bigger != fdes.begin()) {
+      bigger--;
+      assert(bigger->first <= addr);
+      if (bigger->first + bigger->second->irange > addr)
+         return bigger->second.get();
+   }
+   return nullptr;
+
+    for (const auto &fde : fdes)
+        if (fde.second->iloc <= addr && fde.second->iloc + fde.second->irange > addr)
+            return fde.second.get();
     return nullptr;
 }
 

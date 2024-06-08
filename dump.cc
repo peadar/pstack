@@ -502,7 +502,8 @@ operator << (std::ostream &os, const JSON<Dwarf::CFI> &info)
        ciesByString(info.object.cies);
     return JObject(os)
         .field("cielist", ciesByString, &info.object)
-        .field("fdelist", info.object.fdeList, &info.object);
+        //.field("fdelist", info.object.fdes, &info.object)
+        ;
 }
 
 std::ostream &
