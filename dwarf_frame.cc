@@ -5,7 +5,7 @@
 
 namespace pstack::Dwarf {
 std::pair<intmax_t, bool>
-CFI::decodeAddress(DWARFReader &f, uint8_t encoding, Elf::Addr va) const
+CFI::decodeAddress(DWARFReader &f, uint8_t encoding) const
 {
     intmax_t base;
     Elf::Off offset = f.getOffset();
@@ -45,31 +45,9 @@ CFI::decodeAddress(DWARFReader &f, uint8_t encoding, Elf::Addr va) const
     case 0:
         break;
     case DW_EH_PE_pcrel: {
-        // relative to location of the base indicator itself. So, the offset
-        // inside the eh_frame section + the VA of the eh_frame section.
-        base += offset;
-
-        // If this is PC relative, then this unwind information must be in a
-        // mapped section, so it's the EH frame. Get the GNU_EH_FRAME segment,
-        // and vind its virtaddr.
-        if (va == std::numeric_limits<Elf::Addr>::max()) {
-            for (const auto &sect : dwarf->elf->getSegments( PT_GNU_EH_FRAME ) ) {
-                // the segment points to the eh_frame_hdr. Decode it
-                // https://refspecs.linuxfoundation.org/LSB_1.3.0/gLSB/gLSB/ehframehdr.html
-                DWARFReader ehFrameHdr( dwarf->elf->io->view( "eh_frame_hdr", sect.p_offset, sect.p_filesz ) );
-                /* auto version = */ ehFrameHdr.getu8();
-                auto ptr_encoding = ehFrameHdr.getu8();
-                /* auto fde_count_encoding = */ ehFrameHdr.getu8();
-                /* auto table_enc = */ ehFrameHdr.getu8();
-                auto [ ptr, indirect ] = decodeAddress( ehFrameHdr, ptr_encoding, sect.p_vaddr ); // yay recursion.0
-                if (indirect) {
-                    // XXX: this should not happen.
-                    std::clog << "warning: nested indirect address encoding\n";
-                }
-                va = ptr;
-            }
-        }
-        base += va;
+        // relative to location of the base indicator itself. So, add the
+        // offset inside the eh_frame section + the VA of the eh_frame section.
+        base += offset + sectionAddr;
         break;
     }
     default:

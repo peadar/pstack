@@ -546,8 +546,7 @@ struct CFI {
     bool isCIE(Elf::Addr);
 
     // If we know the VA of the byte addressed by the start of the dwarf reader, psas it in "va".
-    std::pair<intmax_t, bool> decodeAddress(DWARFReader &, uint8_t encoding,
-            Elf::Addr va = std::numeric_limits<Elf::Addr>::max()) const;
+    std::pair<intmax_t, bool> decodeAddress(DWARFReader &, uint8_t encoding) const;
 };
 
 class ImageCache;
