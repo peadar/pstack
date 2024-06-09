@@ -7,45 +7,17 @@
 
 namespace pstack::Dwarf {
 
-std::unique_ptr<CFI>
-Info::decodeCFI(const Elf::Section &section, FIType ftype, Reader::csptr hdr) const {
-    try {
-        return std::make_unique<CFI>(this, section.shdr.sh_addr, section.io(), ftype, hdr);
-    }
-    catch (const Exception &ex) {
-        *debug << "can't decode " << section.name << " for " << *elf->io << ": " << ex.what() << "\n";
-    }
-    return {};
-};
-
-CFI *
-Info::getEhFrame() const {
-    if (!ehFrameLoaded) {
-        ehFrameLoaded = true;
-        const Elf::Section &sec = elf->getDebugSection(".eh_frame", SHT_PROGBITS);
-        const Elf::Section &hdrsec = elf->getDebugSection(".eh_frame_hdr", SHT_PROGBITS);
-        if (sec)
-           ehFrame = decodeCFI(sec, FI_EH_FRAME, hdrsec ? hdrsec.io() : nullptr);
-    }
-    return ehFrame.get();
-}
-
-CFI *
-Info::getDebugFrame() const {
-    if (!debugFrameLoaded) {
-        debugFrameLoaded = true;
-        const Elf::Section &sec = elf->getSection(".debug_frame", SHT_PROGBITS);
-        if (sec)
-           debugFrame = decodeCFI(sec, FI_DEBUG_FRAME, nullptr);
-    }
-    return debugFrame.get();
-}
-
-CFI *Info::getCFI() const {
-    CFI *eh = getEhFrame();
-    if (eh != nullptr)
-        return eh;
-    return getDebugFrame();
+CFI *Info::getCFI(FIType type) const {
+   for (auto candidate : { FI_EH_FRAME,  FI_DEBUG_FRAME } ) {
+      if (candidate != type && type != FI_BEST)
+         continue;
+      if (cfi[ candidate ] == nullptr) {
+         cfi[candidate] = std::make_unique<CFI>( this, candidate );
+      }
+      if (*cfi[ candidate ])
+         return cfi[candidate].get();
+   }
+   return nullptr;
 }
 
 Info::Info(Elf::Object::sptr obj, ImageCache &cache_)

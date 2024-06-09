@@ -385,7 +385,6 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
             }
 
             case DW_OP_piece: {
-                getppid();
                 auto bytes = r.getuleb128();
                 auto value = poptop();
                 uintmax_t mask = bytes < sizeof mask ? std::numeric_limits<uintmax_t>::max() << 8 * bytes : 0;
@@ -617,7 +616,7 @@ ProcessLocation::cie() const {
     const Dwarf::FDE *lfde = fde();
     if (lfde == nullptr)
         return nullptr;
-    return &cfi()->cies.at(lfde->cieOff);
+    return &cfi()->getCIE(lfde->cieOff);
 }
 
 std::vector<std::pair<std::string, int>>
@@ -655,7 +654,7 @@ ProcessLocation::set(Process &proc, Elf::Addr address)
     this->location = address;
 }
 
-const Dwarf::CFI *
+Dwarf::CFI *
 CodeLocation::cfi() const {
     Dwarf::CFI *cfi = dwarf_->getCFI();
     if (cfi == nullptr)

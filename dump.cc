@@ -476,7 +476,6 @@ operator <<(std::ostream &os, const JSON<Dwarf::CIE, const Dwarf::CFI *> &dcie)
 std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::FDE, const Dwarf::CFI*> &dfi)
 {
-    Dwarf::DWARFReader r(dfi.context->io, dfi.object.instructions, dfi.object.end);
     return JObject(os)
         .field("cie", dfi.object.cieOff)
         .field( "loc", dfi.object.iloc)
@@ -523,10 +522,12 @@ operator << (std::ostream &os, const JSON<Dwarf::Info> &di)
     writer.field("units", di.object.getUnits())
         .field("pubnameUnits", di.object.pubnames())
         ; // XXX .field("aranges", di->getARanges());
-    if (di.object.getDebugFrame())
-        writer.field("debugframe", *di.object.getDebugFrame());
-    if (di.object.getEhFrame())
-        writer.field("ehFrame", *di.object.getEhFrame());
+
+    auto debugFrame = di.object.getCFI( Dwarf::FI_DEBUG_FRAME );
+    if (debugFrame)
+        writer.field("debugframe", *debugFrame);
+    auto ehFrame = di.object.getCFI( Dwarf::FI_EH_FRAME );
+        writer.field("ehFrame", *ehFrame);
     return writer;
 }
 
