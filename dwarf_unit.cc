@@ -211,6 +211,12 @@ Unit::findAbbreviation(size_t code) const
 
 const std::unique_ptr<Ranges> &
 Unit::getRanges(const DIE &die, uintmax_t base) {
+    if (base == 0) {
+       const DIE::Attribute & low = root().attribute(DW_AT_low_pc);
+       if (low.valid())
+          base = uintmax_t(low);
+
+    }
     auto &ptr = rangesForOffset[die.offset];
     if (ptr == nullptr)
         ptr = std::make_unique<Ranges>(die, base);

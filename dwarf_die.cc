@@ -488,7 +488,6 @@ Ranges::Ranges(const DIE &die, uintmax_t base) {
         // const auto &elf = die.getUnit()->dwarf->elf;
         // auto &addrs = elf->getDebugSection(".debug_addr", SHT_NULL); // XXX: would be used by the "x" ops below
 
-        uintmax_t base = 0;
         auto addrlen = die.getUnit()->addrlen;
         auto &unit = *die.getUnit();
         for (bool done = false; !done;) {
