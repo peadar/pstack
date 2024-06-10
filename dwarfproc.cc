@@ -55,6 +55,8 @@ StackFrame::scopeIP(Process &proc) const
        return { proc, raw };
     if (mechanism == UnwindMechanism::MACHINEREGS)
        return { proc, raw };
+    if (isSignalTrampoline)
+       return { proc, raw };
     ProcessLocation location(proc, raw);
 
     const auto *lcie = location.cie();
