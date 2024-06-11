@@ -112,7 +112,7 @@ Info::offsetToDIE(Elf::Off offset) const
                 // should be in here.
                 DIE entry = u->offsetToDIE(DIE(), offset);
                 if (entry) {
-                    if (verbose > 1)
+                    if (verbose > 2)
                         *debug << "search for DIE at " << offset
                                   << " in " << *debugInfo.io()
                                   << " started at " << uOffset
