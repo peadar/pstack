@@ -113,12 +113,8 @@ public:
 // Reader implementations
 
 class CacheReader final : public Reader {
-    struct CacheEnt {
-        std::string value;
-        bool isNew = true;
-    };
     Reader::csptr upstream;
-    mutable std::unordered_map<Off, CacheEnt> stringCache;
+    mutable std::unordered_map<Off, std::string> stringCache;
     static const size_t PAGESIZE = 256;
     static const size_t MAXPAGES = 16;
     class Page {

@@ -186,12 +186,10 @@ CacheReader::read(Off off, size_t count, char *ptr) const
 string
 CacheReader::readString(Off off) const
 {
-    auto &entry = stringCache[off];
-    if (entry.isNew) {
-        entry.value = Reader::readString(off);
-        entry.isNew = false;
-    }
-    return entry.value;
+    auto [it, neu] = stringCache.insert(std::make_pair(off, std::string{}));
+    if (neu)
+        it->second = Reader::readString(off);
+    return it->second;
 }
 
 Reader::csptr
