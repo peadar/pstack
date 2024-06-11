@@ -37,7 +37,7 @@ getPyInterpInfo(Procman::Process &proc) {
     int minor = minorChar - '0';
 
     if (verbose)
-        std::clog << "python version is: " << major << "." << minor << std::endl;
+        *debug << "python version is: " << major << "." << minor << std::endl;
 
     return PyInterpInfo {
         libpython, libpythonAddr, interpreterHead, 
@@ -65,7 +65,7 @@ getInterpHead(Procman::Process &proc) {
     }
     catch (...) {
         if (verbose)
-            std::clog << "Py_interp_headp symbol not found. Trying fallback" << std::endl;
+            *debug << "Py_interp_headp symbol not found. Trying fallback" << std::endl;
     }
 
 #ifdef WITH_PYTHON2
@@ -73,7 +73,7 @@ getInterpHead(Procman::Process &proc) {
         return getInterpHead<2>(proc);
     } catch (...) {
         if (verbose)
-            std::clog << "Python 2 interpreter not found" << std::endl;
+            *debug << "Python 2 interpreter not found" << std::endl;
     }
 #endif
 #ifdef WITH_PYTHON3
@@ -81,12 +81,12 @@ getInterpHead(Procman::Process &proc) {
         return getInterpHead<3>(proc);
     } catch (...) {
         if (verbose)
-            std::clog << "Python 3 interpreter not found" << std::endl;
+            *debug << "Python 3 interpreter not found" << std::endl;
     }
 #endif
 
     if (verbose)
-        std::clog << "Couldn't find a python interpreter" << std::endl;
+        *debug << "Couldn't find a python interpreter" << std::endl;
 
     return std::make_tuple(nullptr, 0, 0);
 }

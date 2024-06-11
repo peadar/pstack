@@ -252,7 +252,8 @@ Process::processAUXV(const Reader &auxio)
 
                     }
                     catch (const std::exception &ex) {
-                        std::clog << "auxv: warning: failed to load DSO: " << ex.what() << "\n";
+                        if (debug)
+                           *debug << "auxv: warning: failed to load DSO: " << ex.what() << "\n";
                     }
                     break;
                 }
@@ -289,7 +290,7 @@ Process::processAUXV(const Reader &auxio)
         }
     } catch (const std::exception &ex) {
         if (verbose)
-            std::clog << "exception while reading auxv: " << ex.what() << "\n";
+            *debug << "exception while reading auxv: " << ex.what() << "\n";
     }
 
 }
@@ -768,7 +769,8 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
             addElfObject(path, nullptr, Elf::Addr(map.l_addr));
         }
         catch (const std::exception &e) {
-            std::clog << "warning: can't load text for '" << path << "' at " <<
+            if (debug)
+               *debug << "warning: can't load text for '" << path << "' at " <<
             (void *)mapAddr << "/" << (void *)map.l_addr << ": " << e.what() << "\n";
             continue;
         }
@@ -1044,7 +1046,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
         }
     }
     catch (const std::exception &ex) {
-        std::clog << "warning: exception unwinding stack: " << ex.what() << std::endl;
+        if (debug)
+           *debug << "warning: exception unwinding stack: " << ex.what() << std::endl;
     }
 }
 

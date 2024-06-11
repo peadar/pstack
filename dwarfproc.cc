@@ -405,25 +405,30 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                 break; // XXX: the returned value is not a location, but the underlying value itself.
             case DW_OP_GNU_parameter_ref:
                 {
-                  std::clog << "can't handle DW_OP_GNU_parameter_ref: ";
+                  if (debug)
+                     *debug << "can't handle DW_OP_GNU_parameter_ref: ";
                   auto loc = frame->scopeIP(proc);
                   auto unit = loc.die().getUnit();
                   auto off = r.getuint(4);
                   auto die = unit->offsetToDIE(DIE(), off + unit->offset);
-                  std::clog << json(die) << "\n";
+                  if (debug)
+                     *debug << json(die) << "\n";
                   auto attr = die.attribute(DW_AT_type);
                   if (attr) {
                      auto typeDie = DIE(attr);
-                     std::clog << json(typeDie) << "\n";
+                     if (debug)
+                        *debug << json(typeDie) << "\n";
                   }
-                  std::clog << "\n";
+                  if (debug)
+                     *debug << "\n";
                   return -1;
                 }
                 // FALLTHROUGH
 
             default:
                 abort();
-                std::clog << "error evaluating DWARF OP " << op << " (" << int(op) << ")\n";
+                if (debug)
+                   *debug << "error evaluating DWARF OP " << op << " (" << int(op) << ")\n";
                 return -1;
         }
     }

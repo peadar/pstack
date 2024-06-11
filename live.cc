@@ -69,8 +69,8 @@ LiveProcess::resume(lwpid_t lwpid) {
          *debug << "not attempting to resume lwp " << lwpid << ", as it failed to stop\n";
       return;
    }
-   if (ptrace(PT_DETACH, lwpid, caddr_t(1), 0) != 0)
-      std::clog << "failed to detach from process " << lwpid << ": " << strerror(errno) << "\n";
+   if (ptrace(PT_DETACH, lwpid, caddr_t(1), 0) != 0 && debug)
+      *debug << "failed to detach from process " << lwpid << ": " << strerror(errno) << "\n";
    dynamic_cast<CacheReader&>(*io).flush();
    if (verbose >= 1) {
       timeval tv;

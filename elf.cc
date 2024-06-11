@@ -440,8 +440,8 @@ Object::findSymbolByAddress(Addr addr, int type)
         }
 #else
         static bool warned = false;
-        if (!warned) {
-            std::clog << "warning: no compiled support for LZMA - "
+        if (!warned && debug) {
+            *debug << "warning: no compiled support for LZMA - "
                 "can't decode debug data in " << *io << "\n";
             warned = true;
         }
@@ -606,10 +606,10 @@ Object::getDebug() const
     auto &s = getSection(".dynamic", SHT_NULL);
     auto &d = debugObject->getSection(".dynamic", SHT_NULL);
 
-    if (d.shdr.sh_addr != s.shdr.sh_addr) {
+    if (d.shdr.sh_addr != s.shdr.sh_addr && debug) {
         Elf::Addr diff = s.shdr.sh_addr - d.shdr.sh_addr;
-        IOFlagSave _(std::clog);
-        std::clog << "warning: dynamic section for debug symbols "
+        IOFlagSave _(*debug);
+        *debug << "warning: dynamic section for debug symbols "
            << *debugObject->io << " loaded for object "
            << *this->io << " at different offset: diff is "
            << std::hex << diff
@@ -707,9 +707,9 @@ Reader::csptr Section::io() const {
 #ifndef WITH_ZLIB
     if (wantedZlib) {
         static bool warned = false;
-        if (!warned) {
+        if (!warned && debug) {
             warned = true;
-            std::clog <<"warning: no support configured for compressed debug info in section "
+            *debug <<"warning: no support configured for compressed debug info in section "
                 << name << " of " << *elf->io << std::endl;
         }
     }

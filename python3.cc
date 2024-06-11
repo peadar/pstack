@@ -157,7 +157,7 @@ getInterpHead<3>(Procman::Process &proc) {
 
     if (libpython == nullptr) {
         if (verbose)
-            std::clog << "Python 3 interpreter not found" << std::endl;
+            *debug << "Python 3 interpreter not found" << std::endl;
         throw Exception() << "No libpython3 found";
     }
 
