@@ -364,7 +364,6 @@ DIE::getParentOffset() const
                 << ", need to do full walk of DIE tree"
                 << std::endl;
         walk(unit->root());
-        assert(raw->parent != 0);
     }
     return raw->parent;
 }

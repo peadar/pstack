@@ -1,4 +1,5 @@
 #include <string>
+#include <cassert>
 #include "libpstack/elf.h"
 #include "libpstack/reader.h"
 #include <stdint.h>

@@ -1,15 +1,12 @@
 #ifndef pstack_reader_h
 #define pstack_reader_h
 
-#include <stdint.h>
 #include <climits>
-#include <stdlib.h>
 #include <iostream>
 #include <memory>
 #include <unordered_map>
 #include <limits>
 #include <list>
-#include <cassert>
 #include <array>
 #include "libpstack/exception.h"
 
@@ -118,35 +115,31 @@ public:
 class CacheReader final : public Reader {
     struct CacheEnt {
         std::string value;
-        bool isNew;
-        CacheEnt() : isNew(true) {}
+        bool isNew = true;
     };
     Reader::csptr upstream;
     mutable std::unordered_map<Off, CacheEnt> stringCache;
     static const size_t PAGESIZE = 256;
     static const size_t MAXPAGES = 16;
     class Page {
-        Page(const Page &) = delete;
     public:
         Off offset;
         size_t len;
-        char data[PAGESIZE];
-        Page() {};
+        std::array<char, PAGESIZE> data;
         void load(const Reader &r, Off offset_);
     };
-    mutable std::list<Page *> pages;
-    Page *getPage(Off pageoff) const;
+    mutable std::list<std::unique_ptr<Page>> pages;
+    Page &getPage(Off pageoff) const;
 public:
     void flush();
-    virtual size_t read(Off off, size_t count, char *ptr) const override;
-    virtual void describe(std::ostream &os) const override {
+    size_t read(Off off, size_t count, char *ptr) const override;
+    void describe(std::ostream &os) const override {
         // this must be the same as the underlying stream: we sometimes rely on the
         // FileReader's filename
         os << *upstream;
     }
-    CacheReader(Reader::csptr upstream_);
+    explicit CacheReader(Reader::csptr upstream_);
     std::string readString(Off off) const override;
-    ~CacheReader();
     Off size() const override { return upstream->size(); }
     std::string filename() const override { return upstream->filename(); }
 };
@@ -250,7 +243,9 @@ public:
          reader(reader_),
          base(offset),
          eof( ( reader.size() - base ) / sizeof(T) ) {
-      assert(reader.size() == std::numeric_limits<size_t>::max() || reader.size() % sizeof (T) == 0);
+      if(reader.size() != std::numeric_limits<size_t>::max() && reader.size() % sizeof (T) != 0) {
+         throw ( Exception() << "end of data while reading array" );
+      }
    }
 };
 

@@ -48,9 +48,7 @@ Reader::csptr LiveProcess::getAUXV() const {
 size_t
 LiveProcess::getRegs(lwpid_t lwpid, int code, size_t sz, void *reg) {
     StopLWP here( this, lwpid );
-    iovec iov;
-    iov.iov_base = reg;
-    iov.iov_len = sz;
+    iovec iov { .iov_base = reg, .iov_len = sz };
     int rc = ptrace(PTRACE_GETREGSET, lwpid, code, &iov);
     return rc == 0 ? iov.iov_len : 0;
 }
@@ -61,15 +59,14 @@ LiveProcess::resume(lwpid_t lwpid) {
    if (tcbi == stoppedLWPs.end())
       return;
    auto &tcb = tcbi->second;
-   assert(tcb.stopCount != 0); // We can't resume an LWP that is not suspended.
    if (--tcb.stopCount != 0)
       return;
    if (tcb.ptraceErr != 0) {
-      if (verbose)
+      if (verbose > 0)
          *debug << "not attempting to resume lwp " << lwpid << ", as it failed to stop\n";
       return;
    }
-   if (ptrace(PT_DETACH, lwpid, caddr_t(1), 0) != 0 && debug)
+   if (ptrace(PT_DETACH, lwpid, caddr_t(1), 0) != 0 && debug != nullptr)
       *debug << "failed to detach from process " << lwpid << ": " << strerror(errno) << "\n";
    dynamic_cast<CacheReader&>(*io).flush();
    if (verbose >= 1) {
@@ -201,7 +198,7 @@ LiveProcess::stop(lwpid_t tid) {
    }
    tcb.ptraceErr = 0;
 
-   int status;
+   int status = 0;
    pid_t waitedpid = waitpid(tid, &status, tid == this->pid ? 0 : __WCLONE);
    if (waitedpid == -1)
       *debug << "failed to stop LWP " << tid << ": wait failed: " << strerror(errno) << "\n";

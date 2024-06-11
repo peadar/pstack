@@ -3,7 +3,6 @@
 #include <link.h>
 #include <unistd.h>
 
-#include <cassert>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -310,7 +309,6 @@ buildDIEName(std::ostream &os, const Dwarf::DIE &die, bool first=true) {
         return false;
 
     auto parent = die.getParentOffset();
-    assert(parent != 0); // because die would have been a unit or partial unit
     bool printedParent = buildDIEName(os, die.getUnit()->offsetToDIE(Dwarf::DIE(), parent), false);
 
     auto tag = die.tag();

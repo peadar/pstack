@@ -2,6 +2,7 @@
 #include "libpstack/global.h"
 #include "libpstack/archreg.h"
 #include <unistd.h>
+#include <cassert>
 
 extern "C" {
 int foobar() {
@@ -25,5 +26,5 @@ main()
 
     std::cout << "found foobar in " << *lib->io << "@" << addr << ", value=" << sym.st_value << ", size=" << sym.st_size << std::endl;
     assert(pstack::Elf::Addr(foobar) == addr + sym.st_value);
-    exit(0);
+    return 0;
 }

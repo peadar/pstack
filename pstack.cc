@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include <csignal>
+#include <cassert>
 #include <algorithm>
 #include <fstream>
 #include <iostream>

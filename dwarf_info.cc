@@ -148,7 +148,13 @@ Info::decodeARangeSet(DWARFReader &r) const {
     r.addrLen = addrlen;
     uint8_t segdesclen = r.getu8();
     (void)segdesclen;
-    assert(segdesclen == 0);
+    if (segdesclen != 0) {
+       // consider this an encoding error.
+       if (debug != nullptr) {
+          *debug << "warning: arangeset in " << *r.io << "has non-zero segdesclen\n";
+       }
+       return;
+    }
     unsigned tupleLen = addrlen * 2;
 
     // Align on tupleLen-boundary.

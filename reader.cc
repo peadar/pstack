@@ -115,63 +115,49 @@ FileReader::read(Off off, size_t count, char *ptr) const
 void
 CacheReader::Page::load(const Reader &r, Off offset_)
 {
-    assert(offset_ % PAGESIZE == 0);
-    len = r.read(offset_, PAGESIZE, data);
+    assert(offset_ % data.size() == 0);
+    len = r.read(offset_, data.size(), data.data());
     offset = offset_;
 }
 
 CacheReader::CacheReader(Reader::csptr upstream_)
-    : upstream(move(upstream_))
+    : upstream(std::move(upstream_))
 {
 }
 
 void
 CacheReader::flush() {
-    std::list<Page *> clearpages;
-    std::swap(pages, clearpages);
-    for (auto &i : clearpages)
-        delete i;
+    pages.clear();
 }
 
-CacheReader::~CacheReader()
-{
-    flush();
-}
-
-CacheReader::Page *
+CacheReader::Page &
 CacheReader::getPage(Off pageoff) const
 {
-    Page *p;
     bool first = true;
     for (auto i = pages.begin(); i != pages.end(); ++i) {
-        p = *i;
-        if (p->offset == pageoff) {
+        if ((*i)->offset == pageoff) {
             // move page to front.
             if (!first) {
+                auto page = std::exchange(*i, nullptr);
                 pages.erase(i);
-                pages.push_front(p);
+                pages.push_front(std::move(page));
             }
-            return p;
+            return **pages.begin();
         }
         first = false;
     }
+
+    std::unique_ptr<Page> p;
     if (pages.size() == MAXPAGES) {
-        p = pages.back();
+        // steal the oldest page.
+        p = std::exchange( pages.back(), nullptr );
         pages.pop_back();
     } else {
-        p = new Page();
+        p = std::make_unique<Page>();
     }
-    try {
-        p->load(*upstream, pageoff);
-        pages.push_front(p);
-        return p;
-    }
-    catch (...) {
-        // failed to load page - delete it, and continue with error.
-        delete p;
-        throw;
-    }
-
+     p->load(*upstream, pageoff);
+     pages.push_front(std::move(p));
+     return **pages.begin();
 }
 
 size_t
@@ -185,15 +171,13 @@ CacheReader::read(Off off, size_t count, char *ptr) const
             break;
         size_t offsetOfDataInPage = off % PAGESIZE;
         Off offsetOfPageInFile = off - offsetOfDataInPage;
-        Page *page = getPage(offsetOfPageInFile);
-        if (page == nullptr)
-            break;
-        size_t chunk = std::min(page->len - offsetOfDataInPage, count);
-        memcpy(ptr, page->data + offsetOfDataInPage, chunk);
+        Page &page = getPage(offsetOfPageInFile);
+        size_t chunk = std::min(page.len - offsetOfDataInPage, count);
+        memcpy(ptr, page.data.data() + offsetOfDataInPage, chunk);
         off += chunk;
         count -= chunk;
         ptr += chunk;
-        if (page->len != PAGESIZE)
+        if (page.len != PAGESIZE)
             break;
     }
     return off - startoff;

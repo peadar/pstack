@@ -5,6 +5,7 @@
 #include "heap.h"
 #include <unistd.h>
 #include <set>
+#include <cassert>
 
 using namespace pstack;
 

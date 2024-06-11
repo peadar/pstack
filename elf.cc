@@ -735,9 +735,8 @@ ImageCache::ImageCache() : elfHits(0), elfLookups(0) {}
 ImageCache::~ImageCache() noexcept {
     if (verbose >= 2) {
         *debug << "ELF image cache: lookups: " << elfLookups << ", hits=" << elfHits << std::endl;
-        for (const auto &items : cache) {
-            assert(items.second);
-            *debug << "\t" << *items.second->io << std::endl;
+        for (const auto &[name, elf] : cache) {
+            *debug << "\t" << *elf->io << std::endl;
         }
     }
 }
