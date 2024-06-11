@@ -655,10 +655,6 @@ Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo)
                << std::left << std::setw(2) << std::setfill(' ') << frameNo << " "
                << std::setw(ELF_BITS/4 + 2) << std::setfill(' ')
                << "inlined";
-           if (verbose > 0) {
-               os << std::setw(ELF_BITS/4 + 2) << std::setfill(' ') << "/";
-               os << " ";
-           }
            os << " in ";
            buildDIEName(os, *i);
            if (!options.nosrc) {
