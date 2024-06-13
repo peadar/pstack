@@ -32,3 +32,8 @@ def TEXT(cmd):
 def JSON(cmd):
     pstack, target = _run(cmd, ["./%s" % PSTACK_BIN, "-j" ])
     return json.loads(pstack), target
+
+def dumpJSON(image):
+    args = ["./%s" % PSTACK_BIN, "-D", image ]
+    pstackOutput = subprocess.check_output(args, universal_newlines=True)
+    return json.loads(pstackOutput)

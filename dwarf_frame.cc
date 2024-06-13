@@ -129,6 +129,15 @@ CFI::putFDEorCIE( DWARFReader &reader ) const {
    }
 }
 
+const std::vector<std::unique_ptr<FDE>> &CFI::getFDEs() const {
+   ensureFDEs();
+   return fdes;
+}
+
+const std::map<Elf::Addr,CIE> &CFI::getCIEs() const {
+   return cies;
+}
+
 CFI::CFI(const Info *info, FIType type_)
     : dwarf(info)
     , type(type_)

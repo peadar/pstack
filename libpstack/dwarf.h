@@ -544,11 +544,32 @@ struct CIE {
  * CFI represents call frame information (generally contents of .debug_frame or .eh_frame)
  */
 class CFI {
+public:
+    using CIEs = std::map<Elf::Addr, CIE>;
+    using FDEs = std::vector<std::unique_ptr<FDE>>;
+    [[nodiscard]] const CIE &getCIE(Elf::Addr off) const { return cies.at(off); }
+    [[nodiscard]] const CIEs &getCIEs() const;
+    [[nodiscard]] const FDEs &getFDEs() const;
+    [[nodiscard]] const FDE *findFDE(Elf::Addr) const;
+    [[nodiscard]] operator bool() const noexcept { return io != nullptr; }
+
+    CFI(const Info *, FIType);
+    CFI() = delete;
+    CFI(const CFI &) = delete;
+    CFI(CFI &&) = delete;
+    CFI &operator = (const CFI &) = delete;
+    CFI &operator = (CFI &&) = delete;
+    ~CFI() = default;
+
+    Reader::csptr io; // public to allow decoding instructions.
+private:
+    friend struct FDE;
+    friend struct CIE;
     const Info *dwarf;
     Elf::Addr sectionAddr; // virtual address of section (either eh_frame or debug_frame.
     Elf::Addr ehFrameHdrAddr; // virtual address of eh_frame_hdr
     FIType type;
-    mutable std::map<Elf::Addr, CIE> cies;
+    mutable CIEs cies;
 
     // FDEs are sorted by their iloc field. If we have an fdeTable, then the
     // table starts out with the correct size, but unpopulated, and searching
@@ -558,7 +579,7 @@ class CFI {
     // with al the FDEs. Currently, this happens for the VDSO in aarch64
     // platforms (where there are just a handful of FDEs), and pretty much
     // everything else has an eh_frame_hdr.
-    mutable std::vector<std::unique_ptr<FDE>> fdes;
+    mutable FDEs fdes;
 
     ExceptionHandlingEncoding fdeTableEnc; // the encoding format of the entries in fdeTable.
     mutable Reader::csptr fdeTable; // the start of the table in the eh_frame_hdr section.
@@ -571,29 +592,9 @@ class CFI {
     void putCIE(Elf::Addr offset, DWARFReader &r, Elf::Addr end) const; // put CIE who's header we already decoded.
 
     std::pair<uintmax_t, bool> decodeAddress(DWARFReader &, uint8_t encoding, uintptr_t sectionVa) const;
-    friend std::ostream & ::operator << (std::ostream &os, const JSON<CFI> &);
-    friend struct FDE;
-    friend struct CIE;
 
     void ensureFDE(size_t idx) const; // ensures that the fde at index idx is preloaded.
     void ensureFDEs() const; // ensure all FDEs are pre-loaded.
-
-public:
-    const CIE &getCIE(Elf::Addr off) const {
-       return cies.at(off);
-    }
-    Reader::csptr io;
-    CFI(const Info *, FIType);
-    CFI() = delete;
-    CFI(const CFI &) = delete;
-    CFI(CFI &&) = delete;
-    CFI &operator = (const CFI &) = delete;
-    CFI &operator = (CFI &&) = delete;
-    ~CFI() = default;
-
-    [[nodiscard]] const FDE *findFDE(Elf::Addr) const;
-    operator bool() const noexcept { return io != nullptr; }
-    // If we know the VA of the byte addressed by the start of the dwarf reader, psas it in "va".
 };
 
 class ImageCache;

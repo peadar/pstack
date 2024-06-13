@@ -254,6 +254,7 @@ std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIE> &jo) {
     JObject o(os);
 
     o
+        .field("name", entry.name())
         .field("type", entry.tag())
         .field("cuOffset", entry.getOffset() - entry.getUnit()->offset)
         .field("offset", entry.getOffset())
@@ -497,12 +498,11 @@ operator << (std::ostream &os, const JSON<AddrStr> &addr)
 std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::CFI> &info)
 {
-    Mapper<AddrStr, decltype(info.object.cies)::mapped_type, decltype(info.object.cies)>
-       ciesByString(info.object.cies);
-    info.object.ensureFDEs();
+    const Dwarf::CFI::CIEs &cies = info.object.getCIEs();
+    Mapper<AddrStr, Dwarf::CFI::CIEs::mapped_type, Dwarf::CFI::CIEs> ciesByString(cies);
     return JObject(os)
         .field("cielist", ciesByString, &info.object)
-        .field("fdelist", info.object.fdes, &info.object)
+        .field("fdelist", info.object.getFDEs(), &info.object)
         ;
    return os;
 }
