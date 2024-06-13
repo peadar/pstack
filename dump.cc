@@ -499,6 +499,7 @@ operator << (std::ostream &os, const JSON<Dwarf::CFI> &info)
 {
     Mapper<AddrStr, decltype(info.object.cies)::mapped_type, decltype(info.object.cies)>
        ciesByString(info.object.cies);
+    info.object.ensureFDEs();
     return JObject(os)
         .field("cielist", ciesByString, &info.object)
         .field("fdelist", info.object.fdes, &info.object)

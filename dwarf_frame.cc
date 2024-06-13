@@ -97,7 +97,7 @@ static size_t sizeForEncoding( ExceptionHandlingEncoding ehe ) {
 }
 
 void
-CFI::putCIE(Elf::Addr offset, DWARFReader &r, Elf::Addr end) {
+CFI::putCIE(Elf::Addr offset, DWARFReader &r, Elf::Addr end) const {
    cies.emplace(std::piecewise_construct,
          std::forward_as_tuple(offset),
          std::forward_as_tuple(this, r, end));
@@ -107,7 +107,7 @@ CFI::putCIE(Elf::Addr offset, DWARFReader &r, Elf::Addr end) {
 // CIE/FDE The header indicates if its a CIE or FDE - an FDE starts with a
 // reference to the CIE, while a CIE starts with a reference of "-1"
 std::pair<bool, std::unique_ptr<FDE>>
-CFI::putFDEorCIE( DWARFReader &reader ) {
+CFI::putFDEorCIE( DWARFReader &reader ) const {
    size_t startOffset = reader.getOffset();
    Elf::Off associatedCIE;
    Elf::Off nextoff = decodeCIEFDEHdr(reader, type, &associatedCIE);
@@ -123,7 +123,7 @@ CFI::putFDEorCIE( DWARFReader &reader ) {
          auto [ success, notAnFde ] = putFDEorCIE(r2);
          assert(success && notAnFde == nullptr);
       }
-      std::unique_ptr<FDE> fde = std::make_unique<FDE>(this, reader, associatedCIE, nextoff);
+      std::unique_ptr<FDE> fde = std::make_unique<FDE>(*this, reader, associatedCIE, nextoff);
       reader.setOffset( nextoff );
       return {true, std::move(fde) };
    }
@@ -212,33 +212,44 @@ CFI::CFI(const Info *info, FIType type_)
           return l->iloc < r->iloc; });
 }
 
+
+void
+CFI::ensureFDE(size_t idx) const {
+   auto &entry = fdes[idx];
+   if (entry != nullptr)
+      return;
+   size_t encodingSize = sizeForEncoding( ExceptionHandlingEncoding(fdeTableEnc) );
+   DWARFReader tableReader( fdeTable, encodingSize * 2 * idx );
+   auto [fdeAddr,indirectAddr] = decodeAddress(tableReader, fdeTableEnc, ehFrameHdrAddr);
+   (void)fdeAddr;
+   (void)indirectAddr;
+   auto [fdeOff,indirectOff] = decodeAddress(tableReader, fdeTableEnc, ehFrameHdrAddr);
+   DWARFReader fdeReader( io, fdeOff - sectionAddr );
+   auto [ success, newEntry ] = putFDEorCIE( fdeReader );
+   entry = std::move(newEntry);
+   assert(fdeAddr == entry->iloc);
+}
+
+void
+CFI::ensureFDEs() const {
+   if (fdeTable == nullptr)
+      return;
+   for (size_t i = 0; i < fdes.size(); ++i)
+      ensureFDE(i);
+   fdeTable.reset(); // We don't need this anymore, as we've read all the FDEs.
+}
+
 const FDE *
-CFI::findFDE(Elf::Addr addr)
-{
+CFI::findFDE(Elf::Addr addr) const {
 
    // No FDE found. Check the lookup table.
    uintptr_t start = 0;
    uintptr_t end = fdes.size();
 
-   DWARFReader fdeReader( io );
-
-   size_t encodingSize = sizeForEncoding( ExceptionHandlingEncoding(fdeTableEnc) );
    while (start < end) {
       auto mid = start + (end - start) / 2;
+      ensureFDE(mid);
       auto &entry = fdes[mid];
-      if (entry == nullptr) {
-         DWARFReader tableReader( fdeTable, encodingSize * 2 * mid );
-         auto [fdeAddr,indirectAddr] = decodeAddress(tableReader, fdeTableEnc, ehFrameHdrAddr);
-
-         (void)fdeAddr;
-         (void)indirectAddr;
-
-         auto [fdeOff,indirectOff] = decodeAddress(tableReader, fdeTableEnc, ehFrameHdrAddr);
-         fdeReader.setOffset(fdeOff - sectionAddr);
-         auto [ success, newEntry ] = putFDEorCIE( fdeReader );
-         entry = std::move(newEntry);
-         assert(fdeAddr == entry->iloc);
-      }
       if (entry->iloc <= addr) {
          start = mid + 1;
          if (addr < entry->iloc + entry->irange)
@@ -451,16 +462,16 @@ struct FdeCounter {
 
 static FdeCounter fdeCounter;
 
-FDE::FDE(CFI *fi, DWARFReader &reader, Elf::Off cieOff_, Elf::Off endOff_)
+FDE::FDE(const CFI &fi, DWARFReader &reader, Elf::Off cieOff_, Elf::Off endOff_)
     : end(endOff_)
     , cieOff(cieOff_)
 {
-    auto &cie = fi->cies[cieOff];
+    auto &cie = fi.cies.at( cieOff );
     bool indirect;
-    std::tie(iloc, indirect) = fi->decodeAddress(reader, cie.addressEncoding, fi->sectionAddr);
+    std::tie(iloc, indirect) = fi.decodeAddress(reader, cie.addressEncoding, fi.sectionAddr);
     if (indirect)
         throw (Exception() << "FDE has indirect encoding for location");
-    std::tie(irange, indirect) = fi->decodeAddress(reader, cie.addressEncoding & 0xf, fi->sectionAddr);
+    std::tie(irange, indirect) = fi.decodeAddress(reader, cie.addressEncoding & 0xf, fi.sectionAddr);
     assert(!indirect); // we've anded out the indirect encoding flag.
     if (!cie.augmentation.empty() && cie.augmentation[0] == 'z') {
         size_t alen = reader.getuleb128();

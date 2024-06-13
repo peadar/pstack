@@ -8,6 +8,7 @@
 #include "libpstack/fs.h"
 #include "libpstack/global.h"
 #include <cstring>
+#include <utility>
 
 namespace pstack {
 using std::string;
