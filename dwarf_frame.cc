@@ -2,6 +2,7 @@
 #include "libpstack/dwarf_reader.h"
 #include "libpstack/global.h"
 #include <stack>
+#include <algorithm>
 
 namespace pstack::Dwarf {
 std::pair<uintmax_t, bool>
