@@ -434,6 +434,7 @@ class FileEntries {
     Reader::csptr names;
 
 public:
+    class sentinel { };
     class iterator {
         friend class FileEntries;
         const FileEntries &entries;
@@ -447,6 +448,7 @@ public:
         iterator &operator++();
         std::pair<std::string, FileEntry> operator *() { fetch(); return cur; }
         bool operator != (const iterator &rhs) const { return entriesIterator != rhs.entriesIterator; }
+        bool operator != (const sentinel &) const { return entriesIterator != entries.entriesArray->end(); }
     };
     FileEntries(const Elf::Object &obj) {
         // find the Notes section.
@@ -463,12 +465,8 @@ public:
            entries = std::make_shared<NullReader>();
         entriesArray = std::make_unique<ReaderArray<FileEntry>>(*entries);
     }
-    iterator begin() const {
-       return iterator(*this, entriesArray->begin());
-    }
-    iterator end() const {
-       return iterator(*this, entriesArray->end());
-    }
+    iterator begin() const { return iterator(*this, entriesArray->begin()); }
+    sentinel end() const { return sentinel{}; }
 };
 
 

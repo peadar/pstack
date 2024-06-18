@@ -212,27 +212,42 @@ class ReaderArray {
    mutable std::array<T, cachesize> cache;
 
 public:
+   class sentinel { }; // to return from 'end()'
    class iterator {
-      const ReaderArray<T, cachesize> &array;
+      const ReaderArray<T, cachesize> *arrayp;
       size_t idx; // Index of current item
    public:
+      using value_type = T;
       const T &operator *() const {
-         return array.getitem( idx );
+         return arrayp->getitem( idx );
       }
-      iterator(const ReaderArray<T, cachesize> &array_, size_t idx_) noexcept : array(array_), idx(idx_) { }
-      iterator(const ReaderArray<T, cachesize> &array_) noexcept : array(array_), idx(array.eof) { }
+      iterator(const ReaderArray<T, cachesize> &array_, size_t idx_) noexcept : arrayp(&array_), idx(idx_) { }
+
       bool operator == (const iterator &rhs) const noexcept {
-         return idx == rhs.idx || ( idx >= array.eof && rhs.idx >= rhs.array.eof );
+         return idx == rhs.idx || ( idx >= arrayp->eof && rhs.idx >= rhs.arrayp->eof );
       }
+
+      bool operator == (const sentinel &) const noexcept {
+         return idx == arrayp->eof;
+      }
+
       bool operator != (const iterator &rhs) const noexcept { return ! (*this == rhs); }
-      size_t operator - (const iterator &rhs) const noexcept { return idx - rhs.idx; }
+      bool operator != (const sentinel &rhs) const noexcept { return ! (*this == rhs); }
+      using difference_type = ptrdiff_t;
+      difference_type operator - (const iterator &rhs) const noexcept { return idx - rhs.idx; }
       iterator & operator++() noexcept;
+      iterator operator++(int) noexcept {
+         auto self = *this;
+         this->operator++();
+         return self;
+      };
+
    };
 
    using const_iterator = iterator;
-   typedef T value_type;
+   using value_type = T;
    iterator begin() const { return iterator(*this, 0); }
-   iterator end() const { return iterator(*this); }
+   sentinel end() const { return sentinel{}; }
    const inline T &getitem(size_t) const;
 
    ReaderArray(const Reader &reader_, size_t offset = 0) :
