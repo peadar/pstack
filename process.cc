@@ -373,6 +373,14 @@ PrintableFrame::PrintableFrame(Process &proc, const StackFrame &frame)
     }
 }
 
+Dwarf::DIE removeCV(Dwarf::DIE type) {
+    while (type.tag() == Dwarf::DW_TAG_typedef
+          || type.tag() == Dwarf::DW_TAG_const_type
+          || type.tag() == Dwarf::DW_TAG_volatile_type)
+       type = Dwarf::DIE(type.attribute(Dwarf::DW_AT_type));
+    return type;
+}
+
 struct ArgPrint {
     Process &p;
     const StackFrame &frame;
@@ -380,45 +388,41 @@ struct ArgPrint {
         : p(p_), frame(frame_) {}
 };
 
+using namespace Dwarf;
+
 struct RemoteValue {
     const Process &p;
     const Elf::Addr addr;
-    const Dwarf::DIE type;
-    RemoteValue(const Process &p_, Elf::Addr addr_, Dwarf::DIE type_)
+    const DIE type;
+    std::vector<char> buf;
+    std::string error;
+
+    RemoteValue(const Process &p_, Elf::Addr addr_, bool isValue, DIE type_)
         : p(p_)
         , addr(addr_)
-        , type(type_)
-    {}
+        , type(removeCV( std::move(type_)) ) {
+      if (isValue) {
+         buf.resize(sizeof addr_);
+         memcpy(&buf[0], &addr_, sizeof addr_);
+      } else {
+         size_t size;
+         auto sizeAttr = type.attribute(DW_AT_byte_size);
+         if (sizeAttr.valid()) {
+            size = uintmax_t(sizeAttr);
+         } else if (type.tag() == DW_TAG_reference_type || type.tag() == DW_TAG_pointer_type) {
+            size = sizeof (void *);
+         }
+         if (!size) {
+            error = "<no size for type>";
+         }
+         buf.resize(size);
+         auto rc = p.io->read(addr, size, &buf[0]);
+         if (rc != size) {
+            error = "<failed to read from remote>";
+         }
+      }
+   }
 };
-
-struct ProcPtr {
-    const Process &proc;
-    const Dwarf::DIE &type;
-    Elf::Addr addr;
-    ProcPtr(const Process &proc_, const Dwarf::DIE &type_, Elf::Addr addr_)
-        : proc(proc_)
-        , type(type_)
-        , addr(addr_)
-    {}
-};
-
-std::ostream &
-operator << (std::ostream &os, const ProcPtr &pp) {
-    using namespace Dwarf;
-    DIE base;
-    for (base = DIE(pp.type.attribute(DW_AT_type)); 
-        base && base.tag() == DW_TAG_const_type;
-        base = DIE(base.attribute(DW_AT_type))) 
-        ;
-
-    if (base && base.name() == "char") {
-       std::string s = pp.proc.io->readString(pp.addr);
-       os << "\"" << s << "\"";
-    } else {
-       os << pp.addr << "(" << (void *)pp.addr << ")";
-    }
-    return os;
-}
 
 std::ostream &
 operator << (std::ostream &os, const RemoteValue &rv)
@@ -426,47 +430,25 @@ operator << (std::ostream &os, const RemoteValue &rv)
     using namespace Dwarf;
     if (rv.addr == 0)
        return os << "(null)";
-    auto type = rv.type;
-    while (type.tag() == DW_TAG_typedef || type.tag() == DW_TAG_const_type)
-       type = DIE(type.attribute(DW_AT_type));
-
-
-    uintmax_t size;
-    std::vector<char> buf;
-    auto sizeAttr = type.attribute(DW_AT_byte_size);
-    if (sizeAttr.valid()) {
-        size = uintmax_t(sizeAttr);
-        buf.resize(size);
-        auto rc = rv.p.io->read(rv.addr, size, &buf[0]);
-        if (rc != size) {
-            return os << "<error reading " << size << " bytes from " << rv.addr
-               << ", got " << rc << ">";
-        }
-    } else {
-       size = 0;
-    }
 
     IOFlagSave _(os);
-    switch (type.tag()) {
+    switch (rv.type.tag()) {
         case DW_TAG_base_type: {
-            if (size == 0) {
-                os << "unrepresentable(1)";
-            }
-            auto encoding = type.attribute(DW_AT_encoding);
+            auto encoding = rv.type.attribute(DW_AT_encoding);
             if (!encoding.valid())
                 throw (Exception() << "no encoding specified for base type");
 
             union {
-               int8_t *int8;
-               int16_t *int16;
-               int32_t *int32;
-               int64_t *int64;
-               float *float_;
-               double *double_;
-               void **voidp;
-               char *cp;
+               const int8_t *int8;
+               const int16_t *int16;
+               const int32_t *int32;
+               const int64_t *int64;
+               const float *float_;
+               const double *double_;
+               const void **voidp;
+               const char *cp;
             } u;
-            u.cp = &buf[0];
+            u.cp = &rv.buf[0];
 
             switch (uintmax_t(encoding)) {
                 case DW_ATE_address:
@@ -474,11 +456,11 @@ operator << (std::ostream &os, const RemoteValue &rv)
                     break;
                 case DW_ATE_boolean:
                     for (size_t i = 0;; ++i) {
-                        if (i == size) {
+                        if (i == rv.buf.size()) {
                             os << "false";
                             break;
                         }
-                        if (buf[i] != 0) {
+                        if (rv.buf[i] != 0) {
                             os << "true";
                             break;
                         }
@@ -487,7 +469,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
 
                 case DW_ATE_signed:
                 case DW_ATE_signed_char:
-                    switch (size) {
+                    switch (rv.buf.size()) {
                         case sizeof (int8_t):
                             os << *u.int8;
                             break;
@@ -507,7 +489,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
 
                 case DW_ATE_unsigned:
                 case DW_ATE_unsigned_char:
-                    switch (size) {
+                    switch (rv.buf.size()) {
                         case sizeof (uint8_t):
                             os << *u.int8;
                             break;
@@ -525,7 +507,7 @@ operator << (std::ostream &os, const RemoteValue &rv)
                     }
                     break;
                 case DW_ATE_float:
-                    switch (size) {
+                    switch (rv.buf.size()) {
                        case sizeof(double):
                           os << *u.double_;
                           break;
@@ -544,15 +526,23 @@ operator << (std::ostream &os, const RemoteValue &rv)
         }
         case DW_TAG_reference_type:
         case DW_TAG_pointer_type: {
-            if (size == 0) {
-               buf.resize(sizeof (void *));
-               rv.p.io->read(rv.addr, sizeof (void **), &buf[0]);
+            auto ptr = *(Elf::Addr *)&rv.buf[0];
+            os << (void *)ptr;
+            auto reftype = removeCV(DIE(rv.type.attribute(DW_AT_type)));
+            if (reftype.name() == "char") {
+                std::string s = rv.p.io->readString(ptr);
+                os << " \"" << s << "\"";
+            } else {
+                if (ptr == 0)
+                    os << "->nullptr";
+                else
+                    os << "->" << RemoteValue(rv.p, ptr, false, reftype);
+                break;
             }
-            os << ProcPtr(rv.p, type, *(Elf::Addr *)&buf[0]);
             break;
         }
         default:
-            os << "<unprintable type " << type.tag() << ">";
+            os << "<unprintable type " << rv.type.name() << ">";
     }
     return os;
 }
@@ -580,10 +570,7 @@ operator << (std::ostream &os, const ArgPrint &ap)
                         addr = fbstack.eval(ap.p, attr, &ap.frame, location.elfReloc());
                         os << "=";
                         try {
-                           if (fbstack.isValue)
-                              os << ProcPtr(ap.p, type, addr) << "{r" << fbstack.inReg << "}"; // note the value may be in *multiple* registers.
-                           else
-                              os << RemoteValue(ap.p, addr, type);
+                           os << RemoteValue(ap.p, addr, fbstack.isValue, type);
                         }
                         catch (const Exception &ex) {
                            os << "<" << ex.what() << ">";
