@@ -213,6 +213,8 @@ class ReaderArray {
 
 public:
    class sentinel { }; // to return from 'end()'
+   using value_type = T;
+
    class iterator {
       const ReaderArray<T, cachesize> *arrayp;
       size_t idx; // Index of current item
@@ -245,7 +247,6 @@ public:
    };
 
    using const_iterator = iterator;
-   using value_type = T;
    iterator begin() const { return iterator(*this, 0); }
    sentinel end() const { return sentinel{}; }
    const inline T &getitem(size_t) const;
