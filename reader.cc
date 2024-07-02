@@ -172,14 +172,24 @@ CacheReader::read(Off off, size_t count, char *ptr) const
             break;
         size_t offsetOfDataInPage = off % PAGESIZE;
         Off offsetOfPageInFile = off - offsetOfDataInPage;
-        Page &page = getPage(offsetOfPageInFile);
-        size_t chunk = std::min(page.len - offsetOfDataInPage, count);
-        memcpy(ptr, page.data.data() + offsetOfDataInPage, chunk);
-        off += chunk;
-        count -= chunk;
-        ptr += chunk;
-        if (page.len != PAGESIZE)
-            break;
+        try {
+           Page &page = getPage(offsetOfPageInFile);
+           size_t chunk = std::min(page.len - offsetOfDataInPage, count);
+           memcpy(ptr, page.data.data() + offsetOfDataInPage, chunk);
+           off += chunk;
+           count -= chunk;
+           ptr += chunk;
+           if (page.len != PAGESIZE)
+               break;
+        }
+        catch (const Exception &e) {
+           if (verbose > 1) {
+              *debug << "failed to read page in " << *upstream << ": " << e.what() << "\n";
+           }
+           break;
+        }
+
+
     }
     return off - startoff;
 }
