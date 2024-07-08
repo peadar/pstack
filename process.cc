@@ -405,20 +405,23 @@ struct RemoteValue {
          buf.resize(sizeof addr_);
          memcpy(&buf[0], &addr_, sizeof addr_);
       } else {
-         size_t size;
          auto sizeAttr = type.attribute(DW_AT_byte_size);
+         size_t size;
          if (sizeAttr.valid()) {
             size = uintmax_t(sizeAttr);
          } else if (type.tag() == DW_TAG_reference_type || type.tag() == DW_TAG_pointer_type) {
             size = sizeof (void *);
+         } else {
+            size = 0;
          }
          if (!size) {
             error = "<no size for type>";
-         }
-         buf.resize(size);
-         auto rc = p.io->read(addr, size, &buf[0]);
-         if (rc != size) {
-            error = "<failed to read from remote>";
+         } else {
+            buf.resize(size);
+            auto rc = p.io->read(addr, size, &buf[0]);
+            if (rc != size) {
+               error = "<failed to read from remote>";
+            }
          }
       }
    }
