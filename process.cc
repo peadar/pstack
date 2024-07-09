@@ -374,9 +374,10 @@ PrintableFrame::PrintableFrame(Process &proc, const StackFrame &frame)
 }
 
 Dwarf::DIE removeCV(Dwarf::DIE type) {
-    while (type.tag() == Dwarf::DW_TAG_typedef
+    while (type && 
+          (type.tag() == Dwarf::DW_TAG_typedef
           || type.tag() == Dwarf::DW_TAG_const_type
-          || type.tag() == Dwarf::DW_TAG_volatile_type)
+          || type.tag() == Dwarf::DW_TAG_volatile_type))
        type = Dwarf::DIE(type.attribute(Dwarf::DW_AT_type));
     return type;
 }
@@ -532,15 +533,17 @@ operator << (std::ostream &os, const RemoteValue &rv)
             auto ptr = *(Elf::Addr *)&rv.buf[0];
             os << (void *)ptr;
             auto reftype = removeCV(DIE(rv.type.attribute(DW_AT_type)));
-            if (reftype.name() == "char") {
-                std::string s = rv.p.io->readString(ptr);
-                os << " \"" << s << "\"";
-            } else {
-                if (ptr == 0)
-                    os << "->nullptr";
-                else
-                    os << "->" << RemoteValue(rv.p, ptr, false, reftype);
-                break;
+            if (reftype) {
+               if (reftype.name() == "char") {
+                  std::string s = rv.p.io->readString(ptr);
+                  os << " \"" << s << "\"";
+               } else {
+                  if (ptr == 0)
+                     os << "->nullptr";
+                  else
+                     os << "->" << RemoteValue(rv.p, ptr, false, reftype);
+                  break;
+               }
             }
             break;
         }
