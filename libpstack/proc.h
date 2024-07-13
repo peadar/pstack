@@ -185,7 +185,7 @@ struct PrintableFrame;
 struct DevNode {
     int major = -1;
     int minor = -1;
-    ino_t inode = -1;
+    uintmax_t inode = 0;
     std::string path;
     bool operator == (const DevNode &rhs) const {
         return major == rhs.major && minor == rhs.minor && inode == rhs.inode;

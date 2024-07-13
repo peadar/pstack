@@ -222,7 +222,7 @@ Process::procAddressSpace(const std::string &fn) {
        uintptr_t start, end;
        off_t offset;
        int major, minor;
-       ino_t inode;
+       uintmax_t inode;
        std::string perms, path;
        char colon, minus;
        lineStream >> std::hex >> start >> minus >> end >> perms >> offset >>
