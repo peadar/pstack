@@ -14,6 +14,7 @@ extern "C" {
 #include <functional>
 #include <optional>
 #include <string_view>
+#include <sys/stat.h> // for ino_t
 #include <ucontext.h> // for gregset_t
 
 #include "libpstack/ps_callback.h"
@@ -184,7 +185,7 @@ struct PrintableFrame;
 struct DevNode {
     int major = -1;
     int minor = -1;
-    unsigned long inode = -1;
+    ino_t inode = -1;
     std::string path;
     bool operator == (const DevNode &rhs) const {
         return major == rhs.major && minor == rhs.minor && inode == rhs.inode;
