@@ -7,6 +7,7 @@
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 
 #include <dirent.h>
 #include <err.h>
@@ -221,10 +222,11 @@ Process::procAddressSpace(const std::string &fn) {
        uintptr_t start, end;
        off_t offset;
        int major, minor;
-       unsigned long inode;
+       ino_t inode;
        std::string perms, path;
        char colon, minus;
-       lineStream >> std::hex >> start >> minus >> end >> perms >> offset >> major >> colon >> minor >> inode >> path;
+       lineStream >> std::hex >> start >> minus >> end >> perms >> offset >>
+          major >> colon >> minor >> std::dec >> inode >> path;
        if (input.eof() || !input.good())
           break;
        std::set<AddressRange::Flags> flags;
