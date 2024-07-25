@@ -211,6 +211,7 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
     double sleepTime = 0.0;
     PstackOptions options;
     std::ofstream out;
+    bool failures = false;
 
 #if defined(WITH_PYTHON)
     bool doPython = false;
@@ -399,18 +400,19 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
                 break;
         }
     };
-     for (int i = optind; i < argc; i++) {
-         try {
-             auto process = Procman::Process::load(exec, argv[i], options, imageCache); // this calls the load() instance member.
-             if (process == nullptr)
-                 exec = imageCache.getImageForName(argv[i]);
-             else
-                 doStack(*process);
-         } catch (const std::exception &e) {
-             std::cerr << "trace of " << argv[i] << " failed: " << e.what() << "\n";
-         }
-     }
-    return 0;
+    for (int i = optind; i < argc; i++) {
+       try {
+          auto process = Procman::Process::load(exec, argv[i], options, imageCache); // this calls the load() instance member.
+          if (process == nullptr)
+             exec = imageCache.getImageForName(argv[i]);
+          else
+             doStack(*process);
+       } catch (const std::exception &e) {
+          std::cerr << "trace of " << argv[i] << " failed: " << e.what() << "\n";
+          failures = true;
+       }
+    }
+    return failures ? EX_SOFTWARE : 0;
 }
 }
 
@@ -425,12 +427,13 @@ main(int argc, char **argv)
         // Only interrupt cleanly once. Then just terminate, in case we're stuck in a loop
         sa.sa_flags = SA_RESETHAND;
         sigaction(SIGINT, &sa, nullptr);
-        emain(argc, argv, imageCache);
+        int rc = emain(argc, argv, imageCache);
 
         // Normally, exit without free'ing imagecache - don't waste effort
         // moving pointers around in a terminating process
         if (!freeres)
-           exit(0);
+           exit(rc);
+        return rc;
     }
     catch (std::exception &ex) {
         std::clog << "error: " << ex.what() << std::endl;
