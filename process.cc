@@ -944,10 +944,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                         stack.emplace_back(UnwindMechanism::BAD_IP_RECOVERY, newRegs);
                         continue;
 #endif
-
                     }
                 }
-
 #if defined(__aarch64__)
                 // Deal with unwinding through an ARM signal handler
                 if (trampoline && trampoline == prev.rawIP()) {
@@ -966,7 +964,6 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                     stack.emplace_back(UnwindMechanism::TRAMPOLINE, newRegs);
                     continue;
                 }
-
 #elif defined(__i386__)
                 // Deal with signal trampolines for i386
                 Elf::Addr reloc;
@@ -996,9 +993,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                        continue;
                     }
                 }
-#endif
-
-#if defined(__i386__) || defined(__amd64__)
+#elif defined(__i386__) || defined(__amd64__)
                 // frame-pointer unwinding.
                 // Use ebp/rbp to find return address and saved BP.
                 // Restore those, and the stack pointer itself.
@@ -1163,7 +1158,3 @@ operator << (std::ostream &os, const JSON<Procman::StackFrame, Procman::Process 
 
     return jo;
 }
-
-
-
-
