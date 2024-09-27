@@ -215,18 +215,15 @@ Process::procAddressSpace(const std::string &fn) {
     std::vector<AddressRange> rv;
     std::ifstream input(fn);
     for (;;) {
-       std::string line;
-       std::getline(input, line);
-       std::istringstream lineStream(line);
-
        uintptr_t start, end;
        off_t offset;
        int major, minor;
        uintmax_t inode;
        std::string perms, path;
        char colon, minus;
-       lineStream >> std::hex >> start >> minus >> end >> perms >> offset >>
-          major >> colon >> minor >> std::dec >> inode >> path;
+       input >> std::hex >> start >> minus >> end >> perms >> offset >>
+          major >> colon >> minor >> std::dec >> inode;
+       std::getline( input, path );
        if (input.eof() || !input.good())
           break;
        std::set<AddressRange::Flags> flags;
