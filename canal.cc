@@ -375,6 +375,12 @@ mainExcept(int argc, char *argv[])
             IOFlagSave _(*debug);
             *debug << "scan " << hex << segment.start <<  " to " << segment.start + segment.fileEnd;
         }
+        if (segment.vmflags.find( pstack::Procman::AddressRange::VmFlag::memory_mapped_io ) != segment.vmflags.end() ) {
+           if (verbose) {
+              *debug << "skipping IO mapping\n";
+           }
+           continue;
+        }
         if (findstr != "") {
            findString( *process, segment, findstr );
         } else {

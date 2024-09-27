@@ -199,8 +199,23 @@ struct AddressRange {
     off_t offset;
     DevNode backing;
 
-    enum class Flags { read,write,exec,priv,count, shared };
-    std::set<Flags> permissions;
+    enum class VmFlag {
+       readable, writeable, executable, shared, may_read, may_write,
+       may_execute, may_share, stack_grows_down, pure_pfn_range,
+       disabled_write, pages_locked, memory_mapped_io, sequential_read_advised,
+       random_read_advised, dont_copy_on_fork, dont_expand_on_remap,
+       accountable, swap_not_reserved, huge_tlb_pages, synchronous_page_fault,
+       architecture_specific, wipe_on_fork, dont_dump, soft_dirty, mixed_map,
+       huge_page_advised, no_huge_page_advised, mergeable_advised,
+       arm64_BTI_guarded_page, arm64_MTE_allocation_tags,
+       userfaultfd_missing_tracking, userfaultfd_wr_protect_tracking,
+       shadow_stack, sealed
+    };
+    static std::optional<VmFlag> vmflag(std::string_view);
+
+    enum class Permission { read,write,exec,priv,count, shared };
+    std::set<Permission> permissions;
+    std::set<VmFlag> vmflags;
 };
 
 // An ELF object mapped at an address. We don't actually create the Elf::Object

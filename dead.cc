@@ -235,15 +235,15 @@ CoreProcess::addressSpace() const {
             if (ub->first >= hdr.p_vaddr && ub->second.second.end <= hdr.p_vaddr + hdr.p_memsz)
                 name = ub->second.first;
         }
-        std::set<AddressRange::Flags> flags;
+        std::set<AddressRange::Permission> flags;
         if ((hdr.p_flags & PF_W) != 0)
-           flags.insert(AddressRange::Flags::write);
+           flags.insert(AddressRange::Permission::write);
         if ((hdr.p_flags & PF_R) != 0)
-           flags.insert(AddressRange::Flags::read);
+           flags.insert(AddressRange::Permission::read);
         if ((hdr.p_flags & PF_X) != 0)
-           flags.insert(AddressRange::Flags::exec);
+           flags.insert(AddressRange::Permission::exec);
         rv.push_back( { hdr.p_vaddr, hdr.p_vaddr + hdr.p_memsz,
-                hdr.p_vaddr + hdr.p_filesz, 0, {0, 0, 0, name}, {}});
+                hdr.p_vaddr + hdr.p_filesz, 0, {0, 0, 0, name}, {}, {}});
     }
     return rv;
 }

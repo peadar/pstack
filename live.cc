@@ -207,14 +207,14 @@ LiveProcess::stop(lwpid_t tid) {
       *debug << "suspend LWP " << tid << std::endl;
 }
 
+// Parse [s]maps for this pid. We use "smaps" just for vmflags for now.
 std::vector<AddressRange>
-LiveProcess::addressSpace() const { return procAddressSpace(procname(pid, "maps")); }
+LiveProcess::addressSpace() const { return procAddressSpace(procname(pid, "smaps")); }
 
 std::vector<AddressRange>
 Process::procAddressSpace(const std::string &fn) {
     std::vector<AddressRange> rv;
-    std::ifstream input(fn);
-    for (;;) {
+    for (std::ifstream input{fn}; input && input.peek() != EOF; ) {
        uintptr_t start, end;
        off_t offset;
        int major, minor;
@@ -223,22 +223,46 @@ Process::procAddressSpace(const std::string &fn) {
        char colon, minus;
        input >> std::hex >> start >> minus >> end >> perms >> offset >>
           major >> colon >> minor >> std::dec >> inode;
+      
        std::getline( input, path );
-       if (input.eof() || !input.good())
-          break;
-       std::set<AddressRange::Flags> flags;
+       size_t trim = path.find_first_not_of(" ");
+       if ( trim != std::string::npos ) {
+          path = path.substr( trim );
+       } else {
+          path = "";
+       }
+       std::set<AddressRange::Permission> flags;
        for (auto c : perms) {
-           static const std::map<char, AddressRange::Flags> flagmap {
-               { 'r', AddressRange::Flags::read },
-               { 'w', AddressRange::Flags::write },
-               { 'x', AddressRange::Flags::exec },
-               { 'p', AddressRange::Flags::priv },
-               { 's', AddressRange::Flags::shared },
+           static const std::map<char, AddressRange::Permission> flagmap {
+               { 'r', AddressRange::Permission::read },
+               { 'w', AddressRange::Permission::write },
+               { 'x', AddressRange::Permission::exec },
+               { 'p', AddressRange::Permission::priv },
+               { 's', AddressRange::Permission::shared },
            };
            if (c != '-')
                flags.insert(flagmap.at(c));
        }
-       rv.push_back({start, end, end, offset, {major, minor, inode, path}, flags });
+       std::set<AddressRange::VmFlag> vmflags;
+       while (isupper(input.peek())) {
+          std::string key;
+          input >> std::ws >> key >> std::ws;
+          if (key == "VmFlags:") {
+             std::string str;
+             std::getline(input, str);
+             for (size_t cur = 0; cur < str.size(); ) {
+                int next = str.find_first_of(' ', cur);
+                auto tok = str.substr(cur, next - cur);
+                cur = next + 1;
+                auto flag = AddressRange::vmflag(tok);
+                if (flag)
+                   vmflags.insert( *flag );
+             }
+          } else {
+             input.ignore( std::numeric_limits<std::streamsize>::max(), '\n' );
+          }
+       }
+       rv.push_back({start, end, end, offset, {major, minor, inode, path }, flags, vmflags });
     }
     return rv;
 }
@@ -251,4 +275,50 @@ LiveProcess::loadSharedObjectsFromFileNote()
     // it mostly exists for truncated core files, so don't bother now.
     return false;
 }
+
+std::optional<AddressRange::VmFlag> AddressRange::vmflag(std::string_view sv) {
+    static const std::map<std::string_view, AddressRange::VmFlag> flagmap {
+       { "rd", VmFlag::readable },
+       { "wr", VmFlag::writeable },
+       { "ex", VmFlag::executable },
+       { "sh", VmFlag::shared },
+       { "mr", VmFlag::may_read },
+       { "mw", VmFlag::may_write },
+       { "me", VmFlag::may_execute },
+       { "ms", VmFlag::may_share },
+       { "gd", VmFlag::stack_grows_down },
+       { "pf", VmFlag::pure_pfn_range },
+       { "dw", VmFlag::disabled_write },
+       { "lo", VmFlag::pages_locked },
+       { "io", VmFlag::memory_mapped_io },
+       { "sr", VmFlag::sequential_read_advised },
+       { "rr", VmFlag::random_read_advised },
+       { "dc", VmFlag::dont_copy_on_fork },
+       { "de", VmFlag::dont_expand_on_remap },
+       { "ac", VmFlag::accountable },
+       { "nr", VmFlag::swap_not_reserved },
+       { "ht", VmFlag::huge_tlb_pages },
+       { "sf", VmFlag::synchronous_page_fault },
+       { "ar", VmFlag::architecture_specific },
+       { "wf", VmFlag::wipe_on_fork },
+       { "dd", VmFlag::dont_dump },
+       { "sd", VmFlag::soft_dirty },
+       { "mm", VmFlag::mixed_map },
+       { "hg", VmFlag::huge_page_advised },
+       { "nh", VmFlag::no_huge_page_advised },
+       { "mg", VmFlag::mergeable_advised },
+       { "bt", VmFlag::arm64_BTI_guarded_page },
+       { "mt", VmFlag::arm64_MTE_allocation_tags },
+       { "um", VmFlag::userfaultfd_missing_tracking },
+       { "uw", VmFlag::userfaultfd_wr_protect_tracking },
+       { "ss", VmFlag::shadow_stack },
+       { "sl", VmFlag::sealed },
+    };
+    auto it = flagmap.find( sv );
+    if (it != flagmap.end()) {
+       return it->second;
+    }
+    return std::nullopt;
+}
+
 }
