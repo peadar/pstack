@@ -196,7 +196,7 @@ struct AddressRange {
     Elf::Addr start;
     Elf::Addr end;
     Elf::Addr fileEnd;
-    off_t offset;
+    uintmax_t offset;
     DevNode backing;
 
     enum class VmFlag {

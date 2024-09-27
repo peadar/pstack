@@ -211,29 +211,60 @@ LiveProcess::stop(lwpid_t tid) {
 std::vector<AddressRange>
 LiveProcess::addressSpace() const { return procAddressSpace(procname(pid, "smaps")); }
 
+template < typename Separator >
+std::string_view nextTok( std::string_view &total, Separator sep ) {
+   auto startPos = total.find_first_not_of(' '); // skip whitespace at the start.
+   size_t sepPos = total.find_first_of( sep, startPos );
+   std::string_view res;
+   if ( sepPos == std::string::npos ) {
+      res = total;
+      total = "";
+   } else {
+      res = total.substr( 0, sepPos );
+      total = total.substr( sepPos + 1 );
+   }
+   return res;
+}
+
+static uintmax_t hex2int(std::string_view strv) {
+   // strtoull does not take a stringview :-(
+   return std::stoull(std::string{strv}, 0, 16 );
+}
+
 std::vector<AddressRange>
 Process::procAddressSpace(const std::string &fn) {
     std::vector<AddressRange> rv;
+    // there can be many mappings, and we don't call this very often, so
+    // pre-allocate the space we need.
+    rv.reserve(10240);
+
+    std::string buf;
+    buf.reserve( 1024 );
     for (std::ifstream input{fn}; input && input.peek() != EOF; ) {
-       uintptr_t start, end;
-       off_t offset;
-       int major, minor;
-       uintmax_t inode;
-       std::string perms, path;
-       char colon, minus;
-       input >> std::hex >> start >> minus >> end >> perms >> offset >>
-          major >> colon >> minor >> std::dec >> inode;
-      
-       std::getline( input, path );
-       size_t trim = path.find_first_not_of(" ");
+       // We could just use operator>> to stream each field of the line to the
+       // relevant fields, but it is ridiculously slow, I Think mostly because
+       // of the use of std::hex invoking std::use_facet, which uses dynamic
+       // casts. So, instead, parse out the line the hard way.
+       std::getline( input, buf );
+       std::string_view remains{ buf };
+
+       uintmax_t start = hex2int(nextTok( remains, '-' ));
+       uintmax_t end = hex2int(nextTok( remains, ' ' ));
+       auto perms = nextTok( remains, ' ' );
+       uintmax_t offset = hex2int(nextTok( remains, ' ' ));
+       int major = hex2int(nextTok( remains, ':' ));
+       int minor = hex2int(nextTok( remains, ' ' ));
+       uintmax_t inode = hex2int(nextTok( remains, ' ' ));
+       size_t trim = remains.find_first_not_of(" ");
+       std::string path;
        if ( trim != std::string::npos ) {
-          path = path.substr( trim );
+          path = remains.substr( trim );
        } else {
-          path = "";
+          path = "<anon>";
        }
        std::set<AddressRange::Permission> flags;
        for (auto c : perms) {
-           static const std::map<char, AddressRange::Permission> flagmap {
+           static const std::unordered_map<char, AddressRange::Permission> flagmap {
                { 'r', AddressRange::Permission::read },
                { 'w', AddressRange::Permission::write },
                { 'x', AddressRange::Permission::exec },
@@ -245,15 +276,14 @@ Process::procAddressSpace(const std::string &fn) {
        }
        std::set<AddressRange::VmFlag> vmflags;
        while (isupper(input.peek())) {
-          std::string key;
-          input >> std::ws >> key >> std::ws;
-          if (key == "VmFlags:") {
-             std::string str;
-             std::getline(input, str);
-             for (size_t cur = 0; cur < str.size(); ) {
-                int next = str.find_first_of(' ', cur);
-                auto tok = str.substr(cur, next - cur);
-                cur = next + 1;
+          std::getline(input, buf);
+          std::string_view lineview { buf };
+          auto key = nextTok( lineview, ':' );
+          if (key == "VmFlags") {
+             for (;;) {
+                auto tok = nextTok( lineview, ' ' );
+                if (tok == "")
+                   break;
                 auto flag = AddressRange::vmflag(tok);
                 if (flag)
                    vmflags.insert( *flag );
@@ -277,7 +307,7 @@ LiveProcess::loadSharedObjectsFromFileNote()
 }
 
 std::optional<AddressRange::VmFlag> AddressRange::vmflag(std::string_view sv) {
-    static const std::map<std::string_view, AddressRange::VmFlag> flagmap {
+    static const std::unordered_map<std::string_view, AddressRange::VmFlag> flagmap {
        { "rd", VmFlag::readable },
        { "wr", VmFlag::writeable },
        { "ex", VmFlag::executable },
