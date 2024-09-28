@@ -259,21 +259,23 @@ Process::procAddressSpace(const std::string &fn) {
        std::getline( input, buf );
        std::string_view remains{ buf };
 
-       uintmax_t start = hex2int(nextTok( remains, '-' ));
-       uintmax_t end = hex2int(nextTok( remains, ' ' ));
+       rv.emplace_back();
+       AddressRange &range = rv.back();
+       range.start = hex2int(nextTok( remains, '-' ));
+       range.end = hex2int(nextTok( remains, ' ' ));
        auto perms = nextTok( remains, ' ' );
-       uintmax_t offset = hex2int(nextTok( remains, ' ' ));
-       int major = hex2int(nextTok( remains, ':' ));
-       int minor = hex2int(nextTok( remains, ' ' ));
-       uintmax_t inode = hex2int(nextTok( remains, ' ' ));
+       range.offset = hex2int(nextTok( remains, ' ' ));
+
+       auto &backing = range.backing;
+       backing.major = hex2int(nextTok( remains, ':' ));
+       backing.minor = hex2int(nextTok( remains, ' ' ));
+       backing.inode = hex2int(nextTok( remains, ' ' ));
        size_t trim = remains.find_first_not_of(" ");
-       std::string path;
        if ( trim != std::string::npos ) {
-          path = remains.substr( trim );
+          backing.path = remains.substr( trim );
        } else {
-          path = "<anon>";
+          backing.path = "<anon>";
        }
-       std::set<AddressRange::Permission> flags;
        for (auto c : perms) {
            static const std::unordered_map<char, AddressRange::Permission> flagmap {
                { 'r', AddressRange::Permission::read },
@@ -283,9 +285,9 @@ Process::procAddressSpace(const std::string &fn) {
                { 's', AddressRange::Permission::shared },
            };
            if (c != '-')
-               flags.insert(flagmap.at(c));
+               range.permissions.insert(flagmap.at(c));
        }
-       std::set<AddressRange::VmFlag> vmflags;
+
        while (isupper(input.peek())) {
           std::getline(input, buf);
           std::string_view lineview { buf };
@@ -297,13 +299,12 @@ Process::procAddressSpace(const std::string &fn) {
                    break;
                 auto flag = AddressRange::vmflag(tok);
                 if (flag)
-                   vmflags.insert( *flag );
+                   range.vmflags.insert( *flag );
              }
           } else {
              input.ignore( std::numeric_limits<std::streamsize>::max(), '\n' );
           }
        }
-       rv.push_back({start, end, end, offset, {major, minor, inode, path }, flags, vmflags });
     }
     return rv;
 }
