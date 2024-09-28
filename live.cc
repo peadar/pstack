@@ -212,7 +212,7 @@ std::vector<AddressRange>
 LiveProcess::addressSpace() const { return procAddressSpace(procname(pid, "smaps")); }
 
 template < typename Separator >
-std::string_view nextTok( std::string_view &total, Separator sep ) {
+static std::string_view nextTok( std::string_view &total, Separator sep ) {
    auto startPos = total.find_first_not_of(' '); // skip whitespace at the start.
    size_t sepPos = total.find_first_of( sep, startPos );
    std::string_view res;

@@ -218,6 +218,8 @@ struct AddressRange {
     std::set<VmFlag> vmflags;
 };
 
+using AddressSpace = std::vector<AddressRange>;
+
 // An ELF object mapped at an address. We don't actually create the Elf::Object
 // until the first time you call "object" here. This avoids needless I/O, esp.
 // on resource constrained systems.
@@ -256,7 +258,7 @@ public:
     Elf::Object::sptr vdsoImage;
 protected:
     std::string abiPrefix;
-    static std::vector<AddressRange> procAddressSpace(const std::string &fn); //  utility to parse contents of /proc/pid/maps
+    static AddressSpace procAddressSpace(const std::string &fn); //  utility to parse contents of /proc/pid/maps
 
 public:
     std::pair<Elf::Addr, Elf::Object::sptr> getElfObject(Elf::Addr addr);
@@ -302,7 +304,7 @@ public:
     virtual ~Process();
     void load();
     virtual pid_t getPID() const = 0;
-    virtual std::vector<AddressRange> addressSpace() const = 0;
+    virtual AddressSpace addressSpace() const = 0;
     static std::shared_ptr<Process> load(Elf::Object::sptr exe, std::string id, const PstackOptions &options, Dwarf::ImageCache &cache);
 };
 

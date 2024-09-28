@@ -411,7 +411,7 @@ public:
     }
     iterator &operator++();
     NoteDesc operator *() {
-        return NoteDesc(curNote, std::make_shared<const OffsetReader>("note content", io, offset));
+        return NoteDesc(curNote, io->view("note content", offset));
     }
 };
 

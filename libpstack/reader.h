@@ -192,6 +192,12 @@ public:
     }
     Off size() const override;
     std::string filename() const override { return upstream->filename(); }
+
+    // Implement "view" on the parent with our offset added.
+    Reader::csptr view( const std::string &name, Off offset_, Off size) const {
+       return upstream->view( name, offset + offset_, size );
+    }
+
 };
 
 Reader::csptr loadFile(const std::string &path);

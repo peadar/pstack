@@ -243,24 +243,15 @@ MemReader::view(const std::string &name, Off offset, Off size) const {
    return std::make_shared<MemOffsetReader>(name, this, offset, size);
 }
 
-
 OffsetReader::OffsetReader(std::string name_, Reader::csptr upstream_, Off offset_, Off length_)
     : upstream(upstream_)
     , offset(offset_)
     , name(std::move(name_))
 {
-    // If we create an offset reader with the upstream being another offset
-    // reader, we can just add the offsets, and use the
-    // upstream-of-the-upstream instead.
-    for (;;) {
-        auto orReader = dynamic_cast<const OffsetReader *>(upstream.get());
-        if (!orReader)
-            break;
-        if (verbose > 2)
-            *debug << "optimize: collapse offset reader : " << *upstream.get() << "->" << *orReader->upstream.get() << "\n";
-        offset += orReader->offset;
-        upstream = orReader->upstream;
-    }
+    // We used to have an explicit cast here to find the nearest non-offset
+    // reader, to collapse the stack. But now we use "view" rather than
+    // creating offset readers separately, that happens via dynamic dispatch
+    // when we create the view
     length = length_ == std::numeric_limits<Off>::max() ? upstream->size() - offset : length_;
 }
 

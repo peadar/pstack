@@ -79,7 +79,7 @@ Macros::readD5(const Info &dwarf, intmax_t offset)
                 table.emplace_back(dr.getu8());
         }
     }
-    io = std::make_shared<OffsetReader>("macro subsection", macrosh.io(), dr.getOffset());
+    io = macrosh.io()->view("macro subsection", dr.getOffset());
 }
 
 bool
