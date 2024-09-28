@@ -227,8 +227,19 @@ static std::string_view nextTok( std::string_view &total, Separator sep ) {
 }
 
 static uintmax_t hex2int(std::string_view strv) {
-   // strtoull does not take a stringview :-(
-   return std::stoull(std::string{strv}, 0, 16 );
+   uintmax_t val = 0;
+   for (auto c : strv) {
+      val *= 16;
+      if (c >= '0' && c <= '9')
+         val += c - '0';
+      else if (c >= 'a' && c <= 'f')
+         val += c - 'a' + 10;
+      else if (c >= 'A' && c <= 'F')
+         val += c - 'A' + 10;
+      else
+         throw std::logic_error("unexpected character in hex string");
+   }
+   return val;
 }
 
 std::vector<AddressRange>
