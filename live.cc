@@ -227,8 +227,22 @@ static std::string_view nextTok( std::string_view &total, Separator sep ) {
 }
 
 static uintmax_t hex2int(std::string_view strv) {
-   // strtoull does not take a stringview :-(
-   return std::stoull(std::string{strv}, 0, 16 );
+   // This is basically strtoul(strv, 0, 16), but stroul won't take a
+   // string_view, and its costly to create a string from this substring of the
+   // processed line.
+   uintmax_t val = 0;
+   for (auto c : strv) {
+      val *= 16;
+      if (c >= '0' && c <= '9')
+         val += c - '0';
+      else if (c >= 'a' && c <= 'f')
+         val += c - 'a' + 10;
+      else if (c >= 'A' && c <= 'F')
+         val += c - 'A' + 10;
+      else
+         throw std::logic_error("unexpected character in hex string");
+   }
+   return val;
 }
 
 std::vector<AddressRange>
@@ -244,37 +258,47 @@ Process::procAddressSpace(const std::string &fn) {
        // We could just use operator>> to stream each field of the line to the
        // relevant fields, but it is ridiculously slow, I Think mostly because
        // of the use of std::hex invoking std::use_facet, which uses dynamic
-       // casts. So, instead, parse out the line the hard way.
+       // casts. So, instead, parse out the line the hard way. This first line
+       // includes details of the address range covered, and some basic
+       // details. The /proc/<pid>/maps file includes just these lines.
        std::getline( input, buf );
        std::string_view remains{ buf };
 
-       uintmax_t start = hex2int(nextTok( remains, '-' ));
-       uintmax_t end = hex2int(nextTok( remains, ' ' ));
-       auto perms = nextTok( remains, ' ' );
-       uintmax_t offset = hex2int(nextTok( remains, ' ' ));
-       int major = hex2int(nextTok( remains, ':' ));
-       int minor = hex2int(nextTok( remains, ' ' ));
-       uintmax_t inode = hex2int(nextTok( remains, ' ' ));
-       size_t trim = remains.find_first_not_of(" ");
-       std::string path;
-       if ( trim != std::string::npos ) {
-          path = remains.substr( trim );
-       } else {
-          path = "<anon>";
-       }
-       std::set<AddressRange::Permission> flags;
-       for (auto c : perms) {
-           static const std::unordered_map<char, AddressRange::Permission> flagmap {
-               { 'r', AddressRange::Permission::read },
-               { 'w', AddressRange::Permission::write },
-               { 'x', AddressRange::Permission::exec },
-               { 'p', AddressRange::Permission::priv },
-               { 's', AddressRange::Permission::shared },
-           };
+       rv.emplace_back();
+       AddressRange &range = rv.back();
+       range.start = hex2int(nextTok( remains, '-' ));
+       range.end = hex2int(nextTok( remains, ' ' ));
+
+       std::string_view  perms = nextTok( remains, ' ' );
+
+       static const std::unordered_map<char, AddressRange::Permission> flagmap {
+           { 'r', AddressRange::Permission::read },
+           { 'w', AddressRange::Permission::write },
+           { 'x', AddressRange::Permission::exec },
+           { 'p', AddressRange::Permission::priv },
+           { 's', AddressRange::Permission::shared },
+       };
+       for (auto c : perms)
            if (c != '-')
-               flags.insert(flagmap.at(c));
+               range.permissions.insert(flagmap.at(c));
+
+       range.offset = hex2int(nextTok( remains, ' ' ));
+
+       auto &backing = range.backing;
+       backing.major = hex2int(nextTok( remains, ':' ));
+       backing.minor = hex2int(nextTok( remains, ' ' ));
+       backing.inode = hex2int(nextTok( remains, ' ' ));
+
+       size_t trim = remains.find_first_not_of(" ");
+       if ( trim != std::string::npos ) {
+          backing.path = remains.substr( trim );
+       } else {
+          backing.path = "<anon>";
        }
-       std::set<AddressRange::VmFlag> vmflags;
+
+       // Now process the attribute lines under the details of the range. These
+       // are only present for /proc/<pid>/smaps.
+
        while (isupper(input.peek())) {
           std::getline(input, buf);
           std::string_view lineview { buf };
@@ -286,13 +310,12 @@ Process::procAddressSpace(const std::string &fn) {
                    break;
                 auto flag = AddressRange::vmflag(tok);
                 if (flag)
-                   vmflags.insert( *flag );
+                   range.vmflags.insert( *flag );
              }
           } else {
              input.ignore( std::numeric_limits<std::streamsize>::max(), '\n' );
           }
        }
-       rv.push_back({start, end, end, offset, {major, minor, inode, path }, flags, vmflags });
     }
     return rv;
 }
