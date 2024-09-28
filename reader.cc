@@ -77,7 +77,6 @@ MemReader::readString(Off offset) const {
    return string(ptroff(data, offset));
 }
 
-
 string
 Reader::readString(Off offset) const
 {
