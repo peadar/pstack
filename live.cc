@@ -312,14 +312,11 @@ Process::procAddressSpace(const std::string &fn) {
                 if (flag)
                    range.vmflags.insert( *flag );
              }
-          } else {
-             input.ignore( std::numeric_limits<std::streamsize>::max(), '\n' );
           }
        }
     }
     return rv;
 }
-
 
 bool
 LiveProcess::loadSharedObjectsFromFileNote()
