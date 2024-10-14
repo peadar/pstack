@@ -35,6 +35,14 @@ target_link_libraries(inline testhelper)
 target_link_libraries(procself dwelf procman)
 SET_TARGET_PROPERTIES(noreturn PROPERTIES COMPILE_FLAGS "-O2 -g")
 
+
+add_custom_command(
+   OUTPUT basic-no-unwind-gen 
+   COMMAND objcopy --strip-debug --remove-section .eh_frame basic basic-no-unwind
+   VERBATIM )
+
+add_custom_target(basic-no-unwind ALL DEPENDS basic basic-no-unwind-gen)
+
 # Build the basic executable with some options to compress debug sections with
 # zlib and zlib-gnu, and ensure we can decode them
 
