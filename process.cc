@@ -964,7 +964,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                     stack.emplace_back(UnwindMechanism::TRAMPOLINE, newRegs);
                     continue;
                 }
-#elif defined(__i386__)
+#endif
+#if defined(__i386__)
                 // Deal with signal trampolines for i386
                 Elf::Addr reloc;
                 const Elf::Phdr *segment;
@@ -993,7 +994,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                        continue;
                     }
                 }
-#elif defined(__i386__) || defined(__amd64__)
+#endif
+#if defined(__i386__) || defined(__amd64__)
                 // frame-pointer unwinding.
                 // Use ebp/rbp to find return address and saved BP.
                 // Restore those, and the stack pointer itself.
