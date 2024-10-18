@@ -30,7 +30,7 @@ LiveReader::LiveReader(pid_t pid, const std::string &base) : FileReader(procname
 }
 
 LiveProcess::LiveProcess(Elf::Object::sptr &ex, pid_t pid_,
-            const PstackOptions &options, Dwarf::ImageCache &imageCache, bool alreadyStopped)
+            const PstackOptions &options, ImageCache &imageCache, bool alreadyStopped)
     : Process(
             ex ? ex : imageCache.getImageForName(procname(pid_, "exe")),
             std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")),
@@ -324,6 +324,12 @@ LiveProcess::loadSharedObjectsFromFileNote()
     // In theory we can implement this by grovelling in /proc/<pid>/maps, but
     // it mostly exists for truncated core files, so don't bother now.
     return false;
+}
+
+std::optional<siginfo_t>
+LiveProcess::getSignalInfo() const
+{
+   return std::nullopt;
 }
 
 std::optional<AddressRange::VmFlag> AddressRange::vmflag(std::string_view sv) {

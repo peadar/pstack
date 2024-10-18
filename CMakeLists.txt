@@ -113,8 +113,6 @@ endif()
 add_definitions("-g3")
 
 add_library(dwelf ${LIBTYPE}
-         dump.cc
-         dwarf_cache.cc
          dwarf_die.cc
          dwarf_frame.cc
          dwarf_info.cc
@@ -123,6 +121,8 @@ add_library(dwelf ${LIBTYPE}
          dwarf_pubnames.cc
          dwarf_reader.cc
          dwarf_unit.cc
+         dump.cc
+         imagecache.cc
          elf.cc
          flags.cc
          global.cc

@@ -597,8 +597,6 @@ private:
     void ensureFDEs() const; // ensure all FDEs are pre-loaded.
 };
 
-class ImageCache;
-
 // Iterates over all units in an object. Existing units will be returned from the
 // cache, and new units will be decoded and added.
 struct Units {
@@ -715,28 +713,6 @@ private:
 
     void decodeARangeSet(DWARFReader &) const;
     std::string getAltImageName() const;
-};
-
-/*
- * A Dwarf Image Cache is an (Elf) ImageCache, but caches Dwarf::Info for the
- * Objects also. (see elf.h:ImageCache)
- */
-class ImageCache : public Elf::ImageCache {
-    int dwarfHits;
-    int dwarfLookups;
-    std::map<Elf::Object::sptr, Info::sptr> dwarfCache;
-public:
-    Info::sptr getDwarf(const std::string &);
-    Info::sptr getDwarf(Elf::Object::sptr);
-    void flush(Elf::Object::sptr o) override;
-    ImageCache();
-
-    ImageCache(const ImageCache &) = delete;
-    ImageCache(ImageCache &&) = delete;
-    ImageCache &operator = (const ImageCache &) = delete;
-    ImageCache &operator = (ImageCache &&) = delete;
-
-    ~ImageCache() noexcept override;
 };
 
 // An attribute within a DIE. A value that you can convert to one of a number

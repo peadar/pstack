@@ -1,4 +1,5 @@
 #include "libpstack/proc.h"
+#include "libpstack/imagecache.h"
 #include "libpstack/global.h"
 #include "libpstack/archreg.h"
 #include <unistd.h>
@@ -15,7 +16,7 @@ main()
 {
     pstack::verbose = 0;
     PstackOptions options;
-    pstack::Dwarf::ImageCache cache;
+    pstack::ImageCache cache;
     getppid();
     std::shared_ptr<pstack::Procman::Process> p = std::make_shared<pstack::Procman::SelfProcess>(nullptr, options, cache);
     p->load();

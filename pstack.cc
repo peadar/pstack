@@ -39,7 +39,11 @@ pstack(Procman::Process &proc)
     if (doJson) {
         os << json(threadStacks, &proc);
     } else {
-        os << "process: " << *proc.io << "\n";
+        os << "process: " << *proc.io;
+        std::optional<siginfo_t> sig = proc.getSignalInfo();
+        if (sig)
+           os << " (terminated with " << *sig << ")";
+        os << "\n";
         for (auto &s : threadStacks) {
             proc.dumpStackText(os, s);
             os << std::endl;
@@ -53,7 +57,7 @@ pstack(Procman::Process &proc)
 // doesn't require a readable core file.
 int
 startChild(Elf::Object::sptr exe, const std::string &cmd,
-           const PstackOptions &options, Dwarf::ImageCache &ic) {
+           const PstackOptions &options, ImageCache &ic) {
    std::vector<std::string> args;
    for (size_t off = 0;;) {
       auto pos = cmd.find(' ', off);
@@ -206,7 +210,7 @@ usage(std::ostream &os, const char *name, const Flags &options)
 }
 
 int
-emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
+emain(int argc, char **argv, ImageCache &imageCache)
 {
     double sleepTime = 0.0;
     PstackOptions options;
@@ -239,7 +243,7 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
             'g',
             "directory",
             "extra location to find debug files for binaries and shared libraries",
-            [&](const char *arg) { Elf::globalDebugDirectories.push_back(arg); })
+            [&](const char *arg) { globalDebugDirectories.push_back(arg); })
 
     .add("constant",
             'b',
@@ -315,7 +319,7 @@ emain(int argc, char **argv, Dwarf::ImageCache &imageCache)
     .add("no-ext-debug",
             'n',
             "don't load external debugging information when processing",
-            Flags::setf(Elf::noExtDebug))
+            Flags::setf(noExtDebug))
 
     .add("version",
             'V',
@@ -420,7 +424,7 @@ int
 main(int argc, char **argv)
 {
     try {
-        Dwarf::ImageCache imageCache;
+        ImageCache imageCache;
         struct sigaction sa;
         memset(&sa, 0, sizeof sa);
         sa.sa_handler = [](int) { interrupted = true; };

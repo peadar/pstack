@@ -15,7 +15,7 @@ enum printoption {
 
 std::set<printoption> options;
 
-void printStack(std::ostream &os, Dwarf::ImageCache &ic, std::shared_ptr<Procman::Process> &proc, const hdbg_info &info, void **frames) {
+void printStack(std::ostream &os, ImageCache &ic, std::shared_ptr<Procman::Process> &proc, const hdbg_info &info, void **frames) {
    for (size_t i = 0; i < info.maxframes && frames[i] != nullptr; ++i) {
       uintptr_t frameip = uintptr_t(frames[i]);
       if (i != 0)
@@ -47,7 +47,7 @@ void printStack(std::ostream &os, Dwarf::ImageCache &ic, std::shared_ptr<Procman
    os << "\n";
 }
 
-void printBlocks(std::ostream &os, Dwarf::ImageCache &ic, std::shared_ptr<Procman::Process> proc, const hdbg_info &info, const memdesc_list &list, enum memstate state) {
+void printBlocks(std::ostream &os, ImageCache &ic, std::shared_ptr<Procman::Process> proc, const hdbg_info &info, const memdesc_list &list, enum memstate state) {
 
    size_t sz = sizeof (struct memdesc) + info.maxframes * sizeof (void *);
    struct memdesc *hdr = (memdesc *)malloc(sz);
@@ -71,7 +71,7 @@ void printBlocks(std::ostream &os, Dwarf::ImageCache &ic, std::shared_ptr<Procma
    free(hdr);
 }
 
-void dumpHeap(std::shared_ptr<Procman::Process> proc, std::ostream &os, Dwarf::ImageCache &ic)
+void dumpHeap(std::shared_ptr<Procman::Process> proc, std::ostream &os, ImageCache &ic)
 {
 
    Procman::StopProcess here(proc.get());
@@ -106,7 +106,7 @@ void dumpHeap(std::shared_ptr<Procman::Process> proc, std::ostream &os, Dwarf::I
 int
 main(int argc, char *argv[])
 {
-   Dwarf::ImageCache ic;
+   ImageCache ic;
    std::shared_ptr<Elf::Object> exec;
 
    int c;
