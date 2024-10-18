@@ -3,7 +3,6 @@
 #include <string.h>
 #include <string>
 #include <regex.h>
-#include "libpstack/global.h"
 #include "libpstack/proc.h"
 #include "libpstack/stringify.h"
 
@@ -36,8 +35,8 @@ getPyInterpInfo(Procman::Process &proc) {
     int major = majorChar - '0';
     int minor = minorChar - '0';
 
-    if (verbose)
-        *debug << "python version is: " << major << "." << minor << std::endl;
+    if (proc.context.verbose > 0)
+        *proc.context.debug << "python version is: " << major << "." << minor << std::endl;
 
     return PyInterpInfo {
         libpython, libpythonAddr, interpreterHead, 
@@ -57,36 +56,36 @@ getInterpHead(Procman::Process &proc) {
                 [&](std::string_view name) {
                     return name.find("python") != std::string::npos;
                 });
-        if (verbose)
-            *debug << "found interp_headp in ELF syms" << std::endl;
+        if (proc.context.verbose)
+            *proc.context.debug << "found interp_headp in ELF syms" << std::endl;
         Elf::Addr interpHead;
         proc.io->readObj(libpythonAddr + interpreterHead.st_value, &interpHead);
         return std::make_tuple(libpython, libpythonAddr, interpHead);
     }
     catch (...) {
-        if (verbose)
-            *debug << "Py_interp_headp symbol not found. Trying fallback" << std::endl;
+        if (proc.context.verbose)
+            *proc.context.debug << "Py_interp_headp symbol not found. Trying fallback" << std::endl;
     }
 
 #ifdef WITH_PYTHON2
     try {
         return getInterpHead<2>(proc);
     } catch (...) {
-        if (verbose)
-            *debug << "Python 2 interpreter not found" << std::endl;
+        if (proc.context.verbose)
+            *proc.context.debug << "Python 2 interpreter not found" << std::endl;
     }
 #endif
 #ifdef WITH_PYTHON3
     try {
         return getInterpHead<3>(proc);
     } catch (...) {
-        if (verbose)
-            *debug << "Python 3 interpreter not found" << std::endl;
+        if (proc.context.verbose)
+            *proc.context.debug << "Python 3 interpreter not found" << std::endl;
     }
 #endif
 
-    if (verbose)
-        *debug << "Couldn't find a python interpreter" << std::endl;
+    if (proc.context.verbose)
+        *proc.context.debug << "Couldn't find a python interpreter" << std::endl;
 
     return std::make_tuple(nullptr, 0, 0);
 }
@@ -113,11 +112,11 @@ pthreadTidOffset(Procman::Process &proc, size_t *offsetp)
             proc.io->readObj(addr, &desc[0], 3);
             offset = desc[2];
             status = found;
-            if (verbose)
-                *debug << "found thread offset " << offset <<  "\n";
+            if (proc.context.verbose)
+                *proc.context.debug << "found thread offset " << offset <<  "\n";
         } catch (const std::exception &ex) {
-           if (verbose)
-               *debug << "failed to find offset of tid in pthread: " << ex.what();
+           if (proc.context.verbose)
+               *proc.context.debug << "failed to find offset of tid in pthread: " << ex.what();
             status = notFound;
         }
     }

@@ -203,12 +203,12 @@ template <int PyV> class FramePrinter final : public PythonTypePrinter<PyV> {
 
             pc->os << pc->prefix() << func;
 
-            if (pc->proc.options.doargs)
+            if (pc->proc.context.options.doargs)
                 printArguments<PyV>(pc, pyo, remoteAddr);
 
             pc->os << " in " << file << ":" << lineNo << std::endl;
 
-            if (pc->proc.options.dolocals) {
+            if (pc->proc.context.options.dolocals) {
 
                 Elf::Addr flocals = remoteAddr + offsetof(PyFrameObject, f_localsplus);
 
@@ -226,7 +226,7 @@ template <int PyV> class FramePrinter final : public PythonTypePrinter<PyV> {
             }
         }
 
-        if (pc->proc.options.dolocals && pfo->f_locals != 0) {
+        if (pc->proc.context.options.dolocals && pfo->f_locals != 0) {
             pc->depth++;
             pc->os << pc->prefix() << "locals: " << std::endl;
             pc->print(Elf::Addr(pfo->f_locals));

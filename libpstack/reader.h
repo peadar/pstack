@@ -9,6 +9,7 @@
 #include <list>
 #include <array>
 #include "libpstack/exception.h"
+#include "libpstack/context.h"
 
 namespace pstack {
 
@@ -103,7 +104,7 @@ protected:
     mutable Off fileSize;
 public:
     virtual size_t read(Off off, size_t count, char *ptr) const override ;
-    FileReader(std::string name_);
+    FileReader(Context &, std::string name_);
     ~FileReader();
     void describe(std::ostream &os) const  override { os << name; }
     std::string filename() const override { return name; }
@@ -159,7 +160,7 @@ public:
 
 class MmapReader final : public MemReader {
 public:
-    MmapReader(const std::string &name_);
+    MmapReader(Context &, const std::string &name_);
     ~MmapReader();
     std::string filename() const override { return descr; }
 };
@@ -199,8 +200,6 @@ public:
     }
 
 };
-
-Reader::csptr loadFile(const std::string &path);
 
 // This allows a reader to provide an iterator over a sequence of objects of a
 // given type. Given a reader r, we can use 

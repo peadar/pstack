@@ -15,7 +15,7 @@ enum printoption {
 
 std::set<printoption> options;
 
-void printStack(std::ostream &os, ImageCache &ic, std::shared_ptr<Procman::Process> &proc, const hdbg_info &info, void **frames) {
+void printStack(std::ostream &os, std::shared_ptr<Procman::Process> &proc, const hdbg_info &info, void **frames) {
    for (size_t i = 0; i < info.maxframes && frames[i] != nullptr; ++i) {
       uintptr_t frameip = uintptr_t(frames[i]);
       if (i != 0)
@@ -32,7 +32,7 @@ void printStack(std::ostream &os, ImageCache &ic, std::shared_ptr<Procman::Proce
             os << "\t" << name << "+" << uintptr_t(frames[i]) - elfReloc - sym.st_value;
          }
 
-         auto dwarf = ic.getDwarf(elf);
+         auto dwarf = proc->context.getDwarf(elf);
          if (dwarf) {
             auto sep = "in";
             for (auto &&[file, line] : dwarf->sourceFromAddr(frameip - elfReloc)) {
@@ -47,7 +47,7 @@ void printStack(std::ostream &os, ImageCache &ic, std::shared_ptr<Procman::Proce
    os << "\n";
 }
 
-void printBlocks(std::ostream &os, ImageCache &ic, std::shared_ptr<Procman::Process> proc, const hdbg_info &info, const memdesc_list &list, enum memstate state) {
+void printBlocks(std::ostream &os, std::shared_ptr<Procman::Process> proc, const hdbg_info &info, const memdesc_list &list, enum memstate state) {
 
    size_t sz = sizeof (struct memdesc) + info.maxframes * sizeof (void *);
    struct memdesc *hdr = (memdesc *)malloc(sz);
@@ -65,19 +65,20 @@ void printBlocks(std::ostream &os, ImageCache &ic, std::shared_ptr<Procman::Proc
          std::cout << " BADTAIL";
       }
       os << " size=" << hdr->len << "\n";
-      printStack(os, ic, proc, info, hdr->stack);
+      printStack(os, proc, info, hdr->stack);
 
    }
    free(hdr);
 }
 
-void dumpHeap(std::shared_ptr<Procman::Process> proc, std::ostream &os, ImageCache &ic)
+void dumpHeap(std::shared_ptr<Procman::Process> proc)
 {
 
    Procman::StopProcess here(proc.get());
    Elf::Addr sym = proc->resolveSymbol("hdbg", false);
    assert(sym);
 
+   auto &os = *proc->context.output;
    auto info = proc->io->readObj<hdbg_info>(sym);
    os << "Allocator usage statistics:\n\n"
    << "Calls to malloc:               " << info.stats.malloc_calls << "\n"
@@ -88,32 +89,31 @@ void dumpHeap(std::shared_ptr<Procman::Process> proc, std::ostream &os, ImageCac
    ;
 
    os << "\nStack at termination:\n\n";
-   printStack(os, ic, proc, info, info.crashstack);
+   printStack(os, proc, info, info.crashstack);
    if (options.find(heap_allocated) != options.end()) {
       os << "\nCurrently allocated memory:\n\n";
-      printBlocks(os, ic, proc, info, info.heap, mem_allocated);
+      printBlocks(os, proc, info, info.heap, mem_allocated);
    }
    if (options.find(heap_recentfree) != options.end()) {
       os << "\nRecently freed memory:\n\n";
-      printBlocks(os, ic, proc, info, info.freelist, mem_free);
+      printBlocks(os, proc, info, info.freelist, mem_free);
    }
    if (options.find(heap_historicbig) != options.end()) {
       os << "\nHistoric large allocations:\n\n";
-      printBlocks(os, ic, proc, info, info.freebig, mem_free);
+      printBlocks(os, proc, info, info.freebig, mem_free);
    }
 }
 
 int
 main(int argc, char *argv[])
 {
-   ImageCache ic;
+   Context context;
    std::shared_ptr<Elf::Object> exec;
 
-   int c;
-   while ((c = getopt(argc, argv, "e:fab")) != -1) {
+   for (int c; (c = getopt(argc, argv, "e:fab")) != -1; ) {
       switch (c) {
          case 'e':
-            exec = ic.getImageForName(optarg);
+            exec = context.getImageForName(optarg);
             break;
          case 'f':
             options.insert(heap_recentfree);
@@ -131,5 +131,5 @@ main(int argc, char *argv[])
    }
 
    for (int i = optind; i < argc; ++i)
-      dumpHeap(Procman::Process::load(exec, argv[i], PstackOptions{}, ic), std::cout, ic);
+      dumpHeap(Procman::Process::load(context, exec, argv[i]));
 }

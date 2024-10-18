@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <sys/user.h>
 
-extern void my_abort();
+void my_abort();
 
 void
 sigsegv(int segv, siginfo_t *info, void *ctxv)

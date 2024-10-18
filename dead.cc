@@ -1,5 +1,4 @@
 #include "libpstack/dwarf.h"
-#include "libpstack/global.h"
 #include "libpstack/elf.h"
 #include "libpstack/proc.h"
 
@@ -7,9 +6,8 @@
 
 namespace pstack::Procman {
 
-CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
-      const PstackOptions &options, ImageCache &imageCache)
-   : Process(std::move(exec), std::make_shared<CoreReader>(this, core), options, imageCache)
+CoreProcess::CoreProcess(Context &ctx, Elf::Object::sptr exec, Elf::Object::sptr core)
+   : Process(ctx, std::move(exec), std::make_shared<CoreReader>(this, core))
      , prpsinfo{}
      , coreImage(std::move(core))
 {
@@ -258,8 +256,8 @@ CoreProcess::loadSharedObjectsFromFileNote()
     for (auto [name, entry] : FileEntries(*coreImage)) {
         uintptr_t size = entry.end - entry.start;
         totalSize += size;
-        if (verbose > 2)
-            *debug << "NT_FILE mapping " << name << " "
+        if (context.verbose > 2)
+            *context.debug << "NT_FILE mapping " << name << " "
                 << (void *)entry.start << " " << size << "\n";
         if (entry.fileOff == 0) {
             try {
@@ -267,12 +265,12 @@ CoreProcess::loadSharedObjectsFromFileNote()
                 addElfObject(name, nullptr, entry.start);
             }
             catch (const std::exception &ex) {
-               *debug << "failed to add ELF object " << name << ": " << ex.what() << "\n";
+               *context.debug << "failed to add ELF object " << name << ": " << ex.what() << "\n";
             }
         }
     }
-    if (verbose > 0)
-        *debug << "total mapped file size: " << totalSize << "\n";
+    if (context.verbose > 0)
+        *context.debug << "total mapped file size: " << totalSize << "\n";
     return true; // found an NT_FILE note, so success.
 }
 

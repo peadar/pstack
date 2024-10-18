@@ -5,8 +5,6 @@
 #include <cassert>
 #include <cstdint>
 #include "libpstack/reader.h"
-#include "libpstack/fs.h"
-#include "libpstack/global.h"
 #include <cstring>
 #include <utility>
 
@@ -18,15 +16,14 @@ FileReader::size() const
     return fileSize;
 }
 
-FileReader::FileReader(string name_)
+FileReader::FileReader(Context &c, string name_)
     : name(std::move(name_))
-    , file(openfile(name))
+    , file(c.openfile(name))
 {
     struct stat buf{};
     int rc = fstat(file, &buf);
     if (rc == -1)
-       throw (Exception() << "fstat failed: can't find size of file: "
-               << std::strerror(errno));
+       throw (Exception() << "fstat failed: can't find size of file: " << std::strerror(errno));
     fileSize = buf.st_size;
 }
 
@@ -182,13 +179,8 @@ CacheReader::read(Off off, size_t count, char *ptr) const
                break;
         }
         catch (const Exception &e) {
-           if (verbose > 1) {
-              *debug << "failed to read page in " << *upstream << ": " << e.what() << "\n";
-           }
            break;
         }
-
-
     }
     return off - startoff;
 }
@@ -202,18 +194,11 @@ CacheReader::readString(Off off) const
     return it->second;
 }
 
-Reader::csptr
-loadFile(const string &path)
-{
-    return std::make_shared<CacheReader>(
-        std::make_shared<FileReader>(path));
-}
-
-MmapReader::MmapReader(const string &name_)
+MmapReader::MmapReader(Context &c, const string &name_)
    : MemReader(name_, 0, nullptr)
 {
-   int fd = openfile(name_);
-   struct stat s;
+   int fd = c.openfile(name_);
+   struct stat s{};
    fstat(fd, &s);
    len = s.st_size;
    void *p = mmap(nullptr, len, PROT_READ, MAP_PRIVATE, fd, 0);

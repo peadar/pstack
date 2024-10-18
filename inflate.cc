@@ -1,6 +1,5 @@
 #include "libpstack/inflatereader.h"
 #include "libpstack/stringify.h"
-#include "libpstack/global.h"
 
 #include <zlib.h>
 namespace pstack {
@@ -22,8 +21,6 @@ InflateReader::InflateReader(size_t inflatedSize, const Reader &upstream)
     stream.next_out = bytep(data);
     bool eof = false;
     size_t inputOffset = 0;
-    if (verbose >= 2)
-        *debug << "inflating " << upstream << "...";
     for (bool done = false; !done; ) {
         if (stream.avail_in == 0 && !eof) {
             // keep the input buffer full
@@ -33,22 +30,17 @@ InflateReader::InflateReader(size_t inflatedSize, const Reader &upstream)
             if (stream.avail_in == 0)
                 eof = true;
         }
-        size_t writeChunk = stream.avail_out;
         switch (inflate(&stream, eof ? Z_FINISH : Z_SYNC_FLUSH)) {
             case Z_STREAM_END:
                 done = true;
                 // fallthrough
             case Z_OK:
-                if (verbose >= 3)
-                    *debug << " [" << writeChunk - stream.avail_out << "]";
                 break;
             default:
                 throw (Exception() << "inflate failed");
         }
     }
     inflateEnd(&stream);
-    if (verbose >= 2)
-        *debug << " total " << inflatedSize << "\n";
 }
 
 InflateReader::~InflateReader()

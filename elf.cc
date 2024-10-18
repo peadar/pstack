@@ -1,8 +1,6 @@
 #include "libpstack/elf.h"
-#include "libpstack/global.h"
 #include "libpstack/stringify.h"
 #include "libpstack/ioflag.h"
-#include "libpstack/fs.h"
 #ifdef WITH_ZLIB
 #include "libpstack/inflatereader.h"
 #endif
@@ -147,15 +145,11 @@ GnuHash::findSymbol(const char *name) const {
                     Elf::Off(1) << (symhash >> header.bloom_shift) % ELF_BITS;
 
     if ((bloomword & mask) != mask) {
-       if (verbose >= 2)
-          *debug << "failed to find '" << name << "' bloom filter missed\n";
        return std::make_pair(0, undef());
     }
 
     auto idx = hash->readObj<uint32_t>(bucketoff(symhash % header.nbuckets));
     if (idx < header.symoffset) {
-        if (verbose >= 2)
-            *debug << "failed to find '" << name << "' bad index in hash table\n";
         return std::make_pair(0, undef());
     }
     for (;;) {
@@ -164,8 +158,6 @@ GnuHash::findSymbol(const char *name) const {
         if ((chainhash | 1U)  == (symhash | 1U) && strings->readString(sym.st_name) == name)
               return std::make_pair(idx, sym);
         if ((chainhash & 1U) != 0) {
-           if (verbose >= 2)
-               *debug << "failed to find '" << name << "' hit end of hash chain\n";
            return std::make_pair(0, undef());
         }
         ++idx;
@@ -189,10 +181,10 @@ Object::getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int t
     return table.get();
 }
 
-Object::Object(ImageCache &cache, Reader::csptr io_, bool isDebug)
+Object::Object(Context &context_, Reader::csptr io_, bool isDebug)
     : io(std::move(io_))
+    , context(context_)
     , elfHeader(io->readObj<Ehdr>(0))
-    , imageCache(cache)
     , debugLoaded(isDebug) // don't attempt to load separate debug info for a debug ELF.
     , lastSegmentForAddress(nullptr)
 {
@@ -277,15 +269,11 @@ Object::symbolVersions() const
         return symbolVersions_.get();
 
     auto rv = std::make_unique<SymbolVersioning>();
-    if (verbose >= 3)
-       *debug << "parsing version info for " << *io << std::endl;
     auto &gnu_version_r = getSection(".gnu.version_r", SHT_GNU_verneed );
     if (gnu_version_r) {
        auto &strings = getLinkedSection(gnu_version_r);
        auto &verneednum = dynamic.at(DT_VERNEEDNUM);
        if (verneednum.size() != 0) {
-          if (verbose >= 2)
-             *debug << "\nhave " << verneednum[0].d_un.d_val << " version_r entries\n";
 
           size_t off = 0;
           for (size_t cnt = verneednum[0].d_un.d_val; cnt; --cnt) {
@@ -293,15 +281,11 @@ Object::symbolVersions() const
              Off auxOff = off + verneed.vn_aux;
              auto filename = strings.io()->readString(verneed.vn_file);
              auto &file = rv->files[filename];
-             if (verbose >= 3)
-                *debug << "\treading version requirement aux entries for " << filename << std::endl;
              for (auto i = 0; i < verneed.vn_cnt; ++i) {
                 auto aux = gnu_version_r.io()->readObj<Vernaux>(auxOff);
                 auto name = strings.io()->readString(aux.vna_name);
                 rv->versions[aux.vna_other] = name;
                 file.push_back(aux.vna_other);
-                if (verbose >= 3)
-                   *debug << "\t\tfound version " << name << " for index " << aux.vna_other << std::endl;
                 auxOff += aux.vna_next;
              }
              off += verneed.vn_next;
@@ -328,8 +312,6 @@ Object::symbolVersions() const
                 auxOff += aux.vda_next;
              }
              rv->versions[verdef.vd_ndx] = name;
-             if (verbose >= 3)
-                *debug << "version definition " << verdef.vd_ndx << " is " << name << std::endl;
              off += verdef.vd_next;
           }
        }
@@ -429,7 +411,7 @@ Object::findSymbolByAddress(Addr addr, int type)
         auto &gnu_debugdata = getSection(".gnu_debugdata", SHT_PROGBITS );
         if (gnu_debugdata) {
            auto reader = make_shared<const LzmaReader>(gnu_debugdata.io());
-           debugData = make_shared<Object>(imageCache, reader, true);
+           debugData = make_shared<Object>(context, reader, true);
         }
 #else
         static bool warned = false;
@@ -551,7 +533,7 @@ Object::findDebugSymbol(const string &name)
 Object *
 Object::getDebug() const
 {
-    if (debugLoaded || noExtDebug)
+    if (debugLoaded || context.noExtDebug)
         return debugObject.get();
     debugLoaded = true;
 
@@ -569,7 +551,7 @@ Object::getDebug() const
             for (i = 1; i < size_t(io->size()); ++i)
                 dir << std::setw(2) << int(data[i]);
             dir << ".debug" << std::dec;
-            debugObject = imageCache.getDebugImage(dir.str());
+            debugObject = context.getDebugImage(dir.str());
             break;
         }
     }
@@ -580,29 +562,29 @@ Object::getDebug() const
         auto &hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
         if (hdr) {
             auto link = hdr.io()->readString(0);
-            auto dir = dirname(stringify(*io));
-            debugObject = imageCache.getDebugImage(dir + "/" + link); //
+            auto dir = context.dirname(stringify(*io));
+            debugObject = context.getDebugImage(dir + "/" + link); //
         }
     }
 
     if (!debugObject) {
-        if (verbose >= 2)
-           *debug << "no debug object for " << *this->io << "\n";
+        if (context.verbose >= 2)
+           *context.debug << "no debug object for " << *this->io << "\n";
         return nullptr;
     }
 
-    if (verbose >= 2)
-        *debug << "found debug object " << *debugObject->io << " for " << *io << "\n";
+    if (context.verbose >= 2)
+        *context.debug << "found debug object " << *debugObject->io << " for " << *io << "\n";
 
     // Validate that the .dynamic section in the debug object and the one in
     // the original image have the same .sh_addr.
     auto &s = getSection(".dynamic", SHT_NULL);
     auto &d = debugObject->getSection(".dynamic", SHT_NULL);
 
-    if (d.shdr.sh_addr != s.shdr.sh_addr && debug) {
+    if (d.shdr.sh_addr != s.shdr.sh_addr && context.debug) {
         Elf::Addr diff = s.shdr.sh_addr - d.shdr.sh_addr;
-        IOFlagSave _(*debug);
-        *debug << "warning: dynamic section for debug symbols "
+        IOFlagSave _(*context.debug);
+        *context.debug << "warning: dynamic section for debug symbols "
            << *debugObject->io << " loaded for object "
            << *this->io << " at different offset: diff is "
            << std::hex << diff

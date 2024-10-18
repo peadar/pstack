@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-extern void my_abort();
+void my_abort();
 
 void g(int two)
 {

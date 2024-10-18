@@ -1,8 +1,6 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/dwarf_reader.h"
 #include "libpstack/stringify.h"
-#include "libpstack/fs.h"
-#include "libpstack/global.h"
 #include <memory>
 
 namespace pstack::Dwarf {
@@ -20,7 +18,7 @@ CFI *Info::getCFI(FIType type) const {
    return nullptr;
 }
 
-Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
+Info::Info(Elf::Object::sptr obj)
     : elf(std::move(obj))
     , debugInfo(elf->getDebugSection(".debug_info", SHT_NULL))
     , debugStrings(elf->getDebugSection(".debug_str", SHT_NULL))
@@ -29,7 +27,6 @@ Info::Info(Elf::Object::sptr obj, ImageCache &cache_)
     , debugStrOffsets(elf->getDebugSection(".debug_str_offsets", SHT_NULL))
     , debugAddr(elf->getDebugSection(".debug_addr", SHT_NULL))
     , debugRangelists(elf->getDebugSection(".debug_rnglists", SHT_NULL))
-    , imageCache(cache_)
 {
 }
 
@@ -66,8 +63,8 @@ Info::getUnit(Elf::Off offset) const
     if (ent == nullptr) {
         DWARFReader r(debugInfo.io(), offset);
         ent = std::make_shared<Unit>(this, r);
-        if (verbose >= 3)
-            *debug << "create unit " << ent->name() << "@" << offset
+        if (elf->context.verbose >= 3)
+            *elf->context.debug << "create unit " << ent->name() << "@" << offset
                       << " in " << *debugInfo.io() << " of " << *elf->io << "\n";
     }
     return ent;
@@ -112,8 +109,8 @@ Info::offsetToDIE(Elf::Off offset) const
                 // should be in here.
                 DIE entry = u->offsetToDIE(DIE(), offset);
                 if (entry) {
-                    if (verbose > 2)
-                        *debug << "search for DIE at " << offset
+                    if (elf->context.verbose > 2)
+                        *elf->context.debug << "search for DIE at " << offset
                                   << " in " << *debugInfo.io()
                                   << " started at " << uOffset
                                   << ", found at " << u->offset
@@ -150,8 +147,8 @@ Info::decodeARangeSet(DWARFReader &r) const {
     (void)segdesclen;
     if (segdesclen != 0) {
        // consider this an encoding error.
-       if (debug != nullptr) {
-          *debug << "warning: arangeset in " << *r.io << "has non-zero segdesclen\n";
+       if (elf->context.debug != nullptr) {
+          *elf->context.debug << "warning: arangeset in " << *r.io << "has non-zero segdesclen\n";
        }
        return;
     }
@@ -257,7 +254,7 @@ Info::getAltImageName() const
     // relative - prefix it with dirname of the image (note we use the image
     // from the section, not from "this", as it may have been in a separate ELF
     // image.
-    const auto &exedir = dirname(linkResolve(section.elf->io->filename()));
+    const auto &exedir = elf->context.dirname(elf->context.linkResolve(section.elf->io->filename()));
     return stringify(exedir, "/", name);
 }
 
@@ -265,7 +262,7 @@ Info::sptr
 Info::getAltDwarf() const
 {
     if (!altImageLoaded) {
-        altDwarf = imageCache.getDwarf(getAltImageName());
+        altDwarf = elf->context.getDwarf(getAltImageName());
         altImageLoaded = true;
     }
     if (altDwarf == nullptr)

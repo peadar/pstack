@@ -1,6 +1,5 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/dwarf_reader.h"
-#include "libpstack/global.h"
 #include "libpstack/stringify.h"
 #include <set>
 #include <algorithm>
@@ -355,8 +354,8 @@ DIE::getParentOffset() const
         // limit our search a bit, but the easiest thing to do is just walk the
         // tree from the root down. (This also fixes the problem for any other
         // dies in the same unit.)
-        if (verbose > 2)
-            *debug << "warning: no parent offset "
+        if (unit->dwarf->elf->context.verbose > 2)
+            *unit->dwarf->elf->context.debug << "warning: no parent offset "
                 << "for die " << name()
                 << " at offset " << offset
                 << " in unit " << unit->name()

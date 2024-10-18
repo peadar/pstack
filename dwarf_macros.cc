@@ -1,6 +1,5 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/dwarf_reader.h"
-#include "libpstack/global.h"
 
 namespace pstack::Dwarf {
 enum DWARF_MACRO_CODE {
@@ -142,14 +141,14 @@ Macros::visit5(Unit &u, MacroVisitor *visitor) const
     DWARFReader dr(io);
     for (bool done=false; !done; ) {
         auto code = DWARF_MACRO_CODE(dr.getu8());
-        if (verbose > 1)
-            *debug << dr.getOffset() - 1 << ": "; // adjust to get offset of code
+        if (u.dwarf->elf->context.verbose > 1)
+            *u.dwarf->elf->context.debug << dr.getOffset() - 1 << ": "; // adjust to get offset of code
         switch(code) {
             case DW_MACRO_start_file: {
                 auto line = dr.getuleb128();
                 auto file = dr.getuleb128();
-                if (verbose > 1)
-                    *debug << "DW_MACRO_start_file( " << lineinfo->files[file].name << " from line " << line << " )\n";
+                if (u.dwarf->elf->context.verbose > 1)
+                    *u.dwarf->elf->context.debug << "DW_MACRO_start_file( " << lineinfo->files[file].name << " from line " << line << " )\n";
                 auto &fileinfo = lineinfo->files[file];
                 if (!visitor->startFile(line, lineinfo->directories[fileinfo.dirindex], fileinfo))
                     return false;
@@ -158,8 +157,8 @@ Macros::visit5(Unit &u, MacroVisitor *visitor) const
 
             case DW_MACRO_import: {
                 auto offset = dr.getuint(dwarflen);
-                if (verbose > 1)
-                    *debug << "DW_MACRO_import( " << offset << " )\n";
+                if (u.dwarf->elf->context.verbose > 1)
+                    *u.dwarf->elf->context.debug << "DW_MACRO_import( " << offset << " )\n";
 
                 // XXX: "u" is likely not right here, but only makes a
                 // difference if the import unit uses unit-relative string
@@ -175,8 +174,8 @@ Macros::visit5(Unit &u, MacroVisitor *visitor) const
             case DW_MACRO_define_strp: {
                 auto line = dr.getuleb128();
                 auto str = dr.readFormString(*u.dwarf, u, code == DW_MACRO_define_strx ? DW_FORM_strx : DW_FORM_strp);
-                if (verbose > 1)
-                    *debug << "DW_MACRO_define_strp( " << line << ", " << str << " )\n";
+                if (u.dwarf->elf->context.verbose > 1)
+                    *u.dwarf->elf->context.debug << "DW_MACRO_define_strp( " << line << ", " << str << " )\n";
                 if (!visitor->define(line, str))
                     return false;
                 break;
@@ -185,8 +184,8 @@ Macros::visit5(Unit &u, MacroVisitor *visitor) const
             case DW_MACRO_define: {
                 auto line = dr.getuleb128();
                 auto str = dr.getstring();
-                if (verbose > 1)
-                    *debug << "DW_MACRO_define( " << line << ", " << str << " )\n";
+                if (u.dwarf->elf->context.verbose > 1)
+                    *u.dwarf->elf->context.debug << "DW_MACRO_define( " << line << ", " << str << " )\n";
                 if (!visitor->define(line, str))
                     return false;
                 break;
@@ -196,8 +195,8 @@ Macros::visit5(Unit &u, MacroVisitor *visitor) const
             case DW_MACRO_undef_strp: {
                 auto line = dr.getuleb128();
                 auto str = dr.readFormString(*u.dwarf, u, code == DW_MACRO_undef_strx ? DW_FORM_strx : DW_FORM_strp);
-                if (verbose > 1)
-                    *debug << "DW_MACRO_undef_strp( " << line << ", '" << str << "' )\n";
+                if (u.dwarf->elf->context.verbose > 1)
+                    *u.dwarf->elf->context.debug << "DW_MACRO_undef_strp( " << line << ", '" << str << "' )\n";
                 if (!visitor->undef(line, str))
                     return false;
                 break;
@@ -206,28 +205,28 @@ Macros::visit5(Unit &u, MacroVisitor *visitor) const
             case DW_MACRO_undef: {
                 auto line = dr.getuleb128();
                 auto str = dr.getstring();
-                if (verbose > 1)
-                    *debug << "DW_MACRO_undef( " << line << ", '" << str << "' )\n";
+                if (u.dwarf->elf->context.verbose > 1)
+                    *u.dwarf->elf->context.debug << "DW_MACRO_undef( " << line << ", '" << str << "' )\n";
                 if (!visitor->undef(line, str))
                     return false;
                 break;
             }
 
             case DW_MACRO_end_file:
-                if (verbose > 1)
-                    *debug << "DW_MACRO_end_file()\n";
+                if (u.dwarf->elf->context.verbose > 1)
+                    *u.dwarf->elf->context.debug << "DW_MACRO_end_file()\n";
                 if (!visitor->endFile())
                     return false;
                 break;
 
             case DW_MACRO_eol:
-                if (verbose > 1)
-                    *debug << "(end of macros)\n";
+                if (u.dwarf->elf->context.verbose > 1)
+                    *u.dwarf->elf->context.debug << "(end of macros)\n";
                 done = true;
                 break;
 
             default:
-                *debug << "unhandled macro entry: " << int(code) << "(" << macroName(code) << ")\n";
+                *u.dwarf->elf->context.debug << "unhandled macro entry: " << int(code) << "(" << macroName(code) << ")\n";
                 break;
         }
     }

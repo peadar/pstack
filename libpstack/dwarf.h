@@ -642,7 +642,7 @@ public:
     using sptr = std::shared_ptr<Info>;
     using csptr = std::shared_ptr<const Info>;
 
-    Info(Elf::Object::sptr, ImageCache &);
+    Info(Elf::Object::sptr);
 
     Info() = delete;
     Info(const Info &) = delete;
@@ -694,9 +694,7 @@ public:
     const Elf::Section & debugStrOffsets;
     const Elf::Section & debugAddr;
     const Elf::Section & debugRangelists;
-
 private:
-    ImageCache &imageCache;
     std::unique_ptr<CFI> decodeCFI(const Elf::Section &, FIType ftype, Reader::csptr) const;
 
     // These are mutable so we can lazy-eval them when getters are called, and

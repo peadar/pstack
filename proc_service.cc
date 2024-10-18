@@ -1,6 +1,5 @@
 #include "libpstack/proc.h"
 #include "libpstack/ps_callback.h"
-#include "libpstack/fs.h"
 
 #include <cstdarg>
 
@@ -48,8 +47,8 @@ ps_pglobal_lookup(struct ps_prochandle *ph, const char *ld_object_name,
     auto p = static_cast<Process *>(ph);
     try {
         *ld_symbol_addr = psaddr_t(intptr_t(p->resolveSymbol(ld_symbol_name, true,
-            [ld_object_name](std::string_view name) {
-                auto bn = basename(std::string(name));
+            [p, ld_object_name](std::string_view name) {
+                auto bn = p->context.basename(std::string(name));
                 return bn == ld_object_name || bn == "libc.so.6";
             }
             )));

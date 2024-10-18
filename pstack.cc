@@ -1,8 +1,6 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/flags.h"
-#include "libpstack/global.h"
 #include "libpstack/proc.h"
-#include "libpstack/fs.h"
 #if defined(WITH_PYTHON2) || defined(WITH_PYTHON3)
 #define WITH_PYTHON
 #include "libpstack/python.h"
@@ -35,7 +33,7 @@ void
 pstack(Procman::Process &proc)
 {
     const auto &threadStacks = proc.getStacks();
-    auto &os = *proc.options.output;
+    auto &os = *proc.context.output;
     if (doJson) {
         os << json(threadStacks, &proc);
     } else {
@@ -56,8 +54,7 @@ pstack(Procman::Process &proc)
 // us to reliably run pstack on a process that will abort or segfault, and
 // doesn't require a readable core file.
 int
-startChild(Elf::Object::sptr exe, const std::string &cmd,
-           const PstackOptions &options, ImageCache &ic) {
+startChild(Context &context, Elf::Object::sptr exe, const std::string &cmd) {
    std::vector<std::string> args;
    for (size_t off = 0;;) {
       auto pos = cmd.find(' ', off);
@@ -81,8 +78,8 @@ startChild(Elf::Object::sptr exe, const std::string &cmd,
                         [] (const std::string &arg) { return arg.c_str(); });
          sysargs.push_back(nullptr);
          execvp(sysargs[0], (char **)&sysargs[0]);
-         if (verbose > 2)
-             *debug << getpid() << " execvp failed: " << strerror(errno) << "\n";
+         if (context.verbose > 2)
+             *context.debug << getpid() << " execvp failed: " << strerror(errno) << "\n";
          // child
          break;
       }
@@ -98,16 +95,16 @@ startChild(Elf::Object::sptr exe, const std::string &cmd,
          assert(statusFile.get());
 
          for (;;) {
-            if (verbose > 2)
-               *debug << getpid() << " waiting...\n";
+            if (context.verbose > 2)
+               *context.debug << getpid() << " waiting...\n";
             rc = wait(&status);
             if (rc != pid) {
-               if (verbose > 2)
-                  *debug << getpid() << "... wait failed: " << strerror(errno) << "\n";
+               if (context.verbose > 2)
+                  *context.debug << getpid() << "... wait failed: " << strerror(errno) << "\n";
                break;
             }
-            if (verbose > 2)
-               *debug << getpid() << "... done - rc=" << rc
+            if (context.verbose > 2)
+               *context.debug << getpid() << "... done - rc=" << rc
                    << ", status=" << Procman::WaitStatus(status) << "\n";
 
             if (WIFSTOPPED(status)) {
@@ -129,7 +126,7 @@ startChild(Elf::Object::sptr exe, const std::string &cmd,
                int stopsig = WSTOPSIG(status);
                int contsig = stopsig == SIGSTOP || stopsig == SIGTRAP ? 0 : stopsig;
                if (((1 << (stopsig -1)) & handledSigs) == 0) {
-                  p = std::make_shared<Procman::LiveProcess>(exe, pid, options, ic, true);
+                  p = std::make_shared<Procman::LiveProcess>(context, exe, pid, true);
                   p->load();
                   pstack(*p);
                   rc = ptrace(PTRACE_KILL, pid, 0, contsig);
@@ -137,10 +134,10 @@ startChild(Elf::Object::sptr exe, const std::string &cmd,
                   rc = ptrace(PTRACE_CONT, pid, 0, contsig);
                }
                if (rc == -1)
-                  *debug << getpid() << " ptrace failed to kill/continue - " << strerror(errno) << "\n";
+                  *context.debug << getpid() << " ptrace failed to kill/continue - " << strerror(errno) << "\n";
                assert(rc == 0);
-               if (verbose > 2)
-                  *debug << getpid() << "..done\n";
+               if (context.verbose > 2)
+                  *context.debug << getpid() << "..done\n";
             }
             else {
                return 0;
@@ -156,7 +153,7 @@ startChild(Elf::Object::sptr exe, const std::string &cmd,
 template<int V> void
 doPy(Procman::Process &proc, bool showModules, const PyInterpInfo &info) {
     Procman::StopProcess here(&proc);
-    PythonPrinter<V> printer(proc, *proc.options.output, info);
+    PythonPrinter<V> printer(proc, *proc.context.output, info);
     if (!printer.interpFound())
         throw Exception() << "no python interpreter found";
     printer.printInterpreters(showModules);
@@ -210,10 +207,9 @@ usage(std::ostream &os, const char *name, const Flags &options)
 }
 
 int
-emain(int argc, char **argv, ImageCache &imageCache)
+emain(int argc, char **argv, Context &context)
 {
     double sleepTime = 0.0;
-    PstackOptions options;
     std::ofstream out;
     bool failures = false;
 
@@ -236,14 +232,14 @@ emain(int argc, char **argv, ImageCache &imageCache)
                 auto sep = strchr(arg, ':');
                 if (sep == 0)
                     usage(std::cerr, argv[0], flags);
-                pathReplacements.push_back(std::make_pair(
+                context.pathReplacements.push_back(std::make_pair(
                             std::string(arg, sep - arg), std::string(sep + 1))); })
 
     .add("debug-dir",
             'g',
             "directory",
             "extra location to find debug files for binaries and shared libraries",
-            [&](const char *arg) { globalDebugDirectories.push_back(arg); })
+            [&](const char *arg) { context.debugDirectories.push_back(arg); })
 
     .add("constant",
             'b',
@@ -256,7 +252,7 @@ emain(int argc, char **argv, ImageCache &imageCache)
             "ELF file",
             "dump details of an ELF image in JSON and exit",
             [&](const char *arg) {
-                *options.output << json(Elf::Object(imageCache, loadFile(arg)));
+                *context.output << json(Elf::Object(context, context.loadFile(arg)));
                 exitCode = 0; })
 
     .add("dwarf-dump",
@@ -264,22 +260,22 @@ emain(int argc, char **argv, ImageCache &imageCache)
             "ELF file",
             "dump details of DWARF information in an ELF image in JSON and exit",
             [&](const char *arg) {
-                auto dumpobj = std::make_shared<Elf::Object>(imageCache, loadFile(arg));
-                auto di = std::make_shared<Dwarf::Info>(dumpobj, imageCache);
-                *options.output << json(*di);
+                auto dumpobj = std::make_shared<Elf::Object>(context, context.loadFile(arg));
+                auto di = std::make_shared<Dwarf::Info>(dumpobj);
+                *context.output << json(*di);
                 exitCode = 0; })
 
     .add("depth",
             'r',
             "depth",
             "max depth when printing python structures",
-            Flags::set(options.maxdepth))
+            Flags::set(context.options.maxdepth))
 
     .add("max-frames",
             'M',
             "max frames",
             "maximum number of stack frames to print for a thread",
-            Flags::set(options.maxframes))
+            Flags::set(context.options.maxframes))
 
     .add("help",
             'h',
@@ -289,7 +285,7 @@ emain(int argc, char **argv, ImageCache &imageCache)
     .add("args",
             'a',
             "attempt to show the value of arguments to functions",
-            Flags::setf(options.doargs))
+            Flags::setf(context.options.doargs))
 
     .add("json",
             'j',
@@ -299,17 +295,17 @@ emain(int argc, char **argv, ImageCache &imageCache)
     .add("no-src",
             's',
             "don't include source info",
-            Flags::setf(options.nosrc))
+            Flags::setf(context.options.nosrc))
 
     .add("verbose",
             'v',
             "more debugging data. Can be repeated",
-            [&]() { ++verbose; })
+            [&]() { ++context.verbose; })
 
     .add("no-threaddb",
             't',
             "don't use the thread_db functions to enumerate pthreads (just uses LWPs)",
-            Flags::setf(options.nothreaddb))
+            Flags::setf(context.options.nothreaddb))
 
     .add("all",
             'A',
@@ -319,7 +315,7 @@ emain(int argc, char **argv, ImageCache &imageCache)
     .add("no-ext-debug",
             'n',
             "don't load external debugging information when processing",
-            Flags::setf(noExtDebug))
+            Flags::setf(context.noExtDebug))
 
     .add("version",
             'V',
@@ -342,7 +338,7 @@ emain(int argc, char **argv, ImageCache &imageCache)
     .add("locals",
             'l',
             "print local variables (just python for now)",
-            Flags::setf(options.dolocals))
+            Flags::setf(context.options.dolocals))
 #endif
     .add("executable",
           'e',
@@ -354,15 +350,15 @@ emain(int argc, char **argv, ImageCache &imageCache)
           "execute command line as subprocess, trace when it receives a signal",
           Flags::set<std::string>(subprocessCmd))
     .add("no-die-names", 'Y', "do not use DIE names for functions",
-          Flags::setf(options.nodienames))
+          Flags::setf(context.options.nodienames))
     .add("freeres", Flags::LONGONLY, "free all memory at exit (useful for valgrind/heapcheck)",
           Flags::setf(freeres))
     .add("output",
           'o',
           "output file",
-          "write output to <output file> instead of stdout", [&options, &out] (const char *opt) {
+          "write output to <output file> instead of stdout", [&context, &out] (const char *opt) {
              out = std::ofstream(opt, std::ofstream::out|std::ofstream::trunc);
-             options.output = &out;
+             context.output = &out;
           })
     .parse(argc, argv);
 
@@ -373,11 +369,11 @@ emain(int argc, char **argv, ImageCache &imageCache)
     // discovering the executable
     Elf::Object::sptr exec;
     if (execName != "")
-         exec = imageCache.getImageForName(execName);
+         exec = context.getImageForName(execName);
 
     if (subprocessCmd != "") {
         // create a new process and trace it.
-        startChild(exec, subprocessCmd, options, imageCache);
+        startChild(context, exec, subprocessCmd);
         return 0;
     }
 
@@ -406,9 +402,9 @@ emain(int argc, char **argv, ImageCache &imageCache)
     };
     for (int i = optind; i < argc; i++) {
        try {
-          auto process = Procman::Process::load(exec, argv[i], options, imageCache); // this calls the load() instance member.
+          auto process = Procman::Process::load(context, exec, argv[i]); // this calls the load() instance member.
           if (process == nullptr)
-             exec = imageCache.getImageForName(argv[i]);
+             exec = context.getImageForName(argv[i]);
           else
              doStack(*process);
        } catch (const std::exception &e) {
@@ -424,14 +420,14 @@ int
 main(int argc, char **argv)
 {
     try {
-        ImageCache imageCache;
+        Context context;
         struct sigaction sa;
         memset(&sa, 0, sizeof sa);
         sa.sa_handler = [](int) { interrupted = true; };
         // Only interrupt cleanly once. Then just terminate, in case we're stuck in a loop
         sa.sa_flags = SA_RESETHAND;
         sigaction(SIGINT, &sa, nullptr);
-        int rc = emain(argc, argv, imageCache);
+        int rc = emain(argc, argv, context);
 
         // Normally, exit without free'ing imagecache - don't waste effort
         // moving pointers around in a terminating process
