@@ -42,8 +42,7 @@
 #include <memory>
 #include <optional>
 #include <utility>
-
-
+#include "libpstack/imagecache.h"
 #include "libpstack/json.h"
 #include "libpstack/reader.h"
 
@@ -70,7 +69,6 @@ typedef struct {
 
 namespace pstack::Elf {
 class Object;
-class ImageCache;
 class SymbolSection;
 class NoteDesc;
 };
@@ -418,32 +416,6 @@ public:
 enum GNUNotes {
    GNU_BUILD_ID = 3
 };
-
-/*
- * Places to look for debug images
- */
-
-extern std::vector<std::string> globalDebugDirectories;
-
-/*
- * A cache of named files to ELF objects. Note no deduping is done for symbolic
- * links, hard links, or canonicalization of filenames. (XXX: do this with stat
- * & st_ino + st_dev)
- */
-class ImageCache {
-    std::map<std::string, Object::sptr> cache;
-    int elfHits;
-    int elfLookups;
-public:
-    ImageCache();
-    virtual ~ImageCache() noexcept;
-    virtual void flush(Object::sptr);
-    Object::sptr getImageForName(const std::string &name, bool isDebug = false);
-    Object::sptr getImageIfLoaded(const std::string &name);
-    Object::sptr getDebugImage(const std::string &name);
-};
-
-extern bool noExtDebug; // if set, don't look for exernal ELF info, i.e., usinb debuglink, or buildid.
 
 } // Elf namespace
 

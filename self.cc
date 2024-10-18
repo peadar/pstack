@@ -15,7 +15,7 @@
 #include <syscall.h> // gettid is still relatively new - use syscall instead.
 
 namespace pstack::Procman {
-SelfProcess::SelfProcess(const Elf::Object::sptr &ex, const PstackOptions &options, Dwarf::ImageCache &imageCache)
+SelfProcess::SelfProcess(const Elf::Object::sptr &ex, const PstackOptions &options, ImageCache &imageCache)
     : Process(
             ex ? ex : imageCache.getImageForName("/proc/self/exe"),
             std::make_shared<MemReader>("me", std::numeric_limits<size_t>::max(), nullptr),

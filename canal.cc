@@ -15,6 +15,7 @@
 #include <map>
 #include <err.h>
 
+#include "libpstack/imagecache.h"
 #include "libpstack/proc.h"
 #include "libpstack/elf.h"
 #include "libpstack/dwarf.h"
@@ -257,7 +258,7 @@ template <typename Matcher> void search(int wordsize,
 int
 mainExcept(int argc, char *argv[])
 {
-    Dwarf::ImageCache imageCache;
+    ImageCache imageCache;
     std::vector<std::string> patterns;
     Elf::Object::sptr exec;
     int wordsize = sizeof (Elf::Off) * 8;

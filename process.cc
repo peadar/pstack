@@ -10,6 +10,7 @@
 #include <sys/ucontext.h>
 #include <sys/wait.h>
 #include <csignal>
+#include <sys/signal.h>
 
 #include "libpstack/archreg.h"
 #include "libpstack/dwarf.h"
@@ -139,7 +140,7 @@ gregset2core(Elf::CoreRegisters &core, const gregset_t greg) {
 
 
 Process::Process(Elf::Object::sptr exec, Reader::sptr memory,
-                  const PstackOptions &options, Dwarf::ImageCache &cache)
+                  const PstackOptions &options, ImageCache &cache)
     : entry(0)
     , interpBase(0)
     , vdsoBase(0)
@@ -1036,7 +1037,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 }
 
 std::shared_ptr<Process>
-Process::load(Elf::Object::sptr exec, std::string id, const PstackOptions &options, Dwarf::ImageCache &imageCache) {
+Process::load(Elf::Object::sptr exec, std::string id, const PstackOptions &options, ImageCache &imageCache) {
     pid_t pid;
     std::istringstream(id) >> pid;
     std::shared_ptr<Process> proc;
@@ -1159,4 +1160,129 @@ operator << (std::ostream &os, const JSON<Procman::StackFrame, Procman::Process 
     jo.field("source", location.source());
 
     return jo;
+}
+
+std::ostream &operator << (std::ostream &os, const siginfo_t &si) {
+
+   static std::map<int, std::map<int, const char *>> codes {
+         { SIGSEGV,  {
+                     { SEGV_MAPERR, "address not mapped to object" },
+                        { SEGV_ACCERR, "invalid permissions for mapped object" },
+                        { SEGV_BNDERR, "address failed bouds checks" },
+                        { SEGV_ACCADI, "ADI not enabled" },
+                        { SEGV_ADIDERR, "disrupting MCD error" },
+                        { SEGV_ADIPERR, "precise MCD exception" },
+                        { SEGV_MTEAERR, "asynchronous ARM MTE error" },
+                  } },
+         { 0,     {
+                     { SI_USER, "sent by kill/sigsend/raise" },
+                     { SI_KERNEL, "sent by kernel" },
+                     { SI_QUEUE, "sent by sigqueue" },
+                     { SI_TIMER, "sent by timer expiration" },
+                     { SI_MESGQ, "sent by real time mesq state change" },
+                     { SI_ASYNCIO, "sent by AIO completion" },
+                     { SI_SIGIO, "sent by queued SIGIO" },
+                     { SI_TKILL, "sent by tkill syscall" },
+                     { SI_DETHREAD, "sent by execve killing subsidiary threads" },
+                     { SI_ASYNCNL, "sent by glibc async name lookup completion" },
+                     { POLL_IN, "data input available" },
+                     { POLL_OUT, "output buffers available" },
+                     { POLL_MSG, "input message available" },
+                     { POLL_ERR, "I/O error" },
+                     { POLL_PRI, "high priority input available" },
+                     { POLL_HUP, "device disconnected" },
+                  } },
+         { SIGILL, {
+                      { ILL_ILLOPC, "illegal opcode" },
+                      { ILL_ILLOPN, "illegal operand" },
+                      { ILL_ILLADR, "illegal address mode" },
+                      { ILL_ILLTRP, "illegal trap" },
+                      { ILL_PRVOPC, "privileged opcode" },
+                      { ILL_PRVREG, "privileged register" },
+                      { ILL_COPROC, "coprocessor error" },
+                      { ILL_BADSTK, "internal stack error" },
+                      { ILL_BADIADDR, "unimplemented instruction address" },
+                      /*
+                      { __ILL_BREAK, "illegal break" },
+                      { __ILL_BNDMOD, "bundle-pudate (modification) in proress" }
+                      */
+                   } },
+         { SIGFPE, {
+                      { FPE_INTDIV, "integer divide by zero" },
+                      { FPE_INTOVF, "integer overflow" },
+                      { FPE_FLTDIV, "floating point divide by zero" },
+                      { FPE_FLTOVF, "floating point overflow" },
+                      { FPE_FLTUND, "floating point underflow" },
+                      { FPE_FLTRES, "floating point inexact result" },
+                      { FPE_FLTINV, "floating point invalid operation" },
+                      { FPE_FLTSUB, "subscript out of range" },
+                      /*
+                      { __FPE_DECOVF, "decimal overflow" },
+                      { __FPE_DECDIV, "decimal division" },
+                      { __FPE_DECERR, "packed decimal error" },
+                      { __FPE_INVASC, "invalid ASCII digit" },
+                      { __FPE_INVDEC, "invalid decimal digit" },
+                      */
+                      { FPE_FLTUNK, "undiagnosed floating point exception" },
+                      { FPE_CONDTRAP, "trap condition" },
+                   } },
+         { SIGBUS, {
+                      { BUS_ADRALN, "invalid address alignment" },
+                      { BUS_ADRERR, "non-existent physical address" },
+                      { BUS_OBJERR, "object specific hardware error" },
+                      { BUS_MCEERR_AR, "hardware memory error consumed on a machine check: action required" },
+                      { BUS_MCEERR_AO, "hardware memory error consumed on a machine check: action optional" },
+                   }
+         },
+         { SIGTRAP, {
+                       { TRAP_BRKPT, "process breakpoint" },
+                       { TRAP_TRACE, "process trace trap" },
+                       { TRAP_BRANCH, "process taken branch trap" },
+                       { TRAP_HWBKPT, "hardware breakpoint/watchpoint" },
+                       { TRAP_UNK, "undiagnosed trap" },
+                       /*
+                       { TRAP_PERF, "perf event with sigtrap=1" },
+                       */
+                    }
+         },
+         {  SIGSYS, {
+                       /*
+                       { SYS_SECCOMP, "seccomp triggered" },
+                       { SYS_USER_DISPATCH, "syscall user dispatch triggered" }
+                       */
+                    }
+         },
+   };
+
+   os << sigdescr_np( si.si_signo )
+      << " SIG" << sigabbrev_np( si.si_signo )
+      << ", si_code " << si.si_code;
+
+   auto codesforsig = codes.find( si.si_signo );
+   if (codesforsig == codes.end()) {
+      codesforsig = codes.find( 0 );
+   }
+
+   if (codesforsig != codes.end()) {
+      auto code = codesforsig->second.find( si.si_code );
+      if (code != codesforsig->second.end())
+            os << " - " << code->second;
+   }
+
+   switch (si.si_signo) {
+      case SIGILL:
+      case SIGFPE:
+      case SIGBUS:
+      case SIGTRAP:
+#ifdef SIGEMT
+      case SIGEMT:
+#endif
+      case SIGSEGV: {
+         os << ", fault address " << std::hex << si.si_addr << std::dec;
+         break;
+      }
+
+
+   }
+   return os;
 }

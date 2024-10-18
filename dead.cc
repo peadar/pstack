@@ -8,7 +8,7 @@
 namespace pstack::Procman {
 
 CoreProcess::CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core,
-      const PstackOptions &options, Dwarf::ImageCache &imageCache)
+      const PstackOptions &options, ImageCache &imageCache)
    : Process(std::move(exec), std::make_shared<CoreReader>(this, core), options, imageCache)
      , prpsinfo{}
      , coreImage(std::move(core))
@@ -276,6 +276,14 @@ CoreProcess::loadSharedObjectsFromFileNote()
     return true; // found an NT_FILE note, so success.
 }
 
+std::optional<siginfo_t>
+CoreProcess::getSignalInfo() const {
+   for ( const auto &note : coreImage->notes() ) {
+      if ( note.name() == "CORE" && note.type() == NT_SIGINFO ) {
+         return note.data()->readObj<siginfo_t>(0);
+      }
+   }
+   return std::nullopt;
 }
 
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::FileEntry> &j) {
@@ -284,3 +292,5 @@ std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::FileEnt
         .field("end", j.object.end)
         .field("fileOff", j.object.fileOff);
 }
+}
+

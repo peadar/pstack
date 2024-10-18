@@ -16,6 +16,7 @@ extern "C" {
 #include <string_view>
 #include <sys/stat.h> // for ino_t
 #include <ucontext.h> // for gregset_t
+#include <signal.h>
 
 #include "libpstack/ps_callback.h"
 #include "libpstack/dwarf.h"
@@ -229,7 +230,7 @@ public:
     bool operator < (const MappedObject &rhs) const {
         return name_ < rhs.name_; // for comparing pairs.
     }
-    Elf::Object::sptr object(Dwarf::ImageCache &cache) {
+    Elf::Object::sptr object(ImageCache &cache) {
         if (objptr_ == nullptr) {
             objptr_ = cache.getImageForName(name_);
         }
@@ -262,7 +263,7 @@ public:
     std::pair<Elf::Addr, Elf::Object::sptr> getElfObject(Elf::Addr addr);
     PstackOptions options;
     Elf::Addr sysent; // for AT_SYSINFO
-    Dwarf::ImageCache &imageCache;
+    ImageCache &imageCache;
     virtual Reader::csptr getAUXV() const = 0;
     void processAUXV(const Reader &);
     Reader::sptr io;
@@ -273,12 +274,13 @@ public:
         return getRegs(pid, code, sizeof (T), reinterpret_cast<void *>( &reg ) );
     }
 
+    virtual std::optional<siginfo_t> getSignalInfo() const = 0;
 
     void addElfObject(std::string_view, const Elf::Object::sptr &, Elf::Addr load);
     // Find the the object (and its load address) and segment containing a given address
     std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *> findSegment(Elf::Addr addr);
     Dwarf::Info::sptr getDwarf(Elf::Object::sptr) const;
-    Process(Elf::Object::sptr exec, Reader::sptr memory, const PstackOptions &prl, Dwarf::ImageCache &cache);
+    Process(Elf::Object::sptr exec, Reader::sptr memory, const PstackOptions &prl, ImageCache &cache);
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
     virtual void resumeProcess() = 0;
@@ -303,7 +305,7 @@ public:
     void load();
     virtual pid_t getPID() const = 0;
     virtual AddressSpace addressSpace() const = 0;
-    static std::shared_ptr<Process> load(Elf::Object::sptr exe, std::string id, const PstackOptions &options, Dwarf::ImageCache &cache);
+    static std::shared_ptr<Process> load(Elf::Object::sptr exe, std::string id, const PstackOptions &options, ImageCache &cache);
 };
 
 template <typename T> int
@@ -339,9 +341,8 @@ class LiveProcess final : public Process {
     std::map<pid_t, Lwp> stoppedLWPs;
 public:
     // attach to existing process.
-    LiveProcess(Elf::Object::sptr &, pid_t, const PstackOptions &, Dwarf::ImageCache &, bool alreadyStopped=false);
+    LiveProcess(Elf::Object::sptr &, pid_t, const PstackOptions &, ImageCache &, bool alreadyStopped=false);
     ~LiveProcess();
-
     void listLWPs(std::function<void(lwpid_t)>) override;
     virtual size_t getRegs(lwpid_t pid, int code, size_t sz, void *reg) override;
     virtual void stop(pid_t) override;
@@ -350,6 +351,7 @@ public:
     void resumeProcess() override;
     virtual Reader::csptr getAUXV() const override;
     virtual pid_t getPID() const override;
+    std::optional<siginfo_t> getSignalInfo() const override;
 protected:
     bool loadSharedObjectsFromFileNote() override;
     std::vector<AddressRange> addressSpace() const override;
@@ -360,7 +362,7 @@ class SelfProcess : public Process {
     pid_t pid;
 public:
     // attach to existing process.
-    SelfProcess(const Elf::Object::sptr &, const PstackOptions &, Dwarf::ImageCache &);
+    SelfProcess(const Elf::Object::sptr &, const PstackOptions &, ImageCache &);
     void listLWPs(std::function<void(lwpid_t)>) override;
     virtual size_t getRegs(lwpid_t pid, int code, size_t sz, void *reg) override;
     virtual void stop(pid_t) override;
@@ -369,6 +371,7 @@ public:
     void resumeProcess() override;
     virtual Reader::csptr getAUXV() const override;
     virtual pid_t getPID() const override;
+    std::optional<siginfo_t> getSignalInfo() const override { return std::nullopt; }
 protected:
     virtual Elf::Addr findRDebugAddr() override;
     bool loadSharedObjectsFromFileNote() override;
@@ -394,7 +397,7 @@ class CoreProcess final : public Process {
     prpsinfo_t prpsinfo;
 public:
     Elf::Object::sptr coreImage;
-    CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core, const PstackOptions &, Dwarf::ImageCache &);
+    CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core, const PstackOptions &, ImageCache &);
     virtual size_t getRegs(lwpid_t pid, int code, size_t sz, void *regs) override;
     virtual void stop(lwpid_t) override;
     virtual void resume(lwpid_t) override;
@@ -403,6 +406,7 @@ public:
     virtual Reader::csptr getAUXV() const override;
     virtual pid_t getPID() const override;
     void listLWPs(std::function<void(lwpid_t)>) override;
+    std::optional<siginfo_t> getSignalInfo() const override;
 protected:
     bool loadSharedObjectsFromFileNote() override;
     std::vector<AddressRange> addressSpace() const override;
@@ -498,5 +502,6 @@ std::ostream &operator << (std::ostream &os, pstack::Procman::WaitStatus ws);
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::StackFrame, pstack::Procman::Process *> &jt);
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::ThreadStack, pstack::Procman::Process *> &jt);
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::FileEntry> &);
+std::ostream &operator << (std::ostream &os, const siginfo_t &);
 
 #endif

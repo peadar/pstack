@@ -22,13 +22,6 @@ namespace pstack::Elf {
 using std::string;
 using std::make_shared;
 
-bool noExtDebug;
-
-std::vector<string> globalDebugDirectories = {
-    "/usr/lib/debug", 
-    "/usr/lib/debug/usr"
-};
-
 namespace {
 
 /*
@@ -717,70 +710,6 @@ Reader::csptr Section::io() const {
     if (io_ == nullptr)
         io_ = make_shared<NullReader>();
     return io_;
-}
-
-Object::sptr
-ImageCache::getImageForName(const string &name, bool isDebug) {
-    auto res = getImageIfLoaded(name);
-    if (res != nullptr)
-        return res;
-    auto item = make_shared<Object>(*this, std::make_shared<MmapReader>(name), isDebug);
-    // don't cache negative entries: assign into the cache after we've constructed:
-    // a failure to load the image will throw.
-    cache[name] = item;
-    return item;
-}
-
-ImageCache::ImageCache() : elfHits(0), elfLookups(0) {}
-ImageCache::~ImageCache() noexcept {
-    if (verbose >= 2) {
-        *debug << "ELF image cache: lookups: " << elfLookups << ", hits=" << elfHits << std::endl;
-        for (const auto &[name, elf] : cache) {
-            *debug << "\t" << *elf->io << std::endl;
-        }
-    }
-}
-
-Object::sptr
-ImageCache::getImageIfLoaded(const string &name)
-{
-    elfLookups++;
-    auto it = cache.find(name);
-    if (it != cache.end()) {
-        elfHits++;
-        return it->second;
-    }
-    return Object::sptr();
-}
-
-Object::sptr
-ImageCache::getDebugImage(const string &name) {
-    // XXX: verify checksum.
-    for (const auto &dir : globalDebugDirectories) {
-        auto img = getImageIfLoaded(stringify(dir, "/", name));
-        if (img)
-            return img;
-    }
-    for (const auto &dir : globalDebugDirectories) {
-        try {
-           return getImageForName(stringify(dir, "/", name), true);
-        }
-        catch (const std::exception &ex) {
-            continue;
-        }
-    }
-    return Object::sptr();
-}
-
-void
-ImageCache::flush(Object::sptr o)
-{
-   for (auto it = cache.begin(); it != cache.end(); ++it) {
-      if (it->second == o) {
-         cache.erase(it);
-         return;
-      }
-   }
 }
 
 namespace {
