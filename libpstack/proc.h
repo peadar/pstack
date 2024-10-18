@@ -23,17 +23,6 @@ extern "C" {
 
 struct ps_prochandle {};
 
-struct PstackOptions {
-    bool nosrc = false;
-    bool doargs = false;
-    bool dolocals = false;
-    bool nothreaddb = false;
-    bool nodienames = false; // don't use names from DWARF dies in backtraces.
-    int maxdepth = std::numeric_limits<int>::max();
-    int maxframes = 20;
-    std::ostream *output = &std::cout;
-};
-
 namespace pstack::Procman {
 
 class Process;
@@ -230,7 +219,7 @@ public:
     bool operator < (const MappedObject &rhs) const {
         return name_ < rhs.name_; // for comparing pairs.
     }
-    Elf::Object::sptr object(ImageCache &cache) {
+    Elf::Object::sptr object(Context &cache) {
         if (objptr_ == nullptr) {
             objptr_ = cache.getImageForName(name_);
         }
@@ -261,9 +250,8 @@ protected:
 
 public:
     std::pair<Elf::Addr, Elf::Object::sptr> getElfObject(Elf::Addr addr);
-    PstackOptions options;
     Elf::Addr sysent; // for AT_SYSINFO
-    ImageCache &imageCache;
+    Context &context;
     virtual Reader::csptr getAUXV() const = 0;
     void processAUXV(const Reader &);
     Reader::sptr io;
@@ -280,7 +268,7 @@ public:
     // Find the the object (and its load address) and segment containing a given address
     std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *> findSegment(Elf::Addr addr);
     Dwarf::Info::sptr getDwarf(Elf::Object::sptr) const;
-    Process(Elf::Object::sptr exec, Reader::sptr memory, const PstackOptions &prl, ImageCache &cache);
+    Process(Context &ctx, Elf::Object::sptr exec, Reader::sptr memory );
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
     virtual void resumeProcess() = 0;
@@ -305,7 +293,7 @@ public:
     void load();
     virtual pid_t getPID() const = 0;
     virtual AddressSpace addressSpace() const = 0;
-    static std::shared_ptr<Process> load(Elf::Object::sptr exe, std::string id, const PstackOptions &options, ImageCache &cache);
+    static std::shared_ptr<Process> load(Context &ctx, Elf::Object::sptr exe, std::string id);
 };
 
 template <typename T> int
@@ -323,11 +311,8 @@ Process::listThreads(const T &callback)
 class LiveReader : public FileReader {
 public:
     Off size() const override { return std::numeric_limits<Off>::max(); }
-    LiveReader(pid_t, const std::string &);
+    LiveReader(Context &, pid_t, const std::string &);
 };
-
-// Name of the file /proc/<pid>/name, after symlink dereferencing
-std::string procname(pid_t pid, const std::string &);
 
 struct LiveThreadList;
 class LiveProcess final : public Process {
@@ -341,7 +326,7 @@ class LiveProcess final : public Process {
     std::map<pid_t, Lwp> stoppedLWPs;
 public:
     // attach to existing process.
-    LiveProcess(Elf::Object::sptr &, pid_t, const PstackOptions &, ImageCache &, bool alreadyStopped=false);
+    LiveProcess(Context &, Elf::Object::sptr &, pid_t, bool alreadyStopped=false);
     ~LiveProcess();
     void listLWPs(std::function<void(lwpid_t)>) override;
     virtual size_t getRegs(lwpid_t pid, int code, size_t sz, void *reg) override;
@@ -362,7 +347,7 @@ class SelfProcess : public Process {
     pid_t pid;
 public:
     // attach to existing process.
-    SelfProcess(const Elf::Object::sptr &, const PstackOptions &, ImageCache &);
+    SelfProcess(Context &, const Elf::Object::sptr & = nullptr);
     void listLWPs(std::function<void(lwpid_t)>) override;
     virtual size_t getRegs(lwpid_t pid, int code, size_t sz, void *reg) override;
     virtual void stop(pid_t) override;
@@ -397,7 +382,7 @@ class CoreProcess final : public Process {
     prpsinfo_t prpsinfo;
 public:
     Elf::Object::sptr coreImage;
-    CoreProcess(Elf::Object::sptr exec, Elf::Object::sptr core, const PstackOptions &, ImageCache &);
+    CoreProcess(Context &, Elf::Object::sptr exec, Elf::Object::sptr core);
     virtual size_t getRegs(lwpid_t pid, int code, size_t sz, void *regs) override;
     virtual void stop(lwpid_t) override;
     virtual void resume(lwpid_t) override;

@@ -1,6 +1,5 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/dwarf_reader.h"
-#include "libpstack/global.h"
 #include <algorithm>
 #include <stack>
 
@@ -148,8 +147,8 @@ CFI::CFI(const Info *info, FIType type_)
     const Elf::Section &ehFrameHdrSec = elf->getDebugSection(".eh_frame_hdr", SHT_PROGBITS);
     const Elf::Section &debugFrameSec = elf->getSection(".debug_frame", SHT_PROGBITS);
 
-    if (verbose)
-       *debug << "construct CFI for " << *info->elf->io << "\n";
+    if (info->elf->context.verbose)
+       *info->elf->context.debug << "construct CFI for " << *info->elf->io << "\n";
 
     const auto &cfiFrame = type != FI_DEBUG_FRAME && ehFrameSec ? ehFrameSec : debugFrameSec;
     type = type != FI_DEBUG_FRAME && ehFrameSec ? FI_EH_FRAME : FI_DEBUG_FRAME;
@@ -204,8 +203,8 @@ CFI::CFI(const Info *info, FIType type_)
 
     // No usable eh_frame_hdr found. Read everything now so we can search it.
 
-    if (verbose)
-       *debug << "fall back to full-FDE decoding for " << *dwarf->elf->io << "\n";
+    if (info->elf->context.verbose)
+       *info->elf->context.debug << "fall back to full-FDE decoding for " << *dwarf->elf->io << "\n";
 
     // Walk the entire CIE/FDE sequence, populating the fdes and cies sets as
     // we go. This really only happens for the VDSO on arm.
@@ -461,17 +460,6 @@ CIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
     return frame;
 }
 
-struct FdeCounter {
-   int fdesCreated = 0;
-   FdeCounter() {}
-   ~FdeCounter() {
-      if (verbose > 2)
-         *debug << "total FDEs constructed: " << fdesCreated << "\n";
-   }
-};
-
-static FdeCounter fdeCounter;
-
 FDE::FDE(const CFI &fi, DWARFReader &reader, Elf::Off cieOff_, Elf::Off endOff_)
     : end(endOff_)
     , cieOff(cieOff_)
@@ -489,10 +477,7 @@ FDE::FDE(const CFI &fi, DWARFReader &reader, Elf::Off cieOff_, Elf::Off endOff_)
             augmentation.push_back(reader.getu8());
     }
     instructions = reader.getOffset();
-    fdeCounter.fdesCreated++;
 }
-
-
 
 CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
     : frameInfo(fi)
@@ -545,8 +530,7 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
             case '\0':
                 break;
             default:
-                *debug << "unknown augmentation '" << aug << "' in "
-                    << augmentation << std::endl;
+                *fi->dwarf->elf->context.debug << "unknown augmentation '" << aug << "' in " << augmentation << std::endl;
                 // The augmentations are in order, so we can't make any sense
                 // of the remaining data in the augmentation block
                 earlyExit = true;
@@ -556,8 +540,7 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
             break;
     }
     if (r.getOffset() != endaugdata) {
-        *debug << "warning: " << endaugdata - r.getOffset()
-            << " bytes of augmentation ignored" << std::endl;
+        *fi->dwarf->elf->context.debug << "warning: " << endaugdata - r.getOffset() << " bytes of augmentation ignored" << std::endl;
         r.setOffset(endaugdata);
     }
     instructions = r.getOffset();

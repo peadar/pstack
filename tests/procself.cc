@@ -1,6 +1,5 @@
 #include "libpstack/proc.h"
-#include "libpstack/imagecache.h"
-#include "libpstack/global.h"
+#include "libpstack/context.h"
 #include "libpstack/archreg.h"
 #include <unistd.h>
 #include <cassert>
@@ -14,11 +13,10 @@ int foobar() {
 int
 main()
 {
-    pstack::verbose = 0;
-    PstackOptions options;
-    pstack::ImageCache cache;
+    pstack::Context context;
+    context.verbose = 0;
     getppid();
-    std::shared_ptr<pstack::Procman::Process> p = std::make_shared<pstack::Procman::SelfProcess>(nullptr, options, cache);
+    std::shared_ptr<pstack::Procman::Process> p = std::make_shared<pstack::Procman::SelfProcess>(context);
     p->load();
 
     pstack::Procman::ProcessLocation li(*p, pstack::Elf::Addr(foobar));

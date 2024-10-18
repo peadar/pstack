@@ -1,5 +1,4 @@
 #include "libpstack/lzmareader.h"
-#include "libpstack/global.h"
 
 #include <lzma.h>
 #include <string.h>
@@ -35,8 +34,6 @@ LzmaReader::LzmaReader(Reader::csptr upstream_)
          options.backward_size);
    if (rc != LZMA_OK)
        throw (Exception() << "can't decode index buffer");
-   if (verbose >= 2)
-      *debug << "lzma inflate: " << *this << "\n";
 }
 
 Reader::Off

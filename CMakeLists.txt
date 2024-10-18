@@ -122,12 +122,10 @@ add_library(dwelf ${LIBTYPE}
          dwarf_reader.cc
          dwarf_unit.cc
          dump.cc
-         imagecache.cc
+         context.cc
          elf.cc
          flags.cc
-         global.cc
          reader.cc
-         fs.cc
          ${inflatesrc}
          ${lzmasrc}
          )

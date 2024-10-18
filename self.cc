@@ -15,11 +15,9 @@
 #include <syscall.h> // gettid is still relatively new - use syscall instead.
 
 namespace pstack::Procman {
-SelfProcess::SelfProcess(const Elf::Object::sptr &ex, const PstackOptions &options, ImageCache &imageCache)
-    : Process(
-            ex ? ex : imageCache.getImageForName("/proc/self/exe"),
-            std::make_shared<MemReader>("me", std::numeric_limits<size_t>::max(), nullptr),
-            options, imageCache)
+SelfProcess::SelfProcess(Context &context_, const Elf::Object::sptr &ex)
+    : Process( context_, ex ? ex : context_.getImageForName("/proc/self/exe"),
+          std::make_shared<MemReader>("me", std::numeric_limits<size_t>::max(), nullptr))
     , pid( getpid() )
 {
 }
@@ -27,7 +25,7 @@ SelfProcess::SelfProcess(const Elf::Object::sptr &ex, const PstackOptions &optio
 Reader::csptr
 SelfProcess::getAUXV() const
 {
-    return loadFile("/proc/self/auxv");
+    return context.loadFile("/proc/self/auxv");
 }
 
 void

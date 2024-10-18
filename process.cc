@@ -15,7 +15,6 @@
 #include "libpstack/archreg.h"
 #include "libpstack/dwarf.h"
 #include "libpstack/proc.h"
-#include "libpstack/global.h"
 #include "libpstack/stringify.h"
 #include "libpstack/ioflag.h"
 
@@ -139,16 +138,14 @@ gregset2core(Elf::CoreRegisters &core, const gregset_t greg) {
 #endif
 
 
-Process::Process(Elf::Object::sptr exec, Reader::sptr memory,
-                  const PstackOptions &options, ImageCache &cache)
+Process::Process(pstack::Context &context_, Elf::Object::sptr exec, Reader::sptr memory)
     : entry(0)
     , interpBase(0)
     , vdsoBase(0)
     , agent(nullptr)
     , execImage(std::move(exec))
-    , options(options)
     , sysent(0)
-    , imageCache(cache)
+    , context(context_)
     , io(std::move(memory))
 {
     if (execImage)
@@ -191,13 +188,13 @@ Process::load()
         throw;
     }
 
-    if (!options.nothreaddb) {
+    if (!context.options.nothreaddb) {
         td_err_e the;
         the = td_ta_new(this, &agent);
         if (the != TD_OK) {
             agent = nullptr;
-            if (verbose > 0 && the != TD_NOLIBTHREAD)
-                *debug << "failed to load thread agent: " << the << std::endl;
+            if (context.verbose > 0 && the != TD_NOLIBTHREAD)
+                *context.debug << "failed to load thread agent: " << the << std::endl;
         }
     }
 
@@ -206,7 +203,7 @@ Process::load()
 Dwarf::Info::sptr
 Process::getDwarf(Elf::Object::sptr elf) const
 {
-    return imageCache.getDwarf(elf);
+    return context.getDwarf(elf);
 }
 
 
@@ -226,71 +223,71 @@ Process::processAUXV(const Reader &auxio)
             Elf::Addr hdr = aux.a_un.a_val;
             switch (aux.a_type) {
                 case AT_ENTRY: {
-                    if (verbose > 2)
-                        *debug << "auxv: AT_ENTRY=" << hdr << std::endl;
+                    if (context.verbose > 2)
+                        *context.debug << "auxv: AT_ENTRY=" << hdr << std::endl;
                     // this provides a reference for relocating the executable when
                     // compared to the entrypoint there.
                     entry = hdr;
                     break;
                 }
                 case AT_SYSINFO: {
-                    if (verbose > 2)
-                        *debug << "auxv:AT_SYSINFO=" << hdr << std::endl;
+                    if (context.verbose > 2)
+                        *context.debug << "auxv:AT_SYSINFO=" << hdr << std::endl;
                     sysent = hdr;
                     break;
                 }
                 case AT_SYSINFO_EHDR: {
                     try {
-                        auto elf = std::make_shared<Elf::Object>(imageCache, io->view("(vdso image)", hdr, 65536));
+                        auto elf = std::make_shared<Elf::Object>(context, io->view("(vdso image)", hdr, 65536));
                         vdsoBase = hdr;
                         addElfObject("(vdso image)", elf, hdr);
                         vdsoImage = elf;
-                        if (verbose >= 2) {
-                            *debug << "auxv: VDSO " << *elf->io
+                        if (context.verbose >= 2) {
+                            *context.debug << "auxv: VDSO " << *elf->io
                                 << " loaded at " << std::hex << hdr << std::dec << "\n";
                         }
 
                     }
                     catch (const std::exception &ex) {
-                        if (debug)
-                           *debug << "auxv: warning: failed to load DSO: " << ex.what() << "\n";
+                        if (context.debug)
+                           *context.debug << "auxv: warning: failed to load DSO: " << ex.what() << "\n";
                     }
                     break;
                 }
                 case AT_BASE:
-                    if (verbose > 2)
-                        *debug << "auxv: AT_BASE=" << hdr << std::endl;
+                    if (context.verbose > 2)
+                        *context.debug << "auxv: AT_BASE=" << hdr << std::endl;
                     interpBase = hdr;
                     break;
 #ifdef AT_EXECFN
                 case AT_EXECFN: {
-                    if (verbose > 2)
-                        *debug << "auxv: AT_EXECFN=" << hdr << std::endl;
+                    if (context.verbose > 2)
+                        *context.debug << "auxv: AT_EXECFN=" << hdr << std::endl;
                     try {
                         auto exeName = io->readString(hdr);
-                        if (verbose >= 2)
-                            *debug << "filename from auxv: " << exeName << "\n";
+                        if (context.verbose >= 2)
+                            *context.debug << "filename from auxv: " << exeName << "\n";
                         if (!execImage) {
-                            execImage = imageCache.getImageForName(exeName);
+                            execImage = context.getImageForName(exeName);
                             if (entry == 0)
                                 entry = execImage->getHeader().e_entry;
                         }
                     }
                     catch (const Exception &ex) {
-                        *debug << "failed to read AT_EXECFN: " << ex.what() << std::endl;
+                        *context.debug << "failed to read AT_EXECFN: " << ex.what() << std::endl;
                     }
 
                     break;
                 }
 #endif
                 default:
-                    if (verbose > 2)
-                        *debug << "auxv: " << auxtype2str( aux.a_type) << ": " << hdr << std::endl;
+                    if (context.verbose > 2)
+                        *context.debug << "auxv: " << auxtype2str( aux.a_type) << ": " << hdr << std::endl;
             }
         }
     } catch (const std::exception &ex) {
-        if (verbose)
-            *debug << "exception while reading auxv: " << ex.what() << "\n";
+        if (context.verbose)
+            *context.debug << "exception while reading auxv: " << ex.what() << "\n";
     }
 
 }
@@ -335,7 +332,7 @@ PrintableFrame::PrintableFrame(Process &proc, const StackFrame &frame)
     if (location.elf() == nullptr)
         return;
     Elf::Addr objIp = location.objLocation();
-    if (!proc.options.nodienames) {
+    if (!proc.context.options.nodienames) {
         auto function = location.die();
         if (function) {
             std::ostringstream sos;
@@ -558,7 +555,7 @@ std::ostream &
 operator << (std::ostream &os, const ArgPrint &ap)
 {
     ProcessLocation location = ap.frame.scopeIP(ap.p);
-    if (!location.die() || !ap.p.options.doargs)
+    if (!location.die() || !ap.p.context.options.doargs)
         return os;
     using namespace Dwarf;
     const char *sep = "";
@@ -632,14 +629,14 @@ Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo)
     ProcessLocation location = frame.scopeIP(*this);
     std::vector<std::pair<std::string, int>> source;
 
-    if (!options.nosrc)
+    if (!context.options.nosrc)
         source = location.source();
 
     std::pair<std::string, int> src = source.size()
         ? source[0]
         : std::make_pair( "", std::numeric_limits<Elf::Addr>::max());
 
-    if (!options.nodienames) {
+    if (!context.options.nodienames) {
         // inlining comes from DIEs with DW_TAG_inlined_subroutine - so no
         // point in trying this without DIE names
         for (auto i = pframe.inlined.rbegin(); i != pframe.inlined.rend(); ++i) {
@@ -649,13 +646,13 @@ Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo)
                << "inlined";
            os << " in ";
            buildDIEName(os, *i);
-           if (!options.nosrc) {
+           if (!context.options.nosrc) {
                const auto &lineinfo = i->getUnit()->getLines();
                if (lineinfo) {
                   os << " at " << src.first << ":" << src.second;
                   auto &fileEnt = lineinfo->files[intmax_t(i->attribute(Dwarf::DW_AT_call_file))];
                   auto &dirname = lineinfo->directories[fileEnt.dirindex];
-                  const auto &name = verbose ? dirname + "/" + fileEnt.name : fileEnt.name;
+                  const auto &name = context.verbose ? dirname + "/" + fileEnt.name : fileEnt.name;
                   src = std::make_pair( name, intmax_t(i->attribute(Dwarf::DW_AT_call_line)));
                   os << "\n";
                }
@@ -691,14 +688,14 @@ Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo)
         if (pframe.functionOffset != std::numeric_limits<Elf::Addr>::max())
             os << "+" << pframe.functionOffset;
         os << " in " << stringify(*location.elf()->io);
-        if (verbose)
+        if (context.verbose)
            os << "@0x" << std::hex << frame.rawIP() - location.elfReloc() << std::dec;
         if (src.first != "")
            os << " at " << src.first << ":" << std::dec << src.second;
     } else {
         os << " no information for frame";
     }
-    if (verbose)
+    if (context.verbose)
        os << " via " << frame.mechanism;
     os << "\n";
     return os;
@@ -708,9 +705,9 @@ void
 Process::addElfObject(std::string_view name, const Elf::Object::sptr &obj, Elf::Addr load)
 {
     objects.emplace(std::make_pair(load, MappedObject{ name, obj }));
-    if (verbose >= 2) {
-        IOFlagSave _(*debug);
-        *debug << "object " << name << " loaded at address "
+    if (context.verbose >= 2) {
+        IOFlagSave _(*context.debug);
+        *context.debug << "object " << name << " loaded at address "
            << std::hex << load << std::dec << std::endl;
     }
 }
@@ -735,7 +732,7 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
         if (mapAddr == Elf::Addr(rDebug.r_map)) {
             auto loadAddr = entry - execImage->getHeader().e_entry;
             if (loadAddr != map.l_addr) {
-                *debug << "calculated load address for executable from process entrypoint ("
+                *context.debug << "calculated load address for executable from process entrypoint ("
                 << std::hex << loadAddr << ") does not match link map (" << map.l_addr
                 << "). Trusting link-map\n" << std::dec;
             }
@@ -757,8 +754,8 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
             addElfObject(path, nullptr, Elf::Addr(map.l_addr));
         }
         catch (const std::exception &e) {
-            if (debug)
-               *debug << "warning: can't load text for '" << path << "' at " <<
+            if (context.debug)
+               *context.debug << "warning: can't load text for '" << path << "' at " <<
             (void *)mapAddr << "/" << (void *)map.l_addr << ": " << e.what() << "\n";
             continue;
         }
@@ -809,7 +806,7 @@ Process::findSegment(Elf::Addr addr)
     auto it = objects.lower_bound(addr);
     if (it != objects.begin()) {
        --it;
-       auto obj = it->second.object(imageCache);
+       auto obj = it->second.object(context);
        if (it->first + obj->endVA() >= addr) {
            auto segment = obj->getSegmentForAddress(addr - it->first);
            if (segment)
@@ -826,12 +823,12 @@ Process::resolveSymbolDetail(const char *name, bool includeDebug,
     for (auto &loaded : objects) {
         if (!match(loaded.second.name()))
            continue;
-        auto obj = loaded.second.object(imageCache);
+        auto obj = loaded.second.object(context);
         auto [sym,idx] = obj->findDynamicSymbol(name);
         if (sym.st_shndx != SHN_UNDEF)
            return std::make_tuple(obj, loaded.first, sym);
         if (includeDebug) {
-           auto [sym, idx] = loaded.second.object(imageCache)->findDebugSymbol(name);
+           auto [sym, idx] = loaded.second.object(context)->findDebugSymbol(name);
            if (sym.st_shndx != SHN_UNDEF)
               return std::make_tuple(obj, loaded.first, sym);
         }
@@ -852,7 +849,7 @@ Process::~Process()
 {
     // don't leave the VDSO in the cache - a new copy will be entered for a new
     // process.
-    imageCache.flush(vdsoImage);
+    context.flush(vdsoImage);
     td_ta_delete(agent);
 }
 
@@ -880,7 +877,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
         // Set up the first frame using the machine context registers
         stack.front().setCoreRegs(regs);
 
-        for (int frameCount = 0; frameCount < p.options.maxframes; frameCount++) {
+        for (int frameCount = 0; frameCount < p.context.options.maxframes; frameCount++) {
             auto &prev = stack.back();
 
             try {
@@ -897,8 +894,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
             }
             catch (const std::exception &ex) {
 
-                if (verbose > 2)
-                    *debug << "failed to unwind frame with DWARF: "
+                if (p.context.verbose > 2)
+                    *p.context.debug << "failed to unwind frame with DWARF: "
                            << ex.what() << std::endl;
 
                 // Some machine specific methods of unwinding if DWARF fails.
@@ -1031,29 +1028,28 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
         }
     }
     catch (const std::exception &ex) {
-        if (debug)
-           *debug << "warning: exception unwinding stack: " << ex.what() << std::endl;
+        if (p.context.debug)
+           *p.context.debug << "warning: exception unwinding stack: " << ex.what() << std::endl;
     }
 }
 
 std::shared_ptr<Process>
-Process::load(Elf::Object::sptr exec, std::string id, const PstackOptions &options, ImageCache &imageCache) {
+Process::load(Context &context, Elf::Object::sptr exec, std::string id) {
     pid_t pid;
     std::istringstream(id) >> pid;
     std::shared_ptr<Process> proc;
     if (pid != 0) {
-       if (kill(pid, 0) == 0)
-          proc = std::make_shared<LiveProcess>(exec, pid, options, imageCache);
-       else
+       if (kill(pid, 0) != 0)
           throw Exception() << "process " << pid << ": " << strerror(errno);
+       proc = std::make_shared<LiveProcess>(context, exec, pid);
     } else {
        // don't use imagecache for cores. We don't want to mmap them (they can
        // be enormous, esp. from a leaky process), use loadFile and a caching
        // reader on the underlying file instead.
-       auto core = std::make_shared<Elf::Object>(imageCache, loadFile(id));
+       auto core = std::make_shared<Elf::Object>(context, context.loadFile(id));
        if (core->getHeader().e_type != ET_CORE)
           return nullptr; // image is ELF, but not a core - just return null
-       proc = std::make_shared<CoreProcess>(exec, core, options, imageCache);
+       proc = std::make_shared<CoreProcess>(context, exec, core);
     }
     proc->load();
     return proc;
@@ -1115,7 +1111,7 @@ Process::getStacks() {
      * backtrace and don't need to read anything more from the process.
      * Everything else is just parsing debug data, so we can resume now.
      */
-    if (!options.doargs)
+    if (!context.options.doargs)
         processSuspender.clear();
     return threadStacks;
 }

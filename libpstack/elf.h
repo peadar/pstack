@@ -42,7 +42,7 @@
 #include <memory>
 #include <optional>
 #include <utility>
-#include "libpstack/imagecache.h"
+#include "libpstack/context.h"
 #include "libpstack/json.h"
 #include "libpstack/reader.h"
 
@@ -257,7 +257,7 @@ public:
 
     // construct/destruct. Note you will generally need to use make_shared to
     // create an Object
-    Object(ImageCache &, Reader::csptr, bool isDebug=false);
+    Object(Context &, Reader::csptr, bool isDebug=false);
     ~Object() noexcept = default;
 
     // Accessing sections.
@@ -300,12 +300,12 @@ public:
     const SymbolVersioning *symbolVersions() const;
     const Section *gnu_version;
     VersionIdx versionIdxForSymbol( size_t symbolIdx ) const;
+    Context &context;
 private:
     mutable std::unique_ptr<SymbolVersioning> symbolVersions_;
     // Elf header, section headers, program headers.
     mutable Object::sptr debugData;
     Ehdr elfHeader;
-    ImageCache &imageCache;
     SectionHeaders sectionHeaders;
     std::map<std::string, size_t> namedSection;
     std::map<Word, ProgramHeaders> programHeaders;

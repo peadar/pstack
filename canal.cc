@@ -15,13 +15,11 @@
 #include <map>
 #include <err.h>
 
-#include "libpstack/imagecache.h"
+#include "libpstack/context.h"
 #include "libpstack/proc.h"
 #include "libpstack/elf.h"
 #include "libpstack/dwarf.h"
 #include "libpstack/stringify.h"
-#include "libpstack/global.h"
-#include "libpstack/fs.h"
 #include "libpstack/ioflag.h"
 #include "libpstack/flags.h"
 #if defined( WITH_PYTHON3 )
@@ -258,7 +256,7 @@ template <typename Matcher> void search(int wordsize,
 int
 mainExcept(int argc, char *argv[])
 {
-    ImageCache imageCache;
+    Context context;
     std::vector<std::string> patterns;
     Elf::Object::sptr exec;
     int wordsize = sizeof (Elf::Off) * 8;
@@ -281,7 +279,7 @@ mainExcept(int argc, char *argv[])
 #endif
     .add("show-syms", 'V', "show symbols matching search pattern", Flags::setf(showsyms))
     .add("show-addrs", 's', "show adddress of references found in core", Flags::setf(showaddrs))
-    .add("verbose", 'v', "increase verbosity (may be repeated)", [&]() { ++verbose; })
+    .add("verbose", 'v', "increase verbosity (may be repeated)", [&]() { ++context.verbose; })
     .add("help", 'h', "show this message", [&]() { std::cout << Usage(flags); exit(0); })
     .add("offset",
           'o',
@@ -298,7 +296,7 @@ mainExcept(int argc, char *argv[])
              size_t colon = both.find(':');
              if (colon == std::string::npos)
                 throw "must specify <to>=<from> for '-r'";
-             pathReplacements.push_back(std::make_pair(both.substr(0, colon), both.substr(colon + 1)));
+             context.pathReplacements.push_back(std::make_pair(both.substr(0, colon), both.substr(colon + 1)));
           })
     .add("start-location", 'f', "addresss",
           "instead of searching for symbols, find references to a specified address. Decimal, or prefix with 0x for hex",
@@ -314,7 +312,7 @@ mainExcept(int argc, char *argv[])
     .parse(argc, argv);
 
     if (argc - optind >= 2) {
-        exec = imageCache.getImageForName(argv[optind]);
+        exec = context.getImageForName(argv[optind]);
         optind++;
     }
 
@@ -324,7 +322,7 @@ mainExcept(int argc, char *argv[])
         return 0;
     }
 
-    auto process = Procman::Process::load(exec, argv[optind], PstackOptions(), imageCache);
+    auto process = Procman::Process::load(context, exec, argv[optind]);
 
 #ifdef WITH_PYTHON
     PyInterpInfo info;
@@ -347,24 +345,24 @@ mainExcept(int argc, char *argv[])
 
     for (auto &loaded : process->objects) {
         size_t count = 0;
-        auto findSymbols = [&count, showsyms, &store, &patterns, &loaded]( auto table ) {
+        auto findSymbols = [&]( auto table ) {
            for (const auto &sym : *table) {
                for (auto &pattern : patterns) {
                    auto name = table->name(sym);
                    if (globmatch(pattern, name)) {
                        store.add(ListedSymbol(sym, loaded.first, name, loaded.second.name()));
-                       if (verbose > 1 || showsyms)
+                       if (context.verbose > 1 || showsyms)
                           std::cout << name << "\n";
                        count++;
                    }
                }
            }
         };
-        auto obj = loaded.second.object(process->imageCache);
+        auto obj = loaded.second.object(process->context);
         findSymbols( obj->dynamicSymbols() );
         findSymbols( obj->debugSymbols() );
-        if (verbose)
-            *debug << "found " << count << " symbols in " << *obj->io << endl;
+        if (context.verbose)
+            *context.debug << "found " << count << " symbols in " << *obj->io << endl;
     }
     if (showsyms)
        exit(0);
@@ -372,13 +370,13 @@ mainExcept(int argc, char *argv[])
     // Now run through the corefile, searching for virtual objects.
     auto as = process->addressSpace();
     for (auto &segment : as ) {
-        if (verbose) {
-            IOFlagSave _(*debug);
-            *debug << "scan " << hex << segment.start <<  " to " << segment.start + segment.fileEnd;
+        if (context.verbose) {
+            IOFlagSave _(*context.debug);
+            *context.debug << "scan " << hex << segment.start <<  " to " << segment.start + segment.fileEnd;
         }
         if (segment.vmflags.find( pstack::Procman::AddressRange::VmFlag::memory_mapped_io ) != segment.vmflags.end() ) {
-           if (verbose) {
-              *debug << "skipping IO mapping\n";
+           if (context.verbose) {
+              *context.debug << "skipping IO mapping\n";
            }
            continue;
         }

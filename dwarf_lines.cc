@@ -1,6 +1,5 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/dwarf_reader.h"
-#include "libpstack/global.h"
 namespace pstack::Dwarf {
 
 namespace {
@@ -87,13 +86,13 @@ LineInfo::build(DWARFReader &r, Unit &unit)
                     }
                     default:{
                         r.readForm(*unit.dwarf, unit, ent.second);
-                        *debug << "unexpected LNCT " << ent.first << " in directory table" << std::endl;
+                        *unit.dwarf->elf->context.debug << "unexpected LNCT " << ent.first << " in directory table" << std::endl;
                         break;
                     }
                 }
             }
             if (path == "") {
-                *debug << "no path in directory table entry" << std::endl;
+                *unit.dwarf->elf->context.debug << "no path in directory table entry" << std::endl;
             } else {
                 directories.emplace_back(path);
             }
@@ -141,8 +140,8 @@ LineInfo::build(DWARFReader &r, Unit &unit)
 
     auto diff = expectedEnd - r.getOffset();
     if (diff != 0) {
-        if (verbose > 0)
-            *debug << "warning: left " << diff
+        if (unit.dwarf->elf->context.verbose > 0)
+            *unit.dwarf->elf->context.debug << "warning: left " << diff
                 << " bytes in line info table of " << *r.io << std::endl;
         r.skip(diff);
     }

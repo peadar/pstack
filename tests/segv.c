@@ -2,7 +2,7 @@
 #include <signal.h>
 #include <unistd.h>
 
-extern void my_abort();
+void my_abort();
 
 void
 sigsegv(int segv)

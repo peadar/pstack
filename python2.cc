@@ -4,7 +4,6 @@
 #include <python2.7/methodobject.h>
 #include "libpstack/python.h"
 #include "libpstack/stringify.h"
-#include "libpstack/global.h"
 
 namespace pstack {
 
@@ -55,7 +54,7 @@ class DictPrinter final : public PythonTypePrinter<2> {
             return 0;
         }
         
-        if (pc->depth > pc->proc.options.maxdepth) {
+        if (pc->depth > pc->proc.context.options.maxdepth) {
             pc->os << "{ ... }";
             return 0;
         }
@@ -136,7 +135,7 @@ template <>
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
 getInterpHead<2>(Procman::Process &proc) {
     for (auto &o : proc.objects) {
-        auto image = o.second.object(proc.imageCache);
+        auto image = o.second.object(proc.context);
         std::string module = stringify(*image->io);
         if (module.find("python") == std::string::npos)
            continue;
@@ -147,8 +146,8 @@ getInterpHead<2>(Procman::Process &proc) {
             auto libpython = image;
             auto libpythonAddr = o.first;
             auto interpHead = libpythonAddr + sym.st_value;
-            if (verbose)
-                *debug << "python2 library is " << *libpython->io << std::endl;
+            if (proc.context.verbose)
+                *proc.context.debug << "python2 library is " << *libpython->io << std::endl;
             return std::make_tuple(libpython, libpythonAddr, interpHead);
         }
     }

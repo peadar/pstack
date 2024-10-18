@@ -14,3 +14,5 @@ ID
 ?64
 build
 .cache
+.clang-tidy
+py311

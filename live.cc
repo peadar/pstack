@@ -1,8 +1,6 @@
 #include "libpstack/proc.h"
 #include "libpstack/ps_callback.h"
 #include "libpstack/stringify.h"
-#include "libpstack/global.h"
-#include "libpstack/fs.h"
 
 #include <sys/ptrace.h>
 #include <sys/types.h>
@@ -19,22 +17,16 @@
 #include <fstream>
 
 namespace pstack::Procman {
-std::string
-procname(pid_t pid, const std::string &base)
-{
-    return linkResolve(stringify("/proc/", pid, "/", base));
-}
 
-LiveReader::LiveReader(pid_t pid, const std::string &base) : FileReader(procname(pid, base)) {
+LiveReader::LiveReader(Context &c, pid_t pid, const std::string &base) : FileReader(c, c.procname(pid, base)) {
    fileSize = std::numeric_limits<Reader::Off>::max();
 }
 
-LiveProcess::LiveProcess(Elf::Object::sptr &ex, pid_t pid_,
-            const PstackOptions &options, ImageCache &imageCache, bool alreadyStopped)
+LiveProcess::LiveProcess(Context &context, Elf::Object::sptr &ex, pid_t pid_, bool alreadyStopped)
     : Process(
-            ex ? ex : imageCache.getImageForName(procname(pid_, "exe")),
-            std::make_shared<CacheReader>(std::make_shared<LiveReader>(pid_, "mem")),
-            options, imageCache)
+            context,
+            ex ? ex : context.getImageForName(context.procname(pid_, "exe")),
+            std::make_shared<CacheReader>(std::make_shared<LiveReader>(context, pid_, "mem")))
     , pid(pid_)
 {
     (void)ps_getpid(this);
@@ -43,7 +35,7 @@ LiveProcess::LiveProcess(Elf::Object::sptr &ex, pid_t pid_,
 }
 
 Reader::csptr LiveProcess::getAUXV() const {
-    return std::make_shared<LiveReader>(pid, "auxv");
+    return std::make_shared<LiveReader>(context, pid, "auxv");
 }
 
 size_t
@@ -63,20 +55,20 @@ LiveProcess::resume(lwpid_t lwpid) {
    if (--tcb.stopCount != 0)
       return;
    if (tcb.ptraceErr != 0) {
-      if (verbose > 0)
-         *debug << "not attempting to resume lwp " << lwpid << ", as it failed to stop\n";
+      if (context.verbose > 0)
+         *context.debug << "not attempting to resume lwp " << lwpid << ", as it failed to stop\n";
       return;
    }
-   if (ptrace(PT_DETACH, lwpid, caddr_t(1), 0) != 0 && debug != nullptr)
-      *debug << "failed to detach from process " << lwpid << ": " << strerror(errno) << "\n";
+   if (ptrace(PT_DETACH, lwpid, caddr_t(1), 0) != 0 && context.debug != nullptr)
+      *context.debug << "failed to detach from process " << lwpid << ": " << strerror(errno) << "\n";
    dynamic_cast<CacheReader&>(*io).flush();
-   if (verbose >= 1) {
+   if (context.verbose >= 1) {
       timeval tv;
       gettimeofday(&tv, nullptr);
       intmax_t usecs = (tv.tv_sec - tcb.stoppedAt.tv_sec) * 1000000;
       usecs += tv.tv_usec;
       usecs -= tcb.stoppedAt.tv_usec;
-      *debug << "resumed LWP " << lwpid << ": was stopped for " << std::dec <<
+      *context.debug << "resumed LWP " << lwpid << ": was stopped for " << std::dec <<
          usecs << " microseconds" << std::endl;
    }
 }
@@ -126,7 +118,7 @@ LiveProcess::stopProcess()
     size_t lastStopCount;
     do {
         lastStopCount = suspended.size();
-        std::string dirName = procname(pid, "task");
+        std::string dirName = context.procname(pid, "task");
         DIR *d = opendir(dirName.c_str());
         if (d != nullptr) {
             for (dirent *de; (de = readdir(d)) != nullptr; ) {
@@ -141,34 +133,34 @@ LiveProcess::stopProcess()
         }
         closedir(d);
         // if we found any threads, log it as debug. If we went around more than once, always log.
-        if (lastStopCount != suspended.size() && (verbose >= 2 || lastStopCount != 1))
-            *debug << "found " << suspended.size() - lastStopCount << " new LWPs after first " << lastStopCount << "\n";
+        if (lastStopCount != suspended.size() && (context.verbose >= 2 || lastStopCount != 1))
+            *context.debug << "found " << suspended.size() - lastStopCount << " new LWPs after first " << lastStopCount << "\n";
     } while (lastStopCount != suspended.size());
 
     /*
      * Attempt to enumerate the threads and suspend with pthread_db. This will
      * probably just fail, but all the LWPs are suspended now, anyway.
      */
-    listThreads([] (const td_thrhandle_t *thr) {
+    listThreads([this] (const td_thrhandle_t *thr) {
         td_thrinfo_t info;
         td_thr_get_info(thr, &info);
         int suspendError = td_thr_dbsuspend(thr);
         if (suspendError != 0 && suspendError != TD_NOCAPAB)
-            *debug << "can't suspend thread "  << thr << ": will suspend it's LWP " << info.ti_lid << "\n";
+            *context.debug << "can't suspend thread "  << thr << ": will suspend it's LWP " << info.ti_lid << "\n";
         });
 
-    if (verbose >= 2)
-        *debug << "stopped process " << pid << "\n";
+    if (context.verbose >= 2)
+        *context.debug << "stopped process " << pid << "\n";
 }
 
 void
 LiveProcess::resumeProcess()
 {
     // this doesn't work on Linux nptl, but it's ok, we'll resume the LWP below.
-    listThreads([] (const td_thrhandle_t *thr) {
+    listThreads([this] (const td_thrhandle_t *thr) {
         int rc = td_thr_dbresume(thr);
         if (rc != 0 && rc != TD_NOCAPAB)
-            *debug << "can't resume thread "  << thr << " (will resume it's LWP)\n";
+            *context.debug << "can't resume thread "  << thr << " (will resume it's LWP)\n";
     });
 
     for (auto &lwp : stoppedLWPs)
@@ -194,7 +186,7 @@ LiveProcess::stop(lwpid_t tid) {
    gettimeofday(&tcb.stoppedAt, nullptr);
    if (ptrace(PT_ATTACH, tid, 0, 0) != 0) {
       tcb.ptraceErr = errno;
-      *debug << "failed to stop LWP " << tid << ": ptrace failed: " << strerror(errno) << "\n";
+      *context.debug << "failed to stop LWP " << tid << ": ptrace failed: " << strerror(errno) << "\n";
       return;
    }
    tcb.ptraceErr = 0;
@@ -202,14 +194,14 @@ LiveProcess::stop(lwpid_t tid) {
    int status = 0;
    pid_t waitedpid = waitpid(tid, &status, tid == this->pid ? 0 : __WCLONE);
    if (waitedpid == -1)
-      *debug << "failed to stop LWP " << tid << ": wait failed: " << strerror(errno) << "\n";
-   else if (verbose >= 1)
-      *debug << "suspend LWP " << tid << std::endl;
+      *context.debug << "failed to stop LWP " << tid << ": wait failed: " << strerror(errno) << "\n";
+   else if (context.verbose >= 1)
+      *context.debug << "suspend LWP " << tid << std::endl;
 }
 
 // Parse [s]maps for this pid. We use "smaps" just for vmflags for now.
 std::vector<AddressRange>
-LiveProcess::addressSpace() const { return procAddressSpace(procname(pid, "smaps")); }
+LiveProcess::addressSpace() const { return procAddressSpace(context.procname(pid, "smaps")); }
 
 template < typename Separator >
 static std::string_view nextTok( std::string_view &total, Separator sep ) {

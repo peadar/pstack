@@ -1,7 +1,6 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/elf.h"
 #include "libpstack/proc.h"
-#include "libpstack/global.h"
 #include "libpstack/dwarf_reader.h"
 #include <stack>
 #include <unistd.h>
@@ -405,30 +404,30 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                 break; // XXX: the returned value is not a location, but the underlying value itself.
             case DW_OP_GNU_parameter_ref:
                 {
-                  if (debug)
-                     *debug << "can't handle DW_OP_GNU_parameter_ref: ";
+                  if (proc.context.debug)
+                     *proc.context.debug << "can't handle DW_OP_GNU_parameter_ref: ";
                   auto loc = frame->scopeIP(proc);
                   auto unit = loc.die().getUnit();
                   auto off = r.getuint(4);
                   auto die = unit->offsetToDIE(DIE(), off + unit->offset);
-                  if (debug)
-                     *debug << json(die) << "\n";
+                  if (proc.context.debug)
+                     *proc.context.debug << json(die) << "\n";
                   auto attr = die.attribute(DW_AT_type);
                   if (attr) {
                      auto typeDie = DIE(attr);
-                     if (debug)
-                        *debug << json(typeDie) << "\n";
+                     if (proc.context.debug)
+                        *proc.context.debug << json(typeDie) << "\n";
                   }
-                  if (debug)
-                     *debug << "\n";
+                  if (proc.context.debug)
+                     *proc.context.debug << "\n";
                   return -1;
                 }
                 // FALLTHROUGH
 
             default:
                 abort();
-                if (debug)
-                   *debug << "error evaluating DWARF OP " << op << " (" << int(op) << ")\n";
+                if (proc.context.debug)
+                   *proc.context.debug << "error evaluating DWARF OP " << op << " (" << int(op) << ")\n";
                 return -1;
         }
     }
@@ -545,8 +544,8 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
 
     // If the return address isn't defined, then we can't unwind.
     if (rarInfo == dcf.registers.end() || rarInfo->second.type == UNDEF || cfa == 0) {
-        if (verbose > 1) {
-           *debug << "DWARF unwinding stopped at "
+        if (p.context.verbose > 1) {
+           *p.context.debug << "DWARF unwinding stopped at "
               << std::hex << location.location() << std::dec
               << ": " <<
               (rarInfo == dcf.registers.end() ? "no RAR register found"

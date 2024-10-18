@@ -1,5 +1,4 @@
 #include "libpstack/elf.h"
-#include "libpstack/global.h"
 #include "libpstack/dwarf.h"
 #include "libpstack/dwarf_reader.h"
 
@@ -176,7 +175,7 @@ Unit::sourceFromAddr(Elf::Addr addr, std::vector<std::pair<std::string, int>> &i
             auto next = i+1;
             if (i->addr <= addr && next->addr > addr) {
                 const std::string &dirname = lines->directories[i->file->dirindex];
-                info.emplace_back(verbose != 0 ? dirname + "/" + i->file->name : i->file->name, i->line);
+                info.emplace_back(dwarf->elf->context.verbose != 0 ? dirname + "/" + i->file->name : i->file->name, i->line);
                 return true;
             }
         }
