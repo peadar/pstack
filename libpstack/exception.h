@@ -7,16 +7,23 @@ class Exception : public std::exception {
     mutable std::ostringstream str;
     mutable std::string intermediate;
 public:
-    Exception() throw() {
-    }
+    Exception() noexcept = default;
+    Exception(const Exception &rhs) noexcept : str{ rhs.str.str() } {}
+    Exception(Exception &&rhs) noexcept : str{ std::move(rhs.str ) } {}
 
-    Exception(const Exception &rhs) throw() {
-        str << rhs.str.str();
-    }
+    Exception &operator = (const Exception &rhs) noexcept {
+       str.clear();
+       str << rhs.str.str();
+       return *this;
+    };
 
-    ~Exception() throw () = default;
+    Exception &operator = (Exception &&rhs) noexcept {
+       str = std::move(rhs.str);
+       return *this;
+    };
+    ~Exception() noexcept = default;
 
-    const char *what() const throw() {
+    const char *what() const noexcept {
         intermediate = str.str();
         return intermediate.c_str();
     }

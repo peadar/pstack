@@ -254,7 +254,11 @@ Process::procAddressSpace(const std::string &fn) {
 
     std::string buf;
     buf.reserve( 1024 );
-    for (std::ifstream input{fn}; input && input.peek() != EOF; ) {
+    std::ifstream input{fn};
+    if ( !input.is_open() || !input.good()){
+         throw ( Exception() << "unable to open smaps file: " << strerror(errno) );
+    }
+    while (input && input.peek() != EOF) {
        // We could just use operator>> to stream each field of the line to the
        // relevant fields, but it is ridiculously slow, I Think mostly because
        // of the use of std::hex invoking std::use_facet, which uses dynamic

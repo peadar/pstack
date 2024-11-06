@@ -731,4 +731,6 @@ const std::unique_ptr<Ranges> &DIE::getRanges() const {
     return unit->getRanges(*this, lowpc.valid() ? uintmax_t(lowpc) : 0);
 }
 
+const DIE DIE::null {};
+
 }

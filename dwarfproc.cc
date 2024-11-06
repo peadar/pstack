@@ -108,7 +108,7 @@ ExpressionStack::eval(Process &proc, const Dwarf::DIE::Attribute &attr,
     Dwarf::Unit::sptr unit = attr.die.getUnit();
     const Dwarf::Info *dwarf = unit->dwarf;
     auto loc = frame->scopeIP(proc);
-    auto ip = loc.address();
+    auto ip = loc.location();
 
     const auto &unitEntry = unit->root();
     auto unitLow = unitEntry.attribute(Dwarf::DW_AT_low_pc);
@@ -451,13 +451,13 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     const Dwarf::CIE *cie = location.cie();
 
     if (fde == nullptr || cie == nullptr || cfi == nullptr)
-        throw (Exception() << "no FDE/CIE/CFI for instruction address " << std::hex << location.address());
+        throw (Exception() << "no FDE/CIE/CFI for instruction address " << std::hex << location.location());
 
     if (cie->isSignalHandler)
        isSignalTrampoline = true;
 
     // relocate from process address to object address
-    Elf::Off objaddr = location.address() - location.elfReloc();
+    Elf::Off objaddr = location.location() - location.elfReloc();
 
     using namespace Dwarf;
 
@@ -547,7 +547,7 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     if (rarInfo == dcf.registers.end() || rarInfo->second.type == UNDEF || cfa == 0) {
         if (verbose > 1) {
            *debug << "DWARF unwinding stopped at "
-              << std::hex << location.address() << std::dec
+              << std::hex << location.location() << std::dec
               << ": " <<
               (rarInfo == dcf.registers.end() ? "no RAR register found"
                : rarInfo->second.type == UNDEF ? "RAR register undefined"
@@ -568,7 +568,7 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
 const Elf::MaybeNamedSymbol &
 CodeLocation::symbol() const {
     if (!symbol_ && dwarf_) {
-        symbol_ = dwarf_->elf->findSymbolByAddress(location_, STT_NOTYPE);
+        symbol_ = dwarf_->elf->findSymbolByAddress(location(), STT_NOTYPE);
     }
     return symbol_;
 }
@@ -590,13 +590,6 @@ CodeLocation::fde() const {
     return fde_;
 }
 
-const Dwarf::FDE *
-ProcessLocation::fde() const {
-    if (!codeloc)
-        return nullptr;
-    return codeloc->fde();
-}
-
 const Dwarf::DIE &
 CodeLocation::die() const {
     if (!die_ && dwarf_) {
@@ -608,14 +601,15 @@ CodeLocation::die() const {
     return die_;
 }
 
-const Dwarf::DIE &
-ProcessLocation::die() const {
-    static Dwarf::DIE empty;
-    return codeloc ? codeloc->die() : empty;
-}
-
 ProcessLocation::ProcessLocation(Process &proc, Elf::Addr address_) {
-    set(proc, address_);
+    auto [ elfReloc, elf, phdr ] = proc.findSegment(address_);
+    auto dwarf = elf ? proc.getDwarf(elf) : nullptr;
+    if (dwarf) {
+        codeloc = std::make_shared<CodeLocation>(dwarf, phdr, address_ - elfReloc);
+    } else {
+        codeloc = nullptr;
+    }
+    location_ = address_;
 }
 
 const Dwarf::CIE *
@@ -646,19 +640,6 @@ CodeLocation::CodeLocation(Dwarf::Info::sptr info, const Elf::Phdr *phdr, Elf::A
     : location_(off)
     , dwarf_(std::move(info)), phdr_(phdr), cie_(nullptr), fde_(nullptr), cfi_(nullptr)
 {
-}
-
-void
-ProcessLocation::set(Process &proc, Elf::Addr address)
-{
-    auto [ elfReloc, elf, phdr ] = proc.findSegment(address);
-    auto dwarf = elf ? proc.getDwarf(elf) : nullptr;
-    if (dwarf) {
-        codeloc = std::make_shared<CodeLocation>(dwarf, phdr, address - elfReloc);
-    } else {
-        this->codeloc = nullptr;
-    }
-    this->location = address;
 }
 
 Dwarf::CFI *

@@ -200,6 +200,7 @@ class DIE {
 
 public:
     class Attribute;
+    const static DIE null;
 
     // A collection of attributes for a DIE, as returned by DIE::attributes
     class Attributes {

@@ -925,7 +925,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 
                 if (stack.size() == 1 || stack[stack.size() - 2].isSignalTrampoline) {
                     ProcessLocation badip = { p, IP(prev.regs) };
-                    if (!badip.inObject() || (badip.codeloc->phdr_->p_flags & PF_X) == 0) {
+                    if (!badip.inObject() || (badip.codeloc->phdr().p_flags & PF_X) == 0) {
                         auto newRegs = prev.regs; // start with a copy of prev frames regs.
 #if defined(__amd64__) || defined(__i386__)
                         // get stack pointer in the current frame, and read content of TOS

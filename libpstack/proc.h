@@ -83,8 +83,8 @@ enum class UnwindMechanism {
 // Information for a specific location in memory
 // XXX: much of this should be per-ELF file, and cached with the elf object.
 
-struct CodeLocation {
-    Elf::Addr location_;
+class CodeLocation {
+    Elf::Addr location_; // object-relative location.
     Dwarf::Info::sptr dwarf_;
     const Elf::Phdr *phdr_;
     mutable const Dwarf::CIE *cie_;
@@ -94,9 +94,12 @@ struct CodeLocation {
     mutable Dwarf::DIE die_;
     mutable Elf::MaybeNamedSymbol symbol_;
 
+public:
+    const Elf::Phdr &phdr() const { return *phdr_; }
+    Elf::Addr location() const { return location_; }
     std::vector<std::pair<std::string, int>> source() const;
     const Elf::MaybeNamedSymbol &symbol() const;
-
+    Dwarf::Info::sptr dwarf() { return dwarf_; }
     operator bool() const;
     const Dwarf::DIE &die() const;
     const Dwarf::CIE *cie() const;
@@ -107,38 +110,33 @@ struct CodeLocation {
 };
 
 // This is a CodeLocation, but relocated for a process address.
-struct ProcessLocation {
-    Elf::Addr location;
+class ProcessLocation {
+    Elf::Addr location_; // process-relative location.
 
+public:
     // XXX: can cache these in Dwarf::Info
     std::shared_ptr<CodeLocation> codeloc;
-
-    void set(Process &proc, Elf::Addr address);
     ProcessLocation(Process &proc, Elf::Addr address_);
 
     // returns true if the location has been located in an ELF object.
-    bool inObject() const  {
-        return codeloc != nullptr;
-    }
-    // these are proxies or the CodeLocation, adjusted by the elfReloc value.
-    const Dwarf::DIE &die() const;
-    const Dwarf::CIE *cie() const;
-    const Dwarf::FDE *fde() const;
-    const Dwarf::CFI *cfi() const;
-    Elf::MaybeNamedSymbol symbol() const;
-    std::vector<std::pair<std::string, int>> source() const;
-    Elf::Object::sptr elf() const { return codeloc ? codeloc->dwarf_->elf : nullptr; }
+    bool inObject() const  { return codeloc != nullptr; }
 
+    // these are proxies or the CodeLocation, adjusted by the elfReloc value.
+    const Dwarf::DIE &die() const { return codeloc ? codeloc->die() : Dwarf::DIE::null; }
+    const Dwarf::FDE *fde() const { return codeloc ? codeloc->fde() : nullptr; }
+    const Dwarf::CIE *cie() const;
+    const Dwarf::CFI *cfi() const;
     // Returns the load address of the ELF object that contains this address.
     // Or zero if there is not ELF object found for this address.
-    Elf::Addr elfReloc() const {
-        if (codeloc == nullptr)
-            return 0;
-        return location - codeloc->location_;
-    }
-    Elf::Addr objLocation() const { return codeloc->location_; }
-    Elf::Addr address() { return location; }
-    Dwarf::Info::sptr dwarf() const { return codeloc ? codeloc->dwarf_ : nullptr; }
+    Elf::Addr elfReloc() const { return codeloc == nullptr ? 0 : location_ - codeloc->location(); }
+    Elf::Object::sptr elf() const { return codeloc ? codeloc->dwarf()->elf : nullptr; }
+
+    Elf::MaybeNamedSymbol symbol() const;
+    std::vector<std::pair<std::string, int>> source() const;
+
+    Elf::Addr objLocation() const { return codeloc->location(); }
+    Elf::Addr location() const { return location_; }
+    Dwarf::Info::sptr dwarf() const { return codeloc ? codeloc->dwarf() : nullptr; }
 };
 
 class StackFrame {
