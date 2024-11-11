@@ -212,7 +212,7 @@ Process::getDwarf(Elf::Object::sptr elf) const
 const char *
 auxtype2str(int auxtype) {
 #define AUX_TYPE(t, v) if (auxtype == t) return #t;
-#include "libpstack/elf/aux.h"
+#include "libpstack/elf/auxv.h"
    return "unknown type";
 #undef AUX_TYPE
 }
