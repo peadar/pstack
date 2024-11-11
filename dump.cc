@@ -681,7 +681,7 @@ operator <<(std::ostream &os, const JSON<Elf::auxv_t> &a)
 
     switch (a.object.a_type) {
 #define AUX_TYPE(name, value) case value: writer.field("a_type", #name); break;
-#include "libpstack/elf/aux.h"
+#include "libpstack/elf/auxv.h"
     default: writer.field("a_type", a.object.a_type); break;
 #undef AUX_TYPE
     }
