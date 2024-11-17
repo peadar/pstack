@@ -527,7 +527,7 @@ struct CIE {
     uint8_t addressSize;
     uint8_t segmentSize;
     unsigned char lsdaEncoding;
-    bool isSignalHandler;
+    bool isSignalTrampoline;
     unsigned codeAlign;
     int dataAlign;
     int rar;

@@ -533,7 +533,7 @@ Object::findDebugSymbol(const string &name)
 Object *
 Object::getDebug() const
 {
-    if (debugLoaded || context.noExtDebug)
+    if ( debugLoaded || context.options.noExtDebug )
         return debugObject.get();
     debugLoaded = true;
 

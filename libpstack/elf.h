@@ -353,7 +353,7 @@ typedef struct pt_regs CoreRegisters;
 typedef struct user_regs_struct CoreRegisters;
 #endif
 
-inline Addr getReg(const CoreRegisters &regs, int reg) {
+inline Addr getReg(const CoreRegisters &regs, int reg) noexcept {
 #define REGMAP(regno, field) case regno: return regs.field;
     switch (reg) {
 #include "libpstack/archreg.h"
@@ -362,7 +362,7 @@ inline Addr getReg(const CoreRegisters &regs, int reg) {
     return 0;
 };
 
-inline void setReg(CoreRegisters &regs, int reg, Addr val) {
+inline void setReg(CoreRegisters &regs, int reg, Addr val) noexcept {
 #define REGMAP(regno, field) case regno: regs.field = val; break;
     switch (reg) {
 #include "libpstack/archreg.h"

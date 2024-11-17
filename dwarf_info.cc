@@ -262,7 +262,7 @@ Info::sptr
 Info::getAltDwarf() const
 {
     if (!altImageLoaded) {
-        altDwarf = elf->context.getDwarf(getAltImageName());
+        altDwarf = elf->context.getDWARF(getAltImageName());
         altImageLoaded = true;
     }
     if (altDwarf == nullptr)

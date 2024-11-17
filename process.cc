@@ -94,6 +94,88 @@ operator << (std::ostream &os, const JSON<td_thr_type_e, ctx> &jt)
 
 namespace pstack::Procman {
 
+StackFrame::StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs_) noexcept
+    : regs(regs_)
+    , cfa(0)
+    , mechanism(mechanism)
+    , isSignalTrampoline(false)
+{
+}
+
+std::optional<Elf::CoreRegisters>
+StackFrame::unwind(Process &p) {
+
+   Unwind *(*ufs[])(StackFrame &frame, Process &p) = {
+   };
+
+   for (auto uf : ufs) {
+      auto unwind = uf(*this, p);
+      if (!unwind->canUnwind(p)) {
+         continue;
+      }
+      isSignalTrampoline = unwind->isSignalTrampoline(p);
+      cfa = unwind->cfa(p);
+      return unwind->unwind(p);
+   }
+   return std::nullopt;
+}
+
+ProcessLocation
+StackFrame::scopeIP(Process &proc) const noexcept
+{
+    // For a return address on the stack, it normally represents the next
+    // instruction after a call. For functions that don't return, this might
+    // land outside the caller function - so we subtract one, putting us in the
+    // middle of the call instruction. This will also improve source line
+    // details, as the actual return address is likely on the line of code
+    // *after* the call rather than at it.
+    //
+    // There are two exceptions: first, the instruction pointer we grab from
+    // the process's register state - this is the currently executing
+    // instruction, so accurately reflects the position in the top stack frame.
+    //
+    // The other is for signal trampolines - In this case, the return address
+    // has been synthesized to be the entrypoint of a function (eg,
+    // __restore_rt) to handle return from the signal handler, and will be the
+    // first instruction in the function - there's no previous call instruction
+    // to point at, so we use it directly.
+    auto raw = rawIP();
+    if (raw == 0)
+       return { proc, raw };
+    if (mechanism == UnwindMechanism::MACHINEREGS)
+       return { proc, raw };
+    if (isSignalTrampoline)
+       return { proc, raw };
+    ProcessLocation location(proc, raw);
+
+    const auto *lcie = location.cie();
+    if (lcie != nullptr && lcie->isSignalTrampoline)
+       return location;
+    return {proc, raw - 1};
+}
+
+void
+StackFrame::setCoreRegs(const Elf::CoreRegisters &sys)
+{
+#define REGMAP(number, field) Elf::setReg(regs, number, sys.field);
+#include "libpstack/archreg.h"
+#undef REGMAP
+}
+
+void
+StackFrame::getCoreRegs(Elf::CoreRegisters &core) const
+{
+#define REGMAP(number, field) core.field = Elf::getReg(regs, number);
+#include "libpstack/archreg.h"
+#undef REGMAP
+}
+
+Elf::Addr
+StackFrame::rawIP() const noexcept
+{
+    return Elf::getReg(regs, IPREG);
+}
+
 /*
  * convert a gregset_t to an Elf::CoreRegs
  */
@@ -200,13 +282,6 @@ Process::load()
 
 }
 
-Dwarf::Info::sptr
-Process::getDwarf(Elf::Object::sptr elf) const
-{
-    return context.getDwarf(elf);
-}
-
-
 const char *
 auxtype2str(int auxtype) {
 #define AUX_TYPE(t, v) if (auxtype == t) return #t;
@@ -268,7 +343,7 @@ Process::processAUXV(const Reader &auxio)
                         if (context.verbose >= 2)
                             *context.debug << "filename from auxv: " << exeName << "\n";
                         if (!execImage) {
-                            execImage = context.getImageForName(exeName);
+                            execImage = context.getELF(exeName);
                             if (entry == 0)
                                 entry = execImage->getHeader().e_entry;
                         }

@@ -25,7 +25,7 @@ LiveReader::LiveReader(Context &c, pid_t pid, const std::string &base) : FileRea
 LiveProcess::LiveProcess(Context &context, Elf::Object::sptr &ex, pid_t pid_, bool alreadyStopped)
     : Process(
             context,
-            ex ? ex : context.getImageForName(context.procname(pid_, "exe")),
+            ex ? ex : context.getELF(context.procname(pid_, "exe")),
             std::make_shared<CacheReader>(std::make_shared<LiveReader>(context, pid_, "mem")))
     , pid(pid_)
 {

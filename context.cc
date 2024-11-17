@@ -10,44 +10,22 @@
 
 namespace pstack {
 
-Context::Context()
-: debugDirectories { "/usr/lib/debug", "/usr/lib/debug/usr" }
-, debug(&std::cerr)
-, output(&std::cout)
-{
-}
-
-int dwarfLookups, elfLookups, dwarfHits, elfHits;
-bool noExtDebug;
-
 std::shared_ptr<Dwarf::Info>
-Context::getDwarf(const std::string &filename)
+Context::getDWARF(const std::string &filename)
 {
-    return getDwarf(getImageForName(filename));
+    return getDWARF(getELF(filename));
 }
 
 Dwarf::Info::sptr
-Context::getDwarf(Elf::Object::sptr object)
+Context::getDWARF(Elf::Object::sptr object)
 {
     auto it = dwarfCache.find(object);
-    dwarfLookups++;
     if (it != dwarfCache.end()) {
-        dwarfHits++;
         return it->second;
     }
     auto dwarf = std::make_shared<Dwarf::Info>(object);
     dwarfCache[object] = dwarf;
     return dwarf;
-}
-
-Context::~Context() noexcept {
-    if (verbose >= 2) {
-        *debug << "image cache: lookups: " << dwarfLookups << ", hits=" << dwarfHits << "\n"
-               << "ELF image cache: lookups: " << elfLookups << ", hits=" << elfHits << std::endl;
-        for (const auto &[name, elf] : elfCache) {
-            *debug << "\t" << *elf->io << std::endl;
-        }
-    }
 }
 
 void
@@ -63,8 +41,8 @@ Context::flush(std::shared_ptr<Elf::Object> o)
 }
 
 std::shared_ptr<Elf::Object>
-Context::getImageForName(const std::string &name, bool isDebug) {
-    auto res = getImageIfLoaded(name);
+Context::getELF(const std::string &name, bool isDebug) {
+    auto res = getELFIfLoaded(name);
     if (res != nullptr)
         return res;
     auto item = std::make_shared<Elf::Object>(*this, std::make_shared<MmapReader>(*this, name), isDebug);
@@ -75,14 +53,11 @@ Context::getImageForName(const std::string &name, bool isDebug) {
 }
 
 std::shared_ptr<Elf::Object>
-Context::getImageIfLoaded(const std::string &name)
+Context::getELFIfLoaded(const std::string &name)
 {
-    elfLookups++;
     auto it = elfCache.find(name);
-    if (it != elfCache.end()) {
-        elfHits++;
+    if (it != elfCache.end())
         return it->second;
-    }
     return {};
 }
 
@@ -90,13 +65,13 @@ std::shared_ptr<Elf::Object>
 Context::getDebugImage(const std::string &name) {
     // XXX: verify checksum.
     for (const auto &dir : debugDirectories) {
-        auto img = getImageIfLoaded(stringify(dir, "/", name));
+        auto img = getELFIfLoaded(stringify(dir, "/", name));
         if (img)
             return img;
     }
     for (const auto &dir : debugDirectories) {
         try {
-           return getImageForName(stringify(dir, "/", name), true);
+           return getELF(stringify(dir, "/", name), true);
         }
         catch (const std::exception &ex) {
             continue;
@@ -130,25 +105,23 @@ Context::basename(const std::string &in)
 std::string
 Context::linkResolve(std::string name)
 {
-    char buf[1024];
     std::string orig = name;
-    int rc;
     for (;;) {
-        rc = readlink(name.c_str(), buf, sizeof buf - 1);
+        std::array<char, PATH_MAX> buf{};
+        ssize_t rc = readlink(name.c_str(), buf.data(), buf.size() - 1);
         // some files in /proc are links, but report "(deleted)" in the name if
         // the original has gone away. Opening such files works, and uses the
         // in-core inode, so use that if we can
         if (rc == -1) {
             return errno == EINVAL ? name : orig;
         }
-        buf[rc] = 0;
         if (buf[0] != '/') {
             auto lastSlash = name.rfind('/');
             name = lastSlash == std::string::npos
-               ? std::string(buf)
-               : name.substr(0, lastSlash + 1) + std::string(buf);
+               ? std::string(buf.data())
+               : name.substr(0, lastSlash + 1) + std::string(buf.data());
         } else {
-            name = buf;
+            name = buf.data();
         }
     }
     return name;

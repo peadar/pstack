@@ -133,13 +133,14 @@ struct ProcessLocation {
 
 class StackFrame {
 public:
-    Elf::Addr rawIP() const;
-    ProcessLocation scopeIP(Process &) const;
     Elf::CoreRegisters regs;
     Elf::Addr cfa;
     UnwindMechanism mechanism;
     bool isSignalTrampoline;
-    StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs);
+
+    [[nodiscard]] Elf::Addr rawIP() const noexcept;
+    ProcessLocation scopeIP(Process &) const noexcept;
+    StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs) noexcept;
     StackFrame &operator = (const StackFrame &) = default;
     StackFrame(const StackFrame &) = default;
     std::optional<Elf::CoreRegisters> unwind(Process &);
@@ -217,13 +218,13 @@ struct MappedObject {
     std::string name_;
     Elf::Object::sptr objptr_;
 public:
-    const std::string &name() { return name_; }
-    bool operator < (const MappedObject &rhs) const {
+    const std::string &name() const noexcept { return name_; }
+    bool operator < (const MappedObject &rhs) const noexcept {
         return name_ < rhs.name_; // for comparing pairs.
     }
     Elf::Object::sptr object(Context &cache) {
         if (objptr_ == nullptr) {
-            objptr_ = cache.getImageForName(name_);
+            objptr_ = cache.getELF(name_);
         }
         return objptr_;
     }
@@ -269,7 +270,6 @@ public:
     void addElfObject(std::string_view, const Elf::Object::sptr &, Elf::Addr load);
     // Find the the object (and its load address) and segment containing a given address
     std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *> findSegment(Elf::Addr addr);
-    Dwarf::Info::sptr getDwarf(Elf::Object::sptr) const;
     Process(Context &ctx, Elf::Object::sptr exec, Reader::sptr memory );
     virtual void stop(pid_t lwpid) = 0;
     virtual void stopProcess() = 0;
@@ -480,6 +480,16 @@ public:
 struct WaitStatus {
     int status;
     WaitStatus(int status) : status{status}{}
+};
+
+struct Unwind {
+   const StackFrame &frame;
+
+   Unwind( Process &, const StackFrame &frame_) : frame{ frame_ } {}
+   virtual bool canUnwind(Process &) = 0;
+   virtual Elf::Addr cfa(Process &) = 0;
+   virtual bool isSignalTrampoline(Process &) = 0;
+   virtual std::optional<Elf::CoreRegisters> unwind(Process &) = 0;
 };
 
 void gregset2core(Elf::CoreRegisters &core, const gregset_t greg);

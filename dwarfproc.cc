@@ -8,77 +8,6 @@
 extern std::ostream & operator << (std::ostream &os, const pstack::Dwarf::DIE &);
 
 namespace pstack::Procman {
-void
-StackFrame::setCoreRegs(const Elf::CoreRegisters &sys)
-{
-#define REGMAP(number, field) Elf::setReg(regs, number, sys.field);
-#include "libpstack/archreg.h"
-#undef REGMAP
-}
-
-void
-StackFrame::getCoreRegs(Elf::CoreRegisters &core) const
-{
-#define REGMAP(number, field) core.field = Elf::getReg(regs, number);
-#include "libpstack/archreg.h"
-#undef REGMAP
-}
-
-Elf::Addr
-StackFrame::rawIP() const
-{
-    return Elf::getReg(regs, IPREG);
-}
-
-ProcessLocation
-StackFrame::scopeIP(Process &proc) const
-{
-    // For a return address on the stack, it normally represents the next
-    // instruction after a call. For functions that don't return, this might
-    // land outside the caller function - so we subtract one, putting us in the
-    // middle of the call instruction. This will also improve source line
-    // details, as the actual return address is likely on the line of code
-    // *after* the call rather than at it.
-    //
-    // There are two exceptions: first, the instruction pointer we grab from
-    // the process's register state - this is the currently executing
-    // instruction, so accurately reflects the position in the top stack frame.
-    //
-    // The other is for signal trampolines - In this case, the return address
-    // has been synthesized to be the entrypoint of a function (eg,
-    // __restore_rt) to handle return from the signal handler, and will be the
-    // first instruction in the function - there's no previous call instruction
-    // to point at, so we use it directly.
-    auto raw = rawIP();
-    if (raw == 0)
-       return { proc, raw };
-    if (mechanism == UnwindMechanism::MACHINEREGS)
-       return { proc, raw };
-    if (isSignalTrampoline)
-       return { proc, raw };
-    ProcessLocation location(proc, raw);
-
-    const auto *lcie = location.cie();
-    if (lcie != nullptr && lcie->isSignalHandler)
-       return location;
-    return {proc, raw - 1};
-}
-
-uintptr_t
-StackFrame::getFrameBase(Process &p) const
-{
-    ProcessLocation location = scopeIP(p);
-    const Dwarf::DIE &f = location.die();
-    if (f) {
-        auto base = f.attribute(Dwarf::DW_AT_frame_base);
-        if (base.valid()) {
-            ExpressionStack stack;
-            return stack.eval(p, base, this, location.elfReloc());
-        }
-    }
-    return 0;
-}
-
 enum DW_LLE : uint8_t {
 #define DW_LLE_VAL(name, value) name = value,
 #include "libpstack/dwarf/lle.h"
@@ -199,6 +128,21 @@ ExpressionStack::eval(Process &proc, const Dwarf::DIE::Attribute &attr,
         default:
             abort();
     }
+}
+
+uintptr_t
+getFrameBase(Process &p, const StackFrame &frame)
+{
+    ProcessLocation location = frame.scopeIP(p);
+    const Dwarf::DIE &f = location.die();
+    if (f) {
+        auto base = f.attribute(Dwarf::DW_AT_frame_base);
+        if (base.valid()) {
+            ExpressionStack stack;
+            return stack.eval(p, base, &frame, location.elfReloc());
+        }
+    }
+    return 0;
 }
 
 uintmax_t
@@ -358,7 +302,7 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                break;
             case DW_OP_fbreg:
                // Yuk - find DW_AT_frame_base, and offset from that.
-               push(frame->getFrameBase(proc) + r.getsleb128());
+               push(getFrameBase(proc, *frame) + r.getsleb128());
                break;
 
             case DW_OP_reg0: case DW_OP_reg1: case DW_OP_reg2: case DW_OP_reg3:
@@ -434,50 +378,48 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
     return poptop();
 }
 
+struct DwarfUnwind : public Unwind {
+   Dwarf::CallFrame *callFrame;
+   DwarfUnwind( Process &p, const StackFrame &frame_) : Unwind( p, frame_ ), callFrame{} { }
 
-StackFrame::StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs_)
-    : regs(regs_)
-    , cfa(0)
-    , mechanism(mechanism)
-    , isSignalTrampoline(false)
-{}
+   bool canUnwind(Process &p) override {
+      ProcessLocation location( frame.scopeIP(p) );
+      return location.cfi() && location.fde() && location.cie();
+   }
+   Elf::Addr cfa(Process &) override;
+   bool isSignalTrampoline(Process &p) override {
+      ProcessLocation location( frame.scopeIP(p) );
+      return location.cie()->isSignalTrampoline;
+   }
+   std::optional<Elf::CoreRegisters> unwind(Process &p) override;
 
-std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
-    ProcessLocation location = scopeIP(p);
+private:
+   Dwarf::CallFrame *getCallFrame(Process &p) {
+      if (callFrame) {
+         return callFrame;
+      }
+      ProcessLocation location( frame.scopeIP(p) );
+      Elf::Off objaddr = location.address() - location.elfReloc();
+      auto iter = location.dwarf()->callFrameForAddr.find(objaddr);
+      Dwarf::DWARFReader r(location.cfi()->io, location.fde()->instructions, location.fde()->end);
+      if (iter == location.dwarf()->callFrameForAddr.end())
+         location.dwarf()->callFrameForAddr[objaddr] = location.cie()->execInsns(r, location.fde()->iloc, objaddr);
+      callFrame = &location.dwarf()->callFrameForAddr[objaddr];
+      return callFrame;
+   }
+};
 
-    const Dwarf::CFI *cfi = location.cfi();
-    const Dwarf::FDE *fde = location.fde();
-    const Dwarf::CIE *cie = location.cie();
-
-    if (fde == nullptr || cie == nullptr || cfi == nullptr)
-        throw (Exception() << "no FDE/CIE/CFI for instruction address " << std::hex << location.address());
-
-    if (cie->isSignalHandler)
-       isSignalTrampoline = true;
-
-    // relocate from process address to object address
-    Elf::Off objaddr = location.address() - location.elfReloc();
-
+Elf::Addr DwarfUnwind::cfa(Process &p) {
     using namespace Dwarf;
-
-
-    DWARFReader r(cfi->io, fde->instructions, fde->end);
-
-    auto iter = location.dwarf()->callFrameForAddr.find(objaddr);
-    if (iter == location.dwarf()->callFrameForAddr.end())
-        location.dwarf()->callFrameForAddr[objaddr] = cie->execInsns(r, fde->iloc, objaddr);
-
-    const CallFrame &dcf = location.dwarf()->callFrameForAddr[objaddr];
-
     // Given the registers available, and the state of the call unwind data,
-    // calculate the CFA at this point.
-    Elf::CoreRegisters out;
-    switch (dcf.cfaValue.type) {
+    // calculate the CFA for *this* frame.
+    ProcessLocation location( frame.scopeIP(p) );
+    auto callFrame = getCallFrame(p);
+    switch (callFrame->cfaValue.type) {
         case SAME:
         case UNDEF:
         case ARCH:
-            cfa = Elf::getReg(regs, dcf.cfaReg);
-            break;
+            return Elf::getReg(frame.regs, callFrame->cfaReg);
         case VAL_OFFSET:
         case VAL_EXPRESSION:
         case REG:
@@ -485,41 +427,49 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
             break;
 
         case OFFSET:
-            cfa = Elf::getReg(regs, dcf.cfaReg) + dcf.cfaValue.u.offset;
-            break;
+            return Elf::getReg(frame.regs, callFrame->cfaReg) + callFrame->cfaValue.u.offset;
 
         case EXPRESSION: {
             ExpressionStack stack;
-            auto start = dcf.cfaValue.u.expression.offset;
-            auto end = start + dcf.cfaValue.u.expression.length;
+            auto start = callFrame->cfaValue.u.expression.offset;
+            auto end = start + callFrame->cfaValue.u.expression.length;
             DWARFReader r(location.cfi()->io, start, end);
-            cfa = stack.eval(p, r, this, location.elfReloc());
-            break;
+            return stack.eval(p, r, &frame, location.elfReloc());
         }
         default:
-            cfa = -1;
+            return 0;
     }
-    auto rarInfo = dcf.registers.find(cie->rar);
+}
 
-    for (const auto &entry : dcf.registers) {
+std::optional<Elf::CoreRegisters> DwarfUnwind::unwind(Process &p) {
+
+    Elf::CoreRegisters out;
+    // relocate from process address to object address
+    using namespace Dwarf;
+    auto location = frame.scopeIP( p );
+    auto callFrame = getCallFrame( p );
+    for (const auto &entry : getCallFrame(p)->registers) {
         const RegisterUnwind &unwind = entry.second;
         int regno = entry.first;
         switch (unwind.type) {
             case ARCH:
+                // For architecture-specifics, we default to just copying the
+                // register from the previous frame. The common case is when
+                // the CFA register has been calculated, we can use that for
+                // the stack pointer if it's not otherwise defined.
 #ifdef CFA_RESTORE_REGNO
-                // "The CFA is defined to be the stack pointer in the calling frame."
                 if (regno == CFA_RESTORE_REGNO)
-                   Elf::setReg(out, regno, cfa);
+                   Elf::setReg(out, regno, frame.cfa);
                 else
-                   Elf::setReg(out, regno, Elf::getReg(regs, regno));
-                break;
 #endif
+                   Elf::setReg(out, regno, Elf::getReg(frame.regs, regno));
+                break;
             case UNDEF:
             case SAME:
-                Elf::setReg(out, regno, Elf::getReg(regs, regno));
+                Elf::setReg(out, regno, Elf::getReg(frame.regs, regno));
                 break;
             case OFFSET: // XXX: assume addrLen = sizeof Elf_Addr
-                Elf::setReg(out, regno, p.io->readObj<Elf::Addr>(cfa + unwind.u.offset));
+                Elf::setReg(out, regno, p.io->readObj<Elf::Addr>(frame.cfa + unwind.u.offset));
                 break;
             case REG:
                 Elf::setReg(out, regno, Elf::getReg(out,unwind.u.reg));
@@ -527,10 +477,10 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
             case VAL_EXPRESSION:
             case EXPRESSION: {
                 ExpressionStack stack;
-                stack.push(cfa);
-                DWARFReader reader(cfi->io, unwind.u.expression.offset,
+                stack.push(frame.cfa);
+                DWARFReader reader(location.cfi()->io, unwind.u.expression.offset,
                       unwind.u.expression.offset + unwind.u.expression.length);
-                auto val = stack.eval(p, reader, this, location.elfReloc());
+                auto val = stack.eval(p, reader, &frame, location.elfReloc());
                 // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                 if (unwind.type == EXPRESSION)
                     p.io->readObj(val, &val);
@@ -543,12 +493,13 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     }
 
     // If the return address isn't defined, then we can't unwind.
-    if (rarInfo == dcf.registers.end() || rarInfo->second.type == UNDEF || cfa == 0) {
+    auto rarInfo = callFrame->registers.find(location.cie()->rar);
+    if (rarInfo == callFrame->registers.end() || rarInfo->second.type == UNDEF || frame.cfa == 0 ) {
         if (p.context.verbose > 1) {
            *p.context.debug << "DWARF unwinding stopped at "
               << std::hex << location.address() << std::dec
               << ": " <<
-              (rarInfo == dcf.registers.end() ? "no RAR register found"
+              (rarInfo == callFrame->registers.end() ? "no RAR register found"
                : rarInfo->second.type == UNDEF ? "RAR register undefined"
                : "null CFA for frame")
               << std::endl;
@@ -558,11 +509,10 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
 
     // We know the RAR is defined, so make that the instruction pointer in the
     // new frame.
-    if (cie && cie->rar != IPREG)
-       Elf::setReg(out, IPREG, Elf::getReg(out, cie->rar));
+    if (location.cie()->rar != IPREG)
+       Elf::setReg(out, IPREG, Elf::getReg(out, location.cie()->rar));
     return out;
 }
-
 
 const Elf::MaybeNamedSymbol &
 CodeLocation::symbol() const {
@@ -651,7 +601,7 @@ void
 ProcessLocation::set(Process &proc, Elf::Addr address)
 {
     auto [ elfReloc, elf, phdr ] = proc.findSegment(address);
-    auto dwarf = elf ? proc.getDwarf(elf) : nullptr;
+    auto dwarf = elf ? proc.context.getDWARF(elf) : nullptr;
     if (dwarf) {
         codeloc = std::make_shared<CodeLocation>(dwarf, phdr, address - elfReloc);
     } else {

@@ -315,7 +315,7 @@ emain(int argc, char **argv, Context &context)
     .add("no-ext-debug",
             'n',
             "don't load external debugging information when processing",
-            Flags::setf(context.noExtDebug))
+            Flags::setf(context.options.noExtDebug))
 
     .add("version",
             'V',
@@ -369,7 +369,7 @@ emain(int argc, char **argv, Context &context)
     // discovering the executable
     Elf::Object::sptr exec;
     if (execName != "")
-         exec = context.getImageForName(execName);
+         exec = context.getELF(execName);
 
     if (subprocessCmd != "") {
         // create a new process and trace it.
@@ -404,7 +404,7 @@ emain(int argc, char **argv, Context &context)
        try {
           auto process = Procman::Process::load(context, exec, argv[i]); // this calls the load() instance member.
           if (process == nullptr)
-             exec = context.getImageForName(argv[i]);
+             exec = context.getELF(argv[i]);
           else
              doStack(*process);
        } catch (const std::exception &e) {

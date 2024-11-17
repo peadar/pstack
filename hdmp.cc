@@ -32,7 +32,7 @@ void printStack(std::ostream &os, std::shared_ptr<Procman::Process> &proc, const
             os << "\t" << name << "+" << uintptr_t(frames[i]) - elfReloc - sym.st_value;
          }
 
-         auto dwarf = proc->context.getDwarf(elf);
+         auto dwarf = proc->context.getDWARF(elf);
          if (dwarf) {
             auto sep = "in";
             for (auto &&[file, line] : dwarf->sourceFromAddr(frameip - elfReloc)) {
@@ -110,10 +110,10 @@ main(int argc, char *argv[])
    Context context;
    std::shared_ptr<Elf::Object> exec;
 
-   for (int c; (c = getopt(argc, argv, "e:fab")) != -1; ) {
+   for (int c = 0; (c = getopt(argc, argv, "e:fab")) != -1; ) {
       switch (c) {
          case 'e':
-            exec = context.getImageForName(optarg);
+            exec = context.getELF(optarg);
             break;
          case 'f':
             options.insert(heap_recentfree);
@@ -124,11 +124,13 @@ main(int argc, char *argv[])
          case 'b':
             options.insert(heap_historicbig);
             break;
+         default:
+            std::cerr << "invalid usage\n";
+            return 1;
       }
    }
-   if (options.empty()) {
+   if (options.empty())
       options = { heap_recentfree, heap_allocated, heap_historicbig };
-   }
 
    for (int i = optind; i < argc; ++i)
       dumpHeap(Procman::Process::load(context, exec, argv[i]));

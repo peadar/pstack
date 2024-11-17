@@ -485,7 +485,7 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
     , addressSize(ELF_BYTES)
     , segmentSize(0)
     , lsdaEncoding(0)
-    , isSignalHandler(false)
+    , isSignalTrampoline(false)
     , end(end_)
     , personality{}
 {
@@ -525,7 +525,7 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
                 addressEncoding = r.getu8();
                 break;
             case 'S':
-                isSignalHandler = true;
+                isSignalTrampoline = true;
                 break;
             case '\0':
                 break;
