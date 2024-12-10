@@ -220,7 +220,7 @@ template <typename Matcher, typename Word> inline void search(
                 if ( auto [ found, sym ] = store.find(p, m); found) {
                     if (showaddrs)
                         cout
-                            << sym->name << " 0x" << std::hex << loc + (cur - start)
+                            << sym->name << " 0x" << std::hex << loc + (cur - start) * sizeof(Word)
                             << std::dec <<  " ... size=" << sym->sym.st_size
                             << ", diff=" << p - sym->memaddr() << endl;
 #ifdef WITH_PYTHON
