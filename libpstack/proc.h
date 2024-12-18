@@ -23,7 +23,8 @@ extern "C" {
 
 struct ps_prochandle {};
 
-namespace pstack::Procman {
+namespace pstack {
+namespace Procman {
 
 class Process;
 
@@ -481,12 +482,15 @@ struct WaitStatus {
 };
 
 void gregset2core(Elf::CoreRegisters &core, const gregset_t greg);
+std::ostream &operator << (std::ostream &os, WaitStatus ws);
 }
 
-std::ostream &operator << (std::ostream &os, pstack::Procman::WaitStatus ws);
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::StackFrame, pstack::Procman::Process *> &jt);
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::ThreadStack, pstack::Procman::Process *> &jt);
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::FileEntry> &);
+
+}
+
 std::ostream &operator << (std::ostream &os, const siginfo_t &);
 
 #endif

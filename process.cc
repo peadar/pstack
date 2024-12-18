@@ -29,7 +29,7 @@
 #elif defined(__aarch64__)
 #define IP(regs) (regs.pc)
 #endif
-using namespace pstack;
+namespace pstack {;
 
 std::ostream &
 operator << (std::ostream &os, const JSON<std::pair<std::string, int>> &jt)
@@ -72,14 +72,16 @@ operator << (std::ostream &os, const JSON<Procman::ThreadStack, Procman::Process
         .field("ti_stack", ts.object.stack, ts.context);
 }
 
+}
 
 namespace std {
 bool
-operator < (const std::pair<Elf::Addr, Elf::Object::sptr> &entry, Elf::Addr addr) {
+operator < (const std::pair<pstack::Elf::Addr, pstack::Elf::Object::sptr> &entry, pstack::Elf::Addr addr) {
    return entry.first < addr;
 }
 }
 
+namespace pstack {
 template <typename ctx>
 std::ostream &
 operator << (std::ostream &os, const JSON<td_thr_type_e, ctx> &jt)
@@ -92,7 +94,7 @@ operator << (std::ostream &os, const JSON<td_thr_type_e, ctx> &jt)
     }
 }
 
-namespace pstack::Procman {
+namespace Procman {
 
 /*
  * convert a gregset_t to an Elf::CoreRegs
@@ -1115,10 +1117,9 @@ Process::getStacks() {
         processSuspender.clear();
     return threadStacks;
 }
-}
 
 std::ostream &
-operator << (std::ostream &os, Procman::WaitStatus ws) {
+operator << (std::ostream &os, WaitStatus ws) {
    if (WIFSIGNALED(ws.status)) {
       os << "signal(" << strsignal(WTERMSIG(ws.status)) << ")";
       if (WCOREDUMP(ws.status))
@@ -1129,6 +1130,7 @@ operator << (std::ostream &os, Procman::WaitStatus ws) {
    else if (WIFEXITED(ws.status))
       os << "exit(" << WEXITSTATUS(ws.status) << ")";
    return os;
+}
 }
 
 std::ostream &
@@ -1156,6 +1158,8 @@ operator << (std::ostream &os, const JSON<Procman::StackFrame, Procman::Process 
     jo.field("source", location.source());
 
     return jo;
+}
+
 }
 
 std::ostream &operator << (std::ostream &os, const siginfo_t &si) {

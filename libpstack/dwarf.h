@@ -22,9 +22,11 @@ class CFI;
 struct CIE;
 } 
 
+namespace pstack {
+
 std::ostream & operator << (std::ostream &os, const JSON<pstack::Dwarf::CFI> &);
 
-namespace pstack::Dwarf {
+namespace Dwarf {
 
 #define DWARF_TAG(a,b) a = (b),
 enum Tag {
@@ -60,14 +62,17 @@ enum AttrName {
     DW_AT_none = 0x0
 };
 
-}
+} // Dwarf
+
+} // pstack
 namespace std {
    template <> struct hash<pstack::Dwarf::AttrName> {
       size_t operator() (pstack::Dwarf::AttrName name) const { return size_t(name); }
    };
 }
 
-namespace pstack::Dwarf {
+namespace pstack {
+namespace Dwarf {
 
 #define DWARF_OP(op, value, args) op = (value),
 enum ExpressionOp {
@@ -836,8 +841,9 @@ Units::iterator::iterator(const Info *info_, Elf::Off offset)
     : info(info_), currentUnit(info->getUnit(offset)) {}
 }
 
-std::ostream &operator << (std::ostream &os, const JSON<pstack::Dwarf::Info> &);
-std::ostream &operator << (std::ostream &os, const JSON<pstack::Dwarf::Macros> &);
-std::ostream &operator << (std::ostream &os, const JSON<pstack::Dwarf::DIE> &);
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Info> &);
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Macros> &);
+std::ostream &operator << (std::ostream &os, const JSON<Dwarf::DIE> &);
+}
 
 #endif

@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <iomanip>
 
+namespace pstack {
 /*
  * General purpose way of printing out JSON objects.
  * Given an std::ostream &s, we can do:
@@ -311,6 +312,7 @@ template <typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<JsonNull, C> &) {
    return os << "null";
+}
 }
 
 

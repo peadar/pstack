@@ -60,7 +60,7 @@ main(int /*unused*/, char ** /*unused*/)
       pthread_mutex_unlock(&l);
    }
    {
-      JObject(std::cout)
+      pstack::JObject(std::cout)
          .field("threads", threads)
          .field("lwps", lwps)
          .field("assert_at", assertline);

@@ -16,7 +16,7 @@
 #error "Non-32, non-64-bit platform?"
 #endif
 
-using namespace pstack;
+namespace pstack {
 struct DumpCFAInsns {
     Elf::Off start;
     Elf::Off end;
@@ -994,3 +994,5 @@ operator <<(std::ostream &os, const JSON<prpsinfo_t> &jo)
         .field("pr_args", args )
               ;
 }
+}
+

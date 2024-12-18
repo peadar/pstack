@@ -73,7 +73,9 @@ class SymbolSection;
 class NoteDesc;
 };
 
+namespace pstack {
 std::ostream &operator<< (std::ostream &, const JSON<pstack::Elf::Object> &);
+}
 
 namespace pstack::Elf {
 
@@ -339,7 +341,7 @@ private:
     GnuHash *gnu_hash() { return get_hash(gnu_hash_); }
 
     Object *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
-    friend std::ostream &::operator<< (std::ostream &, const JSON<Object> &);
+    friend std::ostream &pstack::operator<< (std::ostream &, const pstack::JSON<Object> &);
 
     // used to cache the debug symbol table by name. Popualted first time something requests such a symbol
     std::unique_ptr<std::map<std::string, size_t>> cachedSymbols;
