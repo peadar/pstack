@@ -1,25 +1,23 @@
-#define Py_BUILD_CORE
-#ifdef Py_LIMITED_API
-#undef Py_LIMITED_API
-#endif
 #include <Python.h>
 #include <frameobject.h>
 #include <dictobject.h>
+#include <Objects/dict-common.h>
 #include <longintrepr.h>
-#include <internal/pycore_dict.h>
+#include <longintrepr.h>
 #include <unicodeobject.h>
 #include <methodobject.h>
 #include "libpstack/python.h"
+#include "libpstack/global.h"
+#include "libpstack/fs.h"
 
-#ifndef DK_SIZE
 #define DK_SIZE(dk) ((dk)->dk_size)
 #define DK_IXSIZE(dk)                \
     (  DK_SIZE(dk) <= 0xff       ? 1 \
     :  DK_SIZE(dk) <= 0xffff     ? 2 \
     :  DK_SIZE(dk) <= 0xffffffff ? 4 \
+                                 : sizeof(int64_t))
 #define DK_ENTRIES(dk) \
     ((PyDictKeyEntry *)(&((int8_t *)((dk)->dk_indices))[DK_SIZE(dk) * DK_IXSIZE(dk)]))
-#endif
 
 namespace pstack {
 
