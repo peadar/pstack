@@ -148,21 +148,21 @@ getInterpHead<3>(Procman::Process &proc) {
 
     std::tie(libpython, libpythonAddr, _PyRuntimeSym) = proc.resolveSymbolDetail(
           "_PyRuntime", false,
-          [](std::string_view name) {
-             auto base = basename(std::string(name));
+          [&](std::string_view name) {
+             auto base = proc.context.basename(std::string(name));
             return base.find("python3") != std::string::npos;
           });
 
     Elf::Addr interpHead = libpythonAddr + _PyRuntimeSym.st_value + pyInterpOffset();
 
     if (libpython == nullptr) {
-        if (verbose)
-            *debug << "Python 3 interpreter not found" << std::endl;
+        if (proc.context.verbose)
+            *proc.context.debug << "Python 3 interpreter not found" << std::endl;
         throw Exception() << "No libpython3 found";
     }
 
-    if (verbose)
-       *debug << "python3 library is " << *libpython->io << std::endl;
+    if (proc.context.verbose)
+       *proc.context.debug << "python3 library is " << *libpython->io << std::endl;
 
     return std::make_tuple(libpython, libpythonAddr, interpHead);
 }
