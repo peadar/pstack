@@ -1131,38 +1131,9 @@ operator << (std::ostream &os, WaitStatus ws) {
       os << "exit(" << WEXITSTATUS(ws.status) << ")";
    return os;
 }
-}
 
-std::ostream &
-operator << (std::ostream &os, const JSON<Procman::StackFrame, Procman::Process *> &jt)
-{
-    auto &frame =jt.object;
-    Procman::ProcessLocation location = frame.scopeIP(*jt.context);
-    Procman::PrintableFrame pframe(*jt.context, frame);
-
-    JObject jo(os);
-    jo
-        .field("ip", frame.rawIP())
-        .field("offset", pframe.functionOffset)
-        .field("trampoline", frame.isSignalTrampoline)
-        .field("die", pframe.dieName)
-        .field("loadaddr", location.elfReloc())
-        ;
-
-    const auto &sym = location.symbol();
-    if (sym)
-        jo.field("symbol", *sym);
-    else
-        jo.field("symbol", JsonNull());
-
-    jo.field("source", location.source());
-
-    return jo;
-}
-
-}
-
-std::ostream &operator << (std::ostream &os, const siginfo_t &si) {
+std::ostream &operator << (std::ostream &os, const SigInfo &sip) {
+   const auto si = sip.si;
 
    static std::map<int, std::map<int, const char *>> codes {
          { SIGSEGV,  {
@@ -1285,4 +1256,33 @@ std::ostream &operator << (std::ostream &os, const siginfo_t &si) {
 
    }
    return os;
+}}
+
+std::ostream &
+operator << (std::ostream &os, const JSON<Procman::StackFrame, Procman::Process *> &jt)
+{
+    auto &frame =jt.object;
+    Procman::ProcessLocation location = frame.scopeIP(*jt.context);
+    Procman::PrintableFrame pframe(*jt.context, frame);
+
+    JObject jo(os);
+    jo
+        .field("ip", frame.rawIP())
+        .field("offset", pframe.functionOffset)
+        .field("trampoline", frame.isSignalTrampoline)
+        .field("die", pframe.dieName)
+        .field("loadaddr", location.elfReloc())
+        ;
+
+    const auto &sym = location.symbol();
+    if (sym)
+        jo.field("symbol", *sym);
+    else
+        jo.field("symbol", JsonNull());
+
+    jo.field("source", location.source());
+
+    return jo;
+}
+
 }

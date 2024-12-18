@@ -40,7 +40,7 @@ pstack(Procman::Process &proc)
         os << "process: " << *proc.io;
         std::optional<siginfo_t> sig = proc.getSignalInfo();
         if (sig)
-           os << " (terminated with " << *sig << ")";
+           os << " (terminated with " << Procman::SigInfo{*sig} << ")";
         os << "\n";
         for (auto &s : threadStacks) {
             proc.dumpStackText(os, s);

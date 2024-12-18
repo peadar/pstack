@@ -481,7 +481,13 @@ struct WaitStatus {
     WaitStatus(int status) : status{status}{}
 };
 
+struct SigInfo {
+   const siginfo_t &si;
+};
+std::ostream &operator << (std::ostream &os, const SigInfo &);
+
 void gregset2core(Elf::CoreRegisters &core, const gregset_t greg);
+
 std::ostream &operator << (std::ostream &os, WaitStatus ws);
 }
 
@@ -490,7 +496,5 @@ std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::ThreadS
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::FileEntry> &);
 
 }
-
-std::ostream &operator << (std::ostream &os, const siginfo_t &);
 
 #endif
