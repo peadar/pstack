@@ -178,7 +178,7 @@ printTupleVars(const PythonPrinter<PyV> *pc, Elf::Addr namesAddr, Elf::Addr valu
     pc->proc.io->readObj(namesAddr + offsetof(PyTupleObject, ob_item), &varnames[0], maxvals);
     pc->proc.io->readObj(valuesAddr, &varvals[0], maxvals);
 
-    pc->os << pc->prefix() << type <<":" << std::endl;
+    pc->os << pc->prefix() << type <<":\n";
     pc->depth++;
     for (auto i = 0; i < maxvals; ++i) {
         pc->os << pc->prefix();
@@ -206,7 +206,7 @@ template <int PyV> class FramePrinter final : public PythonTypePrinter<PyV> {
             if (pc->proc.context.options.doargs)
                 printArguments<PyV>(pc, pyo, remoteAddr);
 
-            pc->os << " in " << file << ":" << lineNo << std::endl;
+            pc->os << " in " << file << ":" << lineNo << "\n";
 
             if (pc->proc.context.options.dolocals) {
 
@@ -228,7 +228,7 @@ template <int PyV> class FramePrinter final : public PythonTypePrinter<PyV> {
 
         if (pc->proc.context.options.dolocals && pfo->f_locals != 0) {
             pc->depth++;
-            pc->os << pc->prefix() << "locals: " << std::endl;
+            pc->os << pc->prefix() << "locals:\n";
             pc->print(Elf::Addr(pfo->f_locals));
             pc->depth--;
         }
@@ -322,7 +322,7 @@ template <int PyV>
 void
 PythonPrinter<PyV>::print(Elf::Addr remoteAddr) const {
     if (depth > 10000) {
-        os << "too deep" << std::endl;
+        os << "too deep\n";
         return;
     }
     depth++;
@@ -355,7 +355,7 @@ PythonPrinter<PyV>::print(Elf::Addr remoteAddr) const {
                     static HeapPrinter<PyV> heapPrinter;
                     printer = &heapPrinter;
                 } else {
-                    os <<  remoteAddr << " unprintable-type-" << tn << "@"<< pyObjtype<PyV>(&baseObj) << std::endl;
+                    os <<  remoteAddr << " unprintable-type-" << tn << "@"<< pyObjtype<PyV>(&baseObj) << "\n";
                     break;
                 }
             }
@@ -434,13 +434,13 @@ PythonPrinter<PyV>::printInterp(Elf::Addr ptr, bool showModules)
     };
     State state;
     proc.io->readObj(ptr, &state);
-    os << "---- interpreter @" << std::hex << ptr << std::dec << " -----" << std::endl ;
+    os << "---- interpreter @" << std::hex << ptr << std::dec << " -----\n";
     for (Elf::Addr tsp = state.head; tsp; ) {
         tsp = printThread(tsp);
-        os << std::endl;
+        os << "\n";
     }
     if (showModules) {
-       os << "---- modules:" << std::endl;
+       os << "---- modules:\n";
        print(state.modules);
     }
     return state.next;

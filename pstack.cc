@@ -44,7 +44,7 @@ pstack(Procman::Process &proc)
         os << "\n";
         for (auto &s : threadStacks) {
             proc.dumpStackText(os, s);
-            os << std::endl;
+            os << "\n";
         }
     }
 }
