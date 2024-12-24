@@ -255,6 +255,13 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                 break;
             }
 
+            case DW_OP_plus_uconst: {
+                auto arg = r.getuleb128();
+                auto tos = poptop();
+                push(arg + tos);
+                break;
+            }
+
             case DW_OP_breg0: case DW_OP_breg1: case DW_OP_breg2: case DW_OP_breg3:
             case DW_OP_breg4: case DW_OP_breg5: case DW_OP_breg6: case DW_OP_breg7:
             case DW_OP_breg8: case DW_OP_breg9: case DW_OP_breg10: case DW_OP_breg11:
@@ -278,6 +285,24 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                 push(op - DW_OP_lit0);
                 break;
 
+            case DW_OP_not: {
+                auto arg = poptop();
+                push(~arg);
+                break;
+            }
+
+            case DW_OP_abs: {
+                auto arg = intmax_t(poptop());
+                push(std::abs(arg));
+                break;
+            }
+
+            case DW_OP_neg: {
+                auto arg = intmax_t(poptop());
+                push(-arg);
+                break;
+            }
+
             case DW_OP_and: {
                 auto lhs = poptop();
                 auto rhs = poptop();
@@ -285,10 +310,39 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                 break;
             }
 
+            case DW_OP_div: {
+                auto denom = intmax_t(poptop());
+                auto num = intmax_t(poptop());
+                push(num/denom);
+                break;
+            }
+
+            case DW_OP_mul: {
+                auto a = intmax_t(poptop());
+                auto b = intmax_t(poptop());
+                push(a*b);
+                break;
+            }
+
+
+            case DW_OP_mod: {
+                auto denom = intmax_t(poptop());
+                auto num = intmax_t(poptop());
+                push(num%denom);
+                break;
+            }
+
             case DW_OP_or: {
                 auto lhs = poptop();
                 auto rhs = poptop();
                 push(lhs | rhs);
+                break;
+            }
+
+            case DW_OP_xor: {
+                auto lhs = poptop();
+                auto rhs = poptop();
+                push(lhs ^ rhs);
                 break;
             }
 
@@ -347,6 +401,14 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                 push(lhs >> rhs);
                 break;
             }
+
+            case DW_OP_shra: {
+                auto rhs = intmax_t(poptop());
+                auto lhs = intmax_t(poptop());
+                push(lhs >> rhs);
+                break;
+            }
+
             case DW_OP_addr: {
                 auto value = r.getuint(r.addrLen);
                 push(value + reloc);
