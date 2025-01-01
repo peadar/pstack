@@ -163,9 +163,8 @@ ExpressionStack::eval(Process &proc, const Dwarf::DIE::Attribute &attr,
                             r.skip(len);
                             break;
                         }
-
                         default:
-                            abort(); // can implement it when we see it.
+                            throw (Exception() << "unhandled DW_LLE_" << lle);
                     }
                 }
             } else {
@@ -187,7 +186,7 @@ ExpressionStack::eval(Process &proc, const Dwarf::DIE::Attribute &attr,
                     r.skip(len);
                 }
             }
-            abort();
+            throw (Exception() << ".debug_loc search failed");
 
         case Dwarf::DW_FORM_block1:
         case Dwarf::DW_FORM_block:
@@ -197,7 +196,7 @@ ExpressionStack::eval(Process &proc, const Dwarf::DIE::Attribute &attr,
             return eval(proc, r, frame, reloc);
         }
         default:
-            abort();
+            throw (Exception() << "unhandled attribute form " << attr.form() << " evaluating expression");
     }
 }
 
@@ -425,10 +424,7 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
                 // FALLTHROUGH
 
             default:
-                abort();
-                if (proc.context.debug)
-                   *proc.context.debug << "error evaluating DWARF OP " << op << " (" << int(op) << ")\n";
-                return -1;
+                throw (Exception() << "error evaluating DWARF OP " << op << " (" << int(op) << ")");
         }
     }
     return poptop();
@@ -481,8 +477,7 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
         case VAL_OFFSET:
         case VAL_EXPRESSION:
         case REG:
-            abort();
-            break;
+            throw (Exception() << "unhandled CFA value type " << dcf.cfaValue.type);
 
         case OFFSET:
             cfa = Elf::getReg(regs, dcf.cfaReg) + dcf.cfaValue.u.offset;

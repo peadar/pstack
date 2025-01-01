@@ -38,7 +38,7 @@ CFI::decodeAddress(DWARFReader &f, uint8_t encoding, uintptr_t sectionVa) const
         base = f.getint(sizeof (Elf::Word));
         break;
     default:
-        __builtin_unreachable();
+        throw (Exception() << "unhandled encoding " << (encoding & 0xfU) << " while decoding CFI address");
     }
 
     switch (encoding & 0xf0U & ~unsigned(DW_EH_PE_indirect)) {
@@ -60,8 +60,7 @@ CFI::decodeAddress(DWARFReader &f, uint8_t encoding, uintptr_t sectionVa) const
     }
 
     default:
-        abort();
-        break;
+        throw (Exception() << "unhandled base encoding inforation " << (encoding & 0xf0U) << " while decoding CFI address");
     }
     return { base, (encoding & DW_EH_PE_indirect ) != 0 };
 }
@@ -448,13 +447,12 @@ CIE::execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const
             case DW_CFA_GNU_window_save:
             case DW_CFA_GNU_negative_offset_extended:
             default:
-                abort();
+                throw (Exception() << "unhandled secondary CFA instruction " << op);
             }
             break;
 
         default:
-            abort();
-            break;
+            throw (Exception() << "unhandled CFA instruction " << op);
         }
     }
     return frame;

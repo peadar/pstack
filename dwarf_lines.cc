@@ -180,8 +180,7 @@ LineInfo::build(DWARFReader &r, Unit &unit)
                 break;
             default:
                 r.skip(len - 1);
-                abort();
-                break;
+                throw (Exception() << "unhandled DW_LNE_ instruction in line data");
             }
         } else {
             /* Standard opcode. */
@@ -225,11 +224,10 @@ LineInfo::build(DWARFReader &r, Unit &unit)
                 state.isa = r.getuleb128();
                 break;
             default: {
-                abort();
                 int argCount = opcode_lengths[opcode - 1];
                 for (int i = 0; i < argCount; i++)
                     r.getuleb128();
-                break;
+                throw (Exception() << "unhandled DW_LNS_ instruction in line data");
             }
             case DW_LNS_none:
                 break;

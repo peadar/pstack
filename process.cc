@@ -2,6 +2,7 @@
 
 #include <link.h>
 #include <unistd.h>
+#include <charconv>
 
 #include <iomanip>
 #include <iostream>
@@ -1038,9 +1039,10 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 std::shared_ptr<Process>
 Process::load(Context &context, Elf::Object::sptr exec, std::string id) {
     pid_t pid;
-    std::istringstream(id) >> pid;
+    auto [ ptr, ec ] = std::from_chars(id.data(), id.data() + id.size(), pid);
+
     std::shared_ptr<Process> proc;
-    if (pid != 0) {
+    if (ec == std::errc() && ptr == id.data() + id.size()) {
        if (kill(pid, 0) != 0)
           throw Exception() << "process " << pid << ": " << strerror(errno);
        proc = std::make_shared<LiveProcess>(context, exec, pid);

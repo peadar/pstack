@@ -91,7 +91,7 @@ Unit::Unit(const Info *di, DWARFReader &r)
             r.getBytes(sizeof id, &id[0]);
             break;
         default:
-            abort();
+            throw (Exception() << "unhandled DW_UT_ unit type value " << unitType);
         }
     } else {
         abbrevOffset = r.getuint(version <= 2 ? 4 : dwarfLen);

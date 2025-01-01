@@ -17,7 +17,7 @@ DWARFReader::readForm(const Info &info, Unit &unit, Form form)
             return;
 
         default:
-            abort();
+            throw (Exception() << "unhandled form when reading form " << form);
     }
 }
 
@@ -27,8 +27,6 @@ DWARFReader::readFormString(const Info &dwarf, Unit &unit, Form form)
     switch (form) {
         case DW_FORM_string:
             return getstring();
-        default:
-            abort();
         case DW_FORM_line_strp: {
             auto off = getuint(unit.dwarfLen);
             return dwarf.debugLineStrings.io()->readString(off);
@@ -40,6 +38,9 @@ DWARFReader::readFormString(const Info &dwarf, Unit &unit, Form form)
         case DW_FORM_strx: {
             size_t off = getuleb128();
             return unit.strx(off);
+        }
+        default: {
+            throw (Exception() << "unhandled form " << form << " when reading string");
         }
     }
 }
@@ -57,7 +58,7 @@ DWARFReader::readFormUnsigned(Form form)
         case DW_FORM_data4:
             return getu32();
         default:
-            abort();
+            throw (Exception() << "unhandled form " << form << " when reading unsigned");
     }
 }
 
@@ -67,7 +68,7 @@ DWARFReader::readFormSigned(Form form)
     (void)this; // avoid warnings about making this static.
     switch (form) {
         default:
-            abort();
+            throw (Exception() << "unhandled form " << form << " when reading signed");
     }
 }
 

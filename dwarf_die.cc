@@ -68,8 +68,7 @@ DIE::containsAddress(Elf::Addr addr) const
                 start = uintmax_t(low);
                 break;
             default:
-                abort();
-                break;
+                throw (Exception() << "unhandled form " << low.form() << " for DW_AT_low_pc");
         }
 
         switch (high.form()) {
@@ -89,7 +88,7 @@ DIE::containsAddress(Elf::Addr addr) const
                 end = start + uintmax_t(high);
                 break;
             default:
-                abort();
+                throw (Exception() << "unhandled form " << high.form() << " for DW_AT_high_pc");
         }
         return start <= addr && end > addr ? ContainsAddr::YES : ContainsAddr::NO;
     }
@@ -318,9 +317,7 @@ DIE::Attribute::Value::Value(DWARFReader &r, const FormEntry &forment, Unit *uni
         break;
 
     default:
-        addr = 0;
-        abort();
-        break;
+        throw (Exception() << "unhandled form " << forment.form  << " creating value for DIE");
     }
 }
 
@@ -429,7 +426,7 @@ DIE::Attribute::operator intmax_t() const
     case DW_FORM_sec_offset:
         return value().addr;
     default:
-        abort();
+        throw (Exception() << "no conversion from form " << formp->form << " to intmax_t");
     }
 }
 
@@ -459,7 +456,7 @@ DIE::Attribute::operator uintmax_t() const
     case DW_FORM_rnglistx:
         return die.unit->rnglistx(value().udata);
     default:
-        abort();
+        throw (Exception() << "no conversion from form " << formp->form << " to uintmax_t");
     }
 }
 
@@ -504,8 +501,7 @@ Ranges::Ranges(const DIE &die, uintmax_t base) {
                 case DW_RLE_startx_endx: {
                     /* auto startx = */ r.getuleb128();
                     /* auto endx = */ r.getuleb128();
-                    abort();
-                    break;
+                    throw (Exception() << "DW_RLE_startx_endx is not handled");
                 }
 
                 case DW_RLE_startx_length: {
@@ -539,7 +535,7 @@ Ranges::Ranges(const DIE &die, uintmax_t base) {
                     break;
                 }
                 default:
-                    abort();
+                    throw (Exception() << "unhandled DW_RLE_ entry " << entryType);
             }
         }
     }
@@ -579,7 +575,7 @@ DIE::Attribute::operator std::string() const
             return die.unit->strx(value().addr);
 
         default:
-            abort();
+            throw (Exception() << "no conversion from form " << formp->form << " to string");
     }
 }
 
@@ -609,8 +605,7 @@ DIE::Attribute::operator DIE() const
             break;
         }
         default:
-            abort();
-            break;
+            throw (Exception() << "no conversion from form " << formp->form << " to DIE");
     }
 
     // Try this unit first (if we're dealing with the same Info)
