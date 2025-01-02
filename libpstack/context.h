@@ -1,5 +1,6 @@
 #pragma once
 #include <map>
+#include <string_view>
 #include <memory>
 #include <vector>
 #include <limits>
@@ -17,11 +18,12 @@ class Info;
 }
 
 struct PstackOptions {
-    bool nosrc = false;
-    bool doargs = false;
+    bool nosrc = false; // don't display source code (makes things faster)
+    bool doargs = false; // show arguments to functions
     bool dolocals = false;
-    bool nothreaddb = false;
+    bool nothreaddb = false; // don't use threaddb.
     bool nodienames = false; // don't use names from DWARF dies in backtraces.
+    bool noExtDebug = false; // if set, don't look for exernal ELF info, i.e., usinb debuglink, or buildid.
     int maxdepth = std::numeric_limits<int>::max();
     int maxframes = 20;
 };
@@ -30,11 +32,16 @@ class Context {
 
    std::map<std::shared_ptr<Elf::Object>, std::shared_ptr<Dwarf::Info>> dwarfCache;
    std::map<std::string, std::shared_ptr<Elf::Object>> elfCache;
-  
-public:
    std::vector<std::string> debugDirectories;
-   std::ostream *debug;
-   std::ostream *output;
+public:
+   void addDebugDirectory(std::string_view dir) {
+      debugDirectories.emplace_back(dir);
+   }
+
+   std::ostream *debug{};
+   std::ostream *output{};
+   PstackOptions options{};
+   int verbose{};
    std::vector<std::pair<std::string, std::string>> pathReplacements;
    std::string dirname(const std::string &);
    std::string basename(const std::string &);
@@ -50,9 +57,6 @@ public:
    std::string procname(pid_t pid, const std::string &base);
 
    std::shared_ptr<const Reader> loadFile(const std::string &path);
-   PstackOptions options;
-   bool noExtDebug; // if set, don't look for exernal ELF info, i.e., usinb debuglink, or buildid.
-   int verbose;
    Context();
    Context(const Context &) = delete;
    Context(Context &&) = delete;

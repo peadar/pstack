@@ -239,7 +239,7 @@ emain(int argc, char **argv, Context &context)
             'g',
             "directory",
             "extra location to find debug files for binaries and shared libraries",
-            [&](const char *arg) { context.debugDirectories.push_back(arg); })
+            [&](const char *arg) { context.addDebugDirectory(arg); })
 
     .add("constant",
             'b',
@@ -315,7 +315,7 @@ emain(int argc, char **argv, Context &context)
     .add("no-ext-debug",
             'n',
             "don't load external debugging information when processing",
-            Flags::setf(context.noExtDebug))
+            Flags::setf(context.options.noExtDebug))
 
     .add("version",
             'V',
