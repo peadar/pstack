@@ -221,78 +221,74 @@ auxtype2str(int auxtype) {
 void
 Process::processAUXV(const Reader &auxio)
 {
-    try {
-        for (auto &aux : ReaderArray<Elf::auxv_t>(auxio)) {
-            Elf::Addr hdr = aux.a_un.a_val;
-            switch (aux.a_type) {
-                case AT_ENTRY: {
-                    if (context.verbose > 2)
-                        *context.debug << "auxv: AT_ENTRY=" << hdr << std::endl;
-                    // this provides a reference for relocating the executable when
-                    // compared to the entrypoint there.
-                    entry = hdr;
-                    break;
-                }
-                case AT_SYSINFO: {
-                    if (context.verbose > 2)
-                        *context.debug << "auxv:AT_SYSINFO=" << hdr << std::endl;
-                    sysent = hdr;
-                    break;
-                }
-                case AT_SYSINFO_EHDR: {
-                    try {
-                        auto elf = std::make_shared<Elf::Object>(context, io->view("(vdso image)", hdr, 65536));
-                        vdsoBase = hdr;
-                        addElfObject("(vdso image)", elf, hdr);
-                        vdsoImage = elf;
-                        if (context.verbose >= 2) {
-                            *context.debug << "auxv: VDSO " << *elf->io
-                                << " loaded at " << std::hex << hdr << std::dec << "\n";
-                        }
-
-                    }
-                    catch (const std::exception &ex) {
-                        if (context.debug)
-                           *context.debug << "auxv: warning: failed to load DSO: " << ex.what() << "\n";
-                    }
-                    break;
-                }
-                case AT_BASE:
-                    if (context.verbose > 2)
-                        *context.debug << "auxv: AT_BASE=" << hdr << std::endl;
-                    interpBase = hdr;
-                    break;
-#ifdef AT_EXECFN
-                case AT_EXECFN: {
-                    if (context.verbose > 2)
-                        *context.debug << "auxv: AT_EXECFN=" << hdr << std::endl;
-                    try {
-                        auto exeName = io->readString(hdr);
-                        if (context.verbose >= 2)
-                            *context.debug << "filename from auxv: " << exeName << "\n";
-                        if (!execImage) {
-                            execImage = context.getImageForName(exeName);
-                            if (entry == 0)
-                                entry = execImage->getHeader().e_entry;
-                        }
-                    }
-                    catch (const Exception &ex) {
-                        *context.debug << "failed to read AT_EXECFN: " << ex.what() << std::endl;
-                    }
-
-                    break;
-                }
-#endif
-                default:
-                    if (context.verbose > 2)
-                        *context.debug << "auxv: " << auxtype2str( aux.a_type) << ": " << hdr << std::endl;
+    for (auto &aux : ReaderArray<Elf::auxv_t>(auxio)) {
+        Elf::Addr hdr = aux.a_un.a_val;
+        switch (aux.a_type) {
+            case AT_NULL: // Indicates end of the AUXV vector.
+                return;
+            case AT_ENTRY: {
+                if (context.verbose > 2)
+                    *context.debug << "auxv: AT_ENTRY=" << hdr << std::endl;
+                // this provides a reference for relocating the executable when
+                // compared to the entrypoint there.
+                entry = hdr;
+                break;
             }
-        }
-    } catch (const std::exception &ex) {
-        if (context.verbose)
-            *context.debug << "exception while reading auxv: " << ex.what() << "\n";
-    }
+            case AT_SYSINFO: {
+                if (context.verbose > 2)
+                    *context.debug << "auxv:AT_SYSINFO=" << hdr << std::endl;
+                sysent = hdr;
+                break;
+            }
+            case AT_SYSINFO_EHDR: {
+                try {
+                    auto elf = std::make_shared<Elf::Object>(context, io->view("(vdso image)", hdr, 65536));
+                    vdsoBase = hdr;
+                    addElfObject("(vdso image)", elf, hdr);
+                    vdsoImage = elf;
+                    if (context.verbose >= 2) {
+                        *context.debug << "auxv: VDSO " << *elf->io
+                            << " loaded at " << std::hex << hdr << std::dec << "\n";
+                    }
 
+                }
+                catch (const std::exception &ex) {
+                    if (context.debug)
+                        *context.debug << "auxv: warning: failed to load DSO: " << ex.what() << "\n";
+                }
+                break;
+            }
+            case AT_BASE:
+                if (context.verbose > 2)
+                    *context.debug << "auxv: AT_BASE=" << hdr << std::endl;
+                interpBase = hdr;
+                break;
+#ifdef AT_EXECFN
+            case AT_EXECFN: {
+                if (context.verbose > 2)
+                    *context.debug << "auxv: AT_EXECFN=" << hdr << std::endl;
+                try {
+                    auto exeName = io->readString(hdr);
+                    if (context.verbose >= 2)
+                        *context.debug << "filename from auxv: " << exeName << "\n";
+                    if (!execImage) {
+                        execImage = context.getImageForName(exeName);
+                        if (entry == 0)
+                            entry = execImage->getHeader().e_entry;
+                    }
+                }
+                catch (const Exception &ex) {
+                    *context.debug << "failed to read AT_EXECFN: " << ex.what() << std::endl;
+                }
+
+                break;
+            }
+#endif
+            default:
+                if (context.verbose > 2)
+                    *context.debug << "auxv: " << auxtype2str( aux.a_type) << ": " << hdr << std::endl;
+        }
+    }
 }
 
 static bool
