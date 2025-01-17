@@ -415,8 +415,8 @@ Object::findSymbolByAddress(Addr addr, int type)
         }
 #else
         static bool warned = false;
-        if (!warned && debug) {
-            *debug << "warning: no compiled support for LZMA - "
+        if (!warned && context.debug) {
+            *context.debug << "warning: no compiled support for LZMA - "
                 "can't decode debug data in " << *io << "\n";
             warned = true;
         }
