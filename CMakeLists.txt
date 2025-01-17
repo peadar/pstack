@@ -75,33 +75,33 @@ endif()
 
 if (PYTHON3 AND Python3_Development_FOUND)
    if ("${PYTHON3_SOURCE}" STREQUAL "") # not set
-      message(STATUS "Python 3 source not specified. Checking /usr/src/debug/Python-3.* as default")
-
-      file(GLOB PYTHON3_SOURCE_GLOB "/usr/src/debug/Python-3.*")
-      if ("${PYTHON3_SOURCE_GLOB}" STREQUAL "") # glob was empty
-         file(GLOB PYTHON3_SOURCE_GLOB "/usr/src/debug/python3*")
-      endif()
-
-      if ("${PYTHON3_SOURCE_GLOB}" STREQUAL "") # glob was empty
-         message(STATUS "Python 3 source not found")
-      else()
-         message(STATUS "Python3 source is \"${PYTHON3_SOURCE_GLOB}\"")
-         set(PYTHON3_SOURCE "${PYTHON3_SOURCE_GLOB}")
-      endif()
+      set( py3_src_patterns
+         "/usr/src/debug/Python-${Python3_VERSION}"
+         "/usr/src/debug/Python-3*"
+         "/usr/src/debug/python3"
+         )
+      foreach(pattern ${py3_src_patterns})
+         message(STATUS "checking ${pattern} for python-3 source")
+         file(GLOB found_path "${pattern}")
+         if (NOT "${found_path}" STREQUAL "")
+            message(STATUS "python-3 source is \"${found_path}\"")
+            set(PYTHON3_SOURCE "${found_path}")
+            break()
+         endif()
+      endforeach()
    endif()
 
-
-   if (NOT "${PYTHON3_SOURCE}" STREQUAL "") # src found in some way
-      set(pyinc "-I${Python3_INCLUDE_DIRS} -I${PYTHON3_SOURCE} -I${PYTHON3_SOURCE}/Include")
-      message(STATUS  "Python3_INCLUDE_DIRS are ${pyinc}")
-      add_definitions("-DWITH_PYTHON3")
-      set(pysrc ${pysrc} python3.cc pythonc.c)
-      set_source_files_properties(python3.cc PROPERTIES COMPILE_FLAGS ${pyinc})
-      set_source_files_properties(pythonc.c PROPERTIES COMPILE_FLAGS ${pyinc})
-      set_source_files_properties(canal.cc PROPERTIES COMPILE_FLAGS ${pyinc})
-   else()
+   if ("${PYTHON3_SOURCE}" STREQUAL "") # src not found, but we were asked for py3 support. Fail.
       message(FATAL_ERROR "Path to CPython source code needed for Python 3 support\nSpecify with -DPYTHON3_SOURCE=<path>")
    endif()
+
+   set(pyinc "-I${Python3_INCLUDE_DIRS} -I${PYTHON3_SOURCE} -I${PYTHON3_SOURCE}/Include")
+   message(STATUS  "Python3_INCLUDE_DIRS are ${pyinc}")
+   add_definitions("-DWITH_PYTHON3")
+   set(pysrc ${pysrc} python3.cc pythonc.c)
+   set_source_files_properties(python3.cc PROPERTIES COMPILE_FLAGS ${pyinc})
+   set_source_files_properties(pythonc.c PROPERTIES COMPILE_FLAGS ${pyinc})
+   set_source_files_properties(canal.cc PROPERTIES COMPILE_FLAGS ${pyinc})
 endif()
 
 if (Python2_Development_FOUND)
