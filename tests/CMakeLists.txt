@@ -37,7 +37,7 @@ SET_TARGET_PROPERTIES(noreturn PROPERTIES COMPILE_FLAGS "-O2 -g")
 
 
 add_custom_command(
-   OUTPUT basic-no-unwind-gen 
+   OUTPUT basic-no-unwind-gen
    COMMAND objcopy --strip-debug --remove-section .eh_frame basic basic-no-unwind
    VERBATIM )
 

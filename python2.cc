@@ -12,10 +12,10 @@ template<> char PythonTypePrinter<2>::pyBytesType[] = "PyString_Type";
 
 /**
  * @brief Reads a Python2 string
- * 
+ *
  * @param r The reader used
  * @param addr Address of PyStringObject
- * @return std::string 
+ * @return std::string
  */
 template <> std::string readString<2>(const Reader &r, const Elf::Addr addr) {
     return r.readString(addr + offsetof(PyBytesObject, ob_sval));
@@ -53,7 +53,7 @@ class DictPrinter final : public PythonTypePrinter<2> {
             pc->os << "{}";
             return 0;
         }
-        
+
         if (pc->depth > pc->proc.context.options.maxdepth) {
             pc->os << "{ ... }";
             return 0;

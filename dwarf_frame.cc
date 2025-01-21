@@ -160,7 +160,7 @@ CFI::CFI(const Info *info, FIType type_)
     do {
 
        // If we are using .eh_frame and have .eh_frame_hdr, we can use
-       // the sorted header later to read the FDEs lazily. 
+       // the sorted header later to read the FDEs lazily.
        if ( type != FI_EH_FRAME )
           break;
        if (!ehFrameHdrSec)

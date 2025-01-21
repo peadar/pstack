@@ -202,7 +202,7 @@ public:
 };
 
 // This allows a reader to provide an iterator over a sequence of objects of a
-// given type. Given a reader r, we can use 
+// given type. Given a reader r, we can use
 // for (const Foo &foo : ReaderArray<Foo>(r)) {
 //   ...
 // }

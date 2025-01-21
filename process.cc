@@ -371,7 +371,7 @@ PrintableFrame::PrintableFrame(Process &proc, const StackFrame &frame)
 }
 
 Dwarf::DIE removeCV(Dwarf::DIE type) {
-    while (type && 
+    while (type &&
           (type.tag() == Dwarf::DW_TAG_typedef
           || type.tag() == Dwarf::DW_TAG_const_type
           || type.tag() == Dwarf::DW_TAG_volatile_type))
