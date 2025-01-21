@@ -1,3 +1,12 @@
+/* This file is a copy of a "Objects/dict-common.h" file from CPython source.
+ *
+ * https://github.com/python/cpython/blob/340a82d9cff7127bb5a777d8b9a30b861bb4beee/Objects/dict-common.h
+ *
+ * Should we switch to handling layouts of various Python3 releases, this
+ * header file needs to be replaced with a series of headers, each
+ * corresponding to each Python3 minor version.
+ */
+
 #ifndef Py_DICT_COMMON_H
 #define Py_DICT_COMMON_H
 
