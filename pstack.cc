@@ -163,7 +163,7 @@ doPy(Procman::Process &proc, bool showModules, const PyInterpInfo &info) {
  * @brief Given a process, tries to print the Python strack trace of it.
  * If the process wasn't a Python process, returns false.
  * True on successful printing of Python stack trace
- * 
+ *
  * @param proc          The process
  * @param o             The stream to which to print the otutput
  * @param options       Options

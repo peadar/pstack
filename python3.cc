@@ -25,10 +25,10 @@ char PythonTypePrinter<3>::pyBytesType[] = "PyUnicode_Type";
 
 /**
  * @brief Converts a Python PyASCIIObject, PyCompactUnicodeObject or PyUnicodeObjec to a string
- * 
+ *
  * @param r The reader used
  * @param addr Address of the object
- * @return std::string 
+ * @return std::string
  */
 template <> std::string readString<3>(const Reader &r, const Elf::Addr addr) {
     PyASCIIObject baseObj = r.readObj<PyASCIIObject>(addr);

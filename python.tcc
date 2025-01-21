@@ -396,7 +396,7 @@ PythonPrinter<PyV>::print(Elf::Addr remoteAddr) const {
 }
 
 /*
- * process one python thread in an interpreter, at remote addr "ptr". 
+ * process one python thread in an interpreter, at remote addr "ptr".
  * returns the address of the next thread on the list.
  */
 template <int PyV>

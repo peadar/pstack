@@ -39,7 +39,7 @@ getPyInterpInfo(Procman::Process &proc) {
         *proc.context.debug << "python version is: " << major << "." << minor << std::endl;
 
     return PyInterpInfo {
-        libpython, libpythonAddr, interpreterHead, 
+        libpython, libpythonAddr, interpreterHead,
         "v" + std::to_string(major) + "." + std::to_string(minor),
         V2HEX(major, minor)};
 }
@@ -51,7 +51,7 @@ getInterpHead(Procman::Process &proc) {
     // (Python3 does not require this hack, because _PyRuntime is exported
     // in the dynamic symbols.)
     try {
-        auto [ libpython,  libpythonAddr, interpreterHead ] = 
+        auto [ libpython,  libpythonAddr, interpreterHead ] =
            proc.resolveSymbolDetail("Py_interp_headp", false,
                 [&](std::string_view name) {
                     return name.find("python") != std::string::npos;

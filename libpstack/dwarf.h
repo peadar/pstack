@@ -20,7 +20,7 @@ class LineInfo;
 class Unit;
 class CFI;
 struct CIE;
-} 
+}
 
 namespace pstack {
 
@@ -222,7 +222,7 @@ public:
                 ++rawIter;
                 return *this;
             }
-            const_iterator(const DIE &die_, Abbreviation::AttrNameMap::const_iterator rawIter_) : 
+            const_iterator(const DIE &die_, Abbreviation::AttrNameMap::const_iterator rawIter_) :
                 die(die_), rawIter(rawIter_) {}
             bool operator == (const const_iterator &rhs) const {
                 return rawIter == rhs.rawIter;
