@@ -1,12 +1,12 @@
 #include <Python.h>
 #include <frameobject.h>
 #include <dictobject.h>
-#include <Objects/dict-common.h>
 #include <longintrepr.h>
 #include <longintrepr.h>
 #include <unicodeobject.h>
 #include <methodobject.h>
 #include "libpstack/python.h"
+#include "python3_dict_internal.h"
 
 #define DK_SIZE(dk) ((dk)->dk_size)
 #define DK_IXSIZE(dk)                \
