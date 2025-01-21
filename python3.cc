@@ -3,7 +3,6 @@
 #include <dictobject.h>
 #include <Objects/dict-common.h>
 #include <longintrepr.h>
-#include <longintrepr.h>
 #include <unicodeobject.h>
 #include <methodobject.h>
 #include "libpstack/python.h"
