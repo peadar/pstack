@@ -190,6 +190,9 @@ add_test(NAME segv COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_SOURCE_DIR}/test
 add_test(NAME thread COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/thread-test.py)
 add_test(NAME jsondump COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/dump-test.py)
 add_test(NAME procself COMMAND tests/procself)
+if (PYTHON3 AND Python3_Development_FOUND)
+	add_test(NAME pydict COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/pydict_test.py)
+endif()
 
 # for automake and rpmbuild
 add_custom_target(check COMMAND make test)
