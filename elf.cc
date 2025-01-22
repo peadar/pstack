@@ -682,9 +682,9 @@ Reader::csptr Section::io() const {
 #ifndef WITH_ZLIB
     if (wantedZlib) {
         static bool warned = false;
-        if (!warned && debug) {
+        if (!warned && elf->context.debug) {
             warned = true;
-            *debug <<"warning: no support configured for compressed debug info in section "
+            *(elf->context.debug) <<"warning: no support configured for compressed debug info in section "
                 << name << " of " << *elf->io << std::endl;
         }
     }
