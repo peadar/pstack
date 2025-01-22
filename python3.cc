@@ -1,7 +1,6 @@
 #include <Python.h>
 #include <frameobject.h>
 #include <dictobject.h>
-#include <Objects/dict-common.h>
 #include <longintrepr.h>
 #include <unicodeobject.h>
 #include <methodobject.h>
@@ -15,6 +14,37 @@
                                  : sizeof(int64_t))
 #define DK_ENTRIES(dk) \
     ((PyDictKeyEntry *)(&((int8_t *)((dk)->dk_indices))[DK_SIZE(dk) * DK_IXSIZE(dk)]))
+
+/*
+ * A key of dictionary as implemented by Python3.
+ * Applies to versions <= 3.10.x
+ */
+typedef struct {
+    Py_hash_t me_hash;
+    PyObject *me_key;
+ PyObject *me_value;
+} PyDictKeyEntry;
+
+#define DKIX_EMPTY (-1)
+#define DKIX_DUMMY (-2)
+#define DKIX_ERROR (-3)
+
+/* a type of a lookup function which is used by Python3 dicts internally */
+typedef Py_ssize_t (*dict_lookup_func)
+    (PyDictObject *mp, PyObject *key, Py_hash_t hash, PyObject **value_addr);
+
+/*
+ * The dictionary's hashtable as implemented by Python3.
+ * Appies to version <= 3.10.x
+ */
+struct _dictkeysobject {
+    Py_ssize_t dk_refcnt;
+    Py_ssize_t dk_size;
+    dict_lookup_func dk_lookup;
+    Py_ssize_t dk_usable;
+    Py_ssize_t dk_nentries;
+    char dk_indices[];
+};
 
 namespace pstack {
 
