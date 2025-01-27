@@ -8,31 +8,41 @@ that a neatly printed dictionary is there. Afterwards it sends SIGKILL to the
 child and returns.
 """
 
+import os
 import signal
 import subprocess
-import os
 import time
 
 import pstack
 
 
 def main():
+    # this pipe synchronises the processes, so pstack is launched only
+    # after the subprocess actually printed something
+    r, w = os.pipe()
     pid = os.fork()
     if pid == 0:
+        os.close(r)
         a_dict = {"ahoy": "sailor"}
+        os.write(w, b"written")
+        os.close(w)
         while True:
             time.sleep(1)
     else:
+        os.close(w)
+        os.read(r, 7) # block until we get 7 bytes (the "written" string)
+        os.close(r)
         try:
-            # the output is kept raw (in bytes) as python's internal are not
-            # exactly UTF-8 only and can make UTF-8 decoder crash
+            # the output is kept raw (in bytes), because some of the literals
+            # in python code can be interpreted as UTF-8, which breaks the
+            # decoder.
             output = subprocess.check_output(
                 ["./" + pstack.PSTACK_BIN, "-pl", str(pid)]
             )
             assert b'"ahoy" : "sailor"' in output
         finally:
             os.kill(pid, signal.SIGKILL)
-
+            os.waitpid(pid, 0)
 
 if __name__ == "__main__":
     main()
