@@ -22,15 +22,14 @@ def main():
     r, w = os.pipe()
     pid = os.fork()
     if pid == 0:
-        os.close(r)
         a_dict = {"ahoy": "sailor"}
-        os.write(w, b"written")
-        os.close(w)
+        os.close(r)
+        os.close(w) # closing this pipe will unblock the read in the parent
         while True:
             time.sleep(1)
     else:
         os.close(w)
-        os.read(r, 7) # block until we get 7 bytes (the "written" string)
+        os.read(r, 1)
         os.close(r)
         try:
             # the output is kept raw (in bytes), because some of the literals
