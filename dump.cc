@@ -469,16 +469,15 @@ operator <<(std::ostream &os, const JSON<Dwarf::CIE, const Dwarf::CFI *> &dcie)
     .field("codeAlign", dcie.object.codeAlign)
     .field("dataAlign", dcie.object.dataAlign)
     .field("return address reg", dcie.object.rar)
-    .field("instruction length", dcie.object.end - dcie.object.instructions)
+    .field("instruction length", dcie.object.end - dcie.object.initial_instructions)
     .field("LSDA encoding", int(dcie.object.lsdaEncoding))
-    .field("instructions", DumpCFAInsns(dcie.object.instructions, dcie.object.end), dcie.context);
+    .field("instructions", DumpCFAInsns(dcie.object.initial_instructions, dcie.object.end), dcie.context);
 }
 
 std::ostream &
 operator << (std::ostream &os, const JSON<std::unique_ptr<Dwarf::FDE>, const Dwarf::CFI*> &dfi)
 {
     return JObject(os)
-        .field("cie", dfi.object->cieOff)
         .field( "loc", dfi.object->iloc)
         .field("range", dfi.object->irange)
         .field("instructions", DumpCFAInsns(dfi.object->instructions, dfi.object->end), dfi.context);

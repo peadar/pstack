@@ -519,11 +519,13 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     using namespace Dwarf;
 
 
+
     DWARFReader r(cfi->io, fde->instructions, fde->end);
 
     auto iter = location.dwarf()->callFrameForAddr.find(objaddr);
-    if (iter == location.dwarf()->callFrameForAddr.end())
-        location.dwarf()->callFrameForAddr[objaddr] = cie->execInsns(r, fde->iloc, objaddr);
+    if (iter == location.dwarf()->callFrameForAddr.end()) {
+        location.dwarf()->callFrameForAddr[objaddr] = fde->execInsns(objaddr);
+    }
 
     const CallFrame &dcf = location.dwarf()->callFrameForAddr[objaddr];
 
@@ -673,7 +675,7 @@ ProcessLocation::cie() const {
     const Dwarf::FDE *lfde = fde();
     if (lfde == nullptr)
         return nullptr;
-    return &cfi()->getCIE(lfde->cieOff);
+    return &lfde->cie;
 }
 
 std::vector<std::pair<std::string, int>>

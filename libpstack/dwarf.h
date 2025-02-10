@@ -477,6 +477,8 @@ public:
 
 };
 
+class CallFrame;
+
 // A frame-descriptor-entry describes the details of how to unwind the stack
 // over a range of machine addresses to a caller.
 struct FDE {
@@ -484,9 +486,11 @@ struct FDE {
     uintmax_t irange;
     Elf::Off instructions;
     Elf::Off end;
-    Elf::Off cieOff;
+    CIE &cie;
     std::vector<unsigned char> augmentation;
     FDE(const CFI &, DWARFReader &, Elf::Off cieOff_, Elf::Off endOff_);
+    CallFrame execInsns(uintmax_t addr) const;
+    CallFrame defaultFrame() const;
 };
 
 enum RegisterType {
@@ -521,7 +525,6 @@ struct CallFrame {
     int cfaReg;
     RegisterUnwind cfaValue;
     CallFrame();
-    // default copy constructor is valid.
 };
 
 // A CIE is a Common Information Entry, describing attributes of code and some
@@ -537,13 +540,13 @@ struct CIE {
     unsigned codeAlign;
     int dataAlign;
     int rar;
-    Elf::Off instructions;
+    Elf::Off initial_instructions;
     Elf::Off end;
     std::pair<uintmax_t,bool> personality;
     std::string augmentation;
     CIE(const CFI *, DWARFReader &, Elf::Off);
     CIE() = default;
-    CallFrame execInsns(DWARFReader &r, uintmax_t addr, uintmax_t wantAddr) const;
+    template <typename Yield> CallFrame execInsns(const CallFrame &cf, uintptr_t start, uintptr_t end, uintmax_t addr, Yield) const;
 };
 
 /*
