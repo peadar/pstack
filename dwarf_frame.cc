@@ -388,5 +388,3 @@ CIE::CIE(const CFI *fi, DWARFReader &r, Elf::Off end_)
 }
 
 }
-
-#include "dwarf_frame.tcc"
