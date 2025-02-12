@@ -847,11 +847,6 @@ inline
 Units::iterator::iterator(const Info *info_, Elf::Off offset)
     : info(info_), currentUnit(info->getUnit(offset)) {}
 
-// Execute a set of call frame instructions, updating the CallFrame data and/or
-// the current address as we go, and call "yield" just before executing the
-// next instruction. This allows for the caller to exit the execution early, or
-// observe the progress of the execution
-
 /*
  * A DWARF Reader is a wrapper for a reader that keeps a current position in the
  * underlying reader, and provides operations to read values in DWARF standard
@@ -958,6 +953,11 @@ public:
     void skip(Elf::Off amount) { off += amount; }
 };
 
+
+// Execute a set of call frame instructions, updating the CallFrame data and/or
+// the current address as we go, and call "yield" just before executing the
+// next instruction. This allows for the caller to exit the execution early, or
+// observe the progress of the execution
 template <typename YieldFunc>
 CallFrame
 CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_t addr, YieldFunc yield) const {
