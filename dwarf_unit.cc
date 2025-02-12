@@ -1,6 +1,5 @@
 #include "libpstack/elf.h"
 #include "libpstack/dwarf.h"
-#include "libpstack/dwarf_reader.h"
 
 namespace pstack::Dwarf {
 

@@ -1,5 +1,4 @@
 #include "libpstack/dwarf.h"
-#include "libpstack/dwarf_reader.h"
 
 namespace pstack::Dwarf {
 enum DWARF_MACRO_CODE {

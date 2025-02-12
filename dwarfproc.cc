@@ -1,7 +1,6 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/elf.h"
 #include "libpstack/proc.h"
-#include "libpstack/dwarf_reader.h"
 #include <stack>
 #include <unistd.h>
 
