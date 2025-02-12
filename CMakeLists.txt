@@ -167,8 +167,10 @@ endif()
 # bonus: heap debugger
 add_library(hdbg SHARED heap.c)
 add_executable(hdmp hdmp.cc)
+add_executable(stackusers stackusers.cc)
 target_link_libraries(hdmp dwelf procman)
 target_link_libraries(hdbg dl)
+target_link_libraries(stackusers dwelf procman)
 
 install(TARGETS ${PSTACK_BIN} canal)
 install(TARGETS hdmp)
