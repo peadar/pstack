@@ -172,7 +172,7 @@ find_path (
 find_library ( DEBUGINFOD_LIB NAMES debuginfod )
 
 if(DEBUGINFOD_INCLUDE_DIR AND DEBUGINFOD_LIB)
-   message("found debuginfod header at ${DEBUGINFOD_INCLUDE_DIR}, lib at ${DEBUGINFOD_LIB}")
+   message(STATUS "found debuginfod header at ${DEBUGINFOD_INCLUDE_DIR}, lib at ${DEBUGINFOD_LIB}")
    target_link_libraries(dwelf ${DEBUGINFOD_LIB})
    add_definitions(-DDEBUGINFOD)
 else()
