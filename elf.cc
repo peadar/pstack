@@ -579,6 +579,7 @@ Object::getDebug() const
       if (fd >= 0) {
          auto reader = std::make_shared<FileReader>(context, path, fd );
          debugObject = std::make_shared<Elf::Object>( context, reader, true );
+         free(path);
       } else if (context.verbose) {
          *context.debug << "failed to fetch debuginfo with debuginfod: " << strerror(-fd) << "\n";
       }
