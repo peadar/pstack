@@ -538,18 +538,19 @@ Object::getDebug() const
     debugLoaded = true;
 
     // Use the build ID to find debug data.
+    std::vector<unsigned char> buildID;
     for (const auto &note : notes()) {
         if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
             std::ostringstream dir;
             dir << ".build-id/";
             size_t i;
             auto io = note.data();
-            std::vector<unsigned char> data(io->size());
-            io->readObj(0, &data[0], io->size());
-            dir << std::hex << std::setw(2) << std::setfill('0') << int(data[0]);
+            buildID.resize(io->size());
+            io->readObj(0, &buildID[0], io->size());
+            dir << std::hex << std::setw(2) << std::setfill('0') << int(buildID[0]);
             dir << "/";
             for (i = 1; i < size_t(io->size()); ++i)
-                dir << std::setw(2) << int(data[i]);
+                dir << std::setw(2) << int(buildID[i]);
             dir << ".debug" << std::dec;
             debugObject = context.getDebugImage(dir.str());
             break;
@@ -566,6 +567,23 @@ Object::getDebug() const
             debugObject = context.getDebugImage(dir + "/" + link); //
         }
     }
+
+#ifdef DEBUGINFOD
+   if (!debugObject && buildID.size() && context.debuginfod) {
+      char *path;
+      int fd = debuginfod_find_debuginfo(
+            context.debuginfod.get(),
+            buildID.data(),
+            int( buildID.size() ),
+            &path );
+      if (fd >= 0) {
+         auto reader = std::make_shared<FileReader>(context, path, fd );
+         debugObject = std::make_shared<Elf::Object>( context, reader, true );
+      } else if (context.verbose) {
+         *context.debug << "failed to fetch debuginfo with debuginfod: " << strerror(-fd) << "\n";
+      }
+   }
+#endif
 
     if (!debugObject) {
         if (context.verbose >= 2)

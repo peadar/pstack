@@ -11,9 +11,8 @@
 namespace pstack {
 
 Context::Context()
-: debugDirectories { "/usr/lib/debug", "/usr/lib/debug/usr" }
-, debug(&std::cerr)
-, output(&std::cout)
+    : debugDirectories { "/usr/lib/debug", "/usr/lib/debug/usr" }
+    , debug(&std::cerr), output(&std::cout)
 {
 }
 

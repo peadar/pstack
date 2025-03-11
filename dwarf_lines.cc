@@ -117,8 +117,7 @@ LineInfo::build(DWARFReader &r, Unit &unit)
         }
     } else {
         directories.emplace_back(".");
-        int count;
-        for (count = 0;; count++) {
+        for (;;) {
             const auto &s = r.getstring();
             if (s == "")
                 break;
@@ -126,7 +125,7 @@ LineInfo::build(DWARFReader &r, Unit &unit)
         }
 
         files.emplace_back("unknown", 0U, 0U, 0U); // index 0 is special
-        for (int count = 1;; count++) {
+        for ( ;; ) {
             char c;
             r.io->readObj(r.getOffset(), &c);
             if (c == 0) {

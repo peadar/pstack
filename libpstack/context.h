@@ -3,6 +3,9 @@
 #include <string_view>
 #include <memory>
 #include <vector>
+#ifdef DEBUGINFOD
+#include <elfutils/debuginfod.h>
+#endif
 #include <limits>
 #include <fcntl.h>
 
@@ -24,12 +27,14 @@ struct PstackOptions {
     bool nothreaddb = false; // don't use threaddb.
     bool nodienames = false; // don't use names from DWARF dies in backtraces.
     bool noExtDebug = false; // if set, don't look for exernal ELF info, i.e., usinb debuglink, or buildid.
+#ifdef DEBUGINFOD
+    bool doDebuginfod = true; // if set, don't look for exernal ELF info, i.e., usinb debuglink, or buildid.
+#endif
     int maxdepth = std::numeric_limits<int>::max();
     int maxframes = 20;
 };
 
 class Context {
-
    std::map<std::shared_ptr<Elf::Object>, std::shared_ptr<Dwarf::Info>> dwarfCache;
    std::map<std::string, std::shared_ptr<Elf::Object>> elfCache;
    std::vector<std::string> debugDirectories;
@@ -37,10 +42,17 @@ public:
    void addDebugDirectory(std::string_view dir) {
       debugDirectories.emplace_back(dir);
    }
-
    std::ostream *debug{};
    std::ostream *output{};
    PstackOptions options{};
+#ifdef DEBUGINFOD
+   struct DidClose {
+      void operator() ( debuginfod_client *client ) {
+         debuginfod_end( client );
+      }
+   };
+   std::unique_ptr<debuginfod_client, DidClose> debuginfod;
+#endif
    int verbose{};
    std::vector<std::pair<std::string, std::string>> pathReplacements;
    std::string dirname(const std::string &);

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.7)
+cmake_minimum_required(VERSION 3.10)
 set(PSTACK_SOVERSION 2.10)
 set(PSTACK_VERSION 2.10)
 project(pstack LANGUAGES C CXX VERSION "${PSTACK_VERSION}" )
@@ -7,8 +7,9 @@ include (GNUInstallDirs)
 enable_testing()
 add_subdirectory(tests)
 
-option(PYTHON3 "Compile with experimental python 3 support" OFF)
+option(PYTHON3 "Compile with python 3 support" OFF)
 option(PYTHON2 "Compile with python 2 support" ON)
+option(DEBUGINFOD "Compile with debuginfod support" ON)
 
 math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 set(PSTACK_BIN "pstack" CACHE STRING "Name of the 'pstack' binary")
@@ -162,6 +163,21 @@ endif()
 
 if (NOT (Python2_Development_FOUND) AND PYTHON2)
    message(WARNING "no python2 support found")
+endif()
+
+if (DEBUGINFOD)
+find_path (
+   DEBUGINFOD_INCLUDE_DIR NAMES elfutils/debuginfod.h
+   HINTS /usr/include/ ${CMAKE_INSTALL_FULL_INCLUDEDIR} )
+find_library ( DEBUGINFOD_LIB NAMES debuginfod )
+
+if(DEBUGINFOD_INCLUDE_DIR AND DEBUGINFOD_LIB)
+   message("found debuginfod header at ${DEBUGINFOD_INCLUDE_DIR}, lib at ${DEBUGINFOD_LIB}")
+   target_link_libraries(dwelf ${DEBUGINFOD_LIB})
+   add_definitions(-DDEBUGINFOD)
+else()
+   message(WARNING "no debuginod support found")
+endif()
 endif()
 
 # bonus: heap debugger

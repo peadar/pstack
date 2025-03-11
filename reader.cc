@@ -16,9 +16,14 @@ FileReader::size() const
     return fileSize;
 }
 
-FileReader::FileReader(Context &c, string name_)
-    : name(std::move(name_))
-    , file(c.openfile(name))
+FileReader::FileReader(Context &c, const std::string &name_)
+    : FileReader( c, name_, c.openfile(name_) )
+{
+}
+
+FileReader::FileReader(Context &, const string &name_, int fd)
+    : name(name_)
+    , file(fd)
 {
     struct stat buf{};
     int rc = fstat(file, &buf);

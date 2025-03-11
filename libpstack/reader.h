@@ -104,7 +104,8 @@ protected:
     mutable Off fileSize;
 public:
     virtual size_t read(Off off, size_t count, char *ptr) const override ;
-    FileReader(Context &, std::string name_);
+    FileReader(Context &, const std::string &name_);
+    FileReader(Context &, const std::string &name_, int fd);
     ~FileReader();
     void describe(std::ostream &os) const  override { os << name; }
     std::string filename() const override { return name; }
@@ -195,7 +196,7 @@ public:
     std::string filename() const override { return upstream->filename(); }
 
     // Implement "view" on the parent with our offset added.
-    Reader::csptr view( const std::string &name, Off offset_, Off size) const {
+    Reader::csptr view( const std::string &name, Off offset_, Off size) const override {
        return upstream->view( name, offset + offset_, size );
     }
 

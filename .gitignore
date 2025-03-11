@@ -16,3 +16,4 @@ build
 .cache
 .clang-tidy
 py311
+compile_commands.json

@@ -481,7 +481,7 @@ public:
 
 };
 
-class CallFrame;
+struct CallFrame;
 
 // A frame-descriptor-entry describes the details of how to unwind the stack
 // over a range of machine addresses to a caller.
