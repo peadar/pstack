@@ -577,7 +577,8 @@ Object::getDebug() const
             int( buildID.size() ),
             &path );
       if (fd >= 0) {
-         auto reader = std::make_shared<FileReader>(context, path, fd );
+         std::shared_ptr<Reader> reader = std::make_shared<FileReader>(context, path, fd );
+         reader = std::make_shared<CacheReader>(reader);
          debugObject = std::make_shared<Elf::Object>( context, reader, true );
          free(path);
       } else if (context.verbose) {
