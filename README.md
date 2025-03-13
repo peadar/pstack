@@ -3,7 +3,7 @@
 **A from-scratch implementation of pstack using DWARF debugging and unwind
 information.  Works for C/C++, Go, Rust, and Python**
 
-A traditional pstack command can print a backtrace of each thread
+A traditional pstack command can generally print a backtrace of each thread
 in a running program, and sometimes from a core file.
 
 This version of pstack uses its own self contained ELF and DWARF parsing
