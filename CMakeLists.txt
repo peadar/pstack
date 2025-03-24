@@ -13,6 +13,11 @@ option(DEBUGINFOD "Compile with debuginfod support" ON)
 
 math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 set(PSTACK_BIN "pstack" CACHE STRING "Name of the 'pstack' binary")
+
+# Generate position independent code, even for static libs - that way we can
+# link them to shared libs.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/" CACHE STRING "Rpath to install for binaries or the empty string")
 set(LIBTYPE "SHARED" CACHE STRING "Build libraries as STATIC or SHARED")
 set (PYTHON3_SOURCE "" CACHE STRING "Path to the CPython source code")
