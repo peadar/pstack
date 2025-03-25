@@ -13,7 +13,7 @@
 
 namespace pstack {
 
-void Context::DidClose::operator() ( struct debuginfod_client *client )
+void Context::DidClose::operator() ( [[maybe_unused]] struct debuginfod_client *client )
 {
 #ifdef DEBUGINFOD
     debuginfod_end( client );
