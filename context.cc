@@ -7,13 +7,25 @@
 
 #include <unistd.h>
 #include <string.h>
+#include <elfutils/debuginfod.h>
 
 namespace pstack {
+
+void Context::DidClose::operator() ( struct debuginfod_client *client )
+{
+#ifdef DEBUGINFOD
+    debuginfod_end( client );
+#endif
+}
 
 Context::Context()
     : debugDirectories { "/usr/lib/debug", "/usr/lib/debug/usr" }
     , debug(&std::cerr), output(&std::cout)
 {
+#ifdef DEBUGINFOD
+    if (!options.noDebuginfod)
+       debuginfod.reset( debuginfod_begin() );
+#endif
 }
 
 int dwarfLookups, elfLookups, dwarfHits, elfHits;

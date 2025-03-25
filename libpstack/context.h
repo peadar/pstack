@@ -3,11 +3,10 @@
 #include <string_view>
 #include <memory>
 #include <vector>
-#ifdef DEBUGINFOD
-#include <elfutils/debuginfod.h>
-#endif
 #include <limits>
 #include <fcntl.h>
+
+struct debuginfod_client;
 
 namespace pstack {
 class Reader;
@@ -26,12 +25,10 @@ struct PstackOptions {
     bool dolocals = false;
     bool nothreaddb = false; // don't use threaddb.
     bool nodienames = false; // don't use names from DWARF dies in backtraces.
-    bool noExtDebug = false; // if set, don't look for exernal ELF info, i.e., usinb debuglink, or buildid.
-#ifdef DEBUGINFOD
-    bool doDebuginfod = true; // if set, don't look for exernal ELF info, i.e., usinb debuglink, or buildid.
-#endif
+    bool noExtDebug = false; // don't look for exernal ELF info, i.e., using debuglink, or buildid.
+    bool noDebuginfod = false; // don't use debuginfod client library.
     int maxdepth = std::numeric_limits<int>::max();
-    int maxframes = 20;
+    int maxframes = 30;
 };
 
 class Context {
@@ -45,14 +42,11 @@ public:
    std::ostream *debug{};
    std::ostream *output{};
    PstackOptions options{};
-#ifdef DEBUGINFOD
    struct DidClose {
-      void operator() ( debuginfod_client *client ) {
-         debuginfod_end( client );
-      }
+      void operator() ( struct debuginfod_client *client );
+
    };
    std::unique_ptr<debuginfod_client, DidClose> debuginfod;
-#endif
    int verbose{};
    std::vector<std::pair<std::string, std::string>> pathReplacements;
    std::string dirname(const std::string &);

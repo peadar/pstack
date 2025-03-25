@@ -219,7 +219,6 @@ emain(int argc, char **argv, Context &context)
 #endif
     std::string execName;
     bool printAllStacks = false;
-    bool disableDebuginfod = false;
     int exitCode = -1; // used for options that exit immediately to signal exit.
     std::string subprocessCmd;
 
@@ -364,7 +363,7 @@ emain(int argc, char **argv, Context &context)
 
 #ifdef DEBUGINFOD
     .add("no-debuginfod", Flags::LONGONLY,
-          "disable debuginfod client", Flags::setf( disableDebuginfod ) )
+          "disable debuginfod client", Flags::setf( context.options.noDebuginfod ) )
 #endif
 
     .parse(argc, argv);
@@ -375,10 +374,7 @@ emain(int argc, char **argv, Context &context)
     // any instance of a non-core ELF image will override default behaviour of
     // discovering the executable
     Elf::Object::sptr exec;
-#ifdef DEBUGINFOD
-    if (!disableDebuginfod)
-       context.debuginfod.reset( debuginfod_begin() );
-#endif
+
     if (execName != "")
          exec = context.getImageForName(execName);
 

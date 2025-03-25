@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <iostream>
 #include <cstring>
+#include <elfutils/debuginfod.h>
 
 #include <unistd.h>
 
