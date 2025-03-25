@@ -7,7 +7,9 @@
 
 #include <unistd.h>
 #include <string.h>
+#ifdef DEBUGINFOD
 #include <elfutils/debuginfod.h>
+#endif
 
 namespace pstack {
 
