@@ -241,7 +241,7 @@ CoreProcess::addressSpace() const {
         if ((hdr.p_flags & PF_X) != 0)
            flags.insert(AddressRange::Permission::exec);
         rv.push_back( { hdr.p_vaddr, hdr.p_vaddr + hdr.p_memsz,
-                hdr.p_vaddr + hdr.p_filesz, 0, {0, 0, 0, name}, {}, {}});
+                hdr.p_vaddr + hdr.p_filesz, 0, {0, 0, 0, name}, flags, {}});
     }
     return rv;
 }
