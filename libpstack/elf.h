@@ -232,7 +232,8 @@ class SymbolSection {
     Reader::csptr strings;
     ReaderArray<Sym> array;
 public:
-    auto begin() { return array.begin(); }
+    using iterator = ReaderArray<Sym>::iterator;
+    iterator begin() { return array.begin(); }
     auto end() { return array.end(); }
     Elf::Sym operator [] (size_t idx) const {
         return symbols->readObj<Sym>(idx * sizeof (Sym));
