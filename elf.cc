@@ -9,7 +9,6 @@
 #endif
 
 #include <algorithm>
-#include <iomanip>
 #include <iostream>
 #include <cstring>
 #ifdef DEBUGINFOD
@@ -463,6 +462,10 @@ Object::getSection(const string &name, Word type) const
     return *sectionHeaders[0];
 }
 
+/*
+ * Get the section for this image, or, if its absent, the same section from the
+ * associated debug image.
+ */
 const Section &
 Object::getDebugSection(const string &name, Word type) const
 {
@@ -490,10 +493,7 @@ Object::getLinkedSection(const Section &from) const
         return from;
     if (from.elf == this) // it might come from the debug object...
         return *sectionHeaders[from.shdr.sh_link];
-    auto debug = getDebug();
-    if (debug)
-       return debug->getLinkedSection(from);
-    return *sectionHeaders[0];
+    return from.elf->getLinkedSection(from);
 }
 
 /*
@@ -536,6 +536,23 @@ Object::findDebugSymbol(const string &name)
     return {undef(), 0};
 }
 
+BuildID Object::getBuildID() const {
+    for (const auto &note : notes()) {
+        if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
+            Elf::BuildID buildID;
+            auto io = note.data();
+            buildID.data.resize(io->size());
+            io->readObj(0, &buildID.data[0], io->size());
+            return buildID;
+        }
+    }
+    return BuildID{};
+}
+
+/*
+ * Find the debug object associated with this ELF object.
+ * This can be located by build ID or by path.
+ */
 Object *
 Object::getDebug() const
 {
@@ -544,24 +561,9 @@ Object::getDebug() const
     debugLoaded = true;
 
     // Use the build ID to find debug data.
-    std::vector<unsigned char> buildID;
-    for (const auto &note : notes()) {
-        if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
-            std::ostringstream dir;
-            dir << ".build-id/";
-            size_t i;
-            auto io = note.data();
-            buildID.resize(io->size());
-            io->readObj(0, &buildID[0], io->size());
-            dir << std::hex << std::setw(2) << std::setfill('0') << int(buildID[0]);
-            dir << "/";
-            for (i = 1; i < size_t(io->size()); ++i)
-                dir << std::setw(2) << int(buildID[i]);
-            dir << ".debug" << std::dec;
-            debugObject = context.getDebugImage(dir.str());
-            break;
-        }
-    }
+    auto bid = getBuildID();
+    if (bid)
+        debugObject = context.getDebugImage(bid);
 
     // If that doesn't work, maybe the gnu_debuglink is valid?
     if (!debugObject) {
@@ -570,40 +572,20 @@ Object::getDebug() const
         if (hdr) {
             auto link = hdr.io()->readString(0);
             auto dir = context.dirname(stringify(*io));
-            debugObject = context.getDebugImage(dir + "/" + link); //
+            debugObject = context.getDebugImage(dir + "/" + link);
         }
     }
 
-#ifdef DEBUGINFOD
-   if (!debugObject && buildID.size() && context.debuginfod) {
-      char *path;
-      int fd = debuginfod_find_debuginfo(
-            context.debuginfod.get(),
-            buildID.data(),
-            int( buildID.size() ),
-            &path );
-      if (fd >= 0) {
-         std::shared_ptr<Reader> reader = std::make_shared<FileReader>(context, path, fd );
-         reader = std::make_shared<CacheReader>(reader);
-         debugObject = std::make_shared<Elf::Object>( context, reader, true );
-         free(path);
-      } else if (context.verbose) {
-         *context.debug << "failed to fetch debuginfo with debuginfod: " << strerror(-fd) << "\n";
-      }
-   }
-#endif
+    if (!debugObject)
+       return nullptr;
 
-    if (!debugObject) {
-        if (context.verbose >= 2)
-           *context.debug << "no debug object for " << *this->io << "\n";
-        return nullptr;
-    }
-
-    if (context.verbose >= 2)
-        *context.debug << "found debug object " << *debugObject->io << " for " << *io << "\n";
+    auto dbid = debugObject->getBuildID();
+    if (dbid != bid)
+        *context.debug << "build IDs differ for linked object: " << bid << " != " << dbid << "\n";
 
     // Validate that the .dynamic section in the debug object and the one in
     // the original image have the same .sh_addr.
+    // XXX: skip if build IDs are the same?
     auto &s = getSection(".dynamic", SHT_NULL);
     auto &d = debugObject->getSection(".dynamic", SHT_NULL);
 

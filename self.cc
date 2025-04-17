@@ -16,7 +16,7 @@
 
 namespace pstack::Procman {
 SelfProcess::SelfProcess(Context &context_, const Elf::Object::sptr &ex)
-    : Process( context_, ex ? ex : context_.getImageForName("/proc/self/exe"),
+    : Process( context_, ex ? ex : context_.getImage("/proc/self/exe"),
           std::make_shared<MemReader>("me", std::numeric_limits<size_t>::max(), nullptr))
     , pid( getpid() )
 {

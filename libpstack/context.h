@@ -13,6 +13,7 @@ class Reader;
 
 namespace Elf {
 class Object;
+class BuildID;
 }
 
 namespace Dwarf {
@@ -33,8 +34,14 @@ struct PstackOptions {
 
 class Context {
    std::map<std::shared_ptr<Elf::Object>, std::shared_ptr<Dwarf::Info>> dwarfCache;
-   std::map<std::string, std::shared_ptr<Elf::Object>> elfCache;
+
+   std::map<std::string, std::shared_ptr<Elf::Object>> imageByName;
+   std::map<std::string, std::shared_ptr<Elf::Object>> debugImageByName;
+   std::map<Elf::BuildID, std::shared_ptr<Elf::Object>> imageByID;
+   std::map<Elf::BuildID, std::shared_ptr<Elf::Object>> debugImageByID;
    std::vector<std::string> debugDirectories;
+   template <typename Container> std::shared_ptr<Elf::Object> getImageIfLoaded( const Container &ctr, const typename Container::key_type &key);
+
 public:
    void addDebugDirectory(std::string_view dir) {
       debugDirectories.emplace_back(dir);
@@ -44,7 +51,6 @@ public:
    PstackOptions options{};
    struct DidClose {
       void operator() ( struct debuginfod_client *client );
-
    };
    std::unique_ptr<debuginfod_client, DidClose> debuginfod;
    int verbose{};
@@ -54,10 +60,18 @@ public:
    std::string linkResolve(std::string name);
    int openfile(const std::string &filename, int mode = O_RDONLY, int umask = 0777);
    int openFileDirect(const std::string &name_, int mode, int mask);
-   std::shared_ptr<Elf::Object> getImageForName(const std::string &name, bool isDebug = false);
-   std::shared_ptr<Elf::Object> getImageIfLoaded(const std::string &name);
+
+   std::shared_ptr<Elf::Object> getImage(const std::string &name, bool isDebug = false);
+   std::shared_ptr<Elf::Object> getImage(const Elf::BuildID &);
+
+   // Debug images are specifically those with the text/data stripped, and just
+   // the Dwarf/symbol table left.
    std::shared_ptr<Elf::Object> getDebugImage(const std::string &name);
+   std::shared_ptr<Elf::Object> getDebugImage(const Elf::BuildID &);
+
    std::shared_ptr<Dwarf::Info> getDwarf(const std::string &);
+   std::shared_ptr<Dwarf::Info> getDwarf(const Elf::BuildID &);
+
    std::shared_ptr<Dwarf::Info> getDwarf(std::shared_ptr<Elf::Object>);
    void flush(std::shared_ptr<Elf::Object> o);
    std::string procname(pid_t pid, const std::string &base);
