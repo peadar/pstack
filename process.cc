@@ -172,6 +172,7 @@ Process::load()
     if (auxv)
         processAUXV(*auxv);
 
+    // by now, we should know what executable was loaded for the process.
     if (!execImage)
         throw (Exception() << "no executable image located for process");
 
@@ -289,22 +290,64 @@ Process::processAUXV(const Reader &auxio)
         }
     }
 
-    if (phNum && phOff) {
-       auto view = io->view("phdrs", phOff, sizeof (Elf::Phdr) * phNum);
-       ReaderArray<Elf::Phdr> headers { *view };
-       for ( auto phdr : headers ) {
-          if (phdr.p_type == PT_PHDR) {
-             auto elf = std::make_shared<Elf::Object>(context, io->view("(in-process exe)", phOff - phdr.p_offset , 4096));
-             exeID = elf->getBuildID(); // for a core, this might be just the first page of the executable - we find it later.
-             if (context.verbose && exeID) {
-                *context.debug << "found build-id for process's executable: " << exeID <<  "\n";
-             }
-          }
-       }
+
+    // If we have phdrs, process them. Use PT_PHDR to find the relocation ofset
+    // between the phOff and the virtual addresses in the executable image.
+    auto view = io->view("phdrs", phOff, sizeof (Elf::Phdr) * phNum);
+    ReaderArray<Elf::Phdr> headers { *view };
+    Elf::Addr vaOff = 0;
+    std::optional<Elf::Phdr> ptDynamic;
+
+    std::vector<Elf::Addr> notes;
+    for ( auto phdr : headers ) {
+        switch (phdr.p_type) {
+            case PT_PHDR:
+                // that's the diff between the va's in the process vs the image.
+                // XXX: always before the notes?
+                vaOff = phOff - phdr.p_vaddr;
+                break;
+            case PT_NOTE:
+                notes.push_back(phdr.p_vaddr);
+                break;
+
+            case PT_DYNAMIC:
+                ptDynamic = phdr;
+                break;
+        }
+    }
+    if (ptDynamic) {
+        auto view = io->view( "dynamic table", ptDynamic->p_vaddr + vaOff, ptDynamic->p_memsz );
+        for (auto dyn : ReaderArray<Elf::Dyn>(*view)) {
+            if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0) {
+                if (context.verbose)
+                    *context.debug << "found DT_DEBUG at " << std::hex << dyn.d_un.d_ptr << std::dec << " from auxv\n";
+            }
+        }
     }
 
-    if (!execImage && exeID)
-       execImage = context.getImage(exeID);
+    // Find the executable image - we'll need it to find DT_DEBUG.
+    if (!execImage) {
+        // search for a GNU_BUILD_ID note in the notes.
+        for ( auto noteOff : notes) {
+            auto noteVa = noteOff + vaOff;
+            auto n = io->readObj<Elf::Note>( noteOff + vaOff );
+            if (n.n_type != Elf::GNU_BUILD_ID)
+                continue;
+            std::vector<char> name(n.n_namesz);
+            io->read(noteVa + sizeof n, name.size(), name.data());
+            if (name[n.n_namesz - 1] == 0)
+                name.resize(name.size() - 1);
+            if (std::string_view(name.data(), name.size()) != "GNU")
+                continue;
+            exeID.data.resize(n.n_descsz);
+            io->read(noteVa + sizeof n + 4, n.n_descsz, (char *)exeID.data.data());
+            if (context.verbose)
+                *context.debug << "build ID From AT_PHDR: " << exeID << "\n";
+            break;
+        }
+        execImage = context.getImage(exeID);
+    }
+
     if (!execImage && exeName != "")
        execImage = context.getImage(exeName);
     if (!execImage)
@@ -801,8 +844,11 @@ Process::findRDebugAddr()
         auto dynReader = io->view("PT_DYNAMIC segment", segment.p_vaddr + loadAddr, segment.p_filesz);
         ReaderArray<Elf::Dyn> dynamic(*dynReader);
         for (auto &dyn : dynamic)
-            if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0)
+            if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0) {
+                if (context.verbose)
+                    *context.debug << "found rdebugaddr via DT_DEBUG at " << dyn.d_un.d_ptr << "\n";
                 return dyn.d_un.d_ptr;
+            }
     }
     /*
      * If there's no DT_DEBUG, we've probably got someone executing a shared
