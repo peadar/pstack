@@ -234,8 +234,10 @@ public:
 
 class Process : public ps_prochandle {
     Elf::Addr entry;
+    Elf::Addr dt_debug;
     Elf::Addr interpBase;
     void loadSharedObjects(Elf::Addr);
+    Elf::Addr extractDtDebugFromDynamicSegment(const Elf::Phdr &phdr, Elf::Addr loadAddr);
 public:
     std::map<Elf::Addr, MappedObject> objects;
     Elf::Addr vdsoBase;

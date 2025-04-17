@@ -143,6 +143,7 @@ gregset2core(Elf::CoreRegisters &core, const gregset_t greg) {
 
 Process::Process(pstack::Context &context_, Elf::Object::sptr exec, Reader::sptr memory)
     : entry(0)
+    , dt_debug(0)
     , interpBase(0)
     , vdsoBase(0)
     , agent(nullptr)
@@ -172,6 +173,7 @@ Process::load()
     if (auxv)
         processAUXV(*auxv);
 
+    // by now, we should know what executable was loaded for the process.
     if (!execImage)
         throw (Exception() << "no executable image located for process");
 
@@ -218,6 +220,20 @@ auxtype2str(int auxtype) {
 #include "libpstack/elf/auxv.h"
    return "unknown type";
 #undef AUX_TYPE
+}
+
+Elf::Addr
+Process::extractDtDebugFromDynamicSegment(const Elf::Phdr &phdr, Elf::Addr loadAddr) {
+    auto dynReader = io->view("PT_DYNAMIC segment", phdr.p_vaddr + loadAddr, phdr.p_filesz);
+    ReaderArray<Elf::Dyn> dynamic(*dynReader);
+    for (auto &dyn : dynamic) {
+        if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0) {
+            if (context.verbose)
+                *context.debug << "found rdebugaddr via DT_DEBUG at " << dyn.d_un.d_ptr << "\n";
+            return dyn.d_un.d_ptr;
+        }
+    }
+    return 0;
 }
 
 void
@@ -289,22 +305,55 @@ Process::processAUXV(const Reader &auxio)
         }
     }
 
-    if (phNum && phOff) {
-       auto view = io->view("phdrs", phOff, sizeof (Elf::Phdr) * phNum);
-       ReaderArray<Elf::Phdr> headers { *view };
-       for ( auto phdr : headers ) {
-          if (phdr.p_type == PT_PHDR) {
-             auto elf = std::make_shared<Elf::Object>(context, io->view("(in-process exe)", phOff - phdr.p_offset , 4096));
-             exeID = elf->getBuildID(); // for a core, this might be just the first page of the executable - we find it later.
-             if (context.verbose && exeID) {
-                *context.debug << "found build-id for process's executable: " << exeID <<  "\n";
-             }
-          }
-       }
+    // If we have phdrs, process them. Use PT_PHDR to find the relocation ofset
+    // between the phOff and the virtual addresses in the executable image.
+    auto view = io->view("phdrs", phOff, sizeof (Elf::Phdr) * phNum);
+    ReaderArray<Elf::Phdr> headers { *view };
+    std::optional<Elf::Phdr> ptDynamic;
+
+    std::vector<Elf::Addr> notes;
+    Elf::Addr exeReloc = 0;
+    for ( auto phdr : headers ) {
+        switch (phdr.p_type) {
+            case PT_PHDR:
+                // that's the diff between the va's in the process vs the image.
+                exeReloc = phOff - phdr.p_vaddr;
+                break;
+            case PT_NOTE:
+                notes.push_back(phdr.p_vaddr);
+                break;
+            case PT_DYNAMIC:
+                ptDynamic = phdr;
+                break;
+        }
     }
 
-    if (!execImage && exeID)
-       execImage = context.getImage(exeID);
+    if (ptDynamic && dt_debug == 0)
+        dt_debug = extractDtDebugFromDynamicSegment(*ptDynamic, exeReloc);
+
+    // Find the executable image
+    if (!execImage) {
+        // search for a GNU_BUILD_ID note in the notes.
+        for ( auto noteOff : notes) {
+            auto noteVa = noteOff + exeReloc;
+            auto n = io->readObj<Elf::Note>( noteOff + exeReloc );
+            if (n.n_type != Elf::GNU_BUILD_ID)
+                continue;
+            std::vector<char> name(n.n_namesz);
+            io->read(noteVa + sizeof n, name.size(), name.data());
+            if (name[n.n_namesz - 1] == 0)
+                name.resize(name.size() - 1);
+            if (std::string_view(name.data(), name.size()) != "GNU")
+                continue;
+            exeID.data.resize(n.n_descsz);
+            io->read(noteVa + sizeof n + 4, n.n_descsz, (char *)exeID.data.data());
+            if (context.verbose)
+                *context.debug << "build ID From AT_PHDR: " << exeID << "\n";
+            break;
+        }
+        execImage = context.getImage(exeID);
+    }
+
     if (!execImage && exeName != "")
        execImage = context.getImage(exeName);
     if (!execImage)
@@ -789,30 +838,37 @@ Elf::Addr
 Process::findRDebugAddr()
 {
     /*
+     * We should have already worked out dt_debug by now, as we should have
+     * found the program headers for the loaded program when running
+     * processAUXV, and gone through them to find DT_DEBUG.
+     *
+     * Just in case things went wrong, we try a few other approaches to locate
+     * DT_DEBUG (for example, ELF images don't *have* to have a DYNAMIC segment
+     * to be executable)
+     *
      * Calculate the address the executable was loaded at - we know the entry
      * supplied by the kernel, and also the executable's desired entrypoint -
      * the difference is the load address.
      */
-    Elf::Off loadAddr = entry - execImage->getHeader().e_entry;
 
-    // Find DT_DEBUG in the process's dynamic section.
-    for (auto &segment : execImage->getSegments(PT_DYNAMIC)) {
-        // Read from the process, not the executable - the linker will have updated the content.
-        auto dynReader = io->view("PT_DYNAMIC segment", segment.p_vaddr + loadAddr, segment.p_filesz);
-        ReaderArray<Elf::Dyn> dynamic(*dynReader);
-        for (auto &dyn : dynamic)
-            if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0)
-                return dyn.d_un.d_ptr;
+    if (dt_debug == 0) {
+       // Iterate over the PT_DYNAMIC segment of the loaded executable. (We
+       // should not get here, as we should have found the program headers in
+       // the AT_PHDR auxv entry, and done this already
+       Elf::Off loadAddr = entry - execImage->getHeader().e_entry;
+       for (auto &segment : execImage->getSegments(PT_DYNAMIC))
+           dt_debug = extractDtDebugFromDynamicSegment(segment, loadAddr);
     }
+
     /*
      * If there's no DT_DEBUG, we've probably got someone executing a shared
      * library, which doesn't have an _r_debug symbol. Use the address of
      * _r_debug in the interpreter
      */
-    if (interpBase && execImage->getInterpreter() != "") {
+    if (dt_debug == 0 && interpBase && execImage->getInterpreter() != "") {
         try {
             addElfObject(execImage->getInterpreter(), nullptr, interpBase);
-            return resolveSymbol("_r_debug", false,
+            dt_debug = resolveSymbol("_r_debug", false,
                   [this](const std::string_view name) {
                       return execImage->getInterpreter() == name;
                   });
@@ -820,7 +876,7 @@ Process::findRDebugAddr()
         catch (...) {
         }
     }
-    return 0;
+    return dt_debug;
 }
 
 std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>
