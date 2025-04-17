@@ -214,11 +214,15 @@ Process::getDwarf(Elf::Object::sptr elf) const
 }
 
 
-const char *
-auxtype2str(int auxtype) {
-#define AUX_TYPE(t, v) if (auxtype == t) return #t;
+struct AuxType {
+   int type;
+   AuxType(int type) : type(type) {}
+};
+
+std::ostream &operator << (std::ostream &os, AuxType auxtype) {
+#define AUX_TYPE(t, v) if (auxtype.type == t) return os << #t;
 #include "libpstack/elf/auxv.h"
-   return "unknown type";
+   return os << "unknown type " << auxtype.type;
 #undef AUX_TYPE
 }
 
@@ -246,7 +250,7 @@ Process::processAUXV(const Reader &auxio)
     for (auto &aux : ReaderArray<Elf::auxv_t>(auxio)) {
         Elf::Addr hdr = aux.a_un.a_val;
         if (context.verbose > 2)
-            *context.debug << "auxv: " << auxtype2str(aux.a_type) << ": " << hdr << std::endl;
+            *context.debug << "auxv: " << AuxType(aux.a_type) << ": " << hdr << std::endl;
         if (aux.a_type == AT_NULL)
            break;
         switch (aux.a_type) {
