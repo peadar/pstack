@@ -113,7 +113,7 @@ main(int argc, char *argv[])
    for (int c; (c = getopt(argc, argv, "e:fab")) != -1; ) {
       switch (c) {
          case 'e':
-            exec = context.getImageForName(optarg);
+            exec = context.getImage(optarg);
             break;
          case 'f':
             options.insert(heap_recentfree);

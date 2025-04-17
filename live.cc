@@ -22,11 +22,13 @@ LiveReader::LiveReader(Context &c, pid_t pid, const std::string &base) : FileRea
    fileSize = std::numeric_limits<Reader::Off>::max();
 }
 
+Elf::Object::sptr
+LiveProcess::executableImage() {
+   return context.getImage(context.procname(getPID(), "exe"));
+}
+
 LiveProcess::LiveProcess(Context &context, Elf::Object::sptr &ex, pid_t pid_, bool alreadyStopped)
-    : Process(
-            context,
-            ex ? ex : context.getImageForName(context.procname(pid_, "exe")),
-            std::make_shared<CacheReader>(std::make_shared<LiveReader>(context, pid_, "mem")))
+    : Process( context, ex, std::make_shared<CacheReader>(std::make_shared<LiveReader>(context, pid_, "mem")))
     , pid(pid_)
 {
     (void)ps_getpid(this);

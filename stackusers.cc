@@ -50,7 +50,7 @@ int
 main(int argc, char *argv[]) {
    pstack::Context ctx;
    std::span<char *> args{ argv, size_t( argc ) };
-   auto elf = ctx.getImageForName(args[1]);
+   auto elf = ctx.getImage(args[1]);
    auto dwarf = ctx.getDwarf(elf);
    std::set<std::string_view> funcs;
    for (int i = 2; i < argc; ++i)

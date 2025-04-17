@@ -5,7 +5,7 @@ project(pstack-tests C CXX)
 # we need
 set(CMAKE_BUILD_TYPE Debug)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 add_definitions("-O0 -D_FORTIFY_SOURCE=0 -I${CMAKE_SOURCE_DIR}")
 
