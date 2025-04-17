@@ -214,20 +214,22 @@ using AddressSpace = std::vector<AddressRange>;
 // on resource constrained systems.
 struct MappedObject {
     std::string name_;
+    Elf::BuildID bid_;
     Elf::Object::sptr objptr_;
 public:
     const std::string &name() { return name_; }
     bool operator < (const MappedObject &rhs) const {
-        return name_ < rhs.name_; // for comparing pairs.
+        return name_ < rhs.name_ || ( name_ == rhs.name_ && bid_ < rhs.bid_); // for comparing pairs.
     }
-    Elf::Object::sptr object(Context &cache) {
-        if (objptr_ == nullptr) {
-            objptr_ = cache.getImageForName(name_);
-        }
+    Elf::Object::sptr object(Context &ctx) {
+        if (objptr_ == nullptr)
+            objptr_ = ctx.getImage(bid_);
+        if (objptr_ == nullptr)
+            objptr_ = ctx.getImage(name_);
         return objptr_;
     }
-    MappedObject(std::string_view name, const Elf::Object::sptr &objptr = {})
-        : name_{name}, objptr_{objptr} {}
+    MappedObject(std::string_view name, const Elf::BuildID &bid, const Elf::Object::sptr &objptr = {})
+        : name_{name}, bid_(bid), objptr_{objptr} {}
 };
 
 class Process : public ps_prochandle {
@@ -274,6 +276,7 @@ public:
     virtual void stopProcess() = 0;
     virtual void resumeProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
+    virtual Elf::Object::sptr executableImage() { return nullptr; }
     std::ostream &dumpStackText(std::ostream &, const ThreadStack &);
     std::ostream &dumpFrameText(std::ostream &, const StackFrame &, int);
     template <typename T> void listThreads(const T &);
@@ -337,6 +340,7 @@ public:
     void resumeProcess() override;
     virtual Reader::csptr getAUXV() const override;
     virtual pid_t getPID() const override;
+    virtual Elf::Object::sptr executableImage() override;
     std::optional<siginfo_t> getSignalInfo() const override;
 protected:
     bool loadSharedObjectsFromFileNote() override;

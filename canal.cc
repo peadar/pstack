@@ -312,7 +312,7 @@ mainExcept(int argc, char *argv[])
     .parse(argc, argv);
 
     if (argc - optind >= 2) {
-        exec = context.getImageForName(argv[optind]);
+        exec = context.getImage(argv[optind]);
         optind++;
     }
 
