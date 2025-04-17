@@ -302,6 +302,9 @@ public:
     SymbolSection *debugSymbols();
     SymbolSection *dynamicSymbols();
     const SymbolVersioning *symbolVersions() const;
+
+    BuildID getBuildID() const;
+
     const Section *gnu_version;
     std::optional<VersionIdx> versionIdxForSymbol( size_t symbolIdx ) const;
     Context &context;
@@ -420,6 +423,14 @@ public:
 enum GNUNotes {
    GNU_BUILD_ID = 3
 };
+
+class BuildID {
+public:
+   std::vector<uint8_t> data;
+   auto operator <=> (const BuildID &) const = default;
+   operator bool() const { return data.size() != 0; }
+};
+std::ostream &operator << (std::ostream &, const BuildID &);
 
 } // Elf namespace
 

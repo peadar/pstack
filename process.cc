@@ -151,8 +151,10 @@ Process::Process(pstack::Context &context_, Elf::Object::sptr exec, Reader::sptr
     , context(context_)
     , io(std::move(memory))
 {
-    if (execImage)
+    if (execImage) {
+        // assume the entry point is that of the executable (correct for non-PIE/static)
         entry = execImage->getHeader().e_entry;
+    }
 }
 
 void
@@ -221,25 +223,26 @@ auxtype2str(int auxtype) {
 void
 Process::processAUXV(const Reader &auxio)
 {
+    std::string exeName;
+    Elf::Addr phOff = 0;
+    size_t phNum = 0;
+    Elf::BuildID exeID;
     for (auto &aux : ReaderArray<Elf::auxv_t>(auxio)) {
         Elf::Addr hdr = aux.a_un.a_val;
+        if (context.verbose > 2)
+            *context.debug << "auxv: " << auxtype2str(aux.a_type) << ": " << hdr << std::endl;
+        if (aux.a_type == AT_NULL)
+           break;
         switch (aux.a_type) {
-            case AT_NULL: // Indicates end of the AUXV vector.
-                return;
             case AT_ENTRY: {
-                if (context.verbose > 2)
-                    *context.debug << "auxv: AT_ENTRY=" << hdr << std::endl;
                 // this provides a reference for relocating the executable when
-                // compared to the entrypoint there.
+                // compared to the entrypoint in the image.
                 entry = hdr;
                 break;
             }
-            case AT_SYSINFO: {
-                if (context.verbose > 2)
-                    *context.debug << "auxv:AT_SYSINFO=" << hdr << std::endl;
+            case AT_SYSINFO:
                 sysent = hdr;
                 break;
-            }
             case AT_SYSINFO_EHDR: {
                 try {
                     auto elf = std::make_shared<Elf::Object>(context, io->view("(vdso image)", hdr, 65536));
@@ -259,23 +262,14 @@ Process::processAUXV(const Reader &auxio)
                 break;
             }
             case AT_BASE:
-                if (context.verbose > 2)
-                    *context.debug << "auxv: AT_BASE=" << hdr << std::endl;
                 interpBase = hdr;
                 break;
 #ifdef AT_EXECFN
             case AT_EXECFN: {
-                if (context.verbose > 2)
-                    *context.debug << "auxv: AT_EXECFN=" << hdr << std::endl;
                 try {
-                    auto exeName = io->readString(hdr);
+                    exeName = io->readString(hdr);
                     if (context.verbose >= 2)
                         *context.debug << "filename from auxv: " << exeName << "\n";
-                    if (!execImage) {
-                        execImage = context.getImageForName(exeName);
-                        if (entry == 0)
-                            entry = execImage->getHeader().e_entry;
-                    }
                 }
                 catch (const Exception &ex) {
                     *context.debug << "failed to read AT_EXECFN: " << ex.what() << std::endl;
@@ -284,11 +278,37 @@ Process::processAUXV(const Reader &auxio)
                 break;
             }
 #endif
+            case AT_PHDR:
+               phOff = hdr;
+               break;
+            case AT_PHNUM:
+               phNum = hdr;
+               break;
             default:
-                if (context.verbose > 2)
-                    *context.debug << "auxv: " << auxtype2str( aux.a_type) << ": " << hdr << std::endl;
+               break;
         }
     }
+
+    if (phNum && phOff) {
+       auto view = io->view("phdrs", phOff, sizeof (Elf::Phdr) * phNum);
+       ReaderArray<Elf::Phdr> headers { *view };
+       for ( auto phdr : headers ) {
+          if (phdr.p_type == PT_PHDR) {
+             auto elf = std::make_shared<Elf::Object>(context, io->view("(in-process exe)", phOff - phdr.p_offset , 4096));
+             exeID = elf->getBuildID(); // for a core, this might be just the first page of the executable - we find it later.
+             if (context.verbose && exeID) {
+                *context.debug << "found build-id for process's executable: " << exeID <<  "\n";
+             }
+          }
+       }
+    }
+
+    if (!execImage && exeID)
+       execImage = context.getImage(exeID);
+    if (!execImage && exeName != "")
+       execImage = context.getImage(exeName);
+    if (!execImage)
+       execImage = executableImage(); // default to whatever the process can give us (eg, mmap /proc/<>/exe)
 }
 
 static bool
@@ -703,11 +723,16 @@ Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo)
 void
 Process::addElfObject(std::string_view name, const Elf::Object::sptr &obj, Elf::Addr load)
 {
-    objects.emplace(std::make_pair(load, MappedObject{ name, obj }));
+    auto inMemElf = std::make_shared<Elf::Object>(context, io->view( "in-memory elf object", load, 4096 ), false );
+    auto bid = inMemElf->getBuildID();
+
+    objects.emplace(std::make_pair(load, MappedObject{ name, bid, obj }));
     if (context.verbose >= 2) {
         IOFlagSave _(*context.debug);
-        *context.debug << "object " << name << " loaded at address "
-           << std::hex << load << std::dec << std::endl;
+        *context.debug << "object " << name;
+        if (bid)
+            *context.debug << " with in-process build ID " << bid;
+        *context.debug << " loaded at address " << std::hex << load << std::dec << std::endl;
     }
 }
 
@@ -717,7 +742,6 @@ Process::addElfObject(std::string_view name, const Elf::Object::sptr &obj, Elf::
 void
 Process::loadSharedObjects(Elf::Addr rdebugAddr)
 {
-
     struct r_debug rDebug;
     io->readObj(rdebugAddr, &rDebug);
 
