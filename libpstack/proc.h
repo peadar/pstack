@@ -234,6 +234,7 @@ public:
 
 class Process : public ps_prochandle {
     Elf::Addr entry;
+    Elf::Addr dt_debug;
     Elf::Addr interpBase;
     void loadSharedObjects(Elf::Addr);
 public:
