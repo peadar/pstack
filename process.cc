@@ -143,6 +143,7 @@ gregset2core(Elf::CoreRegisters &core, const gregset_t greg) {
 
 Process::Process(pstack::Context &context_, Elf::Object::sptr exec, Reader::sptr memory)
     : entry(0)
+    , dt_debug(0)
     , interpBase(0)
     , vdsoBase(0)
     , agent(nullptr)
@@ -319,8 +320,9 @@ Process::processAUXV(const Reader &auxio)
         auto view = io->view( "dynamic table", ptDynamic->p_vaddr + vaOff, ptDynamic->p_memsz );
         for (auto dyn : ReaderArray<Elf::Dyn>(*view)) {
             if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0) {
+                dt_debug = dyn.d_un.d_ptr;
                 if (context.verbose)
-                    *context.debug << "found DT_DEBUG at " << std::hex << dyn.d_un.d_ptr << std::dec << " from auxv\n";
+                    *context.debug << "found DT_DEBUG at " << std::hex << dt_debug << std::dec << " from auxv\n";
             }
         }
     }
@@ -831,34 +833,47 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
 Elf::Addr
 Process::findRDebugAddr()
 {
+   // We should really have already worked out dt_debug, as we should have
+   // found the program headers for the loaded program, and gone through them
+   // to find DT_DEBUG in processAUXV already. Just in case things go wrong, we
+   // try a few other approaches too.
+
     /*
      * Calculate the address the executable was loaded at - we know the entry
      * supplied by the kernel, and also the executable's desired entrypoint -
      * the difference is the load address.
      */
-    Elf::Off loadAddr = entry - execImage->getHeader().e_entry;
 
-    // Find DT_DEBUG in the process's dynamic section.
-    for (auto &segment : execImage->getSegments(PT_DYNAMIC)) {
-        // Read from the process, not the executable - the linker will have updated the content.
-        auto dynReader = io->view("PT_DYNAMIC segment", segment.p_vaddr + loadAddr, segment.p_filesz);
-        ReaderArray<Elf::Dyn> dynamic(*dynReader);
-        for (auto &dyn : dynamic)
-            if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0) {
-                if (context.verbose)
-                    *context.debug << "found rdebugaddr via DT_DEBUG at " << dyn.d_un.d_ptr << "\n";
-                return dyn.d_un.d_ptr;
-            }
+    if (dt_debug == 0) {
+       Elf::Off loadAddr = entry - execImage->getHeader().e_entry;
+
+       // ITerate over the PT_DYNAMIC segment of the loaded executable. (We should
+       // not get here, as we should have found the program headers in the AT_PHDR
+       // auxv entry, and done this already
+       for (auto &segment : execImage->getSegments(PT_DYNAMIC)) {
+           // Read from the process, not the executable - the linker will have updated the content.
+           auto dynReader = io->view("PT_DYNAMIC segment", segment.p_vaddr + loadAddr, segment.p_filesz);
+           ReaderArray<Elf::Dyn> dynamic(*dynReader);
+           for (auto &dyn : dynamic) {
+               if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0) {
+                   if (context.verbose)
+                       *context.debug << "found rdebugaddr via DT_DEBUG at " << dyn.d_un.d_ptr << "\n";
+                   dt_debug = dyn.d_un.d_ptr;
+                   break;
+               }
+           }
+       }
     }
+
     /*
      * If there's no DT_DEBUG, we've probably got someone executing a shared
      * library, which doesn't have an _r_debug symbol. Use the address of
      * _r_debug in the interpreter
      */
-    if (interpBase && execImage->getInterpreter() != "") {
+    if (dt_debug == 0 && interpBase && execImage->getInterpreter() != "") {
         try {
             addElfObject(execImage->getInterpreter(), nullptr, interpBase);
-            return resolveSymbol("_r_debug", false,
+            dt_debug = resolveSymbol("_r_debug", false,
                   [this](const std::string_view name) {
                       return execImage->getInterpreter() == name;
                   });
@@ -866,7 +881,7 @@ Process::findRDebugAddr()
         catch (...) {
         }
     }
-    return 0;
+    return dt_debug;
 }
 
 std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>
