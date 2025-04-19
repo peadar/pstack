@@ -2,7 +2,7 @@ name: C/C++ CI
 
 on:
   push:
-    branches: [ "master", "clang-ci" ]
+    branches: [ "master", "clang-ci", "bid" ]
   pull_request:
     branches: [ "master", "clang-ci" ]
 
