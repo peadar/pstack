@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <cassert>
 #include <cstring>
 #ifdef DEBUGINFOD
 #include <elfutils/debuginfod.h>
@@ -187,6 +188,7 @@ Object::Object(Context &context_, Reader::csptr io_, bool isDebug)
     : io(std::move(io_))
     , context(context_)
     , elfHeader(io->readObj<Ehdr>(0))
+    , isDebug(isDebug)
     , debugLoaded(isDebug) // don't attempt to load separate debug info for a debug ELF.
     , lastSegmentForAddress(nullptr)
 {
@@ -344,6 +346,7 @@ Object::getSegmentForAddress(Off a) const
 const Object::ProgramHeaders &
 Object::getSegments(Word type) const
 {
+    assert(!isDebug); // debug artefacts have junk program heaers.
     auto it = programHeaders.find(type);
     if (it == programHeaders.end()) {
         static const ProgramHeaders empty;
@@ -534,16 +537,32 @@ Object::findDebugSymbol(const string &name)
 }
 
 BuildID Object::getBuildID() const {
-    for (const auto &note : notes()) {
-        if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
-            Elf::BuildID buildID;
-            auto io = note.data();
-            buildID.data.resize(io->size());
-            io->readObj(0, &buildID.data[0], io->size());
-            return buildID;
-        }
+    Elf::BuildID buildID;
+    if (isDebug) {
+       // For debug objects, don't trust the notes segments are accurate
+       // (they're not). Only use sections to derive info in debug objects.
+       auto notesec = getSection(".note.gnu.build-id", SHT_NOTE);
+       if (notesec) {
+          auto noteIo = notesec.io();
+          if (noteIo->size() > 4 + sizeof (Note)) {
+             auto note = noteIo->readObj<Note>( 0 );
+             if (note.n_type == GNU_BUILD_ID) {
+                buildID.data.resize(note.n_descsz);
+                noteIo->readObj(sizeof note + roundup2(note.n_namesz, 4), &buildID.data[0], note.n_descsz );
+             }
+          }
+       }
+    } else {
+       // for "execuable" objects, trust the segments primarily. Find the GNU buildID note.
+       for (const auto &note : notes()) {
+          if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
+             auto noteIo = note.data();
+             buildID.data.resize(noteIo->size());
+             noteIo->readObj(0, &buildID.data[0], noteIo->size());
+          }
+       }
     }
-    return BuildID{};
+    return buildID;
 }
 
 /*
