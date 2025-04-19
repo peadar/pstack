@@ -71,8 +71,8 @@ Notes::section_iterator::nextNoteSection() {
    sectionOffset = 0;
    ++sectionIndex;
    for (;sectionIndex < object->getHeader().e_shnum; ++sectionIndex) {
-      section = object->getSection(sectionIndex);
-      if (section.shdr.sh_type == SHT_NOTE)
+      section = &object->getSection(sectionIndex);
+      if (section->shdr.sh_type == SHT_NOTE)
          return true;
    }
    return false;
@@ -82,7 +82,7 @@ Notes::section_iterator::nextNoteSection() {
 Notes::section_iterator&
 Notes::section_iterator::operator++() {
    sectionOffset += noteSize(curNote);
-   if (sectionOffset < section.shdr.sh_size || nextNoteSection())
+   if (sectionOffset < section->shdr.sh_size || nextNoteSection())
       readNote();
    return *this;
 }
@@ -568,7 +568,7 @@ BuildID Object::getBuildID() const {
     if (isDebug) {
        // For debug objects, don't trust the notes segments are accurate
        // (they're not). Only use sections to derive info in debug objects.
-       auto notesec = getSection(".note.gnu.build-id", SHT_NOTE);
+       auto &notesec = getSection(".note.gnu.build-id", SHT_NOTE);
        if (notesec) {
           auto noteIo = notesec.io();
           if (noteIo->size() > 4 + sizeof (Note)) {

@@ -190,14 +190,18 @@ public:
 class Section {
     mutable Reader::csptr io_;
 public:
-    Object *elf; // the image in which the section resides.
+    Elf::Object *elf;
     std::string name;
     Shdr shdr;
     explicit operator bool() const { return shdr.sh_type != SHT_NULL; }
     Section(Object *io, Off off);
-    Section() : elf( nullptr ), name("null"), shdr { } {
+    Section() : elf{nullptr}, name("null"), shdr { } {
         shdr.sh_type = SHT_NULL;
     }
+    Section(const Section &) = delete;
+    Section(Section &&) = delete;
+    Section &operator = (const Section &) = delete;
+    Section &operator = (Section &&) = delete;
     Reader::csptr io() const;
 };
 
@@ -428,12 +432,12 @@ class Notes::section_iterator {
     const Object *object;
     Off sectionIndex;
     Off sectionOffset;
-    Section section; // XXX: this section stuff has to be cleaned up a bit.
+    const Section *section;
     Note curNote;
 
     bool nextNoteSection();
     void startSection();
-    void readNote() { section.io()->readObj(sectionOffset, &curNote); }
+    void readNote() { section->io()->readObj(sectionOffset, &curNote); }
 public:
     section_iterator(const Object *object_ );
 
@@ -453,7 +457,7 @@ public:
 
     section_iterator &operator++();
     NoteDesc operator *() {
-        return NoteDesc(curNote, section.io()->view("note content", sectionOffset));
+        return NoteDesc(curNote, section->io()->view("note content", sectionOffset));
     }
 };
 
