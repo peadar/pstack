@@ -42,6 +42,7 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <variant>
 #include "libpstack/context.h"
 #include "libpstack/json.h"
 #include "libpstack/reader.h"
@@ -204,8 +205,11 @@ class Notes {
    const Object *object;
 public:
    class iterator;
+   class segment_iterator;
+   class section_iterator;
+   class sentinel {}; // for end.
    [[nodiscard]] iterator begin() const;
-   [[nodiscard]] iterator end() const;
+   [[nodiscard]] sentinel end() const;
    explicit Notes(const Object *object_) : object(object_) {}
    using value_type = NoteDesc;
 };
@@ -388,18 +392,13 @@ class NoteDesc {
 public:
 
    NoteDesc(const NoteDesc &rhs) = default;
-
+   NoteDesc(const Note &note_, Reader::csptr io_) : note(note_) , io(io_) { }
    [[nodiscard]] std::string name() const;
    Reader::csptr data() const;
    int type()  const { return note.n_type; }
-   NoteDesc(const Note &note_, Reader::csptr io_)
-      : note(note_)
-      , io(io_)
-   {
-   }
 };
 
-class Notes::iterator {
+class Notes::segment_iterator {
     const Object *object;
     const Object::ProgramHeaders &phdrs;
     Object::ProgramHeaders::const_iterator phdrsi;
@@ -409,18 +408,81 @@ class Notes::iterator {
     void readNote() { io->readObj(offset, &curNote); }
     void startSection();
 public:
-    iterator(const Object *object_, bool begin);
-    bool operator == (const iterator &rhs) const {
+    segment_iterator(const Object *object_);
+    bool operator == (const segment_iterator &rhs) const {
         return &phdrs == &rhs.phdrs && phdrsi == rhs.phdrsi && offset == rhs.offset;
     }
-    bool operator != (const iterator &rhs) const {
+    bool operator != (const segment_iterator &rhs) const {
         return !(*this == rhs);
     }
-    iterator &operator++();
+    bool operator == (const sentinel &) const {
+       return phdrsi == phdrs.end();
+    }
+    segment_iterator &operator++();
     NoteDesc operator *() {
         return NoteDesc(curNote, io->view("note content", offset));
     }
 };
+
+class Notes::section_iterator {
+    const Object *object;
+    Off sectionIndex;
+    Off sectionOffset;
+    Section section; // XXX: this section stuff has to be cleaned up a bit.
+    Note curNote;
+
+    bool nextNoteSection();
+    void startSection();
+    void readNote() { section.io()->readObj(sectionOffset, &curNote); }
+public:
+    section_iterator(const Object *object_ );
+
+    bool operator == (const section_iterator &rhs) const {
+        return object == rhs.object &&
+           sectionIndex == rhs.sectionIndex &&
+           sectionOffset == rhs.sectionOffset;
+    }
+
+    bool operator != (const section_iterator &rhs) const {
+        return !(*this == rhs);
+    }
+
+    bool operator == (const sentinel &) const {
+       return sectionIndex >= object->getHeader().e_shnum;
+    }
+
+    section_iterator &operator++();
+    NoteDesc operator *() {
+        return NoteDesc(curNote, section.io()->view("note content", sectionOffset));
+    }
+};
+
+class Notes::iterator {
+   std::variant<Notes::section_iterator, Notes::segment_iterator> choice;
+public:
+    iterator(Notes::section_iterator &&it) : choice( it ) {}
+    iterator(Notes::segment_iterator &&it) : choice( it ) {}
+
+    bool operator == (const sentinel &rhs) const {
+       return std::visit([&rhs](auto &lhs) { return lhs == rhs; }, choice);
+    }
+
+    bool operator == (const iterator &rhs) const {
+       return choice == rhs.choice;
+    }
+    bool operator != (const iterator &rhs) const {
+       return choice != rhs.choice;
+    }
+    iterator &operator++() {
+       std::visit([](auto &arg) { ++arg; }, choice);
+       return *this;
+    }
+    NoteDesc operator *() {
+       return std::visit([](auto &arg) { return *arg; }, choice);
+    }
+};
+
+
 
 enum GNUNotes {
    GNU_BUILD_ID = 3
