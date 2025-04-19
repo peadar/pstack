@@ -25,7 +25,7 @@ SelfProcess::SelfProcess(Context &context_, const Elf::Object::sptr &ex)
 Reader::csptr
 SelfProcess::getAUXV() const
 {
-    return context.loadFile("/proc/self/auxv");
+    return std::make_shared<LiveReader>( context, getpid(), "auxv" );
 }
 
 void
