@@ -776,8 +776,14 @@ Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo)
 void
 Process::addElfObject(std::string_view name, const Elf::Object::sptr &obj, Elf::Addr load)
 {
-    auto inMemElf = std::make_shared<Elf::Object>(context, io->view( "in-memory elf object", load, 4096 ), false );
-    auto bid = inMemElf->getBuildID();
+    Elf::BuildID bid;
+    try {
+        auto bidElf = obj ? obj : std::make_shared<Elf::Object>(context, io->view( "in-memory elf object", load, 0x4000), false);
+        bid = bidElf->getBuildID();
+    }
+    catch (const Exception &ex) {
+        *context.debug << "failed to read build id from memory image\n";
+    }
 
     objects.emplace(std::make_pair(load, MappedObject{ name, bid, obj }));
     if (context.verbose >= 2) {
