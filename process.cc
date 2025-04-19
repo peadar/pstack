@@ -222,6 +222,20 @@ auxtype2str(int auxtype) {
 #undef AUX_TYPE
 }
 
+Elf::Addr
+Process::extractDtDebugFromDynamicSegment(const Elf::Phdr &phdr, Elf::Addr loadAddr) {
+    auto dynReader = io->view("PT_DYNAMIC segment", phdr.p_vaddr + loadAddr, phdr.p_filesz);
+    ReaderArray<Elf::Dyn> dynamic(*dynReader);
+    for (auto &dyn : dynamic) {
+        if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0) {
+            if (context.verbose)
+                *context.debug << "found rdebugaddr via DT_DEBUG at " << dyn.d_un.d_ptr << "\n";
+            return dyn.d_un.d_ptr;
+        }
+    }
+    return 0;
+}
+
 void
 Process::processAUXV(const Reader &auxio)
 {
@@ -291,48 +305,38 @@ Process::processAUXV(const Reader &auxio)
         }
     }
 
-
     // If we have phdrs, process them. Use PT_PHDR to find the relocation ofset
     // between the phOff and the virtual addresses in the executable image.
     auto view = io->view("phdrs", phOff, sizeof (Elf::Phdr) * phNum);
     ReaderArray<Elf::Phdr> headers { *view };
-    Elf::Addr vaOff = 0;
     std::optional<Elf::Phdr> ptDynamic;
 
     std::vector<Elf::Addr> notes;
+    Elf::Addr exeReloc = 0;
     for ( auto phdr : headers ) {
         switch (phdr.p_type) {
             case PT_PHDR:
                 // that's the diff between the va's in the process vs the image.
-                // XXX: always before the notes?
-                vaOff = phOff - phdr.p_vaddr;
+                exeReloc = phOff - phdr.p_vaddr;
                 break;
             case PT_NOTE:
                 notes.push_back(phdr.p_vaddr);
                 break;
-
             case PT_DYNAMIC:
                 ptDynamic = phdr;
                 break;
         }
     }
-    if (ptDynamic) {
-        auto view = io->view( "dynamic table", ptDynamic->p_vaddr + vaOff, ptDynamic->p_memsz );
-        for (auto dyn : ReaderArray<Elf::Dyn>(*view)) {
-            if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0) {
-                dt_debug = dyn.d_un.d_ptr;
-                if (context.verbose)
-                    *context.debug << "found DT_DEBUG at " << std::hex << dt_debug << std::dec << " from auxv\n";
-            }
-        }
-    }
 
-    // Find the executable image - we'll need it to find DT_DEBUG.
+    if (ptDynamic && dt_debug == 0)
+        dt_debug = extractDtDebugFromDynamicSegment(*ptDynamic, exeReloc);
+
+    // Find the executable image
     if (!execImage) {
         // search for a GNU_BUILD_ID note in the notes.
         for ( auto noteOff : notes) {
-            auto noteVa = noteOff + vaOff;
-            auto n = io->readObj<Elf::Note>( noteOff + vaOff );
+            auto noteVa = noteOff + exeReloc;
+            auto n = io->readObj<Elf::Note>( noteOff + exeReloc );
             if (n.n_type != Elf::GNU_BUILD_ID)
                 continue;
             std::vector<char> name(n.n_namesz);
@@ -839,36 +843,27 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
 Elf::Addr
 Process::findRDebugAddr()
 {
-   // We should really have already worked out dt_debug, as we should have
-   // found the program headers for the loaded program, and gone through them
-   // to find DT_DEBUG in processAUXV already. Just in case things go wrong, we
-   // try a few other approaches too.
-
     /*
+     * We should have already worked out dt_debug by now, as we should have
+     * found the program headers for the loaded program when running
+     * processAUXV, and gone through them to find DT_DEBUG.
+     *
+     * Just in case things went wrong, we try a few other approaches to locate
+     * DT_DEBUG (for example, ELF images don't *have* to have a DYNAMIC segment
+     * to be executable)
+     *
      * Calculate the address the executable was loaded at - we know the entry
      * supplied by the kernel, and also the executable's desired entrypoint -
      * the difference is the load address.
      */
 
     if (dt_debug == 0) {
+       // Iterate over the PT_DYNAMIC segment of the loaded executable. (We
+       // should not get here, as we should have found the program headers in
+       // the AT_PHDR auxv entry, and done this already
        Elf::Off loadAddr = entry - execImage->getHeader().e_entry;
-
-       // ITerate over the PT_DYNAMIC segment of the loaded executable. (We should
-       // not get here, as we should have found the program headers in the AT_PHDR
-       // auxv entry, and done this already
-       for (auto &segment : execImage->getSegments(PT_DYNAMIC)) {
-           // Read from the process, not the executable - the linker will have updated the content.
-           auto dynReader = io->view("PT_DYNAMIC segment", segment.p_vaddr + loadAddr, segment.p_filesz);
-           ReaderArray<Elf::Dyn> dynamic(*dynReader);
-           for (auto &dyn : dynamic) {
-               if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0) {
-                   if (context.verbose)
-                       *context.debug << "found rdebugaddr via DT_DEBUG at " << dyn.d_un.d_ptr << "\n";
-                   dt_debug = dyn.d_un.d_ptr;
-                   break;
-               }
-           }
-       }
+       for (auto &segment : execImage->getSegments(PT_DYNAMIC))
+           dt_debug = extractDtDebugFromDynamicSegment(segment, loadAddr);
     }
 
     /*
