@@ -145,7 +145,7 @@ CFI::CFI(const Info *info, FIType type_)
     const Elf::Section &ehFrameHdrSec = elf->getDebugSection(".eh_frame_hdr", SHT_PROGBITS);
     const Elf::Section &debugFrameSec = elf->getSection(".debug_frame", SHT_PROGBITS);
 
-    if (info->elf->context.verbose)
+    if (info->elf->context.verbose > 2)
        *info->elf->context.debug << "construct CFI for " << *info->elf->io << "\n";
 
     const auto &cfiFrame = type != FI_DEBUG_FRAME && ehFrameSec ? ehFrameSec : debugFrameSec;
