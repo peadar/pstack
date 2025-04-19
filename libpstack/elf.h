@@ -322,6 +322,9 @@ private:
 
     SymbolSection *getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type) const;
 
+public:
+    const bool isDebug; // this is a debug image.
+private:
     mutable bool debugLoaded; // We've at least attempted to load debugObject: don't try again
     mutable Object::sptr debugObject; // debug object as per .gnu_debuglink/other.
 
