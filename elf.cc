@@ -55,39 +55,66 @@ uint32_t gnu_hash(const char *s) {
 Notes::iterator
 Notes::begin() const
 {
-   return { object, true };
+   if (object->isDebug)
+      return { section_iterator{ object } };
+   return { segment_iterator{ object } };
 }
 
-Notes::iterator
-Notes::end() const
+Notes::sentinel Notes::end() const { return {}; }
+
+size_t noteSize( const Note &n ) {
+   return roundup2(sizeof n, 4) + roundup2(n.n_namesz, 4) + roundup2(n.n_descsz, 4);
+}
+
+bool
+Notes::section_iterator::nextNoteSection() {
+   sectionOffset = 0;
+   ++sectionIndex;
+   for (;sectionIndex < object->getHeader().e_shnum; ++sectionIndex) {
+      section = object->getSection(sectionIndex);
+      if (section.shdr.sh_type == SHT_NOTE)
+         return true;
+   }
+   return false;
+}
+
+
+Notes::section_iterator&
+Notes::section_iterator::operator++() {
+   sectionOffset += noteSize(curNote);
+   if (sectionOffset < section.shdr.sh_size || nextNoteSection())
+      readNote();
+   return *this;
+}
+
+Notes::section_iterator::section_iterator(const Object *object_)
+   : object(object_)
+     , sectionIndex(0)
 {
-   return { object, false };
+   if (nextNoteSection())
+      readNote();
 }
 
-Notes::iterator::iterator(const Object *object_, bool begin)
+Notes::segment_iterator::segment_iterator(const Object *object_)
     : object(object_)
     , phdrs(object_->getSegments(PT_NOTE))
     , offset(0)
 {
-    phdrsi = begin ? phdrs.begin() : phdrs.end();
+    phdrsi = phdrs.begin();
     if (phdrsi != phdrs.end()) {
         startSection();
         readNote();
     }
 }
 
-void Notes::iterator::startSection() {
+void Notes::segment_iterator::startSection() {
     offset = 0;
     io = object->io->view("note section", Off(phdrsi->p_offset), size_t(phdrsi->p_filesz));
 }
 
-Notes::iterator &Notes::iterator::operator++()
+Notes::segment_iterator &Notes::segment_iterator::operator++()
 {
-    auto newOff = offset;
-    newOff += sizeof curNote + curNote.n_namesz;
-    newOff = roundup2(newOff, 4);
-    newOff += curNote.n_descsz;
-    newOff = roundup2(newOff, 4);
+    auto newOff = offset + noteSize( curNote );
     if (newOff >= phdrsi->p_filesz) {
         if (++phdrsi == phdrs.end()) {
             offset = 0;
