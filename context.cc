@@ -171,8 +171,9 @@ std::string buildIdPath(const Elf::BuildID &bid) {
 namespace Elf {
 std::ostream &
 operator << (std::ostream &os, const Elf::BuildID &bid) {
-    os << std::hex << std::setw(2) << std::setfill('0') << int(bid.data[0]);
-    for (size_t i = 1; i < bid.data.size(); ++i)
+    if (!bid)
+        return os << "<no buildid>";
+    for (size_t i = 0; i < bid.data.size(); ++i)
         os << std::hex << std::setw(2) << std::setfill('0') << int(bid.data[i]);
     return os;
 }
@@ -181,6 +182,8 @@ operator << (std::ostream &os, const Elf::BuildID &bid) {
 
 std::shared_ptr<Elf::Object>
 Context::getDebugImage(const Elf::BuildID &bid) {
+    if (!bid)
+        return {};
     // First, try the local filesystem, converting the buildid to a search path.
     if (auto img = debugImageByID.find(bid); img != debugImageByID.end())
         return img->second;
@@ -213,6 +216,9 @@ Context::getDebugImage(const Elf::BuildID &bid) {
 
 std::shared_ptr<Elf::Object>
 Context::getImage(const Elf::BuildID &bid) {
+    if (!bid)
+        return {};
+
     // return it if we already have it.
     if ( auto img = imageByID.find(bid); img != imageByID.end())
         return img->second;

@@ -586,6 +586,7 @@ BuildID Object::getBuildID() const {
              auto noteIo = note.data();
              buildID.data.resize(noteIo->size());
              noteIo->readObj(0, &buildID.data[0], noteIo->size());
+             break;
           }
        }
     }
