@@ -190,11 +190,11 @@ public:
 class Section {
     mutable Reader::csptr io_;
 public:
-    Elf::Object *elf;
+    const Elf::Object *elf;
     std::string name;
     Shdr shdr;
     explicit operator bool() const { return shdr.sh_type != SHT_NULL; }
-    Section(Object *io, Off off);
+    Section(const Object *, Off off);
     Section() : elf{nullptr}, name("null"), shdr { } {
         shdr.sh_type = SHT_NULL;
     }
@@ -264,7 +264,6 @@ public:
     typedef std::shared_ptr<Object> sptr;
     typedef std::vector<Phdr> ProgramHeaders;
     // Use pointers so we can avoid copy-construction of Sections.
-    typedef std::vector<std::unique_ptr<Section>> SectionHeaders;
 
     // construct/destruct. Note you will generally need to use make_shared to
     // create an Object
@@ -283,7 +282,6 @@ public:
     // object, or the associated debug ELF object.
     const Section &getDebugSection(const std::string &name, Word type) const;
 
-    std::map<int, std::vector<Dyn>> dynamic;
 
     // Accessing segments.
     const ProgramHeaders &getSegments(Word type) const;
@@ -312,7 +310,6 @@ public:
 
     BuildID getBuildID() const;
 
-    const Section *gnu_version;
     VersionIdx versionIdxForSymbol( size_t symbolIdx ) const;
     Context &context;
 private:
@@ -320,13 +317,15 @@ private:
     // Elf header, section headers, program headers.
     mutable Object::sptr debugData;
     Ehdr elfHeader;
-    SectionHeaders sectionHeaders;
-    std::map<std::string, size_t> namedSection;
+    typedef std::vector<std::unique_ptr<Section>> SectionHeaders;
+    mutable std::unique_ptr<SectionHeaders> sectionHeaders_;
+    const SectionHeaders &sectionHeaders() const;
+    mutable std::map<std::string, size_t> namedSection;
     std::map<Word, ProgramHeaders> programHeaders;
 
     std::unique_ptr<SymbolSection> debugSymbols_;
     std::unique_ptr<SymbolSection> dynamicSymbols_;
-
+    mutable std::map<int, std::vector<Dyn>> dynamic;
     SymbolSection *getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type) const;
 
 public:

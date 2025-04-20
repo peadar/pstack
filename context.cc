@@ -226,8 +226,8 @@ Context::getImage(const Elf::BuildID &bid) {
     // get it from the filesystem first.
     auto path = std::string("/usr/lib/" ) + buildIdPath( bid );
     try {
-        if (auto debugImage = getImage(path); debugImage)
-            return debugImage;
+        if (auto i = getImage(path); i)
+            return i;
     }
     catch (...) {
     }

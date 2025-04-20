@@ -160,9 +160,8 @@ Object::symbolVersion(VersionIdx idx) const {
 }
 
 VersionIdx Object::versionIdxForSymbol(size_t idx) const {
-   return VersionIdx(*gnu_version ?
-           gnu_version->io()->readObj<Half>(idx * 2) :
-           std::numeric_limits<Half>::max());
+   auto &gnu_version = getSection(".gnu.version", SHT_GNU_versym);
+   return VersionIdx(gnu_version ?  gnu_version.io()->readObj<Half>(idx * 2) : std::numeric_limits<Half>::max());
 }
 
 std::pair<uint32_t, Sym>
@@ -232,7 +231,14 @@ Object::Object(Context &context_, Reader::csptr io_, bool isDebug)
                 [] (const Phdr &lhs, const Phdr &rhs) {
                     return lhs.p_vaddr < rhs.p_vaddr; });
 
+}
+
+const Object::SectionHeaders & Object::sectionHeaders() const {
     // Make sure the header sections are present in the reader, otherwise, skip.
+    if (sectionHeaders_) {
+       return *sectionHeaders_;
+    }
+    sectionHeaders_ = std::make_unique<SectionHeaders>();
     if (elfHeader.e_shoff < io->size()) {
        // If there are too many headers, we need to look in the first section header
        // to get the actual count.
@@ -242,20 +248,20 @@ Object::Object(Context &context_, Reader::csptr io_, bool isDebug)
           headerCount = 1;
        } else {
           headerCount = elfHeader.e_shnum;
-          sectionHeaders.reserve(headerCount);
+          sectionHeaders_->reserve(headerCount);
        }
 
        int i = 0;
        for (Elf::Off off = elfHeader.e_shoff; i < headerCount; i++) {
-           sectionHeaders.emplace_back(std::make_unique<Section>(this, off));
+           sectionHeaders_->push_back(std::make_unique<Section>(this, off));
            if (i == 0 && elfHeader.e_shnum == 0) {
-               headerCount = sectionHeaders[0]->shdr.sh_size;
-               sectionHeaders.reserve(headerCount);
+               headerCount = (*sectionHeaders_)[0]->shdr.sh_size;
+               sectionHeaders_->reserve(headerCount);
            }
            off += elfHeader.e_shentsize;
        }
-       if (sectionHeaders.size() == 0) {
-           sectionHeaders.push_back(std::make_unique<Section>());
+       if (sectionHeaders_->size() == 0) {
+           sectionHeaders_->push_back(std::make_unique<Section>());
        }
 
        if (elfHeader.e_shstrndx != SHN_UNDEF) {
@@ -266,11 +272,11 @@ Object::Object(Context &context_, Reader::csptr io_, bool isDebug)
           // We need to deal with the fact that e_shstrndx might be too small
           // to hold the index of the string section, and look in sh_link if so.
           int shstrSec = elfHeader.e_shstrndx == SHN_XINDEX ?
-              sectionHeaders[0]->shdr.sh_link :
+              (*sectionHeaders_)[0]->shdr.sh_link :
               elfHeader.e_shstrndx;
-          auto &sshdr = sectionHeaders[shstrSec];
+          auto &sshdr = (*sectionHeaders_)[shstrSec];
           size_t secid = 0;
-          for (auto &h : sectionHeaders) {
+          for (auto &h : (*sectionHeaders_)) {
               auto name = sshdr->io()->readString(h->shdr.sh_name);
               namedSection[name] = secid++;
               h->name = name;
@@ -285,12 +291,12 @@ Object::Object(Context &context_, Reader::csptr io_, bool isDebug)
               for (auto dyn : content)
                  dynamic[dyn.d_tag].push_back(dyn);
           }
-          gnu_version = &getSection(".gnu.version", SHT_GNU_versym);
        }
     } else {
         // leave a null section no matter what.
-        sectionHeaders.push_back(std::make_unique<Section>());
+        sectionHeaders_->push_back(std::make_unique<Section>());
     }
+    return *sectionHeaders_;
 }
 
 const SymbolVersioning *
@@ -408,7 +414,7 @@ Object::findSymbolByAddress(Addr addr, int type)
     std::string name;
     auto findSym = [&] (auto &table) {
         for (const auto &candidate : table) {
-            if (candidate.st_shndx >= sectionHeaders.size())
+            if (candidate.st_shndx >= sectionHeaders().size())
                 continue;
             if (type != STT_NOTYPE && ELF_ST_TYPE(candidate.st_info) != type)
                 continue;
@@ -422,7 +428,7 @@ Object::findSymbolByAddress(Addr addr, int type)
                 }
                 continue;
             }
-            auto &sec = sectionHeaders[candidate.st_shndx];
+            auto &sec = sectionHeaders()[candidate.st_shndx];
             if ((sec->shdr.sh_flags & SHF_ALLOC) == 0)
                 continue;
             sym = candidate;
@@ -470,9 +476,10 @@ Object::findSymbolByAddress(Addr addr, int type)
 const Section &
 Object::getSection(const string &name, Word type) const
 {
+    sectionHeaders(); // ensure section headers are loaded.
     auto s = namedSection.find(name);
     if (s != namedSection.end()) {
-        auto &ref = sectionHeaders[s->second];
+        auto &ref = sectionHeaders()[s->second];
         if (ref->shdr.sh_type == type || type == SHT_NULL)
             return *ref;
     }
@@ -486,7 +493,7 @@ Object::getSection(const string &name, Word type) const
     static std::string dwosuffix = ".dwo";
     if (!std::equal(dwosuffix.rbegin(), dwosuffix.rend(), name.rbegin()))
        return getSection(name + ".dwo", type);
-    return *sectionHeaders[0];
+    return *sectionHeaders()[0];
 }
 
 /*
@@ -502,15 +509,16 @@ Object::getDebugSection(const string &name, Word type) const
     auto debug = getDebug();
     if (debug)
         return debug->getSection(name, type);
-    return *sectionHeaders[0];
+    return *sectionHeaders()[0];
 }
 
 const Section &
 Object::getSection(Word idx) const
 {
-    if (sectionHeaders[idx]->shdr.sh_type != SHT_NULL)
-        return *sectionHeaders[idx];
-    return *sectionHeaders[0];
+   auto &sh = sectionHeaders();
+    if (sh[idx]->shdr.sh_type != SHT_NULL)
+        return *sh[idx];
+    return *sh[0];
 }
 
 const Section &
@@ -519,7 +527,7 @@ Object::getLinkedSection(const Section &from) const
     if (!from)
         return from;
     if (from.elf == this) // it might come from the debug object...
-        return *sectionHeaders[from.shdr.sh_link];
+        return *sectionHeaders()[from.shdr.sh_link];
     return from.elf->getLinkedSection(from);
 }
 
@@ -643,7 +651,7 @@ Object::getDebug() const
            << ", assuming " << *this->io << " is prelinked" << std::dec << std::endl;
 
         // looks like the exe has been prelinked - adjust the debug info too.
-        for (auto &sect : debugObject->sectionHeaders)
+        for (auto &sect : debugObject->sectionHeaders())
             sect->shdr.sh_addr += diff;
 
         for (auto &sectType : debugObject->programHeaders)
@@ -682,7 +690,7 @@ SymHash::findSymbol(const string &name)
     return std::make_pair(0, undef());
 }
 
-Section::Section(Object *elf, Off off) : elf(elf) {
+Section::Section(const Object *elf, Off off) : elf(elf) {
     elf->io->readObj(off, &shdr);
 }
 
