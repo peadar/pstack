@@ -38,6 +38,7 @@
 
 #include <string>
 #include <vector>
+#include <span>
 #include <map>
 #include <memory>
 #include <optional>
@@ -46,6 +47,7 @@
 #include "libpstack/context.h"
 #include "libpstack/json.h"
 #include "libpstack/reader.h"
+#include "libpstack/stringify.h"
 
 #ifndef ELF_BITS
 #define ELF_BITS __WORDSIZE
@@ -106,6 +108,7 @@ Type(Verdef);
 Type(Verdaux);
 Type(Verneed);
 Type(Vernaux);
+Type(Sxword);
 
 #if ELF_BITS==64
 #define ELF_ST_TYPE ELF64_ST_TYPE
@@ -190,14 +193,12 @@ public:
 class Section {
     mutable Reader::csptr io_;
 public:
+    Shdr shdr;
     const Elf::Object *elf;
     std::string name;
-    Shdr shdr;
     explicit operator bool() const { return shdr.sh_type != SHT_NULL; }
     Section(const Object *, Off off);
-    Section() : elf{nullptr}, name("null"), shdr { } {
-        shdr.sh_type = SHT_NULL;
-    }
+    Section() : shdr{}, elf{}, name("null") { }
     Section(const Section &) = delete;
     Section(Section &&) = delete;
     Section &operator = (const Section &) = delete;
@@ -259,15 +260,35 @@ struct SymbolVersioning {
     std::map<std::string, std::vector<int>> files;
 };
 
+class BuildID {
+   std::vector<uint8_t> data_;
+public:
+   using value_type = uint8_t;
+   [[nodiscard]] size_t size() const { return data_.size(); }
+   [[nodiscard]] const uint8_t *data() const { return data_.data(); }
+   [[nodiscard]] uint8_t operator[](size_t idx) const { return data_[idx]; }
+   auto operator <=> (const BuildID &) const = default;
+   [[nodiscard]] auto begin() const { return data_.begin(); }
+   [[nodiscard]] auto end() const { return data_.end(); }
+   explicit BuildID(const std::span<uint8_t> &span) : data_(span.begin(), span.end()) {}
+   explicit BuildID(std::vector<uint8_t> &&span) : data_(std::move(span)) {}
+   explicit operator bool() const { return data_.size() != 0; }
+   BuildID() = default;
+};
+
+inline std::ostream & operator << (std::ostream &os, const Elf::BuildID &bid) { return os << AsHex(bid); }
+
 // An ELF object - a shared lib, executable, or object file
 class Object : public std::enable_shared_from_this<Object> {
 public:
-    typedef std::shared_ptr<Object> sptr;
-    typedef std::vector<Phdr> ProgramHeaders;
-    // Use pointers so we can avoid copy-construction of Sections.
+    using sptr = std::shared_ptr<Object>;
+    using ProgramHeaders = std::vector<Phdr>;
+    using Dynamic = std::map<Sxword, std::vector<Dyn>>;
+    using ProgramHeadersByType = std::map<Word, ProgramHeaders>;
+    using SectionHeaders = std::vector<std::unique_ptr<Section>>;
 
-    // construct/destruct. Note you will generally need to use make_shared to
-    // create an Object
+    // construct/destruct.
+    // Note you will generally need to use make_shared to create an Object
     Object(Context &, Reader::csptr, bool isDebug=false);
     ~Object() noexcept = default;
 
@@ -283,61 +304,69 @@ public:
     // object, or the associated debug ELF object.
     const Section &getDebugSection(const std::string &name, Word type) const;
 
-
     // Accessing segments.
     const ProgramHeaders &getSegments(Word type) const;
     const std::map<Word, ProgramHeaders> &getAllSegments() const;
 
     std::optional<std::pair<Sym, std::string>> findSymbolByAddress(Addr addr, int type);
+
+    // Find symbols. The size_t field of the pair is the index within the symbol section
     std::pair<Sym, size_t> findDynamicSymbol(const std::string &name);
     std::pair<Sym, size_t> findDebugSymbol(const std::string &name);
-
-    Reader::csptr io;
 
     // Misc operations
     std::string getInterpreter() const;
     const Ehdr &getHeader() const { return elfHeader; }
     const Phdr *getSegmentForAddress(Off) const;
     Notes notes() const { return Notes(this); }
-    // symbol table data as extracted from .gnu.debugdata -
-    // https://sourceware.org/gdb/current/onlinedocs/gdb/MiniDebugInfo.html
     Addr endVA() const;
 
-    // find text version for a symbol.
+    // text description of a symbol's version
     std::optional<std::string> symbolVersion(VersionIdx) const;
-    SymbolSection *debugSymbols();
-    SymbolSection *dynamicSymbols();
-    const SymbolVersioning *symbolVersions() const;
+
+    SymbolSection *debugSymbols() const;
+    SymbolSection *dynamicSymbols() const;
+    const SymbolVersioning &symbolVersions() const;
 
     BuildID getBuildID() const;
 
     std::optional<VersionIdx> versionIdxForSymbol( size_t symbolIdx ) const;
     Context &context;
-private:
-    mutable std::unique_ptr<SymbolVersioning> symbolVersions_;
-    // Elf header, section headers, program headers.
-    mutable Object::sptr debugData;
-    Ehdr elfHeader;
-    typedef std::vector<std::unique_ptr<Section>> SectionHeaders;
-    mutable std::unique_ptr<SectionHeaders> sectionHeaders_;
-    const SectionHeaders &sectionHeaders() const;
-    mutable std::map<std::string, size_t> namedSection;
-    std::map<Word, ProgramHeaders> programHeaders;
-
-    std::unique_ptr<SymbolSection> debugSymbols_;
-    std::unique_ptr<SymbolSection> dynamicSymbols_;
-    mutable std::map<int, std::vector<Dyn>> dynamic;
-    SymbolSection *getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type) const;
-
-public:
+    Reader::csptr io;
     const bool isDebug; // this is a debug image.
+
 private:
-    mutable bool debugLoaded; // We've at least attempted to load debugObject: don't try again
+    Ehdr elfHeader;
+    std::optional<std::pair<Sym, std::string>> findSym(auto &table, Addr addr, int type);
+    // These are all caches of notionally const data.
+    mutable std::unique_ptr<SymbolVersioning> symbolVersions_;
+    mutable std::unique_ptr<SectionHeaders> sectionHeaders_;
+    mutable std::map<std::string, size_t> namedSection;
+    mutable std::shared_ptr<Dynamic> dynamic_;
+    mutable std::unique_ptr<SymbolSection> debugSymbols_;
+    mutable std::unique_ptr<SymbolSection> dynamicSymbols_;
     mutable Object::sptr debugObject; // debug object as per .gnu_debuglink/other.
+    mutable Object::sptr debugData_; // LZMA object in the original elf, .gnu_debugdata.
+    mutable bool debugLoaded; // We've at least attempted to load debugObject: don't try again
+    mutable std::unique_ptr<SymHash> hash_; // Symbol hash table.
+    mutable std::unique_ptr<GnuHash> gnu_hash_; // Enhanced GNU symbol hash table.
+    mutable const Phdr *lastSegmentForAddress; // cache of last segment returned for a specific address.
+
+    friend std::ostream &pstack::operator<< (std::ostream &, const pstack::JSON<Object> &);
+
+    // used to cache the debug symbol table by name. Popualted first time something requests such a symbol
+    std::unique_ptr<std::map<std::string, size_t>> cachedSymbols;
+
+    ProgramHeadersByType programHeaders_;
+    SymbolSection *getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type) const;
+    Dynamic &dynamic() const;
+
+    const SectionHeaders &sectionHeaders() const;
+    Object::sptr debugData() const;
 
     // Section plumbing for hash and gnu_hash is the same, just with different
     // types and section names, so share the code.
-    template <typename HashType> HashType *get_hash(std::unique_ptr<HashType> &ptr) {
+    template <typename HashType> HashType *get_hash(std::unique_ptr<HashType> &ptr) const {
         if (ptr == nullptr) {
             auto &section { getSection( HashType::tablename(), HashType::sectiontype() ) };
             if (section) {
@@ -350,17 +379,9 @@ private:
         return ptr.get();
     }
 
-    std::unique_ptr<SymHash> hash_; // Symbol hash table.
-    SymHash *hash() { return get_hash(hash_); }
-    std::unique_ptr<GnuHash> gnu_hash_; // Enhanced GNU symbol hash table.
-    GnuHash *gnu_hash() { return get_hash(gnu_hash_); }
-
-    Object *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
-    friend std::ostream &pstack::operator<< (std::ostream &, const pstack::JSON<Object> &);
-
-    // used to cache the debug symbol table by name. Popualted first time something requests such a symbol
-    std::unique_ptr<std::map<std::string, size_t>> cachedSymbols;
-    mutable const Phdr *lastSegmentForAddress; // cache of last segment returned for a specific address.
+    SymHash *hash() const { return get_hash(hash_); }
+    GnuHash *gnu_hash() const { return get_hash(gnu_hash_); }
+    const Object *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
 };
 
 // These are the architecture specific types representing the NT_PRSTATUS registers.
@@ -486,19 +507,9 @@ public:
     }
 };
 
-
-
 enum GNUNotes {
    GNU_BUILD_ID = 3
 };
-
-class BuildID {
-public:
-   std::vector<uint8_t> data;
-   auto operator <=> (const BuildID &) const = default;
-   operator bool() const { return data.size() != 0; }
-};
-std::ostream &operator << (std::ostream &, const BuildID &);
 
 } // Elf namespace
 

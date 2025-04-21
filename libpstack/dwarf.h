@@ -290,7 +290,7 @@ public:
 
     // Get a human-readable name for a type die - ascends through namespaces
     // that contain this DIE, walks through pointers and references, etc.
-    [[nodiscard]] std::string typeName();
+    [[nodiscard]] std::string typeName() const;
     [[nodiscard]] const std::unique_ptr<Ranges> &getRanges() const;
 
     DIE() = default;

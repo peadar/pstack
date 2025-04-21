@@ -5,8 +5,10 @@
 #include "libpstack/stringify.h"
 #include "libpstack/reader.h"
 
-#include <unistd.h>
 #include <string.h>
+#include <unistd.h>
+#include <ranges>
+
 #ifdef DEBUGINFOD
 #include <elfutils/debuginfod.h>
 #endif
@@ -16,22 +18,19 @@ namespace pstack {
 void Context::DidClose::operator() ( [[maybe_unused]] struct debuginfod_client *client )
 {
 #ifdef DEBUGINFOD
-    debuginfod_end( client );
+    if (client)
+        debuginfod_end( client );
 #endif
 }
 
 Context::Context()
-    : debugDirectories { "/usr/lib/debug", "/usr/lib/debug/usr" }
-    , debug(&std::cerr), output(&std::cout)
+    : debug(&std::cerr), output(&std::cout)
 {
 #ifdef DEBUGINFOD
     if (!options.noDebuginfod)
        debuginfod.reset( debuginfod_begin() );
 #endif
 }
-
-int dwarfLookups, elfLookups, dwarfHits, elfHits;
-bool noExtDebug;
 
 std::shared_ptr<Dwarf::Info>
 Context::getDwarf(const std::string &filename)
@@ -49,9 +48,9 @@ Dwarf::Info::sptr
 Context::getDwarf(Elf::Object::sptr object)
 {
     auto it = dwarfCache.find(object);
-    dwarfLookups++;
+    counters.dwarfLookups++;
     if (it != dwarfCache.end()) {
-        dwarfHits++;
+        counters.dwarfHits++;
         return it->second;
     }
     auto dwarf = std::make_shared<Dwarf::Info>(object);
@@ -61,20 +60,24 @@ Context::getDwarf(Elf::Object::sptr object)
 
 Context::~Context() noexcept {
     if (verbose >= 2) {
-        *debug << "image cache: lookups: " << dwarfLookups << ", hits=" << dwarfHits << "\n"
-            << "ELF image cache: lookups: " << elfLookups << ", hits=" << elfHits << std::endl;
-        *debug << "executable images by name:\n";
+        *debug << "DWARF image cache: lookups: " << counters.dwarfLookups << ", hits=" << counters.dwarfHits << "\n"
+            << "ELF image cache: lookups: " << counters.elfLookups << ", hits=" << counters.elfHits << "\n"
+            << "executable images by name:\n";
 
         auto dumpcache = [&] (const auto &map, const char *descr) {
             *debug << descr << "\n";
             for (const auto &[name, elf] : map) {
-                *debug << "\t" << name << ": " << *elf->io << std::endl;
+                *debug << "\t" << name << ": ";
+                if (elf)
+                    *debug << *elf->io;
+                else
+                    *debug << "(negative cache entry)";
+                *debug << "\n";
             }
         };
 
         dumpcache( imageByName, "executables by name");
         dumpcache( debugImageByName, "debuginfo by name");
-
         dumpcache( imageByID, "executables by build-id");
         dumpcache( debugImageByID, "debuginfo by build-id");
     }
@@ -99,161 +102,136 @@ Context::flush(std::shared_ptr<Elf::Object> o)
     dwarfCache.erase(o);
 }
 
+/*
+ * Find an image keyed by 'key' in container
+ */
 template <typename Container>
-std::shared_ptr<Elf::Object>
-Context::getImageIfLoaded( const Container &ctr, const typename Container::key_type &key) {
-    elfLookups++;
+std::optional<std::shared_ptr<Elf::Object>>
+Context::getImageIfLoaded(const Container &ctr, const typename Container::key_type &key) {
+    counters.elfLookups++;
     auto it = ctr.find(key);
     if (it != ctr.end()) {
-        elfHits++;
-        if (verbose) {
+        counters.elfHits++;
+        if (verbose > 0)
             *debug << "cache hit for ELF image " << key << "\n";
-        }
         return it->second;
     }
+    if (verbose > 0)
+        *debug << "cache miss for ELF image " << key << "\n";
     return {};
 }
 
+/*
+ * Find an image from a name, caching in container, and using "paths" as potential prefixes for name
+ */
 std::shared_ptr<Elf::Object>
-Context::getImage(const std::string &name, bool isDebug) {
-    auto &map = isDebug ? debugImageByName : imageByName;
-    auto res = getImageIfLoaded(map, name);
-    if (res != nullptr)
-        return res;
-    auto elf = std::make_shared<Elf::Object>(*this, std::make_shared<MmapReader>(*this, name), isDebug);
-    // don't cache negative entries: assign into the cache after we've constructed:
-    // a failure to load the image will throw.
-    if (verbose)
-        *debug << "loaded image from file " << name << "\n";
-    map[name] = elf;
-    auto bid = elf->getBuildID();
-    if (bid) {
-        if (isDebug)
-            debugImageByID[bid] = elf;
-        else
-            imageByID[bid] = elf;
-    }
-    return elf;
-}
+Context::getImageInPath(const std::vector<std::string> &paths, NameMap &container, const std::string &name, bool isDebug) {
+    std::optional<Elf::Object::sptr> cached = getImageIfLoaded(container, name);
+    if (cached)
+        return *cached;
 
-
-std::shared_ptr<Elf::Object>
-Context::getDebugImage(const std::string &name) {
-    // the name here generally comes from the .debug_link field, so is a
-    // relative path. Search the debug dirs for a debug image
-    for (const auto &dir : debugDirectories) {
-        auto img = getImageIfLoaded(debugImageByName, stringify(dir, "/", name));
-        if (img)
-            return img;
-    }
-    for (const auto &dir : debugDirectories) {
+    Elf::Object::sptr res;
+    for (const auto &dir : paths) {
         try {
-            return getImage(stringify(dir, "/", name), true);
+            res = std::make_shared<Elf::Object>(*this, std::make_shared<MmapReader>(*this, stringify(dir, "/", name)) , isDebug);
+            break;
         }
         catch (const std::exception &ex) {
             continue;
         }
     }
-    if (verbose)
-        *debug << "no debug image found for name " << name << "\n";
-    return {};
+    if (verbose > 0) {
+        if (res)
+            *debug << "found " << *res->io << " for " << name << " in one of " << json(paths) << "\n";
+        else
+            *debug << "no image found for " << name << " in any of " << json(paths) << "\n";
+    }
+    container[name] = res;
+    return res;
 }
 
-
-std::string buildIdPath(const Elf::BuildID &bid) {
-    std::ostringstream dir;
-    dir << ".build-id/" << std::hex << std::setw(2) << std::setfill('0') << int(bid.data[0]);
-    for (size_t i = 1; i < bid.data.size(); ++i)
-        dir << std::hex << std::setw(2) << std::setfill('0') << int(bid.data[i]);
-    return dir.str();
+/*
+ * get an image from a filename
+ */
+std::shared_ptr<Elf::Object>
+Context::getImage(const std::string &name) {
+    return getImageInPath(exePrefixes, imageByName, name, false);
 }
 
-namespace Elf {
-std::ostream &
-operator << (std::ostream &os, const Elf::BuildID &bid) {
-    if (!bid)
-        return os << "<no buildid>";
-    for (size_t i = 0; i < bid.data.size(); ++i)
-        os << std::hex << std::setw(2) << std::setfill('0') << int(bid.data[i]);
-    return os;
-}
-}
-
+/*
+ * get an image, given its build ID. It may be a debug image, or an
+ * "executable". We first defer to the filesystem, using the string versions of
+ * "getImage", and a broken-down form of the build id, with the first octet of
+ * the build-id being a directlry name, and the remainder being the filename,
+ * with a possible suffix. This allows us to find things of the form
+ * /usr/lib/debug/build-id/NN/NNNNNNNNNNNNNNNNNNNN.debug for example.  The
+ * passed "Finder" will be the debuginfod function to fetch either debuginfo or
+ * executable info.
+ */
 
 std::shared_ptr<Elf::Object>
-Context::getDebugImage(const Elf::BuildID &bid) {
+Context::getImageImpl(
+        Context::IdMap &container,
+        Context::NameMap &nameContainer,
+        const std::vector<std::string> &paths,
+        const Elf::BuildID &bid,
+        bool isDebug) {
     if (!bid)
-        return {};
-    // First, try the local filesystem, converting the buildid to a search path.
-    if (auto img = debugImageByID.find(bid); img != debugImageByID.end())
-        return img->second;
-    auto debugObject = getDebugImage(buildIdPath(bid));
+        return nullptr;
+    std::optional<Elf::Object::sptr> cached = getImageIfLoaded( container, bid );
+    if (cached)
+        return *cached;
+
+    std::string bidpath = stringify(
+            AsHex(bid[0]),
+            "/",
+            AsHex(std::views::all(bid) | std::views::drop(1)),
+            isDebug ? ".debug" : "");
+
+    Elf::Object::sptr res = getImageInPath(paths, nameContainer, bidpath, isDebug);
 #ifdef DEBUGINFOD
-    if (!debugObject && debuginfod) {
+    if (!res && debuginfod) {
         char *path;
-        int fd = debuginfod_find_debuginfo(debuginfod.get(), bid.data.data(), int( bid.data.size() ), &path);
+        int fd = (isDebug ? debuginfod_find_debuginfo : debuginfod_find_executable)(debuginfod.get(), bid.data(), int( bid.size() ), &path);
         if (fd >= 0) {
             // Wrap the fd in a reader, and then a cache reader...
             std::shared_ptr<Reader> reader = std::make_shared<FileReader>(*this, path, fd );
             reader = std::make_shared<CacheReader>(reader);
             // and then wrap the lot in an ELF object.
-            debugObject = std::make_shared<Elf::Object>( *this, reader, true );
+            res = std::make_shared<Elf::Object>( *this, reader, true );
             free(path);
-            debugImageByID[bid] = debugObject;
-            if (verbose) {
-                *debug << "loaded debuginfo for " << bid << " from debuginfod\n";
-            }
-            return debugObject;
+            if (verbose)
+                *debug << "fetched " << *res->io << " for " << bid << " with debuginfod\n";
+        } else if (verbose) {
+            *debug << "failed to fetch image for " << bid << " with debuginfod: " << strerror(-fd) << "\n";
         }
-        if (verbose)
-            *debug << "failed to fetch debuginfo for " << bid << " with debuginfod: " << strerror(-fd) << "\n";
     }
+    container[bid] = res; // cache it.
 #endif
-    if (verbose)
-        *debug << "no debug image found for build-id " << bid << "\n";
-    return {};
+    return res;
+}
+
+std::shared_ptr<Elf::Object>
+Context::getDebugImage(const std::string &name) {
+    return getImageInPath(debugPrefixes, debugImageByName, name, true);
+}
+
+#ifndef DEBUGINFOD
+// dummy functions in case we have no debuginfod.
+namespace {
+int debuginfod_find_debuginfo (debuginfod_client *, const unsigned char *, int, char **) { return -ENOSYS; }
+int debuginfod_find_executable (debuginfod_client *, const unsigned char *, int, char **) { return -ENOSYS; }
+}
+#endif
+
+std::shared_ptr<Elf::Object>
+Context::getDebugImage(const Elf::BuildID &bid) {
+    return getImageImpl(debugImageByID, debugImageByName, debugBuildIdPrefixes, bid, true);
 }
 
 std::shared_ptr<Elf::Object>
 Context::getImage(const Elf::BuildID &bid) {
-    if (!bid)
-        return {};
-
-    // return it if we already have it.
-    if ( auto img = imageByID.find(bid); img != imageByID.end())
-        return img->second;
-
-    // get it from the filesystem first.
-    auto path = std::string("/usr/lib/" ) + buildIdPath( bid );
-    try {
-        if (auto i = getImage(path); i)
-            return i;
-    }
-    catch (...) {
-    }
-
-#ifdef DEBUGINFOD
-    // use debuginfo?
-    if (debuginfod) {
-        char *path;
-        int fd = debuginfod_find_executable(debuginfod.get(), bid.data.data(), int( bid.data.size() ), &path);
-        if (fd >= 0) {
-            // Wrap the fd in a reader, and then a cache reader...
-            std::shared_ptr<Reader> reader = std::make_shared<FileReader>(*this, path, fd );
-            reader = std::make_shared<CacheReader>(reader);
-            // and then wrap the lot in an ELF object.
-            auto exeImage = std::make_shared<Elf::Object>( *this, reader, true );
-            free(path);
-            imageByID[bid] = exeImage;
-            if (verbose)
-                *debug << "fetched executable for " << bid << " with debuginfod: " << strerror(-fd) << "\n";
-            return exeImage;
-        } else if (verbose) {
-            *debug << "failed to fetch executable for " << bid << " with debuginfod: " << strerror(-fd) << "\n";
-        }
-    }
-#endif
-    return {};
+    return getImageImpl(imageByID, imageByName, exeBuildIdPrefixes, bid, false);
 }
 
 std::shared_ptr<const Reader>
