@@ -62,8 +62,10 @@ Notes::begin() const
 
 Notes::sentinel Notes::end() const { return {}; }
 
+namespace {
 size_t noteSize( const Note &n ) {
    return roundup2(sizeof n, 4) + roundup2(n.n_namesz, 4) + roundup2(n.n_descsz, 4);
+}
 }
 
 bool
@@ -143,24 +145,24 @@ NoteDesc::data() const
 Elf::Addr
 Object::endVA() const
 {
-    const auto &loadable = programHeaders.at(PT_LOAD);
+    const auto &loadable = programHeaders_.at(PT_LOAD);
     const auto &last = loadable[loadable.size() - 1];
     return last.p_vaddr + last.p_memsz;
 }
 
 std::optional<std::string>
 Object::symbolVersion(VersionIdx idx) const {
-    const SymbolVersioning *vi = symbolVersions();
+    const SymbolVersioning &vi = symbolVersions();
 
     unsigned i = idx.idx & 0x7fffU;
     if (i >= 2)
-        return vi->versions.at(i);
+        return vi.versions.at(i);
     else
         return std::nullopt;
 }
 
 VersionIdx Object::versionIdxForSymbol(size_t idx) const {
-   auto &gnu_version = getSection(".gnu.version", SHT_GNU_versym);
+   const auto &gnu_version = getSection(".gnu.version", SHT_GNU_versym);
    return VersionIdx(gnu_version ?  gnu_version.io()->readObj<Half>(idx * 2) : std::numeric_limits<Half>::max());
 }
 
@@ -193,11 +195,11 @@ GnuHash::findSymbol(const char *name) const {
     }
 }
 
-SymbolSection *Object::debugSymbols() {
+SymbolSection *Object::debugSymbols() const {
     return getSymtab(debugSymbols_, ".symtab", SHT_SYMTAB);
 }
 
-SymbolSection *Object::dynamicSymbols() {
+SymbolSection *Object::dynamicSymbols() const {
     return getSymtab(dynamicSymbols_, ".dynsym", SHT_DYNSYM);
 }
 
@@ -211,10 +213,10 @@ Object::getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int t
 }
 
 Object::Object(Context &context_, Reader::csptr io_, bool isDebug)
-    : io(std::move(io_))
-    , context(context_)
-    , elfHeader(io->readObj<Ehdr>(0))
+    : context(context_)
+    , io(std::move(io_))
     , isDebug(isDebug)
+    , elfHeader(io->readObj<Ehdr>(0))
     , debugLoaded(isDebug) // don't attempt to load separate debug info for a debug ELF.
     , lastSegmentForAddress(nullptr)
 {
@@ -222,37 +224,31 @@ Object::Object(Context &context_, Reader::csptr io_, bool isDebug)
     if (!IS_ELF(elfHeader) || elfHeader.e_ident[EI_VERSION] != EV_CURRENT)
         throw (Exception() << *io << ": content is not an ELF image");
 
+    // Create a sorted mapping of program headers, arranged by type
     Reader::csptr headers = io->view("program headers", elfHeader.e_phoff, elfHeader.e_phnum * sizeof (Phdr));
     for (const auto &hdr : ReaderArray<Phdr>(*headers))
-        programHeaders[hdr.p_type].push_back(hdr);
-    // Sort program headers by VA.
-    for (auto &phdrs : programHeaders)
-        std::sort(phdrs.second.begin(), phdrs.second.end(),
+        programHeaders_[hdr.p_type].push_back(hdr);
+    for (auto &phdrs : programHeaders_)
+        std::ranges::sort(phdrs.second,
                 [] (const Phdr &lhs, const Phdr &rhs) {
                     return lhs.p_vaddr < rhs.p_vaddr; });
-
 }
 
 const Object::SectionHeaders & Object::sectionHeaders() const {
     // Make sure the header sections are present in the reader, otherwise, skip.
-    if (sectionHeaders_) {
+    if (sectionHeaders_)
        return *sectionHeaders_;
-    }
+
     sectionHeaders_ = std::make_unique<SectionHeaders>();
     if (elfHeader.e_shoff < io->size()) {
-       // If there are too many headers, we need to look in the first section header
-       // to get the actual count.
-       //
-       int headerCount;
-       if (elfHeader.e_shnum == 0 && elfHeader.e_shentsize != 0) {
-          headerCount = 1;
-       } else {
-          headerCount = elfHeader.e_shnum;
-          sectionHeaders_->reserve(headerCount);
+       size_t headerCount = elfHeader.e_shnum;
+       if (headerCount == 0 && elfHeader.e_shentsize != 0) {
+          // work out the true headerCount form the sh_size field on the first
+          // iteration of the loop below.
+          headerCount = 65536;
        }
-
-       int i = 0;
-       for (Elf::Off off = elfHeader.e_shoff; i < headerCount; i++) {
+       sectionHeaders_->reserve(headerCount);
+       for (Elf::Off off = elfHeader.e_shoff, i = 0; i < headerCount; i++) {
            sectionHeaders_->push_back(std::make_unique<Section>(this, off));
            if (i == 0 && elfHeader.e_shnum == 0) {
                headerCount = (*sectionHeaders_)[0]->shdr.sh_size;
@@ -260,60 +256,56 @@ const Object::SectionHeaders & Object::sectionHeaders() const {
            }
            off += elfHeader.e_shentsize;
        }
-       if (sectionHeaders_->size() == 0) {
-           sectionHeaders_->push_back(std::make_unique<Section>());
-       }
-
        if (elfHeader.e_shstrndx != SHN_UNDEF) {
           // Create a mapping from section header names to section headers.
-          // We need to do this after reading all the section headers, because
-          // until then we don't have the details of the shstr section
-          //
           // We need to deal with the fact that e_shstrndx might be too small
           // to hold the index of the string section, and look in sh_link if so.
-          int shstrSec = elfHeader.e_shstrndx == SHN_XINDEX ?
-              (*sectionHeaders_)[0]->shdr.sh_link :
-              elfHeader.e_shstrndx;
+          size_t shstrSec = elfHeader.e_shstrndx == SHN_XINDEX ?
+             (*sectionHeaders_)[0]->shdr.sh_link : elfHeader.e_shstrndx;
           auto &sshdr = (*sectionHeaders_)[shstrSec];
           size_t secid = 0;
-          for (auto &h : (*sectionHeaders_)) {
+          for (auto &h : *sectionHeaders_) {
               auto name = sshdr->io()->readString(h->shdr.sh_name);
               namedSection[name] = secid++;
               h->name = name;
           }
-
-          /*
-           * Load dynamic entries
-           */
-          auto &section = getSection(".dynamic", SHT_DYNAMIC );
-          if (section) {
-              ReaderArray<Dyn> content(*section.io());
-              for (auto dyn : content)
-                 dynamic[dyn.d_tag].push_back(dyn);
-          }
        }
-    } else {
-        // leave a null section no matter what.
-        sectionHeaders_->push_back(std::make_unique<Section>());
     }
+    if (sectionHeaders_->size() == 0)
+        sectionHeaders_->push_back(std::make_unique<Section>());
     return *sectionHeaders_;
 }
 
-const SymbolVersioning *
+std::map<Sxword, std::vector<Dyn>> &
+Object::dynamic() const {
+   /* Load dynamic entries */
+   if (!dynamic_) {
+      dynamic_ = std::make_shared<std::map<Sxword, std::vector<Dyn>>>();
+      const auto &section = getSection(".dynamic", SHT_DYNAMIC );
+      if (section) {
+         ReaderArray<Dyn> content(*section.io());
+         for (auto dyn : content)
+            (*dynamic_)[dyn.d_tag].push_back(dyn);
+      }
+   }
+   return *dynamic_;
+};
+
+const SymbolVersioning &
 Object::symbolVersions() const
 {
     if (symbolVersions_ != nullptr)
-        return symbolVersions_.get();
+        return *symbolVersions_;
 
     auto rv = std::make_unique<SymbolVersioning>();
-    auto &gnu_version_r = getSection(".gnu.version_r", SHT_GNU_verneed );
+    const auto &gnu_version_r = getSection(".gnu.version_r", SHT_GNU_verneed );
     if (gnu_version_r) {
-       auto &strings = getLinkedSection(gnu_version_r);
-       auto &verneednum = dynamic.at(DT_VERNEEDNUM);
+       const auto &strings = getLinkedSection(gnu_version_r);
+       const auto &verneednum = dynamic().at(DT_VERNEEDNUM);
        if (verneednum.size() != 0) {
 
           size_t off = 0;
-          for (size_t cnt = verneednum[0].d_un.d_val; cnt; --cnt) {
+          for (size_t cnt = verneednum[0].d_un.d_val; cnt != 0; --cnt) {
              auto verneed = gnu_version_r.io()->readObj<Verneed>(off);
              Off auxOff = off + verneed.vn_aux;
              auto filename = strings.io()->readString(verneed.vn_file);
@@ -330,13 +322,13 @@ Object::symbolVersions() const
        }
     }
 
-    auto &gnu_version_d = getSection(".gnu.version_d", SHT_GNU_verdef );
+    const auto &gnu_version_d = getSection(".gnu.version_d", SHT_GNU_verdef );
     if (gnu_version_d) {
-       auto &strings = getLinkedSection(gnu_version_d);
-       auto &verdefnum = dynamic.at(DT_VERDEFNUM);
+       const auto &strings = getLinkedSection(gnu_version_d);
+       const auto &verdefnum = dynamic().at(DT_VERDEFNUM);
        if (verdefnum.size() != 0) {
           size_t off = 0;
-          for (size_t cnt = verdefnum[0].d_un.d_val; cnt; --cnt) {
+          for (size_t cnt = verdefnum[0].d_un.d_val; cnt != 0; --cnt) {
              auto verdef = gnu_version_d.io()->readObj<Verdef>(off);
              Off auxOff = off + verdef.vd_aux;
              // There's two verdaux entries for some symbols. First is
@@ -354,7 +346,7 @@ Object::symbolVersions() const
        }
     }
     symbolVersions_ = std::move(rv);
-    return symbolVersions_.get();
+    return *symbolVersions_;
 }
 
 const Phdr *
@@ -380,26 +372,72 @@ const Object::ProgramHeaders &
 Object::getSegments(Word type) const
 {
     assert(!isDebug); // debug artefacts have junk program heaers.
-    auto it = programHeaders.find(type);
-    if (it == programHeaders.end()) {
+    auto it = programHeaders_.find(type);
+    if (it == programHeaders_.end()) {
         static const ProgramHeaders empty;
         return empty;
     }
     return it->second;
 }
 
-const std::map<Elf::Word, Object::ProgramHeaders> &
+const Object::ProgramHeadersByType &
 Object::getAllSegments() const {
-    return programHeaders;
+    return programHeaders_;
 }
 
 string
 Object::getInterpreter() const
 {
-    for (auto &seg : getSegments(PT_INTERP))
+    for (const auto &seg : getSegments(PT_INTERP))
         return io->readString(seg.p_offset);
     return "";
 }
+
+Elf::Object::sptr Object::debugData() const {
+    if (debugData_ == nullptr) {
+#ifdef WITH_LZMA
+        auto &gnu_debugdata = getSection(".gnu_debugdata", SHT_PROGBITS );
+        if (gnu_debugdata) {
+           auto reader = make_shared<const LzmaReader>(gnu_debugdata.io());
+           debugData_ = make_shared<Object>(context, reader, true);
+        }
+#else
+        static bool warned = false;
+        if (!warned && context.debug != nullptr) {
+            *context.debug << "warning: no compiled support for LZMA - "
+                "can't decode debug data in " << *io << "\n";
+            warned = true;
+        }
+#endif
+    }
+    return debugData_;
+}
+
+std::optional<std::pair<Sym, std::string>>
+Object::findSym(auto &table, Addr addr, int type) {
+    Sym sym;
+    std::string name;
+    for (const auto &candidate : table) {
+        if (candidate.st_shndx >= sectionHeaders().size())
+            continue;
+        if (type != STT_NOTYPE && ELF_ST_TYPE(candidate.st_info) != type)
+            continue;
+        if (candidate.st_value > addr)
+            continue;
+        if (candidate.st_size + candidate.st_value <= addr) {
+            if (candidate.st_size == 0 && candidate.st_value == addr) {
+                sym = candidate;
+                name = table.name(candidate);
+            }
+            continue;
+        }
+        auto &sec = sectionHeaders()[candidate.st_shndx];
+        if ((sec->shdr.sh_flags & SHF_ALLOC) == 0)
+            continue;
+        return std::make_pair(candidate, table.name(candidate));
+    }
+    return std::nullopt;
+};
 
 /*
  * Find the symbol that represents a particular address.
@@ -407,69 +445,15 @@ Object::getInterpreter() const
 std::optional<std::pair<Sym, string>>
 Object::findSymbolByAddress(Addr addr, int type)
 {
-    /* Try to find symbols in these sections */
-    bool haveExactZeroSizeMatch = false;
-
-    Sym sym;
-    std::string name;
-    auto findSym = [&] (auto &table) {
-        for (const auto &candidate : table) {
-            if (candidate.st_shndx >= sectionHeaders().size())
-                continue;
-            if (type != STT_NOTYPE && ELF_ST_TYPE(candidate.st_info) != type)
-                continue;
-            if (candidate.st_value > addr)
-                continue;
-            if (candidate.st_size + candidate.st_value <= addr) {
-                if (candidate.st_size == 0 && candidate.st_value == addr) {
-                    sym = candidate;
-                    name = table.name(candidate);
-                    haveExactZeroSizeMatch = true;
-                }
-                continue;
-            }
-            auto &sec = sectionHeaders()[candidate.st_shndx];
-            if ((sec->shdr.sh_flags & SHF_ALLOC) == 0)
-                continue;
-            sym = candidate;
-            name = table.name(candidate);
-            return true;
-        }
-        sym.st_shndx = SHN_UNDEF;
-        return false;
-    };
-    if (findSym(*debugSymbols()))
-        return std::make_pair( sym, name );
-    if (findSym(*dynamicSymbols()))
-        return std::make_pair( sym, name );
-    // .gnu_debugdata is a separate LZMA-compressed ELF image with just
-    // a symbol table.
-    if (debugData == nullptr) {
-#ifdef WITH_LZMA
-        auto &gnu_debugdata = getSection(".gnu_debugdata", SHT_PROGBITS );
-        if (gnu_debugdata) {
-           auto reader = make_shared<const LzmaReader>(gnu_debugdata.io());
-           debugData = make_shared<Object>(context, reader, true);
-        }
-#else
-        static bool warned = false;
-        if (!warned && context.debug) {
-            *context.debug << "warning: no compiled support for LZMA - "
-                "can't decode debug data in " << *io << "\n";
-            warned = true;
-        }
-#endif
-    }
-
-    if (debugData) {
-        auto debugSym = debugData->findSymbolByAddress(addr, type);
+    if (auto res = findSym(*debugSymbols(), addr, type); res)
+        return res;
+    if (auto res = findSym(*dynamicSymbols(), addr, type); res)
+        return res;
+    if (auto dd = debugData(); dd) {
+        auto debugSym = dd->findSymbolByAddress(addr, type);
         if (debugSym)
             return debugSym;
     }
-
-    if (haveExactZeroSizeMatch)
-        return std::make_pair( sym, name );
-    sym.st_shndx = SHN_UNDEF;
     return std::nullopt;
 }
 
@@ -479,11 +463,11 @@ Object::getSection(const string &name, Word type) const
     sectionHeaders(); // ensure section headers are loaded.
     auto s = namedSection.find(name);
     if (s != namedSection.end()) {
-        auto &ref = sectionHeaders()[s->second];
+        const auto &ref = sectionHeaders()[s->second];
         if (ref->shdr.sh_type == type || type == SHT_NULL)
             return *ref;
     }
-    if (name.rfind(".debug_", 0) == 0) {
+    if (name.starts_with(".debug_")) {
         // We check for the section names in Section::io() to do decompression
         // for this type of section.
         const auto &compressed = getSection(std::string(".z") + name.substr(1), type);
@@ -503,11 +487,11 @@ Object::getSection(const string &name, Word type) const
 const Section &
 Object::getDebugSection(const string &name, Word type) const
 {
-    auto &local = getSection(name, type);
+    const auto &local = getSection(name, type);
     if (local && local.shdr.sh_type != SHT_NOBITS)
         return local;
-    auto debug = getDebug();
-    if (debug)
+    const Object *debug = getDebug();
+    if (debug != nullptr)
         return debug->getSection(name, type);
     return *sectionHeaders()[0];
 }
@@ -515,7 +499,7 @@ Object::getDebugSection(const string &name, Word type) const
 const Section &
 Object::getSection(Word idx) const
 {
-   auto &sh = sectionHeaders();
+   const auto &sh = sectionHeaders();
     if (sh[idx]->shdr.sh_type != SHT_NULL)
         return *sh[idx];
     return *sh[0];
@@ -540,7 +524,7 @@ std::pair<Sym, size_t>
 Object::findDynamicSymbol(const std::string &name)
 {
     Sym sym;
-    uint32_t idx;
+    uint32_t idx = 0;
 
     std::tie(idx, sym) = gnu_hash() ? gnu_hash()->findSymbol(name)
              : hash() ? hash()->findSymbol(name)
@@ -572,18 +556,19 @@ Object::findDebugSymbol(const string &name)
 }
 
 BuildID Object::getBuildID() const {
-    Elf::BuildID buildID;
     if (isDebug) {
        // For debug objects, don't trust the notes segments are accurate
        // (they're not). Only use sections to derive info in debug objects.
-       auto &notesec = getSection(".note.gnu.build-id", SHT_NOTE);
+       const auto &notesec = getSection(".note.gnu.build-id", SHT_NOTE);
        if (notesec) {
           auto noteIo = notesec.io();
           if (noteIo->size() > 4 + sizeof (Note)) {
              auto note = noteIo->readObj<Note>( 0 );
              if (note.n_type == GNU_BUILD_ID) {
-                buildID.data.resize(note.n_descsz);
-                noteIo->readObj(sizeof note + roundup2(note.n_namesz, 4), &buildID.data[0], note.n_descsz );
+                std::vector<uint8_t> data;
+                data.resize(note.n_descsz);
+                noteIo->readObj(sizeof note + roundup2(note.n_namesz, 4), data.data(), note.n_descsz );
+                return BuildID(data);
              }
           }
        }
@@ -592,20 +577,21 @@ BuildID Object::getBuildID() const {
        for (const auto &note : notes()) {
           if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
              auto noteIo = note.data();
-             buildID.data.resize(noteIo->size());
-             noteIo->readObj(0, &buildID.data[0], noteIo->size());
-             break;
+             std::vector<uint8_t> data;
+             data.resize(noteIo->size());
+             noteIo->readObj(0, data.data(), noteIo->size());
+             return BuildID(data);
           }
        }
     }
-    return buildID;
+    return {};
 }
 
 /*
  * Find the debug object associated with this ELF object.
  * This can be located by build ID or by path.
  */
-Object *
+const Object *
 Object::getDebug() const
 {
     if (debugLoaded || context.options.noExtDebug)
@@ -614,13 +600,12 @@ Object::getDebug() const
 
     // Use the build ID to find debug data.
     auto bid = getBuildID();
-    if (bid)
-        debugObject = context.getDebugImage(bid);
+    debugObject = context.getDebugImage(bid);
 
     // If that doesn't work, maybe the gnu_debuglink is valid?
     if (!debugObject) {
         // if we have a debug link, use that to attempt to find the debug file.
-        auto &hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
+        const auto &hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
         if (hdr) {
             auto link = hdr.io()->readString(0);
             auto dir = context.dirname(stringify(*io));
@@ -638,23 +623,24 @@ Object::getDebug() const
     // Validate that the .dynamic section in the debug object and the one in
     // the original image have the same .sh_addr.
     // XXX: skip if build IDs are the same?
-    auto &s = getSection(".dynamic", SHT_NULL);
-    auto &d = debugObject->getSection(".dynamic", SHT_NULL);
+    const auto &s = getSection(".dynamic", SHT_NULL);
+    const auto &d = debugObject->getSection(".dynamic", SHT_NULL);
 
-    if (d.shdr.sh_addr != s.shdr.sh_addr && context.debug) {
+    if (d.shdr.sh_addr != s.shdr.sh_addr && context.debug != nullptr) {
         Elf::Addr diff = s.shdr.sh_addr - d.shdr.sh_addr;
         IOFlagSave _(*context.debug);
         *context.debug << "warning: dynamic section for debug symbols "
            << *debugObject->io << " loaded for object "
            << *this->io << " at different offset: diff is "
            << std::hex << diff
-           << ", assuming " << *this->io << " is prelinked" << std::dec << std::endl;
+           << ", assuming " << *this->io
+           << " is prelinked" << std::dec << "\n";
 
         // looks like the exe has been prelinked - adjust the debug info too.
-        for (auto &sect : debugObject->sectionHeaders())
+        for (const auto &sect : debugObject->sectionHeaders())
             sect->shdr.sh_addr += diff;
 
-        for (auto &sectType : debugObject->programHeaders)
+        for (auto &sectType : debugObject->programHeaders_)
             for (auto &sect : sectType.second)
                 sect.p_vaddr += diff;
     }
@@ -670,10 +656,10 @@ SymHash::SymHash(Reader::csptr hash_,
     // read the hash table into local memory.
     size_t words = hash->size() / sizeof (Word);
     data.resize(words);
-    hash->readObj(0, &data[0], words);
+    hash->readObj(0, data.data(), words);
     nbucket = data[0];
     nchain = data[1];
-    buckets = &data[0] + 2;
+    buckets = data.data() + 2;
     chains = buckets + nbucket;
 }
 
@@ -690,7 +676,7 @@ SymHash::findSymbol(const string &name)
     return std::make_pair(0, undef());
 }
 
-Section::Section(const Object *elf, Off off) : elf(elf) {
+Section::Section(const Object *elf, Off off) : shdr{}, elf(elf) {
     elf->io->readObj(off, &shdr);
 }
 

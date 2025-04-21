@@ -246,7 +246,6 @@ Process::processAUXV(const Reader &auxio)
     std::string exeName;
     Elf::Addr phOff = 0;
     size_t phNum = 0;
-    Elf::BuildID exeID;
     for (auto &aux : ReaderArray<Elf::auxv_t>(auxio)) {
         Elf::Addr hdr = aux.a_un.a_val;
         if (context.verbose > 2)
@@ -349,13 +348,15 @@ Process::processAUXV(const Reader &auxio)
                 name.resize(name.size() - 1);
             if (std::string_view(name.data(), name.size()) != "GNU")
                 continue;
-            exeID.data.resize(n.n_descsz);
-            io->read(noteVa + sizeof n + 4, n.n_descsz, (char *)exeID.data.data());
+
+            std::vector<uint8_t> data;
+            data.resize(n.n_descsz);
+            io->read(noteVa + sizeof n + 4, n.n_descsz, (char *)data.data());
             if (context.verbose)
-                *context.debug << "build ID From AT_PHDR: " << exeID << "\n";
+                *context.debug << "build ID From AT_PHDR: " << Elf::BuildID(data) << "\n";
+            execImage = context.getImage(Elf::BuildID{data});
             break;
         }
-        execImage = context.getImage(exeID);
     }
 
     if (!execImage && exeName != "")

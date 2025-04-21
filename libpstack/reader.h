@@ -169,6 +169,7 @@ public:
 class NullReader final : public Reader {
 public:
     virtual size_t read(Off, size_t, char *) const override {
+        abort();
         throw Exception() << " read from null reader";
     }
     void describe(std::ostream &os) const override {

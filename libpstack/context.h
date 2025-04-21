@@ -3,24 +3,15 @@
 #include <string_view>
 #include <memory>
 #include <vector>
+#include <optional>
 #include <limits>
 #include <fcntl.h>
 
 struct debuginfod_client;
 
 namespace pstack {
-class Reader;
 
-namespace Elf {
-class Object;
-class BuildID;
-}
-
-namespace Dwarf {
-class Info;
-}
-
-struct PstackOptions {
+struct Options {
     bool nosrc = false; // don't display source code (makes things faster)
     bool doargs = false; // show arguments to functions
     bool dolocals = false;
@@ -32,23 +23,44 @@ struct PstackOptions {
     int maxframes = 30;
 };
 
+class Reader;
+namespace Elf {
+class Object;
+class BuildID;
+}
+
+namespace Dwarf {
+class Info;
+}
+
 class Context {
    std::map<std::shared_ptr<Elf::Object>, std::shared_ptr<Dwarf::Info>> dwarfCache;
 
-   std::map<std::string, std::shared_ptr<Elf::Object>> imageByName;
-   std::map<std::string, std::shared_ptr<Elf::Object>> debugImageByName;
-   std::map<Elf::BuildID, std::shared_ptr<Elf::Object>> imageByID;
-   std::map<Elf::BuildID, std::shared_ptr<Elf::Object>> debugImageByID;
-   std::vector<std::string> debugDirectories;
-   template <typename Container> std::shared_ptr<Elf::Object> getImageIfLoaded( const Container &ctr, const typename Container::key_type &key);
+   using NameMap = std::map<std::string, std::shared_ptr<Elf::Object>>;
+   using IdMap = std::map<Elf::BuildID, std::shared_ptr<Elf::Object>>;
+
+   NameMap imageByName;
+   NameMap debugImageByName;
+   IdMap imageByID;
+   IdMap debugImageByID;
+   struct {
+      int dwarfLookups;
+      int elfLookups;
+      int dwarfHits;
+      int elfHits;
+   } counters {};
+   template <typename Container> std::optional<std::shared_ptr<Elf::Object>> getImageIfLoaded(const Container &ctr, const typename Container::key_type &key);
+   std::shared_ptr<Elf::Object> getImageInPath(const std::vector<std::string> &paths, NameMap &container, const std::string &name, bool debug);
+   std::shared_ptr<Elf::Object> getImageImpl( IdMap &container, NameMap &nameContainer, const std::vector<std::string> &paths, const Elf::BuildID &bid, bool isDebug);
 
 public:
-   void addDebugDirectory(std::string_view dir) {
-      debugDirectories.emplace_back(dir);
-   }
+   std::vector<std::string> debugPrefixes { "/usr/lib/debug", "/usr/lib/debug/usr" };
+   std::vector<std::string> debugBuildIdPrefixes { "/usr/lib/debug/.build-id" };
+   std::vector<std::string> exePrefixes { "" };
+   std::vector<std::string> exeBuildIdPrefixes { "/usr/lib/.build-id" };  // we could add the debuginfod cache here?
    std::ostream *debug{};
    std::ostream *output{};
-   PstackOptions options{};
+   Options options{};
    struct DidClose {
       void operator() ( struct debuginfod_client *client );
    };
@@ -61,7 +73,7 @@ public:
    int openfile(const std::string &filename, int mode = O_RDONLY, int umask = 0777);
    int openFileDirect(const std::string &name_, int mode, int mask);
 
-   std::shared_ptr<Elf::Object> getImage(const std::string &name, bool isDebug = false);
+   std::shared_ptr<Elf::Object> getImage(const std::string &name);
    std::shared_ptr<Elf::Object> getImage(const Elf::BuildID &);
 
    // Debug images are specifically those with the text/data stripped, and just

@@ -239,7 +239,28 @@ emain(int argc, char **argv, Context &context)
             'g',
             "directory",
             "extra location to find debug files for binaries and shared libraries",
-            [&](const char *arg) { context.addDebugDirectory(arg); })
+            [&](const char *arg) { context.debugPrefixes.push_back(arg); })
+
+    .add("exe-dir",
+            Flags::LONGONLY,
+            "directory",
+            "extra location to find executables and shared libraries",
+            [&](const char *arg) { context.exePrefixes.push_back(arg); })
+
+
+    .add("build-id-exepath",
+            Flags::LONGONLY,
+            "directory",
+            "extra location to find executable files from their build-ids",
+            [&](const char *arg) { context.exeBuildIdPrefixes.push_back(arg); })
+
+    .add("build-id-debugpath",
+            Flags::LONGONLY,
+            "directory",
+            "extra location to find debug files from their build-ids",
+            [&](const char *arg) { context.debugBuildIdPrefixes.push_back(arg); })
+
+
 
     .add("constant",
             'b',

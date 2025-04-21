@@ -21,7 +21,9 @@ public:
     // rule-of-three
     Raw() = delete;
     Raw(const Raw &) = delete;
+    Raw(Raw &&) = delete;
     Raw &operator = (const Raw &) = delete;
+    Raw &operator = (Raw &&) = delete;
 };
 
 DIE
@@ -39,7 +41,7 @@ DIE::nextSibling(const DIE &parent) const
         // Run through all our children. decodeEntries will update the
         // parent's (our) nextSibling.
         std::shared_ptr<Raw> last = nullptr;
-        for (auto &it : children())
+        for (const auto &it : children())
             last = it.raw;
         if (last)
             last->nextSibling = 0;
@@ -56,7 +58,8 @@ DIE::containsAddress(Elf::Addr addr) const
     if (low.valid() && high.valid()) {
         // Simple case - the DIE has a low and high address. Just see if the
         // addr is in that range
-        Elf::Addr start, end;
+        Elf::Addr start = 0;
+        Elf::Addr end = 0;
         switch (low.form()) {
             case DW_FORM_addr:
             case DW_FORM_addrx:
@@ -160,7 +163,7 @@ DIE::Raw::Raw(Unit *unit, DWARFReader &r, size_t abbrev, Elf::Off parent_)
 {
     size_t i = 0;
     values.reserve(type->forms.size());
-    for (auto &form : type->forms) {
+    for (const auto &form : type->forms) {
         values.emplace_back(r, form, unit);
         if (int(i) == type->nextSibIdx)
             nextSibling = values[i].sdata + unit->offset;
@@ -323,7 +326,7 @@ DIE::Attribute::Value::Value(DWARFReader &r, const FormEntry &forment, Unit *uni
 DIE::Raw::~Raw()
 {
     int i = 0;
-    for (auto &forment : type->forms) {
+    for (const auto &forment : type->forms) {
         switch (forment.form) {
             case DW_FORM_exprloc:
             case DW_FORM_block:
@@ -339,7 +342,9 @@ DIE::Raw::~Raw()
     }
 }
 
-void walk(const DIE & die) { for (auto c : die.children()) { walk(c); } };
+namespace {
+void walk(const DIE & die) { for (const auto & c : die.children()) { walk(c); } };
+}
 
 Elf::Off
 DIE::getParentOffset() const
@@ -356,8 +361,7 @@ DIE::getParentOffset() const
                 << " at offset " << offset
                 << " in unit " << unit->name()
                 << " of " << *unit->dwarf->elf->io
-                << ", need to do full walk of DIE tree"
-                << std::endl;
+                << ", need to do full walk of DIE tree\n";
         walk(unit->root());
     }
     return raw->parent;
@@ -401,7 +405,7 @@ DIE::Children::const_iterator::const_iterator(const DIE &first, const DIE & pare
 AttrName
 DIE::Attribute::name() const
 {
-    size_t off = formp - &die.raw->type->forms[0];
+    size_t off = formp - die.raw->type->forms.data();
     for (auto ent : die.raw->type->attrName2Idx) {
         if (ent.second == off)
             return ent.first;
@@ -552,7 +556,7 @@ DIE::Attribute::operator std::string() const
             const auto &alt = dwarf->getAltDwarf();
             if (!alt)
                 return "(alt string table unavailable)";
-            auto &strs = alt->debugStrings;
+            const auto &strs = alt->debugStrings;
             if (!strs)
                 return "(alt string table unavailable)";
             return strs.io()->readString(value().addr);
@@ -581,10 +585,10 @@ DIE::Attribute::operator std::string() const
 DIE::Attribute::operator DIE() const
 {
     if (!valid())
-        return DIE();
+        return {};
 
     const Info *dwarf = die.unit->dwarf;
-    Elf::Off off;
+    Elf::Off off = 0;
     switch (formp->form) {
         case DW_FORM_ref_addr:
             off = value().addr;
@@ -623,7 +627,7 @@ DIE::findEntryForAddr(Elf::Addr address, Tag t, bool skipStart)
 {
     switch (containsAddress(address)) {
         case ContainsAddr::NO:
-            return DIE();
+            return {};
         case ContainsAddr::YES:
             if (!skipStart && tag() == t)
                 return *this;
@@ -634,19 +638,19 @@ DIE::findEntryForAddr(Elf::Addr address, Tag t, bool skipStart)
                 if (descendent)
                     return descendent;
             }
-            return DIE();
+            return {};
     }
-    return DIE();
+    return {};
 }
 
 DIE::Children::const_iterator
 DIE::Children::begin() const {
-    return const_iterator(parent.firstChild(), parent);
+    return { parent.firstChild(), parent };
 }
 
 DIE::Children::const_iterator
 DIE::Children::end() const {
-    return const_iterator(DIE(), parent);
+    return { DIE(), parent };
 }
 
 std::pair<AttrName, DIE::Attribute>
@@ -658,16 +662,16 @@ DIE::Attributes::const_iterator::operator *() const {
 
 DIE::Attributes::const_iterator
 DIE::Attributes::begin() const {
-    return const_iterator(die, die.raw->type->attrName2Idx.begin());
+    return { die, die.raw->type->attrName2Idx.begin() };
 }
 
 DIE::Attributes::const_iterator
 DIE::Attributes::end() const {
-    return const_iterator(die, die.raw->type->attrName2Idx.end());
+    return { die, die.raw->type->attrName2Idx.end() };
 }
 
 const DIE::Attribute::Value &DIE::Attribute::value() const {
-    return die.raw->values.at(formp - &die.raw->type->forms[0]);
+    return die.raw->values.at(formp - die.raw->type->forms.data());
 }
 
 Tag DIE::tag() const {
@@ -679,7 +683,7 @@ bool DIE::hasChildren() const {
 }
 
 std::string
-DIE::typeName()
+DIE::typeName() const
 {
     if (!*this)
         return "void";
@@ -687,7 +691,8 @@ DIE::typeName()
     if (selfname != "")
         return selfname;
     auto base = DIE(attribute(DW_AT_type));
-    std::string s, sep;
+    std::string s;
+    std::string sep;
     switch (tag()) {
         case DW_TAG_pointer_type:
             return base.typeName() + " *";
@@ -698,7 +703,7 @@ DIE::typeName()
         case DW_TAG_subroutine_type:
             s = base.typeName() + "(";
             sep = "";
-            for (auto arg : children()) {
+            for (const auto &arg : children()) {
                 if (arg.tag() != DW_TAG_formal_parameter)
                     continue;
                 s += sep;
