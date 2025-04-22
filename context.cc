@@ -26,10 +26,7 @@ void Context::DidClose::operator() ( [[maybe_unused]] struct debuginfod_client *
 Context::Context()
     : debug(&std::cerr), output(&std::cout)
 {
-#ifdef DEBUGINFOD
-    if (!options.noDebuginfod)
-       debuginfod.reset( debuginfod_begin() );
-#endif
+
 }
 
 std::shared_ptr<Dwarf::Info>
@@ -37,6 +34,21 @@ Context::getDwarf(const std::string &filename)
 {
     return getDwarf(getImage(filename));
 }
+
+debuginfod_client *
+Context::debuginfod()
+{
+#ifdef DEBUGINFOD
+    if (options.noDebuginfod)
+        return nullptr;
+    if (!debuginfod_)
+        debuginfod_ = std::unique_ptr<debuginfod_client, DidClose>(debuginfod_begin());
+    return (*debuginfod_).get();
+#else
+    return nullptr;
+#endif
+}
+
 
 std::shared_ptr<Dwarf::Info>
 Context::getDwarf(const Elf::BuildID &bid)
@@ -190,9 +202,9 @@ Context::getImageImpl(
 
     Elf::Object::sptr res = getImageInPath(paths, nameContainer, bidpath, isDebug);
 #ifdef DEBUGINFOD
-    if (!res && debuginfod) {
+    if (!res && debuginfod()) {
         char *path;
-        int fd = (isDebug ? debuginfod_find_debuginfo : debuginfod_find_executable)(debuginfod.get(), bid.data(), int( bid.size() ), &path);
+        int fd = (isDebug ? debuginfod_find_debuginfo : debuginfod_find_executable)(debuginfod(), bid.data(), int( bid.size() ), &path);
         if (fd >= 0) {
             // Wrap the fd in a reader, and then a cache reader...
             std::shared_ptr<Reader> reader = std::make_shared<FileReader>(*this, path, fd );
