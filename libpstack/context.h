@@ -5,6 +5,7 @@
 #include <vector>
 #include <optional>
 #include <limits>
+#include <optional>
 #include <fcntl.h>
 
 struct debuginfod_client;
@@ -53,6 +54,13 @@ class Context {
    std::shared_ptr<Elf::Object> getImageInPath(const std::vector<std::string> &paths, NameMap &container, const std::string &name, bool debug);
    std::shared_ptr<Elf::Object> getImageImpl( IdMap &container, NameMap &nameContainer, const std::vector<std::string> &paths, const Elf::BuildID &bid, bool isDebug);
 
+   struct DidClose {
+      void operator() ( struct debuginfod_client *client );
+   };
+   std::optional<std::unique_ptr<debuginfod_client, DidClose>> debuginfod_;
+   debuginfod_client *debuginfod();
+
+
 public:
    std::vector<std::string> debugPrefixes { "/usr/lib/debug", "/usr/lib/debug/usr" };
    std::vector<std::string> debugBuildIdPrefixes { "/usr/lib/debug/.build-id" };
@@ -61,10 +69,6 @@ public:
    std::ostream *debug{};
    std::ostream *output{};
    Options options{};
-   struct DidClose {
-      void operator() ( struct debuginfod_client *client );
-   };
-   std::unique_ptr<debuginfod_client, DidClose> debuginfod;
    int verbose{};
    std::vector<std::pair<std::string, std::string>> pathReplacements;
    std::string dirname(const std::string &);
