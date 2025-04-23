@@ -46,7 +46,6 @@ Context::debuginfod()
         if (isatty(2)) {
             debuginfod_set_progressfn( debuginfod_->get(),
                     [] (debuginfod_client *client, long num, long denom) {
-                        usleep(10000);
                         const char *url =  debuginfod_get_url( client );
                         char eol = num == denom && denom != 0 ? '\n' : '\r';
                         if (url == nullptr)
