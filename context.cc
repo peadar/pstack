@@ -41,8 +41,23 @@ Context::debuginfod()
 #ifdef DEBUGINFOD
     if (options.noDebuginfod)
         return nullptr;
-    if (!debuginfod_)
+    if (!debuginfod_) {
         debuginfod_ = std::unique_ptr<debuginfod_client, DidClose>(debuginfod_begin());
+        if (isatty(2)) {
+            debuginfod_set_progressfn( debuginfod_->get(),
+                    [] (debuginfod_client *client, long num, long denom) {
+                        int *progress = (int *)debuginfod_get_user_data(client);
+                        ++*progress;
+                        const char *url =  debuginfod_get_url( client );
+                        if (url == nullptr)
+                            url = "<unknown>";
+                        std::cerr << "debuginfod download " << url << ". progress: "
+                            << (denom ? num * 100 / denom : 0) << "%"
+                            << " (" << num << " of " << denom << ")" << "\r";
+                            return 0; });
+        }
+
+    }
     return (*debuginfod_).get();
 #else
     return nullptr;
@@ -208,7 +223,13 @@ std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, boo
 #ifdef DEBUGINFOD
     if (!res && debuginfod()) {
         char *path;
-        int fd = (isDebug ? debuginfod_find_debuginfo : debuginfod_find_executable)(debuginfod(), bid.data(), int( bid.size() ), &path);
+        int progress = 0;
+        debuginfod_set_user_data(debuginfod(), &progress);
+        int fd = (isDebug ? debuginfod_find_debuginfo : debuginfod_find_executable)
+            (debuginfod(), bid.data(), int( bid.size() ), &path);
+        if (progress > 0) {
+            std::cerr << "\n";
+        }
         if (fd >= 0) {
             // Wrap the fd in a reader, and then a cache reader...
             std::shared_ptr<Reader> reader = std::make_shared<FileReader>(*this, path, fd );
