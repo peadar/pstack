@@ -114,9 +114,15 @@ Context::flush(std::shared_ptr<Elf::Object> o)
     dwarfCache.erase(o);
 }
 
+
+// pretty-printer for key types.
+template <typename T> struct ContainerKeyDescr{};
+std::ostream &operator << (std::ostream &os, const ContainerKeyDescr<std::string> &) { return os << "filename"; }
+std::ostream &operator << (std::ostream &os, const ContainerKeyDescr<Elf::BuildID> &) { return os << "build-id"; }
 /*
  * Find an image keyed by 'key' in container
  */
+
 template <typename Container>
 std::optional<std::shared_ptr<Elf::Object>>
 Context::getImageIfLoaded(const Container &ctr, const typename Container::key_type &key) {
@@ -125,11 +131,11 @@ Context::getImageIfLoaded(const Container &ctr, const typename Container::key_ty
     if (it != ctr.end()) {
         counters.elfHits++;
         if (verbose > 0)
-            *debug << "cache hit for ELF image " << key << "\n";
+            *debug << "cache hit for ELF image with " << ContainerKeyDescr<typename Container::key_type>{} << " " << key << "\n";
         return it->second;
     }
     if (verbose > 0)
-        *debug << "cache miss for ELF image " << key << "\n";
+        *debug << "cache miss for ELF image with " << ContainerKeyDescr<typename Container::key_type>{} << " " << key << "\n";
     return {};
 }
 
