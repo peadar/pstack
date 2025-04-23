@@ -41,8 +41,23 @@ Context::debuginfod()
 #ifdef DEBUGINFOD
     if (options.noDebuginfod)
         return nullptr;
-    if (!debuginfod_)
+    if (!debuginfod_) {
         debuginfod_ = std::unique_ptr<debuginfod_client, DidClose>(debuginfod_begin());
+        if (isatty(2)) {
+            debuginfod_set_progressfn( debuginfod_->get(),
+                    [] (debuginfod_client *client, long num, long denom) {
+                        usleep(10000);
+                        const char *url =  debuginfod_get_url( client );
+                        char eol = num == denom && denom != 0 ? '\n' : '\r';
+                        if (url == nullptr)
+                            url = "<unknown>";
+                        std::cerr << "debuginfod download " << url << ". progress: "
+                            << (denom ? num * 100 / denom : 0) << "%"
+                            << " (" << num << " of " << denom << ")" << eol;
+                            return 0; });
+        }
+
+    }
     return (*debuginfod_).get();
 #else
     return nullptr;
