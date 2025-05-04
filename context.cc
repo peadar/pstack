@@ -2,11 +2,11 @@
 
 #include "libpstack/context.h"
 #include "libpstack/dwarf.h"
-#include "libpstack/stringify.h"
 #include "libpstack/reader.h"
 
 #include <string.h>
 #include <unistd.h>
+#include <filesystem>
 #include <ranges>
 
 #ifdef DEBUGINFOD
@@ -30,7 +30,7 @@ Context::Context()
 }
 
 std::shared_ptr<Dwarf::Info>
-Context::getDwarf(const std::string &filename)
+Context::getDwarf(const std::filesystem::path &filename)
 {
     return getDwarf(getImage(filename));
 }
@@ -132,7 +132,8 @@ Context::flush(std::shared_ptr<Elf::Object> o)
 
 // pretty-printer for key types.
 template <typename T> struct ContainerKeyDescr{};
-std::ostream &operator << (std::ostream &os, const ContainerKeyDescr<std::string> &) { return os << "filename"; }
+std::ostream &operator << (std::ostream &os, const ContainerKeyDescr<std::filesystem::path> &) { return os << "filename"; }
+std::ostream &operator << (std::ostream &os, const ContainerKeyDescr<std::string> &) { return os << "string"; }
 std::ostream &operator << (std::ostream &os, const ContainerKeyDescr<Elf::BuildID> &) { return os << "build-id"; }
 /*
  * Find an image keyed by 'key' in container
@@ -158,7 +159,7 @@ Context::getImageIfLoaded(const Container &ctr, const typename Container::key_ty
  * Find an image from a name, caching in container, and using "paths" as potential prefixes for name
  */
 std::shared_ptr<Elf::Object>
-Context::getImageInPath(const std::vector<std::string> &paths, NameMap &container, const std::string &name, bool isDebug) {
+Context::getImageInPath(const std::vector<std::filesystem::path> &paths, NameMap &container, const std::filesystem::path &name, bool isDebug) {
     std::optional<Elf::Object::sptr> cached = getImageIfLoaded(container, name);
     if (cached)
         return *cached;
@@ -166,7 +167,7 @@ Context::getImageInPath(const std::vector<std::string> &paths, NameMap &containe
     Elf::Object::sptr res;
     for (const auto &dir : paths) {
         try {
-            res = std::make_shared<Elf::Object>(*this, std::make_shared<MmapReader>(*this, stringify(dir, "/", name)) , isDebug);
+            res = std::make_shared<Elf::Object>(*this, std::make_shared<MmapReader>(*this,dir / name) , isDebug);
             break;
         }
         catch (const std::exception &ex) {
@@ -187,7 +188,7 @@ Context::getImageInPath(const std::vector<std::string> &paths, NameMap &containe
  * get an image from a filename
  */
 std::shared_ptr<Elf::Object>
-Context::getImage(const std::string &name) {
+Context::getImage(const std::filesystem::path &name) {
     return getImageInPath(exePrefixes, imageByName, name, false);
 }
 
@@ -206,18 +207,21 @@ std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, boo
 
     IdMap &container = isDebug ? debugImageByID : imageByID;
     NameMap &nameContainer = isDebug ? debugImageByName : imageByName;
-    std::vector<std::string> &paths = isDebug ? debugBuildIdPrefixes : exeBuildIdPrefixes;
-    if (!bid)
+    std::vector<std::filesystem::path> &paths = isDebug ? debugBuildIdPrefixes : exeBuildIdPrefixes;
+    if (!bid || options.noBuildIds)
         return nullptr;
     std::optional<Elf::Object::sptr> cached = getImageIfLoaded( container, bid );
     if (cached)
         return *cached;
 
-    std::string bidpath = stringify(
-            AsHex(bid[0]),
-            "/",
-            AsHex(std::views::all(bid) | std::views::drop(1)),
-            isDebug ? ".debug" : "");
+    std::stringstream bucket;
+    bucket << AsHex( bid[ 0 ] );
+    std::stringstream rest;
+    rest << AsHex(std::views::all(bid) | std::views::drop(1));
+    if ( isDebug )
+        rest << ".debug";
+
+    std::string bidpath = std::filesystem::path( bucket.str() ) / std::filesystem::path( rest.str() );
 
     Elf::Object::sptr res = getImageInPath(paths, nameContainer, bidpath, isDebug);
 #ifdef DEBUGINFOD
@@ -249,7 +253,7 @@ std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, boo
 }
 
 std::shared_ptr<Elf::Object>
-Context::getDebugImage(const std::string &name) {
+Context::getDebugImage(const std::filesystem::path &name) {
     return getImageInPath(debugPrefixes, debugImageByName, name, true);
 }
 
@@ -265,30 +269,14 @@ std::shared_ptr<Elf::Object> Context::getDebugImage(const Elf::BuildID &bid) { r
 std::shared_ptr<Elf::Object> Context::getImage(const Elf::BuildID &bid) { return getImageImpl(bid, false); }
 
 std::shared_ptr<const Reader>
-Context::loadFile(const std::string &path) {
+Context::loadFile(const std::filesystem::path &path) {
     return std::make_shared<CacheReader>( std::make_shared<FileReader>(*this, path));
 }
 
-std::string
-Context::dirname(const std::string &in)
+std::filesystem::path
+Context::linkResolve(const std::filesystem::path &path)
 {
-    auto it = in.rfind('/');
-    if (it == std::string::npos)
-        return ".";
-    return in.substr(0, it);
-}
-
-std::string
-Context::basename(const std::string &in)
-{
-    auto it = in.rfind('/');
-    auto out =  it == std::string::npos ?  in : in.substr(it + 1);
-    return out;
-}
-
-std::string
-Context::linkResolve(std::string name)
-{
+    std::string name = path;
     char buf[1024];
     std::string orig = name;
     int rc;
@@ -326,10 +314,11 @@ Context::openFileDirect(const std::string &name_, int mode, int mask)
     return fd;
 }
 
-std::string
-Context::procname(pid_t pid, const std::string &base)
+std::filesystem::path
+Context::procname(pid_t pid, const std::filesystem::path &base)
 {
-    return linkResolve(stringify("/proc/", pid, "/", base));
+    return linkResolve(std::filesystem::path( "/proc" ) 
+            / std::to_string( pid ) / base);
 }
 
 int

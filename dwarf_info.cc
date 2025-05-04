@@ -1,6 +1,7 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/stringify.h"
 #include <memory>
+#include <filesystem>
 
 namespace pstack::Dwarf {
 
@@ -242,7 +243,7 @@ Info::linesAt(intmax_t offset, Unit &unit) const
     return lines;
 }
 
-std::string
+std::filesystem::path
 Info::getAltImageName() const
 {
     const Elf::Section &section = elf->getDebugSection(".gnu_debugaltlink", SHT_NULL);
@@ -253,8 +254,8 @@ Info::getAltImageName() const
     // relative - prefix it with dirname of the image (note we use the image
     // from the section, not from "this", as it may have been in a separate ELF
     // image.
-    const auto &exedir = elf->context.dirname(elf->context.linkResolve(section.elf->io->filename()));
-    return stringify(exedir, "/", name);
+    const auto &exedir = elf->context.linkResolve(section.elf->io->filename()).parent_path();
+    return exedir / name;
 }
 
 Info::sptr
