@@ -69,8 +69,8 @@ public:
    Options options{};
    int verbose{};
    std::filesystem::path linkResolve(const std::filesystem::path &name);
-   int openfile(const std::string &filename, int mode = O_RDONLY, int umask = 0777);
-   int openFileDirect(const std::string &name_, int mode, int mask);
+   int openfile(const std::filesystem::path &filename, int mode = O_RDONLY, int umask = 0777);
+   int openFileDirect(const std::filesystem::path &name_, int mode, int mask);
 
    std::shared_ptr<Elf::Object> getImage(const std::filesystem::path &name);
    std::shared_ptr<Elf::Object> getImage(const Elf::BuildID &);

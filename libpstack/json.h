@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <cstdlib>
 #include <iomanip>
+#include <filesystem>
 
 namespace pstack {
 /*
@@ -233,6 +234,16 @@ std::ostream &
 operator << (std::ostream &os, const JSON<std::string, C> &json) {
    return os << "\"" << Escape(json.object) << "\"";
 }
+
+/*
+ * Print a JSON string (std::filesystem::path, char *, etc)
+ */
+template <typename C>
+std::ostream &
+operator << (std::ostream &os, const JSON<std::filesystem::path, C> &json) {
+   return os << "\"" << Escape(json.object) << "\"";
+}
+
 
 template <typename C>
 std::ostream &
