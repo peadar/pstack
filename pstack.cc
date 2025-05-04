@@ -217,7 +217,7 @@ emain(int argc, char **argv, Context &context)
     bool doPython = false;
     bool pythonModules = false;
 #endif
-    std::string execName;
+    std::filesystem::path execName;
     bool printAllStacks = false;
     int exitCode = -1; // used for options that exit immediately to signal exit.
     std::string subprocessCmd;

@@ -221,7 +221,7 @@ std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, boo
     if ( isDebug )
         rest << ".debug";
 
-    std::string bidpath = std::filesystem::path( bucket.str() ) / std::filesystem::path( rest.str() );
+    std::filesystem::path bidpath = std::filesystem::path( bucket.str() ) / std::filesystem::path( rest.str() );
 
     Elf::Object::sptr res = getImageInPath(paths, nameContainer, bidpath, isDebug);
 #ifdef DEBUGINFOD
@@ -278,7 +278,7 @@ Context::linkResolve(const std::filesystem::path &path)
 {
     std::string name = path;
     char buf[1024];
-    std::string orig = name;
+    auto orig = name;
     int rc;
     for (;;) {
         rc = readlink(name.c_str(), buf, sizeof buf - 1);
@@ -302,7 +302,7 @@ Context::linkResolve(const std::filesystem::path &path)
 }
 
 int
-Context::openFileDirect(const std::string &name_, int mode, int mask)
+Context::openFileDirect(const std::filesystem::path &name_, int mode, int mask)
 {
     auto fd = ::open(name_.c_str(), mode, mask);
     if (verbose > 2) {
@@ -322,7 +322,7 @@ Context::procname(pid_t pid, const std::filesystem::path &base)
 }
 
 int
-Context::openfile(const std::string &name, int mode, int mask)
+Context::openfile(const std::filesystem::path &name, int mode, int mask)
 {
     int fd = openFileDirect(name, mode, mask);
     if (fd != -1)
