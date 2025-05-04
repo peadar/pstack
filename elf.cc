@@ -9,6 +9,7 @@
 #endif
 
 #include <algorithm>
+#include <filesystem>
 #include <iostream>
 #include <cassert>
 #include <cstring>
@@ -608,8 +609,8 @@ Object::getDebug() const
         const auto &hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
         if (hdr) {
             auto link = hdr.io()->readString(0);
-            auto dir = context.dirname(stringify(*io));
-            debugObject = context.getDebugImage(dir + "/" + link);
+            auto dir = std::filesystem::path(stringify(*io)).parent_path();
+            debugObject = context.getDebugImage(dir / link);
         }
     }
 
