@@ -217,23 +217,13 @@ emain(int argc, char **argv, Context &context)
     bool doPython = false;
     bool pythonModules = false;
 #endif
-    std::string execName;
+    std::filesystem::path execName;
     bool printAllStacks = false;
     int exitCode = -1; // used for options that exit immediately to signal exit.
     std::string subprocessCmd;
 
     Flags flags;
     flags
-    .add("replace-path",
-            'F',
-            "from:to",
-            "replace `from` with `to` in paths when finding shared libraries",
-            [&](const char *arg) {
-                auto sep = strchr(arg, ':');
-                if (sep == 0)
-                    usage(std::cerr, argv[0], flags);
-                context.pathReplacements.push_back(std::make_pair(
-                            std::string(arg, sep - arg), std::string(sep + 1))); })
 
     .add("debug-dir",
             'g',
@@ -259,8 +249,10 @@ emain(int argc, char **argv, Context &context)
             "directory",
             "extra location to find debug files from their build-ids",
             [&](const char *arg) { context.debugBuildIdPrefixes.push_back(arg); })
-
-
+    .add("no-buildid",
+            Flags::LONGONLY,
+            "don't look up files by build id",
+            Flags::setf( context.options.noBuildIds ) )
 
     .add("constant",
             'b',

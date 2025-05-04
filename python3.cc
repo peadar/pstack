@@ -176,8 +176,8 @@ getInterpHead<3>(Procman::Process &proc) {
     std::tie(libpython, libpythonAddr, _PyRuntimeSym) = proc.resolveSymbolDetail(
           "_PyRuntime", false,
           [&](std::string_view name) {
-             auto base = proc.context.basename(std::string(name));
-            return base.find("python3") != std::string::npos;
+             auto base = std::filesystem::path(name).filename();
+             return std::string(base).find("python3") != std::string::npos;
           });
 
     Elf::Addr interpHead = libpythonAddr + _PyRuntimeSym.st_value + pyInterpOffset();

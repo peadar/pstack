@@ -723,7 +723,7 @@ private:
     mutable bool unitRangesCached { false };
 
     void decodeARangeSet(DWARFReader &) const;
-    std::string getAltImageName() const;
+    std::filesystem::path getAltImageName() const;
 };
 
 // An attribute within a DIE. A value that you can convert to one of a number
