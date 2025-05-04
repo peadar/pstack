@@ -187,13 +187,11 @@ Context::getImage(const std::string &name) {
  * executable info.
  */
 
-std::shared_ptr<Elf::Object>
-Context::getImageImpl(
-        Context::IdMap &container,
-        Context::NameMap &nameContainer,
-        const std::vector<std::string> &paths,
-        const Elf::BuildID &bid,
-        bool isDebug) {
+std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, bool isDebug) {
+
+    IdMap &container = isDebug ? debugImageByID : imageByID;
+    NameMap &nameContainer = isDebug ? debugImageByName : imageByName;
+    std::vector<std::string> &paths = isDebug ? debugBuildIdPrefixes : exeBuildIdPrefixes;
     if (!bid)
         return nullptr;
     std::optional<Elf::Object::sptr> cached = getImageIfLoaded( container, bid );
@@ -242,15 +240,8 @@ int debuginfod_find_executable (debuginfod_client *, const unsigned char *, int,
 }
 #endif
 
-std::shared_ptr<Elf::Object>
-Context::getDebugImage(const Elf::BuildID &bid) {
-    return getImageImpl(debugImageByID, debugImageByName, debugBuildIdPrefixes, bid, true);
-}
-
-std::shared_ptr<Elf::Object>
-Context::getImage(const Elf::BuildID &bid) {
-    return getImageImpl(imageByID, imageByName, exeBuildIdPrefixes, bid, false);
-}
+std::shared_ptr<Elf::Object> Context::getDebugImage(const Elf::BuildID &bid) { return getImageImpl(bid, true); }
+std::shared_ptr<Elf::Object> Context::getImage(const Elf::BuildID &bid) { return getImageImpl(bid, false); }
 
 std::shared_ptr<const Reader>
 Context::loadFile(const std::string &path) {

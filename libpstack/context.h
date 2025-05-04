@@ -52,7 +52,7 @@ class Context {
    } counters {};
    template <typename Container> std::optional<std::shared_ptr<Elf::Object>> getImageIfLoaded(const Container &ctr, const typename Container::key_type &key);
    std::shared_ptr<Elf::Object> getImageInPath(const std::vector<std::string> &paths, NameMap &container, const std::string &name, bool debug);
-   std::shared_ptr<Elf::Object> getImageImpl( IdMap &container, NameMap &nameContainer, const std::vector<std::string> &paths, const Elf::BuildID &bid, bool isDebug);
+   std::shared_ptr<Elf::Object> getImageImpl( const Elf::BuildID &bid, bool isDebug);
 
    struct DidClose {
       void operator() ( struct debuginfod_client *client );
