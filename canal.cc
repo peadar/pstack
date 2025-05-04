@@ -289,15 +289,6 @@ mainExcept(int argc, char *argv[])
     .add("pattern", 'p', "glob",
           "add <glob> to the list of patterns to be matched for symbols",
           [&](const char *data) { patterns.push_back(data); })
-    .add("replace-path", 'r', "from:to",
-          "replace references to path <from> with <tp> when finding libraries",
-          [&](const char *data) {
-             std::string both = data;
-             size_t colon = both.find(':');
-             if (colon == std::string::npos)
-                throw "must specify <to>=<from> for '-r'";
-             context.pathReplacements.push_back(std::make_pair(both.substr(0, colon), both.substr(colon + 1)));
-          })
     .add("start-location", 'f', "addresss",
           "instead of searching for symbols, find references to a specified address. Decimal, or prefix with 0x for hex",
           [&](const char *p) {

@@ -335,15 +335,7 @@ Context::procname(pid_t pid, const std::string &base)
 int
 Context::openfile(const std::string &name, int mode, int mask)
 {
-    int fd = -1;
-    for (auto &r : pathReplacements) {
-       if (name.compare(0, r.first.size(), r.first) == 0) {
-          fd = openFileDirect(r.second + std::string(name, r.first.size()), mode, mask);
-          if (fd != -1)
-             return fd;
-       }
-    }
-    fd = openFileDirect(name, mode, mask);
+    int fd = openFileDirect(name, mode, mask);
     if (fd != -1)
        return fd;
     throw (Exception() << "cannot open file '" << name << "': " << strerror(errno));
