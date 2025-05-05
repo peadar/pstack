@@ -64,7 +64,7 @@ void CoreReader::describe(std::ostream &os) const
 }
 
 size_t
-readFromHdr(const Elf::Object &obj, const Elf::Phdr *hdr, Elf::Off addr,
+readFromSegment(const Reader::csptr &io, const Elf::Phdr *hdr, Elf::Off addr,
             char *ptr, Elf::Off size, Elf::Off *toClear)
 {
     Elf::Off rv;
@@ -72,7 +72,7 @@ readFromHdr(const Elf::Object &obj, const Elf::Phdr *hdr, Elf::Off addr,
     if (off < hdr->p_filesz) {
         // some of the data is in the file: read min of what we need and that.
         Elf::Off fileSize = std::min(hdr->p_filesz - off, size);
-        rv = obj.io->read(hdr->p_offset + off, fileSize, ptr);
+        rv = io->read(hdr->p_offset + off, fileSize, ptr);
         if (rv != fileSize)
             throw (Exception() << "unexpected short read in core file");
         off += rv;
@@ -103,7 +103,7 @@ CoreReader::read(Off remoteAddr, size_t size, char *ptr) const
            const Elf::Phdr * hdr = core->getSegmentForAddress(remoteAddr);
            if (hdr != nullptr) {
                // The start address appears in the core (or is defaulted from it)
-               size_t rc = readFromHdr(*core, hdr, remoteAddr, ptr, size, &zeroes);
+               size_t rc = readFromSegment(core->io, hdr, remoteAddr, ptr, size, &zeroes);
                remoteAddr += rc;
                ptr += rc;
                size -= rc;
@@ -116,7 +116,7 @@ CoreReader::read(Off remoteAddr, size_t size, char *ptr) const
         auto [loadAddr, obj, hdr] = p->findSegment(remoteAddr);
         if (hdr != nullptr) {
             // header in an object - try reading from here.
-            size_t rc = readFromHdr(*obj, hdr, remoteAddr - loadAddr, ptr, size, &zeroes);
+            size_t rc = readFromSegment(obj->io, hdr, remoteAddr - loadAddr, ptr, size, &zeroes);
             remoteAddr += rc;
             ptr += rc;
             size -= rc;
