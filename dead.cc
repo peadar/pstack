@@ -63,10 +63,9 @@ void CoreReader::describe(std::ostream &os) const
         os << "no backing core file";
 }
 
-size_t
-readFromSegment(const Reader::csptr &io, const Elf::Phdr *hdr, Elf::Off addr,
-            char *ptr, Elf::Off size, Elf::Off *toClear)
-{
+// returns the amount of data read, and the amount of data that is covered by the phdr, but not present.
+std::pair< size_t, size_t >
+readFromSegment(const Reader::csptr &io, const Elf::Phdr *hdr, Elf::Off addr, char *ptr, Elf::Off size) {
     Elf::Off rv;
     Elf::Off off = addr - hdr->p_vaddr; // offset in header of our ptr.
     if (off < hdr->p_filesz) {
@@ -80,54 +79,121 @@ readFromSegment(const Reader::csptr &io, const Elf::Phdr *hdr, Elf::Off addr,
     } else {
         rv = 0;
     }
-    if (toClear != nullptr)
-        *toClear = std::max(
-            *toClear > rv
-                ? *toClear - rv
-                : 0,
-            size != 0 && off < hdr->p_memsz
-                ?  std::min(size, hdr->p_memsz - off)
-                : 0);
-    return rv;
+
+    // How much space is covered by the segment, but not present in the file?
+    Elf::Off missing = hdr->p_memsz > hdr->p_filesz ? hdr->p_memsz - hdr->p_filesz : 0;
+    return { rv, std::min( size, missing ) };
 }
 
 size_t
 CoreReader::read(Off remoteAddr, size_t size, char *ptr) const
 {
-    Elf::Off start = remoteAddr;
-    while (size != 0) {
+    const Elf::Off start = remoteAddr;
+    const Elf::Off end = remoteAddr + size;
+    char *const ptrStart = ptr;
+    char *const ptrEnd = ptr + size;
+    
+    auto loadSegs = getSegments(PT_LOAD);
+    auto coreSeg = std::lower_bound( loadSegs.begin(), loadSegs.end(), remoteAddr, [](const Elf::Phdr &header, Elf::Off addr) { return header.p_vaddr + header.p_memsz <= addr; } );
 
-        Elf::Off zeroes = 0;
+
+    // This gets a bit complicated
+    //
+    // Data can come from the core, or from a loaded library. (for now, we
+    // don't do other mappings) We can also zero-fill if there's a segment
+    // where memsz > filesz.
+    //
+    // Data in the core takes precedence over data from mapped objects. Actual
+    // data in either takes precedence over zero-filling.
+
+
+    while (ptr != ptrEnd) {
+        // If the current phdr covers the address, copy data out of it.
+        if (coreSeg != loadSegs.end()
+                && coreSeg->p_vaddr <= remoteAddr
+                && coreSeg->p_vaddr + coreSeg->p_memsiz >= remoteAddr) {
+            
+            auto segmentOff = remoteAddr - hdr->p_vaddr;
+            auto readCount = std::min(hdr->p_filesz - segmentOff, ptrEnd-ptr);
+            auto actuallyRead = core->read(hdr->p_offset + segmentOff, readCount, ptr);
+
+            ptr += actuallyRead;
+            remoteAddr += actuallyRead;
+
+            if (actuallyRead != readCount) {
+                return ptr - ptrStart;
+            }
+        }
+        // Read everything we can up to the *next* core segment from any file mappings
+        auto nextSeg = coreSeg;
+
+        Elf::Addr nextCoreAddr; // next address in the core we can use.
+        if (nextSeg != loadSegs.end()) {
+            ++nextSeg;
+            nextCoreAddr = nextSeg->p_vaddr;
+        } else {
+            nextCoreAddr = end;
+        }
+
+        while (remoteAddr < nextCoreAddr) {
+            // until we get to the next relevant core segment that has data in
+            // the file itsel, pull data from mapped files.
+            auto [loadAddr, obj, hdr] = p->findSegment(remoteAddr);
+            if (hdr != nullptr) {
+                // header in an object - try reading from here.
+                auto hdroff = remoteAddr - loadAddr - hdr->p_vaddr;
+                auto sz = hdr->p_filesz - hdroff;
+                auto sz = std::min( sz, nextCoreAddr - remoteAddr );
+                auto count = obj->io->read( hdr->p_offset + hdroff, sz, ptr );
+                remoteAddr += count;
+                ptr += count;
+                if (count != sz) {
+                    return ptr - ptrStart;
+                }
+
+                if (hdr->p_memsz > hdr->p_filesz) {
+                    auto zerofill = hdr->p_memsz - hdr->p_filesz;
+                    zerofill = std::min(zerofill, nextCoreAddr - remoteAddr);
+                    if (zerofill) {
+                        memset(ptr, 0, zerofill);
+                        ptr += zerofill;
+                        remoteAddr += zerofill;
+                    }
+                }
+            }
+        }
+
+
+
+        // find the first segment covering an address at or after remoteAddr 
+
+
+
+
+        size_t rc, unread = size;
         if (core) {
            // Locate "remoteAddr" in the core file
            const Elf::Phdr * hdr = core->getSegmentForAddress(remoteAddr);
            if (hdr != nullptr) {
                // The start address appears in the core (or is defaulted from it)
-               size_t rc = readFromSegment(core->io, hdr, remoteAddr, ptr, size, &zeroes);
+               std::tie( rc, unread ) = readFromSegment(core->io, hdr, remoteAddr, ptr, size );
                remoteAddr += rc;
                ptr += rc;
                size -= rc;
-               if (rc != 0 && zeroes == 0)
-                   // we got some data from the header, and there's nothing to default
-                   continue;
            }
         }
-        // Either no data in core, or it was incomplete to this point: search loaded objects.
-        auto [loadAddr, obj, hdr] = p->findSegment(remoteAddr);
-        if (hdr != nullptr) {
-            // header in an object - try reading from here.
-            size_t rc = readFromSegment(obj->io, hdr, remoteAddr - loadAddr, ptr, size, &zeroes);
-            remoteAddr += rc;
-            ptr += rc;
-            size -= rc;
-        }
 
-        // At this point, we have copied any real data, and "zeroes" reflects
-        // the amount we can default to zero.
-        memset(ptr, 0, zeroes);
-        size -= zeroes;
-        remoteAddr += zeroes;
-        ptr += zeroes;
+        if (unread) {
+            // There's a chunk of data up to "unread" that has 
+
+            if (unread > rc) {
+                unread -= rc;
+                memset(ptr, 0, unread);
+                size -= unread;
+                remoteAddr += unread;
+                ptr += unread;
+            }
+        }
 
         if (hdr == nullptr && zeroes == 0) // Nothing from core, objects, or defaulted. We're stuck.
             break;
