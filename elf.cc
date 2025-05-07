@@ -132,10 +132,10 @@ Object::symbolVersion(VersionIdx idx) const {
         return std::nullopt;
 }
 
-VersionIdx Object::versionIdxForSymbol(size_t idx) const {
-   return VersionIdx(*gnu_version ?
-           gnu_version->io()->readObj<Half>(idx * 2) :
-           std::numeric_limits<Half>::max());
+std::optional<VersionIdx> Object::versionIdxForSymbol(size_t idx) const {
+   if (!*gnu_version)
+      return std::nullopt;
+   return VersionIdx(gnu_version->io()->readObj<Half>(idx * 2));
 }
 
 std::pair<uint32_t, Sym>
@@ -305,16 +305,19 @@ Object::symbolVersions() const
           for (size_t cnt = verdefnum[0].d_un.d_val; cnt; --cnt) {
              auto verdef = gnu_version_d.io()->readObj<Verdef>(off);
              Off auxOff = off + verdef.vd_aux;
-             // There's two verdaux entries for some symbols. First is
-             // "predecessor" of some sort. Last is the version string, so
-             // we'll pick that one
+             // IF there are multiple verdaux entries, the first is the
+             // version, and the second is the "predecesor"
              std::string name;
-             for (auto i = 0; i < verdef.vd_cnt; ++i) {
+             if (verdef.vd_cnt >= 1) {
                 auto aux = gnu_version_d.io()->readObj<Verdaux>(auxOff);
-                name = strings.io()->readString(aux.vda_name);
+                rv->versions[verdef.vd_ndx] = strings.io()->readString(aux.vda_name);
                 auxOff += aux.vda_next;
              }
-             rv->versions[verdef.vd_ndx] = name;
+             if (verdef.vd_cnt >= 2) {
+                auto aux = gnu_version_d.io()->readObj<Verdaux>(auxOff);
+                rv->predecessors[verdef.vd_ndx] = strings.io()->readString(aux.vda_name);
+                auxOff += aux.vda_next;
+             }
              off += verdef.vd_next;
           }
        }

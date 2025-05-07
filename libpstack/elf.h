@@ -247,6 +247,7 @@ public:
 
 struct SymbolVersioning {
     std::map<unsigned, std::string> versions;
+    std::map<unsigned, std::string> predecessors;
     std::map<std::string, std::vector<int>> files;
 };
 
@@ -302,7 +303,7 @@ public:
     SymbolSection *dynamicSymbols();
     const SymbolVersioning *symbolVersions() const;
     const Section *gnu_version;
-    VersionIdx versionIdxForSymbol( size_t symbolIdx ) const;
+    std::optional<VersionIdx> versionIdxForSymbol( size_t symbolIdx ) const;
     Context &context;
 private:
     mutable std::unique_ptr<SymbolVersioning> symbolVersions_;
