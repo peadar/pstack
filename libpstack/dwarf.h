@@ -1016,6 +1016,14 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
                 break;
             }
 
+            case DW_CFA_offset_extended_sf: {
+                auto reg = r.getuleb128();
+                auto offset = r.getsleb128();
+                frame.registers[reg].type = OFFSET;
+                frame.registers[reg].u.offset = offset * dataAlign;
+                break;
+            }
+
             case DW_CFA_restore_extended:
                 reg = r.getuleb128();
                 frame.registers[reg] = dframe.registers.at(reg);
