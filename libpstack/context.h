@@ -19,7 +19,7 @@ struct Options {
     bool nothreaddb = false; // don't use threaddb.
     bool nodienames = false; // don't use names from DWARF dies in backtraces.
     bool noExtDebug = false; // don't look for exernal ELF info, i.e., using debuglink, or buildid.
-    bool noDebuginfod = false; // don't use debuginfod client library.
+    bool withDebuginfod = false; // use debuginfod client library.
     bool noBuildIds = false;
     int maxdepth = std::numeric_limits<int>::max();
     int maxframes = 30;
@@ -51,8 +51,8 @@ class Context {
       int dwarfHits;
       int elfHits;
    } counters {};
-   template <typename Container> std::optional<std::shared_ptr<Elf::Object>> getImageIfLoaded(const Container &ctr, const typename Container::key_type &key);
-   std::shared_ptr<Elf::Object> getImageInPath(const std::vector<std::filesystem::path> &paths, NameMap &container, const std::filesystem::path &name, bool debug);
+   template <typename Container> std::optional<std::shared_ptr<Elf::Object>> getImageIfLoaded(const Container &ctr, const typename Container::key_type &key, bool isDebug);
+   std::shared_ptr<Elf::Object> getImageInPath(const std::vector<std::filesystem::path> &paths, NameMap &container, const std::filesystem::path &name, bool isDebug);
    std::shared_ptr<Elf::Object> getImageImpl( const Elf::BuildID &bid, bool isDebug);
 
    struct DidClose { void operator() ( struct debuginfod_client *client ); };

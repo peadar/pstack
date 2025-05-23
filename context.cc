@@ -39,7 +39,7 @@ debuginfod_client *
 Context::debuginfod()
 {
 #ifdef DEBUGINFOD
-    if (options.noDebuginfod)
+    if (!options.withDebuginfod)
         return nullptr;
     if (!debuginfod_) {
         debuginfod_ = std::unique_ptr<debuginfod_client, DidClose>(debuginfod_begin());
@@ -132,7 +132,7 @@ Context::flush(std::shared_ptr<Elf::Object> o)
 
 // pretty-printer for key types.
 template <typename T> struct ContainerKeyDescr{};
-std::ostream &operator << (std::ostream &os, const ContainerKeyDescr<std::filesystem::path> &) { return os << "filename"; }
+std::ostream &operator << (std::ostream &os, const ContainerKeyDescr<std::filesystem::path> &) { return os << "path"; }
 std::ostream &operator << (std::ostream &os, const ContainerKeyDescr<std::string> &) { return os << "string"; }
 std::ostream &operator << (std::ostream &os, const ContainerKeyDescr<Elf::BuildID> &) { return os << "build-id"; }
 /*
@@ -141,17 +141,17 @@ std::ostream &operator << (std::ostream &os, const ContainerKeyDescr<Elf::BuildI
 
 template <typename Container>
 std::optional<std::shared_ptr<Elf::Object>>
-Context::getImageIfLoaded(const Container &ctr, const typename Container::key_type &key) {
+Context::getImageIfLoaded(const Container &ctr, const typename Container::key_type &key, bool isDebug) {
     counters.elfLookups++;
     auto it = ctr.find(key);
     if (it != ctr.end()) {
         counters.elfHits++;
         if (verbose > 0)
-            *debug << "cache hit for ELF image with " << ContainerKeyDescr<typename Container::key_type>{} << " " << key << "\n";
+            *debug << "cache hit for " << (isDebug?"debug ":"") << "ELF image with " << ContainerKeyDescr<typename Container::key_type>{} << " " << key << "\n";
         return it->second;
     }
     if (verbose > 0)
-        *debug << "cache miss for ELF image with " << ContainerKeyDescr<typename Container::key_type>{} << " " << key << "\n";
+        *debug << "cache miss for " << (isDebug?"debug ":"") << "ELF image with " << ContainerKeyDescr<typename Container::key_type>{} << " " << key << "\n";
     return {};
 }
 
@@ -160,7 +160,7 @@ Context::getImageIfLoaded(const Container &ctr, const typename Container::key_ty
  */
 std::shared_ptr<Elf::Object>
 Context::getImageInPath(const std::vector<std::filesystem::path> &paths, NameMap &container, const std::filesystem::path &name, bool isDebug) {
-    std::optional<Elf::Object::sptr> cached = getImageIfLoaded(container, name);
+    std::optional<Elf::Object::sptr> cached = getImageIfLoaded(container, name, isDebug);
     if (cached)
         return *cached;
 
@@ -208,9 +208,10 @@ std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, boo
     IdMap &container = isDebug ? debugImageByID : imageByID;
     NameMap &nameContainer = isDebug ? debugImageByName : imageByName;
     std::vector<std::filesystem::path> &paths = isDebug ? debugBuildIdPrefixes : exeBuildIdPrefixes;
+
     if (!bid || options.noBuildIds)
         return nullptr;
-    std::optional<Elf::Object::sptr> cached = getImageIfLoaded( container, bid );
+    std::optional<Elf::Object::sptr> cached = getImageIfLoaded( container, bid, isDebug );
     if (cached)
         return *cached;
 

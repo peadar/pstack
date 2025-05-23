@@ -373,10 +373,8 @@ emain(int argc, char **argv, Context &context)
              out = std::ofstream(opt, std::ofstream::out|std::ofstream::trunc);
              context.output = &out;
           })
-
 #ifdef DEBUGINFOD
-    .add("no-debuginfod", Flags::LONGONLY,
-          "disable debuginfod client", Flags::setf( context.options.noDebuginfod ) )
+    .add("debuginfod", 'R', "use debuginfod client", Flags::setf( context.options.withDebuginfod ) )
 #endif
 
     .parse(argc, argv);
