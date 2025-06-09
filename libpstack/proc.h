@@ -427,54 +427,6 @@ struct FileNoteHeader {
     Elf::Off pageSize;
 };
 
-struct FileEntry {
-    Elf::Off start;
-    Elf::Off end;
-    Elf::Off fileOff;
-};
-
-class FileEntries {
-    FileNoteHeader header;
-    Reader::csptr entries;
-    std::unique_ptr<ReaderArray<FileEntry>> entriesArray;
-    Reader::csptr names;
-
-public:
-    class sentinel { };
-    class iterator {
-        friend class FileEntries;
-        const FileEntries &entries;
-        void fetch();
-        bool fetched = false;
-        size_t nameoff = 0;
-        std::pair<std::string, FileEntry> cur;
-        ReaderArray<FileEntry>::iterator entriesIterator;
-   public:
-        iterator(const FileEntries &entries, ReaderArray<FileEntry>::iterator start);
-        iterator &operator++();
-        std::pair<std::string, FileEntry> operator *() { fetch(); return cur; }
-        bool operator != (const iterator &rhs) const { return entriesIterator != rhs.entriesIterator; }
-        bool operator != (const sentinel &) const { return entriesIterator != entries.entriesArray->end(); }
-    };
-    FileEntries(const Elf::Object &obj) {
-        // find the Notes section.
-        for (auto note : obj.notes()) {
-            if (note.name() == "CORE" && note.type() == NT_FILE) {
-                auto data = note.data();
-                header = data->readObj<FileNoteHeader>(0);
-                entries = data->view("FILE note entries", sizeof header, header.count * sizeof (FileEntry));
-                names = data->view("FILE note names", sizeof header + header.count * sizeof (FileEntry));
-                break;
-            }
-        }
-        if (!entries)
-           entries = std::make_shared<NullReader>();
-        entriesArray = std::make_unique<ReaderArray<FileEntry>>(*entries);
-    }
-    iterator begin() const { return iterator(*this, entriesArray->begin()); }
-    sentinel end() const { return sentinel{}; }
-};
-
 
 struct WaitStatus {
     int status;
@@ -493,7 +445,6 @@ std::ostream &operator << (std::ostream &os, WaitStatus ws);
 
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::StackFrame, pstack::Procman::Process *> &jt);
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::ThreadStack, pstack::Procman::Process *> &jt);
-std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::FileEntry> &);
 
 }
 

@@ -4,7 +4,60 @@
 
 #include <iostream>
 
+
 namespace pstack::Procman {
+
+namespace {
+
+struct FileEntry {
+    Elf::Off start;
+    Elf::Off end;
+    Elf::Off fileOff;
+};
+
+class FileEntries {
+    FileNoteHeader header;
+    Reader::csptr entries;
+    std::unique_ptr<ReaderArray<FileEntry>> entriesArray;
+    Reader::csptr names;
+
+public:
+    class sentinel { };
+    class iterator {
+        friend class FileEntries;
+        const FileEntries &entries;
+        void fetch();
+        bool fetched = false;
+        size_t nameoff = 0;
+        std::pair<std::string, FileEntry> cur;
+        ReaderArray<FileEntry>::iterator entriesIterator;
+   public:
+        iterator(const FileEntries &entries, ReaderArray<FileEntry>::iterator start);
+        iterator &operator++();
+        std::pair<std::string, FileEntry> operator *() { fetch(); return cur; }
+        bool operator != (const iterator &rhs) const { return entriesIterator != rhs.entriesIterator; }
+        bool operator != (const sentinel &) const { return entriesIterator != entries.entriesArray->end(); }
+    };
+    FileEntries(const Elf::Object &obj) {
+        // find the Notes section.
+        for (auto note : obj.notes()) {
+            if (note.name() == "CORE" && note.type() == NT_FILE) {
+                auto data = note.data();
+                header = data->readObj<FileNoteHeader>(0);
+                entries = data->view("FILE note entries", sizeof header, header.count * sizeof (FileEntry));
+                names = data->view("FILE note names", sizeof header + header.count * sizeof (FileEntry));
+                break;
+            }
+        }
+        if (!entries)
+           entries = std::make_shared<NullReader>();
+        entriesArray = std::make_unique<ReaderArray<FileEntry>>(*entries);
+    }
+    iterator begin() const { return iterator(*this, entriesArray->begin()); }
+    sentinel end() const { return sentinel{}; }
+};
+}
+
 
 CoreProcess::CoreProcess(Context &ctx, Elf::Object::sptr exec, Elf::Object::sptr core)
    : Process(ctx, std::move(exec), std::make_shared<CoreReader>(this, core))
@@ -228,20 +281,25 @@ CoreProcess::addressSpace() const {
     for (const auto &hdr : coreImage->getSegments(PT_LOAD)) {
         auto ub = entries.upper_bound(hdr.p_vaddr);
         std::string name;
+        uintmax_t offset = 0;
+        uintmax_t inode = 0;
         if (ub != entries.begin()) {
             --ub;
-            if (ub->first >= hdr.p_vaddr && ub->second.second.end <= hdr.p_vaddr + hdr.p_memsz)
+            if (ub->first >= hdr.p_vaddr && ub->second.second.end <= hdr.p_vaddr + hdr.p_memsz) {
                 name = ub->second.first;
+                offset = ub->second.second.fileOff * getpagesize(); // that's the offset in pages.
+                inode = 1;
+            }
         }
-        std::set<AddressRange::Permission> flags;
+        std::set<AddressRange::Permission> permissions;
         if ((hdr.p_flags & PF_W) != 0)
-           flags.insert(AddressRange::Permission::write);
+           permissions.insert(AddressRange::Permission::write);
         if ((hdr.p_flags & PF_R) != 0)
-           flags.insert(AddressRange::Permission::read);
+           permissions.insert(AddressRange::Permission::read);
         if ((hdr.p_flags & PF_X) != 0)
-           flags.insert(AddressRange::Permission::exec);
+           permissions.insert(AddressRange::Permission::exec);
         rv.push_back( { hdr.p_vaddr, hdr.p_vaddr + hdr.p_memsz,
-                hdr.p_vaddr + hdr.p_filesz, 0, {0, 0, 0, name}, flags, {}});
+                hdr.p_vaddr + hdr.p_filesz, offset, {0, 0, inode, name}, permissions, {}});
     }
     return rv;
 }
@@ -284,11 +342,5 @@ CoreProcess::getSignalInfo() const {
    return std::nullopt;
 }
 
-std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::FileEntry> &j) {
-    return JObject(os)
-        .field("start", j.object.start)
-        .field("end", j.object.end)
-        .field("fileOff", j.object.fileOff);
-}
 }
 
