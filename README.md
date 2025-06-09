@@ -139,7 +139,7 @@ by passing the "-l" option. The output will be very verbose.
 
 ## Building
 
-   * To compile, you need CMake, and a compiler that's at least C++17 capable.
+   * To compile, you need CMake, and a compiler that's at least C++20 capable.
 
    * Various ELF compression mechanisms mean that you should have the
      development package for zlib and xz compression libraries installed. Those
@@ -150,7 +150,11 @@ by passing the "-l" option. The output will be very verbose.
    * If you want python2 support, you need the python2 development headers installed.
 
    * If you want python3 support, you need the python3 source installed to
-     match the distribution of your binary.
+     match the distribution of your binary. Currently, things only work with
+     python3.9
+
+   * If you want debuginfod support, you need the
+     elfutils-debuginfod-client-debuginfo package or equivalent
 
 To build:
 ```
