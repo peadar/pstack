@@ -159,15 +159,27 @@ Context::getImageIfLoaded(const Container &ctr, const typename Container::key_ty
  * Find an image from a name, caching in container, and using "paths" as potential prefixes for name
  */
 std::shared_ptr<Elf::Object>
-Context::getImageInPath(const std::vector<std::filesystem::path> &paths, NameMap &container, const std::filesystem::path &name, bool isDebug) {
+Context::getImageInPath(const std::vector<std::filesystem::path> &paths, NameMap &container, const std::filesystem::path &name, bool isDebug, bool resolveLink) {
     std::optional<Elf::Object::sptr> cached = getImageIfLoaded(container, name, isDebug);
     if (cached)
         return *cached;
 
     Elf::Object::sptr res;
     for (const auto &dir : paths) {
+        auto path = dir/name;
+        if (resolveLink) {
+            char buf[PATH_MAX];
+            char *p = realpath( path.c_str(), buf );
+            if (p) {
+                path = p;
+            } else if (errno == ENOENT) {
+                return nullptr;
+            } else {
+                *debug << "failed to resolve " << path << ": " << strerror(errno) << "\n";
+            }
+        }
         try {
-            res = std::make_shared<Elf::Object>(*this, std::make_shared<MmapReader>(*this,dir / name) , isDebug);
+            res = std::make_shared<Elf::Object>(*this, std::make_shared<MmapReader>(*this, path) , isDebug);
             break;
         }
         catch (const std::exception &ex) {
@@ -189,7 +201,7 @@ Context::getImageInPath(const std::vector<std::filesystem::path> &paths, NameMap
  */
 std::shared_ptr<Elf::Object>
 Context::getImage(const std::filesystem::path &name) {
-    return getImageInPath(exePrefixes, imageByName, name, false);
+    return getImageInPath(exePrefixes, imageByName, name, false, false);
 }
 
 /*
@@ -224,7 +236,7 @@ std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, boo
 
     std::filesystem::path bidpath = std::filesystem::path( bucket.str() ) / std::filesystem::path( rest.str() );
 
-    Elf::Object::sptr res = getImageInPath(paths, nameContainer, bidpath, isDebug);
+    Elf::Object::sptr res = getImageInPath(paths, nameContainer, bidpath, isDebug, true);
 #ifdef DEBUGINFOD
     if (!res && debuginfod()) {
         char *path;
@@ -255,7 +267,7 @@ std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, boo
 
 std::shared_ptr<Elf::Object>
 Context::getDebugImage(const std::filesystem::path &name) {
-    return getImageInPath(debugPrefixes, debugImageByName, name, true);
+    return getImageInPath(debugPrefixes, debugImageByName, name, true, false);
 }
 
 #ifndef DEBUGINFOD
