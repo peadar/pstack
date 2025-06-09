@@ -20,7 +20,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/" CACHE STRING "Rpath to install for binaries or the empty string")
 set(LIBTYPE "SHARED" CACHE STRING "Build libraries as STATIC or SHARED")
-set (PYTHON3_SOURCE "" CACHE STRING "Path to the CPython source code")
 option(TIDY "Run clang-tidy on the source" False)
 
 find_library(LTHREADDB NAMES thread_db PATHS (/usr/lib /usr/local/lib))
@@ -80,28 +79,7 @@ if (Python3_Development_FOUND OR Python2_Development_FOUND)
 endif()
 
 if (PYTHON3 AND Python3_Development_FOUND)
-   if ("${PYTHON3_SOURCE}" STREQUAL "") # not set
-      set( py3_src_patterns
-         "/usr/src/debug/Python-${Python3_VERSION}"
-         "/usr/src/debug/Python-3*"
-         "/usr/src/debug/python3"
-         )
-      foreach(pattern ${py3_src_patterns})
-         message(STATUS "checking ${pattern} for python-3 source")
-         file(GLOB found_path "${pattern}")
-         if (NOT "${found_path}" STREQUAL "")
-            message(STATUS "python-3 source is \"${found_path}\"")
-            set(PYTHON3_SOURCE "${found_path}")
-            break()
-         endif()
-      endforeach()
-   endif()
-
-   if ("${PYTHON3_SOURCE}" STREQUAL "") # src not found, but we were asked for py3 support. Fail.
-      message(FATAL_ERROR "Path to CPython source code needed for Python 3 support\nSpecify with -DPYTHON3_SOURCE=<path>")
-   endif()
-
-   set(pyinc "-I${Python3_INCLUDE_DIRS} -I${PYTHON3_SOURCE} -I${PYTHON3_SOURCE}/Include")
+   set(pyinc "-I${Python3_INCLUDE_DIRS}")
    message(STATUS  "Python3_INCLUDE_DIRS are ${pyinc}")
    add_definitions("-DWITH_PYTHON3")
    set(pysrc ${pysrc} python3.cc pythonc.c)
