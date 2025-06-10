@@ -975,7 +975,7 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
             break;
 
         case DW_CFA_offset: {
-            intmax_t offset = r.getsleb128();
+            intmax_t offset = r.getuleb128();
             frame.registers[reg].type = OFFSET;
             frame.registers[reg].u.offset = offset * dataAlign;
             break;
