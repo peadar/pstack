@@ -919,8 +919,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                 // For ARM, the concept is the same, but we look at the link
                 // register rather than a pushd return address
 
-
-                if (stack.size() == 1 || stack[stack.size() - 2].isSignalTrampoline) {
+                if (prev.mechanism == UnwindMechanism::MACHINEREGS
+                      || prev.mechanism == UnwindMechanism::TRAMPOLINE) {
                     ProcessLocation badip = { p, IP(prev.regs) };
                     if (!badip.inObject() || (badip.codeloc->phdr().p_flags & PF_X) == 0) {
                         auto newRegs = prev.regs; // start with a copy of prev frames regs.
