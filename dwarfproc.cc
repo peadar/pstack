@@ -563,41 +563,49 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     for (const auto &entry : dcf.registers) {
         const RegisterUnwind &unwind = entry.second;
         int regno = entry.first;
-        switch (unwind.type) {
-            case ARCH:
+        try {
+           switch (unwind.type) {
+               case ARCH:
 #ifdef CFA_RESTORE_REGNO
-                // "The CFA is defined to be the stack pointer in the calling frame."
-                if (regno == CFA_RESTORE_REGNO)
-                   Elf::setReg(out, regno, cfa);
-                else
-                   Elf::setReg(out, regno, Elf::getReg(regs, regno));
-                break;
+                   // "The CFA is defined to be the stack pointer in the calling frame."
+                   if (regno == CFA_RESTORE_REGNO)
+                      Elf::setReg(out, regno, cfa);
+                   else
+                      Elf::setReg(out, regno, Elf::getReg(regs, regno));
+                   break;
 #endif
-            case UNDEF:
-            case SAME:
-                Elf::setReg(out, regno, Elf::getReg(regs, regno));
-                break;
-            case OFFSET: // XXX: assume addrLen = sizeof Elf_Addr
-                Elf::setReg(out, regno, p.io->readObj<Elf::Addr>(cfa + unwind.u.offset));
-                break;
-            case REG:
-                Elf::setReg(out, regno, Elf::getReg(out,unwind.u.reg));
-                break;
-            case VAL_EXPRESSION:
-            case EXPRESSION: {
-                ExpressionStack stack;
-                stack.push(cfa);
-                DWARFReader reader(cfi->io, unwind.u.expression.offset,
-                      unwind.u.expression.offset + unwind.u.expression.length);
-                auto val = stack.eval(p, reader, this, location.elfReloc());
-                // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
-                if (unwind.type == EXPRESSION)
-                    p.io->readObj(val, &val);
-                Elf::setReg(out, regno, val);
-                break;
-            }
-            default:
-                break;
+               case UNDEF:
+               case SAME:
+                   Elf::setReg(out, regno, Elf::getReg(regs, regno));
+                   break;
+               case OFFSET: // XXX: assume addrLen = sizeof Elf_Addr
+                   Elf::setReg(out, regno, p.io->readObj<Elf::Addr>(cfa + unwind.u.offset));
+                   break;
+               case REG:
+                   Elf::setReg(out, regno, Elf::getReg(out,unwind.u.reg));
+                   break;
+               case VAL_EXPRESSION:
+               case EXPRESSION: {
+                   ExpressionStack stack;
+                   stack.push(cfa);
+                   DWARFReader reader(cfi->io, unwind.u.expression.offset,
+                         unwind.u.expression.offset + unwind.u.expression.length);
+                   auto val = stack.eval(p, reader, this, location.elfReloc());
+                   // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
+                   if (unwind.type == EXPRESSION)
+                       p.io->readObj(val, &val);
+                   Elf::setReg(out, regno, val);
+                   break;
+               }
+               default:
+                   break;
+           }
+        }
+        catch (const Exception &ex) {
+           // If part of the stack is unreadable or something, we can fail to
+           // set the reg.  This happens particularly for a stack overflow -
+           // don't fail, and let the rest of the mechanism finish.
+           *p.context.debug << "failed to set register " << regno << ": " << ex.what() << "\n";
         }
     }
 
