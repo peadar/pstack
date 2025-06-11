@@ -51,7 +51,8 @@ StackFrame::scopeIP(Process &proc) const
     auto raw = rawIP();
     if (raw == 0)
        return { proc, raw };
-    if (mechanism == UnwindMechanism::MACHINEREGS)
+    if (mechanism == UnwindMechanism::MACHINEREGS
+          || mechanism == UnwindMechanism::TRAMPOLINE)
        return { proc, raw };
     if (isSignalTrampoline)
        return { proc, raw };
