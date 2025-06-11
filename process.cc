@@ -988,6 +988,9 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                     break;
                 auto &newRegs = *maybeNewRegs;
                 stack.emplace_back(UnwindMechanism::DWARF, newRegs);
+                if (prev.isSignalTrampoline) {
+                   stack.back().unwoundFromTrampoline = true;
+                }
 #ifdef __aarch64__
                 auto &cur = stack.back();
                 if (newRegs.pc == trampoline)
@@ -1023,7 +1026,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                 // register rather than a pushd return address
 
                 if (prev.mechanism == UnwindMechanism::MACHINEREGS
-                      || prev.mechanism == UnwindMechanism::TRAMPOLINE) {
+                      || prev.mechanism == UnwindMechanism::TRAMPOLINE
+                      || prev.unwoundFromTrampoline ) {
                     ProcessLocation badip = { p, IP(prev.regs) };
                     if (!badip.inObject() || (badip.codeloc->phdr().p_flags & PF_X) == 0) {
                         auto newRegs = prev.regs; // start with a copy of prev frames regs.

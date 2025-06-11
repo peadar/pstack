@@ -132,12 +132,20 @@ public:
 
 class StackFrame {
 public:
-    Elf::Addr rawIP() const;
+    [[nodiscard]] Elf::Addr rawIP() const;
     ProcessLocation scopeIP(Process &) const;
     Elf::CoreRegisters regs;
     Elf::Addr cfa;
     UnwindMechanism mechanism;
+
+    // This frame is a signal trampoline, eg, at a function like
+    // __kernel_rt_sigreturn
     bool isSignalTrampoline;
+
+    // This frame was unwound from a signal trampoline - implying didn't call
+    // the function above it on the stack.
+    bool unwoundFromTrampoline;
+
     StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs);
     StackFrame &operator = (const StackFrame &) = default;
     StackFrame(const StackFrame &) = default;

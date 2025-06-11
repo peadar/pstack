@@ -43,18 +43,25 @@ StackFrame::scopeIP(Process &proc) const
     // the process's register state - this is the currently executing
     // instruction, so accurately reflects the position in the top stack frame.
     //
-    // The other is for signal trampolines - In this case, the return address
+    // Next, signal trampolines - For the trampoline itself, the return address
     // has been synthesized to be the entrypoint of a function (eg,
     // __restore_rt) to handle return from the signal handler, and will be the
     // first instruction in the function - there's no previous call instruction
     // to point at, so we use it directly.
+    //
+    // Finally, for the function that was running when the signal was invoked -
+    // The signal was invoked asynchronously, so again, we have no call
+    // instruction to walk back into.
     auto raw = rawIP();
     if (raw == 0)
        return { proc, raw };
     if (mechanism == UnwindMechanism::MACHINEREGS
           || mechanism == UnwindMechanism::TRAMPOLINE)
        return { proc, raw };
+
     if (isSignalTrampoline)
+       return { proc, raw };
+    if (unwoundFromTrampoline)
        return { proc, raw };
     ProcessLocation location(proc, raw);
 
@@ -498,7 +505,9 @@ StackFrame::StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs
     , cfa(0)
     , mechanism(mechanism)
     , isSignalTrampoline(false)
-{}
+    , unwoundFromTrampoline(false)
+{
+}
 
 std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     ProcessLocation location = scopeIP(p);
@@ -517,8 +526,6 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     Elf::Off objaddr = location.location() - location.elfReloc();
 
     using namespace Dwarf;
-
-
 
     DWARFReader r(cfi->io, fde->instructions, fde->end);
 
