@@ -21,6 +21,7 @@ struct Options {
     bool noExtDebug = false; // don't look for exernal ELF info, i.e., using debuglink, or buildid.
     bool withDebuginfod = false; // use debuginfod client library.
     bool noBuildIds = false;
+    bool noLocalFiles = false;
     int maxdepth = std::numeric_limits<int>::max();
     int maxframes = 30;
 };

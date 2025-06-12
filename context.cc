@@ -129,7 +129,6 @@ Context::flush(std::shared_ptr<Elf::Object> o)
     dwarfCache.erase(o);
 }
 
-
 // pretty-printer for key types.
 template <typename T> struct ContainerKeyDescr{};
 std::ostream &operator << (std::ostream &os, const ContainerKeyDescr<std::filesystem::path> &) { return os << "path"; }
@@ -201,6 +200,8 @@ Context::getImageInPath(const std::vector<std::filesystem::path> &paths, NameMap
  */
 std::shared_ptr<Elf::Object>
 Context::getImage(const std::filesystem::path &name) {
+    if (options.noLocalFiles)
+        return nullptr;
     return getImageInPath(exePrefixes, imageByName, name, false, false);
 }
 

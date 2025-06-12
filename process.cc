@@ -172,19 +172,16 @@ Process::load()
     auto auxv = getAUXV();
     if (auxv)
         processAUXV(*auxv);
-
-    // by now, we should know what executable was loaded for the process.
-    if (!execImage)
-        throw (Exception() << "no executable image located for process");
-
     try {
-        Elf::Addr r_debug_addr = findRDebugAddr();
-        bool isStatic = r_debug_addr == 0 || r_debug_addr == Elf::Addr(-1);
+        findRDebugAddr();
+        bool isStatic = dt_debug == 0 || dt_debug == Elf::Addr(-1);
 
-        if (isStatic)
-            addElfObject("", execImage, 0);
-        else
-            loadSharedObjects(r_debug_addr);
+        if (isStatic) {
+            if (execImage)
+                addElfObject("", execImage, 0);
+        } else {
+            loadSharedObjects(dt_debug);
+        }
     }
     catch (const Exception &) {
         // We were unable to read the link map.
@@ -297,13 +294,14 @@ Process::processAUXV(const Reader &auxio)
 
                 break;
             }
+
 #endif
             case AT_PHDR:
-               phOff = hdr;
-               break;
+                phOff = hdr;
+                break;
             case AT_PHNUM:
-               phNum = hdr;
-               break;
+                phNum = hdr;
+                break;
             default:
                break;
         }
@@ -820,13 +818,17 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
         // If we see the executable, just add it in and avoid going through the path
         // replacement work
         if (mapAddr == Elf::Addr(rDebug.r_map)) {
-            auto loadAddr = entry - execImage->getHeader().e_entry;
-            if (loadAddr != map.l_addr) {
-                *context.debug << "calculated load address for executable from process entrypoint ("
-                << std::hex << loadAddr << ") does not match link map (" << map.l_addr
-                << "). Trusting link-map\n" << std::dec;
+            if (execImage) {
+                if (execBase == 0) {
+                    execBase = entry - execImage->getHeader().e_entry;
+                }
+                if (execBase != map.l_addr) {
+                    *context.debug << "calculated load address for executable from process entrypoint ("
+                    << std::hex << execBase << ") does not match link map (" << map.l_addr
+                    << "). Trusting link-map\n" << std::dec;
+                }
+                addElfObject("(exe)", execImage, map.l_addr);
             }
-            addElfObject("(exe)", execImage, map.l_addr);
             continue;
         }
         // If we've loaded the VDSO, and we see it in the link map, just skip it.
@@ -869,7 +871,7 @@ Process::findRDebugAddr()
      * the difference is the load address.
      */
 
-    if (dt_debug == 0) {
+    if (dt_debug == 0 && execImage) {
        // Iterate over the PT_DYNAMIC segment of the loaded executable. (We
        // should not get here, as we should have found the program headers in
        // the AT_PHDR auxv entry, and done this already
@@ -884,7 +886,7 @@ Process::findRDebugAddr()
      * library, which doesn't have an _r_debug symbol. Use the address of
      * _r_debug in the interpreter
      */
-    if (dt_debug == 0 && interpBase && execImage->getInterpreter() != "") {
+    if (dt_debug == 0 && execImage && interpBase && execImage->getInterpreter() != "") {
         try {
             addElfObject(execImage->getInterpreter(), nullptr, interpBase);
             dt_debug = resolveSymbol("_r_debug", false,
@@ -909,7 +911,7 @@ Process::findSegment(Elf::Addr addr)
     if (it != objects.begin()) {
        --it;
        auto obj = it->second.object(context);
-       if (it->first + obj->endVA() >= addr) {
+       if (obj && it->first + obj->endVA() >= addr) {
            auto segment = obj->getSegmentForAddress(addr - it->first);
            if (segment)
                return std::make_tuple(it->first, obj, segment);
@@ -926,6 +928,8 @@ Process::resolveSymbolDetail(const char *name, bool includeDebug,
         if (!match(loaded.second.name()))
            continue;
         auto obj = loaded.second.object(context);
+        if (!obj)
+            continue;
         auto [sym,idx] = obj->findDynamicSymbol(name);
         if (sym.st_shndx != SHN_UNDEF)
            return std::make_tuple(obj, loaded.first, sym);

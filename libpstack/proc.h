@@ -241,9 +241,10 @@ public:
 };
 
 class Process : public ps_prochandle {
-    Elf::Addr entry;
-    Elf::Addr dt_debug;
-    Elf::Addr interpBase;
+    Elf::Addr entry{};
+    Elf::Addr dt_debug{};
+    Elf::Addr interpBase{};
+    Elf::Addr execBase{};
     void loadSharedObjects(Elf::Addr);
     Elf::Addr extractDtDebugFromDynamicSegment(const Elf::Phdr &phdr, Elf::Addr loadAddr, const char *);
 public:

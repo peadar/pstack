@@ -376,6 +376,9 @@ emain(int argc, char **argv, Context &context)
 #ifdef DEBUGINFOD
     .add("debuginfod", 'R', "use debuginfod client", Flags::setf( context.options.withDebuginfod ) )
 #endif
+    .add("no-local-files", Flags::LONGONLY,
+          "don't assume local files match the process's view, and don't open them",
+          Flags::setf( context.options.noLocalFiles ) )
 
     .parse(argc, argv);
 
