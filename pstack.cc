@@ -365,6 +365,9 @@ emain(int argc, char **argv, Context &context)
     .add("no-debuginfod", Flags::LONGONLY,
           "disable debuginfod client", Flags::setf( context.options.noDebuginfod ) )
 #endif
+    .add("no-local-files", Flags::LONGONLY,
+          "don't assume local files match the process's view, and don't open them",
+          Flags::setf( context.options.noLocalFiles ) )
 
     .parse(argc, argv);
 

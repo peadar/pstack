@@ -170,17 +170,16 @@ Process::load()
     if (auxv)
         processAUXV(*auxv);
 
-    if (!execImage)
-        throw (Exception() << "no executable image located for process");
-
     try {
         Elf::Addr r_debug_addr = findRDebugAddr();
         bool isStatic = r_debug_addr == 0 || r_debug_addr == Elf::Addr(-1);
 
-        if (isStatic)
-            addElfObject("", execImage, 0);
-        else
+        if (isStatic) {
+            if (execImage)
+                addElfObject("", execImage, 0);
+        } else {
             loadSharedObjects(r_debug_addr);
+        }
     }
     catch (const Exception &) {
         // We were unable to read the link map.
@@ -218,14 +217,35 @@ auxtype2str(int auxtype) {
 #undef AUX_TYPE
 }
 
+namespace {
+Elf::Addr
+extractDtDebugFromDynamicSegment(Process &proc, const Elf::Phdr &phdr, Elf::Addr loadAddr, const char *loc) {
+    auto dynReader = proc.io->view("PT_DYNAMIC segment", phdr.p_vaddr + loadAddr, phdr.p_filesz);
+    ReaderArray<Elf::Dyn> dynamic(*dynReader);
+    for (auto &dyn : dynamic) {
+        if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0) {
+            if (proc.context.verbose)
+                *proc.context.debug << "found rdebugaddr via DT_DEBUG at "
+                   << std::hex << dyn.d_un.d_ptr << std::dec << " in " << loc << "\n";
+            return dyn.d_un.d_ptr;
+        }
+    }
+    return 0;
+}
+}
+
+
 void
 Process::processAUXV(const Reader &auxio)
 {
+    Elf::Addr phOff = 0;
+    size_t phNum = 0;
+
     for (auto &aux : ReaderArray<Elf::auxv_t>(auxio)) {
         Elf::Addr hdr = aux.a_un.a_val;
+        if (aux.a_type == AT_NULL)
+            break;
         switch (aux.a_type) {
-            case AT_NULL: // Indicates end of the AUXV vector.
-                return;
             case AT_ENTRY: {
                 if (context.verbose > 2)
                     *context.debug << "auxv: AT_ENTRY=" << hdr << std::endl;
@@ -283,11 +303,47 @@ Process::processAUXV(const Reader &auxio)
 
                 break;
             }
+
 #endif
+            case AT_PHDR:
+                phOff = hdr;
+                break;
+            case AT_PHNUM:
+                phNum = hdr;
+                break;
             default:
                 if (context.verbose > 2)
                     *context.debug << "auxv: " << auxtype2str( aux.a_type) << ": " << hdr << std::endl;
         }
+    }
+    if (phOff != 0 && phNum != 0) {
+        auto view = io->view("phdrs", phOff, sizeof (Elf::Phdr) * phNum);
+        ReaderArray<Elf::Phdr> headers { *view };
+        std::optional<Elf::Phdr> ptDynamic;
+
+        std::vector<Elf::Addr> notes;
+        try {
+            for ( auto phdr : headers ) {
+                switch (phdr.p_type) {
+                    case PT_PHDR:
+                        // that's the diff between the va's in the process vs the image.
+                        execBase = phOff - phdr.p_vaddr;
+                        break;
+                    case PT_NOTE:
+                        notes.push_back(phdr.p_vaddr);
+                        break;
+                    case PT_DYNAMIC:
+                        ptDynamic = phdr;
+                        break;
+                }
+            }
+        }
+        catch (const Exception &ex) {
+            // We may not have a full image of the phdrs.
+        }
+
+        if (ptDynamic && dt_debug == 0)
+            dt_debug = extractDtDebugFromDynamicSegment(*this, *ptDynamic, execBase, "aux vector");
     }
 }
 
@@ -729,13 +785,17 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
         // If we see the executable, just add it in and avoid going through the path
         // replacement work
         if (mapAddr == Elf::Addr(rDebug.r_map)) {
-            auto loadAddr = entry - execImage->getHeader().e_entry;
-            if (loadAddr != map.l_addr) {
-                *context.debug << "calculated load address for executable from process entrypoint ("
-                << std::hex << loadAddr << ") does not match link map (" << map.l_addr
-                << "). Trusting link-map\n" << std::dec;
+            if (execImage) {
+                if (execBase == 0) {
+                    execBase = entry - execImage->getHeader().e_entry;
+                }
+                if (execBase != map.l_addr) {
+                    *context.debug << "calculated load address for executable from process entrypoint ("
+                    << std::hex << execBase << ") does not match link map (" << map.l_addr
+                    << "). Trusting link-map\n" << std::dec;
+                }
+                addElfObject("(exe)", execImage, map.l_addr);
             }
-            addElfObject("(exe)", execImage, map.l_addr);
             continue;
         }
         // If we've loaded the VDSO, and we see it in the link map, just skip it.
@@ -769,34 +829,43 @@ Process::findRDebugAddr()
      * supplied by the kernel, and also the executable's desired entrypoint -
      * the difference is the load address.
      */
-    Elf::Off loadAddr = entry - execImage->getHeader().e_entry;
+    if (dt_debug == 0 && execImage) {
+        Elf::Off loadAddr = entry - execImage->getHeader().e_entry;
 
-    // Find DT_DEBUG in the process's dynamic section.
-    for (auto &segment : execImage->getSegments(PT_DYNAMIC)) {
-        // Read from the process, not the executable - the linker will have updated the content.
-        auto dynReader = io->view("PT_DYNAMIC segment", segment.p_vaddr + loadAddr, segment.p_filesz);
-        ReaderArray<Elf::Dyn> dynamic(*dynReader);
-        for (auto &dyn : dynamic)
-            if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0)
-                return dyn.d_un.d_ptr;
-    }
-    /*
-     * If there's no DT_DEBUG, we've probably got someone executing a shared
-     * library, which doesn't have an _r_debug symbol. Use the address of
-     * _r_debug in the interpreter
-     */
-    if (interpBase && execImage->getInterpreter() != "") {
-        try {
-            addElfObject(execImage->getInterpreter(), nullptr, interpBase);
-            return resolveSymbol("_r_debug", false,
-                  [this](const std::string_view name) {
-                      return execImage->getInterpreter() == name;
-                  });
-        }
-        catch (...) {
+        // Find DT_DEBUG in the process's dynamic section.
+        for (auto &segment : execImage->getSegments(PT_DYNAMIC)) {
+            // Read from the process, not the executable - the linker will have updated the content.
+            auto dynReader = io->view("PT_DYNAMIC segment", segment.p_vaddr + loadAddr, segment.p_filesz);
+            ReaderArray<Elf::Dyn> dynamic(*dynReader);
+            for (auto &dyn : dynamic) {
+                if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0) {
+                    dt_debug = dyn.d_un.d_ptr;
+                    break;
+                }
+            }
+            if (dt_debug)
+                break;
         }
     }
-    return 0;
+    if (dt_debug == 0 && interpBase && execImage) {
+        /*
+         * If there's no DT_DEBUG, we've probably got someone executing a shared
+         * library, which doesn't have an _r_debug symbol. Use the address of
+         * _r_debug in the interpreter
+         */
+        if (interpBase && execImage->getInterpreter() != "") {
+            try {
+                addElfObject(execImage->getInterpreter(), nullptr, interpBase);
+                return resolveSymbol("_r_debug", false,
+                      [this](const std::string_view name) {
+                          return execImage->getInterpreter() == name;
+                      });
+            }
+            catch (...) {
+            }
+        }
+    }
+    return dt_debug;
 }
 
 std::tuple<Elf::Addr, Elf::Object::sptr, const Elf::Phdr *>
@@ -806,7 +875,7 @@ Process::findSegment(Elf::Addr addr)
     if (it != objects.begin()) {
        --it;
        auto obj = it->second.object(context);
-       if (it->first + obj->endVA() >= addr) {
+       if (obj && it->first + obj->endVA() >= addr) {
            auto segment = obj->getSegmentForAddress(addr - it->first);
            if (segment)
                return std::make_tuple(it->first, obj, segment);
@@ -823,6 +892,8 @@ Process::resolveSymbolDetail(const char *name, bool includeDebug,
         if (!match(loaded.second.name()))
            continue;
         auto obj = loaded.second.object(context);
+        if (!obj)
+            continue;
         auto [sym,idx] = obj->findDynamicSymbol(name);
         if (sym.st_shndx != SHN_UNDEF)
            return std::make_tuple(obj, loaded.first, sym);

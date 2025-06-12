@@ -27,6 +27,7 @@ struct PstackOptions {
     bool nodienames = false; // don't use names from DWARF dies in backtraces.
     bool noExtDebug = false; // don't look for exernal ELF info, i.e., using debuglink, or buildid.
     bool noDebuginfod = false; // don't use debuginfod client library.
+    bool noLocalFiles = false;
     int maxdepth = std::numeric_limits<int>::max();
     int maxframes = 30;
 };

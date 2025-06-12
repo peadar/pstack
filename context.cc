@@ -77,6 +77,8 @@ Context::flush(std::shared_ptr<Elf::Object> o)
 
 std::shared_ptr<Elf::Object>
 Context::getImageForName(const std::string &name, bool isDebug) {
+    if (options.noLocalFiles)
+        return nullptr;
     auto res = getImageIfLoaded(name);
     if (res != nullptr)
         return res;

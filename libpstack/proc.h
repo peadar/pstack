@@ -241,7 +241,9 @@ public:
 class Process : public ps_prochandle {
     Elf::Addr entry;
     Elf::Addr interpBase;
+    Elf::Addr execBase{};
     void loadSharedObjects(Elf::Addr);
+    Elf::Off dt_debug{};
 public:
     std::map<Elf::Addr, MappedObject> objects;
     Elf::Addr vdsoBase;
