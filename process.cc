@@ -307,60 +307,60 @@ Process::processAUXV(const Reader &auxio)
         }
     }
 
-    // If we have phdrs, process them. Use PT_PHDR to find the relocation ofset
-    // between the phOff and the virtual addresses in the executable image.
-    auto view = io->view("phdrs", phOff, sizeof (Elf::Phdr) * phNum);
-    ReaderArray<Elf::Phdr> headers { *view };
-    std::optional<Elf::Phdr> ptDynamic;
+    if (phOff != 0 && phNum != 0) {
+        // If we have phdrs, process them. Use PT_PHDR to find the relocation ofset
+        // between the phOff and the virtual addresses in the executable image.
+        auto view = io->view("phdrs", phOff, sizeof (Elf::Phdr) * phNum);
+        ReaderArray<Elf::Phdr> headers { *view };
+        std::optional<Elf::Phdr> ptDynamic;
 
-    std::vector<Elf::Addr> notes;
-    Elf::Addr exeReloc = 0;
-    try {
-       for ( auto phdr : headers ) {
-          switch (phdr.p_type) {
-             case PT_PHDR:
-                // that's the diff between the va's in the process vs the image.
-                exeReloc = phOff - phdr.p_vaddr;
+        std::vector<Elf::Addr> notes;
+        try {
+            for ( auto phdr : headers ) {
+                switch (phdr.p_type) {
+                    case PT_PHDR:
+                        // that's the diff between the va's in the process vs the image.
+                        execBase = phOff - phdr.p_vaddr;
+                        break;
+                    case PT_NOTE:
+                        notes.push_back(phdr.p_vaddr);
+                        break;
+                    case PT_DYNAMIC:
+                        ptDynamic = phdr;
+                        break;
+                }
+            }
+        }
+        catch (const Exception &ex) {
+            // We may not have a full image of the phdrs.
+        }
+
+        if (ptDynamic && dt_debug == 0)
+            dt_debug = extractDtDebugFromDynamicSegment(*ptDynamic, execBase, "aux vector");
+
+        // Find the executable image
+        if (!execImage) {
+            // search for a GNU_BUILD_ID note in the notes.
+            for ( auto noteOff : notes) {
+                auto noteVa = noteOff + execBase;
+                auto n = io->readObj<Elf::Note>( noteOff + execBase );
+                if (n.n_type != Elf::GNU_BUILD_ID)
+                    continue;
+                std::vector<char> name(n.n_namesz);
+                io->read(noteVa + sizeof n, name.size(), name.data());
+                if (name[n.n_namesz - 1] == 0)
+                    name.resize(name.size() - 1);
+                if (std::string_view(name.data(), name.size()) != "GNU")
+                    continue;
+
+                std::vector<uint8_t> data;
+                data.resize(n.n_descsz);
+                io->read(noteVa + sizeof n + 4, n.n_descsz, (char *)data.data());
+                if (context.verbose)
+                    *context.debug << "build ID From AT_PHDR: " << Elf::BuildID(data) << "\n";
+                execImage = context.getImage(Elf::BuildID{data});
                 break;
-             case PT_NOTE:
-                notes.push_back(phdr.p_vaddr);
-                break;
-             case PT_DYNAMIC:
-                ptDynamic = phdr;
-                break;
-          }
-       }
-    }
-    catch (const Exception &ex) {
-       // We may not have a full image of the phdrs.
-    }
-
-    if (ptDynamic && dt_debug == 0)
-        dt_debug = extractDtDebugFromDynamicSegment(*ptDynamic, exeReloc,
-              "aux vector");
-
-    // Find the executable image
-    if (!execImage) {
-        // search for a GNU_BUILD_ID note in the notes.
-        for ( auto noteOff : notes) {
-            auto noteVa = noteOff + exeReloc;
-            auto n = io->readObj<Elf::Note>( noteOff + exeReloc );
-            if (n.n_type != Elf::GNU_BUILD_ID)
-                continue;
-            std::vector<char> name(n.n_namesz);
-            io->read(noteVa + sizeof n, name.size(), name.data());
-            if (name[n.n_namesz - 1] == 0)
-                name.resize(name.size() - 1);
-            if (std::string_view(name.data(), name.size()) != "GNU")
-                continue;
-
-            std::vector<uint8_t> data;
-            data.resize(n.n_descsz);
-            io->read(noteVa + sizeof n + 4, n.n_descsz, (char *)data.data());
-            if (context.verbose)
-                *context.debug << "build ID From AT_PHDR: " << Elf::BuildID(data) << "\n";
-            execImage = context.getImage(Elf::BuildID{data});
-            break;
+            }
         }
     }
 
