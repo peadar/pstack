@@ -253,6 +253,7 @@ protected:
     virtual bool loadSharedObjectsFromFileNote() = 0;
 
 public:
+    [[nodiscard]] Elf::Addr getVdsoBase() const { return vdsoBase; };
     std::map<Elf::Addr, MappedObject> objects;
     Elf::Object::sptr execImage;
     Elf::Object::sptr vdsoImage;

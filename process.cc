@@ -964,7 +964,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
     if (p.vdsoImage) {
        auto [sigreturnSym,idx] = p.vdsoImage->findDynamicSymbol("__kernel_rt_sigreturn");
        if (sigreturnSym.st_shndx != SHN_UNDEF) {
-          trampoline = sigreturnSym.st_value + p.vdsoBase;
+          trampoline = sigreturnSym.st_value + p.getVdsoBase();
        }
     }
 #endif
