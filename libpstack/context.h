@@ -73,18 +73,22 @@ public:
    int openfile(const std::filesystem::path &filename, int mode = O_RDONLY, int umask = 0777);
    int openFileDirect(const std::filesystem::path &name_, int mode, int mask);
 
-   std::shared_ptr<Elf::Object> getImage(const std::filesystem::path &name);
-   std::shared_ptr<Elf::Object> getImage(const Elf::BuildID &);
+   // Unlike getImage, this will not search paths - name must be a local file path.
+   std::shared_ptr<Elf::Object> openImage(const std::filesystem::path &name, int fd = -1, bool isDebug = false);
+
+   // Get an image, searching as required.
+   std::shared_ptr<Elf::Object> findImage(const std::filesystem::path &name);
+   std::shared_ptr<Elf::Object> findImage(const Elf::BuildID &);
 
    // Debug images are specifically those with the text/data stripped, and just
    // the Dwarf/symbol table left.
-   std::shared_ptr<Elf::Object> getDebugImage(const std::filesystem::path &name);
-   std::shared_ptr<Elf::Object> getDebugImage(const Elf::BuildID &);
+   std::shared_ptr<Elf::Object> findDebugImage(const std::filesystem::path &name);
+   std::shared_ptr<Elf::Object> findDebugImage(const Elf::BuildID &);
 
-   std::shared_ptr<Dwarf::Info> getDwarf(const std::filesystem::path &);
-   std::shared_ptr<Dwarf::Info> getDwarf(const Elf::BuildID &);
+   std::shared_ptr<Dwarf::Info> findDwarf(const std::filesystem::path &);
+   std::shared_ptr<Dwarf::Info> findDwarf(const Elf::BuildID &);
 
-   std::shared_ptr<Dwarf::Info> getDwarf(std::shared_ptr<Elf::Object>);
+   std::shared_ptr<Dwarf::Info> findDwarf(std::shared_ptr<Elf::Object>);
    void flush(std::shared_ptr<Elf::Object> o);
    std::filesystem::path procname(pid_t pid, const std::filesystem::path &base);
 

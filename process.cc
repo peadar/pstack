@@ -202,7 +202,7 @@ Process::load()
 Dwarf::Info::sptr
 Process::getDwarf(Elf::Object::sptr elf) const
 {
-    return context.getDwarf(elf);
+    return context.findDwarf(elf);
 }
 
 
@@ -350,14 +350,14 @@ Process::processAUXV(const Reader &auxio)
                 io->read(noteVa + sizeof n + 4, n.n_descsz, (char *)data.data());
                 if (context.verbose)
                     *context.debug << "build ID From AT_PHDR: " << Elf::BuildID(data) << "\n";
-                execImage = context.getImage(Elf::BuildID{data});
+                execImage = context.findImage(Elf::BuildID{data});
                 break;
             }
         }
     }
 
     if (!execImage && exeName != "")
-       execImage = context.getImage(exeName);
+       execImage = context.findImage(exeName);
     if (!execImage)
        execImage = executableImage(); // default to whatever the process can give us (eg, mmap /proc/<>/exe)
 }

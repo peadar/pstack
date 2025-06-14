@@ -161,7 +161,7 @@ public:
 
 class MmapReader final : public MemReader {
 public:
-    MmapReader(Context &, const std::string &name_);
+    MmapReader(Context &, const std::string &name_, int fd = - 1);
     ~MmapReader() override;
     MmapReader(const MmapReader &) = delete;
     MmapReader(MmapReader &&) = delete;

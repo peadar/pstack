@@ -228,9 +228,9 @@ public:
     }
     Elf::Object::sptr object(Context &ctx) {
         if (objptr_ == nullptr)
-            objptr_ = ctx.getImage(bid_);
+            objptr_ = ctx.findImage(bid_);
         if (objptr_ == nullptr)
-            objptr_ = ctx.getImage(name_);
+            objptr_ = ctx.findImage(name_);
         return objptr_;
     }
     MappedObject(std::string_view name, Elf::BuildID bid, Elf::Object::sptr objptr = {}) :

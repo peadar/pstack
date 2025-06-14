@@ -24,7 +24,7 @@ LiveReader::LiveReader(Context &c, pid_t pid, const std::string &base) : FileRea
 
 Elf::Object::sptr
 LiveProcess::executableImage() {
-   return context.getImage(context.procname(getPID(), "exe"));
+   return context.findImage(context.procname(getPID(), "exe"));
 }
 
 LiveProcess::LiveProcess(Context &context, Elf::Object::sptr &ex, pid_t pid_, bool alreadyStopped)

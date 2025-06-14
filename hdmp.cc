@@ -32,7 +32,7 @@ void printStack(std::ostream &os, std::shared_ptr<Procman::Process> &proc, const
             os << "\t" << name << "+" << uintptr_t(frames[i]) - elfReloc - sym.st_value;
          }
 
-         auto dwarf = proc->context.getDwarf(elf);
+         auto dwarf = proc->context.findDwarf(elf);
          if (dwarf) {
             auto sep = "in";
             for (auto &&[file, line] : dwarf->sourceFromAddr(frameip - elfReloc)) {
@@ -113,7 +113,7 @@ main(int argc, char *argv[])
    for (int c; (c = getopt(argc, argv, "e:fab")) != -1; ) {
       switch (c) {
          case 'e':
-            exec = context.getImage(optarg);
+            exec = context.openImage(optarg);
             break;
          case 'f':
             options.insert(heap_recentfree);

@@ -606,7 +606,7 @@ Object::getDebug() const
 
     // Use the build ID to find debug data.
     auto bid = getBuildID();
-    debugObject = context.getDebugImage(bid);
+    debugObject = context.findDebugImage(bid);
 
     // If that doesn't work, maybe the gnu_debuglink is valid?
     if (!debugObject) {
@@ -615,7 +615,7 @@ Object::getDebug() const
         if (hdr) {
             auto link = hdr.io()->readString(0);
             auto dir = std::filesystem::path(stringify(*io)).parent_path();
-            debugObject = context.getDebugImage(dir / link);
+            debugObject = context.findDebugImage(dir / link);
         }
     }
 

@@ -390,7 +390,7 @@ emain(int argc, char **argv, Context &context)
     Elf::Object::sptr exec;
 
     if (execName != "")
-         exec = context.getImage(execName);
+         exec = context.openImage(execName);
 
     if (subprocessCmd != "") {
         // create a new process and trace it.
@@ -425,7 +425,7 @@ emain(int argc, char **argv, Context &context)
        try {
           auto process = Procman::Process::load(context, exec, argv[i]); // this calls the load() instance member.
           if (process == nullptr)
-             exec = context.getImage(argv[i]);
+             exec = context.openImage(argv[i]);
           else
              doStack(*process);
        } catch (const std::exception &e) {

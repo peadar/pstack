@@ -199,10 +199,13 @@ CacheReader::readString(Off off) const
     return it->second;
 }
 
-MmapReader::MmapReader(Context &c, const string &name_)
+MmapReader::MmapReader(Context &c, const string &name_, int fd)
    : MemReader(name_, 0, nullptr)
 {
-   int fd = c.openfile(name_);
+   if (fd == -1) {
+      fd = c.openfile( name_ );
+   }
+
    struct stat s{};
    fstat(fd, &s);
    len = s.st_size;
