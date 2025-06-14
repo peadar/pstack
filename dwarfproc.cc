@@ -504,8 +504,6 @@ StackFrame::StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs
     : regs(regs_)
     , cfa(0)
     , mechanism(mechanism)
-    , isSignalTrampoline(false)
-    , unwoundFromTrampoline(false)
 {
 }
 

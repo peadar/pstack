@@ -29,7 +29,7 @@ SelfProcess::getAUXV() const
 }
 
 void
-SelfProcess::listLWPs(std::function<void(lwpid_t)> cb) {
+SelfProcess::listLWPs(const std::function<void(lwpid_t)> &cb) {
    cb(int(syscall(SYS_gettid)));
 }
 

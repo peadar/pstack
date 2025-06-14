@@ -89,7 +89,7 @@ CoreProcess::CoreProcess(Context &ctx, Elf::Object::sptr exec, Elf::Object::sptr
    }
 }
 
-void CoreProcess::listLWPs(std::function<void(lwpid_t)> cb) {
+void CoreProcess::listLWPs(const std::function<void(lwpid_t)> &cb) {
    for (auto &task : lwpToPrStatusIdx)
       cb(task.first);
 }

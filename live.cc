@@ -76,7 +76,7 @@ LiveProcess::resume(lwpid_t lwpid) {
 }
 
 void
-LiveProcess::listLWPs(std::function<void(lwpid_t)> cb)
+LiveProcess::listLWPs(const std::function<void(lwpid_t)> &cb)
 {
    for (auto &lwp : stoppedLWPs)
       if (lwp.second.ptraceErr == 0)

@@ -162,15 +162,18 @@ public:
 class MmapReader final : public MemReader {
 public:
     MmapReader(Context &, const std::string &name_);
-    ~MmapReader();
+    ~MmapReader() override;
+    MmapReader(const MmapReader &) = delete;
+    MmapReader(MmapReader &&) = delete;
+    auto &operator = (const MmapReader &) = delete;
+    auto &operator = (MmapReader &&) = delete;
     std::string filename() const override { return descr; }
 };
 
 class NullReader final : public Reader {
 public:
-    virtual size_t read(Off, size_t, char *) const override {
-        abort();
-        throw Exception() << " read from null reader";
+    size_t read(Off, size_t, char *) const override {
+        throw ( Exception() << " read from null reader" );
     }
     void describe(std::ostream &os) const override {
         os << "empty reader";
@@ -188,7 +191,7 @@ public:
     std::string readString(Off absoff) const override {
         return upstream->readString(absoff + offset);
     }
-    virtual size_t read(Off off, size_t count, char *ptr) const override;
+    size_t read(Off off, size_t count, char *ptr) const override;
     OffsetReader(std::string, Reader::csptr upstream_, Off offset_, Off length_ = std::numeric_limits<Off>::max());
     void describe(std::ostream &os) const override {
         os << name << " [" << offset << "," << offset + length << "] of " << *upstream;

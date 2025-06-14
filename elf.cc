@@ -505,7 +505,7 @@ Object::getDebugSection(const string &name, Word type) const
 const Section &
 Object::getSection(Word idx) const
 {
-   const auto &sh = sectionHeaders();
+    const auto &sh = sectionHeaders();
     if (sh[idx]->shdr.sh_type != SHT_NULL)
         return *sh[idx];
     return *sh[0];

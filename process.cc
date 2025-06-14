@@ -142,13 +142,8 @@ gregset2core(Elf::CoreRegisters &core, const gregset_t greg) {
 
 
 Process::Process(pstack::Context &context_, Elf::Object::sptr exec, Reader::sptr memory)
-    : entry(0)
-    , dt_debug(0)
-    , interpBase(0)
-    , vdsoBase(0)
-    , agent(nullptr)
+    : agent(nullptr)
     , execImage(std::move(exec))
-    , sysent(0)
     , context(context_)
     , io(std::move(memory))
 {
@@ -257,9 +252,6 @@ Process::processAUXV(const Reader &auxio)
                 entry = hdr;
                 break;
             }
-            case AT_SYSINFO:
-                sysent = hdr;
-                break;
             case AT_SYSINFO_EHDR: {
                 try {
                     auto elf = std::make_shared<Elf::Object>(context, io->view("(vdso image)", hdr, 65536));
@@ -824,8 +816,8 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
                 }
                 if (execBase != map.l_addr) {
                     *context.debug << "calculated load address for executable from process entrypoint ("
-                    << std::hex << execBase << ") does not match link map (" << map.l_addr
-                    << "). Trusting link-map\n" << std::dec;
+                        << std::hex << execBase << ") does not match link map (" << map.l_addr
+                        << "). Trusting link-map\n" << std::dec;
                 }
                 addElfObject("(exe)", execImage, map.l_addr);
             }
@@ -833,7 +825,7 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
         }
         // If we've loaded the VDSO, and we see it in the link map, just skip it.
         if (vdsoBase != 0 && map.l_addr == vdsoBase)
-           continue;
+            continue;
 
         // Read the path to the file
         if (map.l_name == 0)
@@ -847,8 +839,8 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
         }
         catch (const std::exception &e) {
             if (context.debug)
-               *context.debug << "warning: can't load text for '" << path << "' at " <<
-            (void *)mapAddr << "/" << (void *)map.l_addr << ": " << e.what() << "\n";
+                *context.debug << "warning: can't load text for '" << path << "' at " <<
+                    (void *)mapAddr << "/" << (void *)map.l_addr << ": " << e.what() << "\n";
             continue;
         }
     }
@@ -872,13 +864,13 @@ Process::findRDebugAddr()
      */
 
     if (dt_debug == 0 && execImage) {
-       // Iterate over the PT_DYNAMIC segment of the loaded executable. (We
-       // should not get here, as we should have found the program headers in
-       // the AT_PHDR auxv entry, and done this already
-       Elf::Off loadAddr = entry - execImage->getHeader().e_entry;
-       for (auto &segment : execImage->getSegments(PT_DYNAMIC)) {
-           dt_debug = extractDtDebugFromDynamicSegment(segment, loadAddr, "exec image");
-       }
+        // Iterate over the PT_DYNAMIC segment of the loaded executable. (We
+        // should not get here, as we should have found the program headers in
+        // the AT_PHDR auxv entry, and done this already
+        Elf::Off loadAddr = entry - execImage->getHeader().e_entry;
+        for (auto &segment : execImage->getSegments(PT_DYNAMIC)) {
+            dt_debug = extractDtDebugFromDynamicSegment(segment, loadAddr, "exec image");
+        }
     }
 
     /*
@@ -890,11 +882,11 @@ Process::findRDebugAddr()
         try {
             addElfObject(execImage->getInterpreter(), nullptr, interpBase);
             dt_debug = resolveSymbol("_r_debug", false,
-                  [this](const std::string_view name) {
-                      return execImage->getInterpreter() == name;
-                  });
+                    [this](const std::string_view name) {
+                    return execImage->getInterpreter() == name;
+                    });
             if (dt_debug != 0 && context.debug) {
-               *context.debug << "found DT_DEBUG using address of _r_debug symbol\n";
+                *context.debug << "found DT_DEBUG using address of _r_debug symbol\n";
             }
 
         }
