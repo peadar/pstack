@@ -43,7 +43,7 @@ Context::debuginfod()
         return nullptr;
     if (!debuginfod_) {
         debuginfod_ = std::unique_ptr<debuginfod_client, DidClose>(debuginfod_begin());
-        if (isatty(2)) {
+        if (debuginfod_ && isatty(2)) {
             debuginfod_set_progressfn( debuginfod_->get(),
                     [] (debuginfod_client *client, long num, long denom) {
                         int *progress = (int *)debuginfod_get_user_data(client);
