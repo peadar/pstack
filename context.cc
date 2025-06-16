@@ -169,17 +169,18 @@ Context::getImageInPath(const std::vector<std::filesystem::path> &paths, NameMap
         return *cached;
 
     Elf::Object::sptr res;
-    for (const auto &dir : paths) {
+    // Walk through these backwards - prefer user specified values to defaults.
+    for (const auto &dir : std::views::reverse(paths)) {
         auto path = dir/name;
         if (resolveLink) {
-            char buf[PATH_MAX];
-            char *p = realpath( path.c_str(), buf );
-            if (p) {
+            std::array<char, PATH_MAX> buf;
+            char *p = realpath( path.c_str(), buf.data() );
+            if (p != nullptr) {
                 path = p;
             } else if (errno == ENOENT) {
                 return nullptr;
             } else {
-                *debug << "failed to resolve " << path << ": " << strerror(errno) << "\n";
+                *debug << "failed to resolve " << path << ": " << strerror_r(errno, buf.data(), buf.size()) << "\n";
             }
         }
         try {
