@@ -281,7 +281,8 @@ Process::processAUXV(const Reader &auxio)
                         *context.debug << "filename from auxv: " << exeName << "\n";
                 }
                 catch (const Exception &ex) {
-                    *context.debug << "failed to read AT_EXECFN: " << ex.what() << std::endl;
+                   if (context.verbose > 1)
+                       *context.debug << "failed to read AT_EXECFN: " << ex.what() << std::endl;
                 }
 
                 break;
@@ -780,7 +781,9 @@ Process::addElfObject(std::string_view name, const Elf::Object::sptr &obj, Elf::
         bid = bidElf->getBuildID();
     }
     catch (const Exception &ex) {
-        *context.debug << "failed to read build id from memory image\n";
+       // this is not a fatal problem - ELF headers may or may not be present in the core.
+       if (context.verbose > 1)
+           *context.debug << "failed to read build id from memory image\n";
     }
 
     objects.emplace(std::make_pair(load, MappedObject{ name, bid, obj }));
