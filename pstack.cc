@@ -366,6 +366,15 @@ emain(int argc, char **argv, Context &context)
           Flags::setf(context.options.nodienames))
     .add("freeres", Flags::LONGONLY, "free all memory at exit (useful for valgrind/heapcheck)",
           Flags::setf(freeres))
+    .add("clear-search-paths",
+          Flags::LONGONLY,
+          "remove all default search paths for shared libraries and debug info",
+          [&]() {
+            context.exePrefixes.clear();
+            context.debugPrefixes.clear();
+            context.debugBuildIdPrefixes.clear();
+            context.exeBuildIdPrefixes.clear();
+          })
     .add("output",
           'o',
           "output file",
