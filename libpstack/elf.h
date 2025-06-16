@@ -276,7 +276,7 @@ public:
    BuildID() = default;
 };
 
-inline std::ostream & operator << (std::ostream &os, const Elf::BuildID &bid) { return os << AsHex(bid); }
+inline std::ostream & operator << (std::ostream &os, const Elf::BuildID &bid) { return os << AsHex{bid}; }
 
 // An ELF object - a shared lib, executable, or object file
 class Object : public std::enable_shared_from_this<Object> {

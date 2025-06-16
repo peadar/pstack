@@ -238,9 +238,9 @@ std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, boo
         std::vector<std::filesystem::path> &paths = isDebug ? debugBuildIdPrefixes : exeBuildIdPrefixes;
 
         std::stringstream bucket;
-        bucket << AsHex( bid[ 0 ] );
+        bucket << AsHex{bid[0]};
         std::stringstream rest;
-        rest << AsHex(std::views::all(bid) | std::views::drop(1));
+        rest << AsHex{std::views::all(bid) | std::views::drop(1)};
         if ( isDebug )
             rest << ".debug";
 
