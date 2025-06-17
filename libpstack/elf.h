@@ -451,9 +451,9 @@ public:
 
 class Notes::section_iterator {
     const Object *object;
-    Off sectionIndex;
-    Off sectionOffset;
-    const Section *section;
+    Off sectionIndex{};
+    Off sectionOffset{};
+    const Section *section{};
     Note curNote;
 
     bool nextNoteSection();

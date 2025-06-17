@@ -92,7 +92,6 @@ Notes::section_iterator::operator++() {
 
 Notes::section_iterator::section_iterator(const Object *object_)
    : object(object_)
-     , sectionIndex(0)
 {
    if (nextNoteSection())
       readNote();
