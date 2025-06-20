@@ -20,24 +20,33 @@ Unit::strx(size_t idx) {
     if (!dwarf->debugStrOffsets)
         throw Exception() << "no string offsets table, but have strx form";
     // Get the root die, and the string offset base.
-    auto base = intmax_t(root().attribute(DW_AT_str_offsets_base));
-    size_t seclen, entrysize;
-    Elf::Off tableStart;
-
-    if (version >= 5) {
-       DWARFReader r(dwarf->debugStrOffsets.io());
-       // Version 5 has a header
-       std::tie( seclen, entrysize ) = r.getlength();
-       [[maybe_unused]] auto version = r.getu16();
-       [[maybe_unused]] auto padding = r.getu16();
-       tableStart = r.getOffset();
+    auto offsets_base = root().attribute(DW_AT_str_offsets_base);
+    Elf::Off base;
+    size_t entrysize;
+    if (offsets_base.valid()) {
+       // non-DWO case.
+       base = Elf::Off(uintmax_t(offsets_base));
+       // XXX: this should be from the header, but I can't get to the header
+       // from here. "base" points just after it, but I can't back up over it
+       // without knowing the length encoded at the start of it. So let's just
+       // assume its the same as the unit for now.
+       entrysize = dwarfLen;
     } else {
-       // Old versions of this table just had 4-byte string offsets, I think.
-       seclen = std::numeric_limits<Elf::Off>::max();
-       entrysize = 4;
-       tableStart = 0;
+       if (version >= 5) {
+          DWARFReader r(dwarf->debugStrOffsets.io());
+          // Version 5 has a header
+          [[maybe_unused]] size_t seclen;
+          std::tie( seclen, entrysize ) = r.getlength();
+          [[maybe_unused]] auto version = r.getu16();
+          [[maybe_unused]] auto padding = r.getu16();
+          base = r.getOffset();
+       } else {
+          // Old versions of this table just had 4-byte string offsets, I think.
+          entrysize = 4;
+          base = 0;
+       }
     }
-    DWARFReader r(dwarf->debugStrOffsets.io(), tableStart + base + entrysize * idx);
+    DWARFReader r(dwarf->debugStrOffsets.io(), base + (entrysize * idx));
     return dwarf->debugStrings.io()->readString(r.getuint(entrysize));
 }
 
