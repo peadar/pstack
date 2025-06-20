@@ -18,11 +18,11 @@ Unit::load()
 std::string
 Unit::strx(size_t idx) {
     if (!dwarf->debugStrOffsets)
-        throw Exception() << "no string offsets table, but have strx form";
+        throw (Exception() << "no string offsets table, but have strx form");
     // Get the root die, and the string offset base.
     auto offsets_base = root().attribute(DW_AT_str_offsets_base);
-    Elf::Off base;
-    size_t entrysize;
+    Elf::Off base = 0;
+    size_t entrysize = 4;
     if (offsets_base.valid()) {
        // non-DWO case.
        base = Elf::Off(uintmax_t(offsets_base));
@@ -31,33 +31,33 @@ Unit::strx(size_t idx) {
        // without knowing the length encoded at the start of it. So let's just
        // assume its the same as the unit for now.
        entrysize = dwarfLen;
-    } else {
-       if (version >= 5) {
-          DWARFReader r(dwarf->debugStrOffsets.io());
-          // Version 5 has a header
-          [[maybe_unused]] size_t seclen;
-          std::tie( seclen, entrysize ) = r.getlength();
-          [[maybe_unused]] auto version = r.getu16();
-          [[maybe_unused]] auto padding = r.getu16();
-          base = r.getOffset();
-       } else {
-          // Old versions of this table just had 4-byte string offsets, I think.
-          entrysize = 4;
-          base = 0;
-       }
+    } else if (version >= 5) {
+       DWARFReader r(dwarf->debugStrOffsets.io());
+       // Version 5 has a header
+       [[maybe_unused]] size_t seclen = 0;
+       std::tie( seclen, entrysize ) = r.getlength();
+       [[maybe_unused]] auto version = r.getu16();
+       [[maybe_unused]] auto padding = r.getu16();
+       base = r.getOffset();
     }
     DWARFReader r(dwarf->debugStrOffsets.io(), base + (entrysize * idx));
-    return dwarf->debugStrings.io()->readString(r.getuint(entrysize));
+    uintmax_t offset = r.getuint(entrysize);
+    return dwarf->debugStrings.io()->readString(offset);
 }
 
 uintmax_t
 Unit::addrx(size_t idx) {
     if (!dwarf->debugAddr)
-        throw Exception() << "no debug addr table, but have addrx form";
+        throw (Exception() << "no debug addr table, but have addrx form");
     auto base = intmax_t(root().attribute(DW_AT_addr_base));
-    return dwarf->debugAddr.io()->readObj<Elf::Addr>(base + idx * sizeof(Elf::Addr));
+    auto addrlen = sizeof(Elf::Addr);
+    if (base > 2) {
+       // the header precedes this, and two bytes back, we get the address size.
+       DWARFReader r(dwarf->debugAddr.io(), base - 2);
+       addrlen = r.getu8();
+    }
+    return dwarf->debugAddr.io()->readObj<Elf::Addr>(base + (idx * addrlen));
 }
-
 
 uintmax_t
 Unit::rnglistx(size_t slot) {
