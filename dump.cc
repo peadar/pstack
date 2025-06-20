@@ -527,6 +527,7 @@ operator << (std::ostream &os, const JSON<Dwarf::Info> &di)
     if (debugFrame)
         writer.field("debugframe", *debugFrame);
     auto ehFrame = di.object.getCFI( Dwarf::FI_EH_FRAME );
+    if (ehFrame)
         writer.field("ehFrame", *ehFrame);
     return writer;
 }
