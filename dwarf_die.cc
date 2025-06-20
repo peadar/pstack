@@ -225,6 +225,8 @@ DIE::Attribute::Value::Value(DWARFReader &r, const FormEntry &forment, Unit *uni
         break;
 
     // offsets in various sections...
+    case DW_FORM_GNU_str_index:
+    case DW_FORM_GNU_addr_index:
     case DW_FORM_strx:
     case DW_FORM_loclistx:
     case DW_FORM_rnglistx:
@@ -575,6 +577,7 @@ DIE::Attribute::operator std::string() const
         case DW_FORM_strx3:
         case DW_FORM_strx4:
         case DW_FORM_strx:
+        case DW_FORM_GNU_str_index:
             return die.unit->strx(value().addr);
 
         default:

@@ -44,5 +44,7 @@ DWARF_FORM(DW_FORM_addrx3, 0x2b)
 DWARF_FORM(DW_FORM_addrx4, 0x2c)
 
 //XXX: GNU extensions. Please someone show me a proper references for these.
+DWARF_FORM(DW_FORM_GNU_addr_index, 0x1f01)
+DWARF_FORM(DW_FORM_GNU_str_index, 0x1f02)
 DWARF_FORM(DW_FORM_GNU_strp_alt, 0x1f21)
 DWARF_FORM(DW_FORM_GNU_ref_alt, 0x1f20)
