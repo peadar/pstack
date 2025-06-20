@@ -21,9 +21,24 @@ Unit::strx(size_t idx) {
         throw Exception() << "no string offsets table, but have strx form";
     // Get the root die, and the string offset base.
     auto base = intmax_t(root().attribute(DW_AT_str_offsets_base));
-    auto len = dwarfLen;
-    DWARFReader r(dwarf->debugStrOffsets.io(), base + len * idx);
-    return dwarf->debugStrings.io()->readString(r.getuint(len));
+    size_t seclen, entrysize;
+    Elf::Off tableStart;
+
+    if (version >= 5) {
+       DWARFReader r(dwarf->debugStrOffsets.io());
+       // Version 5 has a header
+       std::tie( seclen, entrysize ) = r.getlength();
+       [[maybe_unused]] auto version = r.getu16();
+       [[maybe_unused]] auto padding = r.getu16();
+       tableStart = r.getOffset();
+    } else {
+       // Old versions of this table just had 4-byte string offsets, I think.
+       seclen = std::numeric_limits<Elf::Off>::max();
+       entrysize = 4;
+       tableStart = 0;
+    }
+    DWARFReader r(dwarf->debugStrOffsets.io(), tableStart + base + entrysize * idx);
+    return dwarf->debugStrings.io()->readString(r.getuint(entrysize));
 }
 
 uintmax_t
