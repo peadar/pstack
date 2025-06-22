@@ -38,7 +38,7 @@ SET_TARGET_PROPERTIES(noreturn PROPERTIES COMPILE_FLAGS "-O2 -g")
 
 add_custom_command(
    OUTPUT basic-no-unwind-gen
-   COMMAND objcopy --strip-debug --remove-section .eh_frame basic basic-no-unwind
+   COMMAND ${CMAKE_OBJCOPY} --strip-debug --remove-section .eh_frame basic basic-no-unwind
    VERBATIM )
 
 add_custom_target(basic-no-unwind ALL DEPENDS basic basic-no-unwind-gen)
