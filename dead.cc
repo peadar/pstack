@@ -334,11 +334,13 @@ CoreProcess::loadSharedObjectsFromFileNote()
 
 std::optional<siginfo_t>
 CoreProcess::getSignalInfo() const {
+#ifdef NT_SIGINFO
    for ( const auto &note : coreImage->notes() ) {
       if ( note.name() == "CORE" && note.type() == NT_SIGINFO ) {
          return note.data()->readObj<siginfo_t>(0);
       }
    }
+#endif
    return std::nullopt;
 }
 

@@ -1243,11 +1243,21 @@ std::ostream &operator << (std::ostream &os, const SigInfo &sip) {
          { SIGSEGV,  {
                      { SEGV_MAPERR, "address not mapped to object" },
                         { SEGV_ACCERR, "invalid permissions for mapped object" },
+#ifdef SEGV_BNDERR
                         { SEGV_BNDERR, "address failed bouds checks" },
+#endif
+#ifdef SEGV_ACCADI
                         { SEGV_ACCADI, "ADI not enabled" },
+#endif
+#ifdef SEGV_ADIDERR
                         { SEGV_ADIDERR, "disrupting MCD error" },
+#endif
+#ifdef SEGV_ADIPERR
                         { SEGV_ADIPERR, "precise MCD exception" },
+#endif
+#ifdef SEGV_MTEAERR
                         { SEGV_MTEAERR, "asynchronous ARM MTE error" },
+#endif
                   } },
          { 0,     {
                      { SI_USER, "sent by kill/sigsend/raise" },
@@ -1258,7 +1268,9 @@ std::ostream &operator << (std::ostream &os, const SigInfo &sip) {
                      { SI_ASYNCIO, "sent by AIO completion" },
                      { SI_SIGIO, "sent by queued SIGIO" },
                      { SI_TKILL, "sent by tkill syscall" },
+#ifdef SI_DETHREAD
                      { SI_DETHREAD, "sent by execve killing subsidiary threads" },
+#endif
                      { SI_ASYNCNL, "sent by glibc async name lookup completion" },
                      { POLL_IN, "data input available" },
                      { POLL_OUT, "output buffers available" },
@@ -1276,7 +1288,9 @@ std::ostream &operator << (std::ostream &os, const SigInfo &sip) {
                       { ILL_PRVREG, "privileged register" },
                       { ILL_COPROC, "coprocessor error" },
                       { ILL_BADSTK, "internal stack error" },
+#ifdef ILL_BADIADDR
                       { ILL_BADIADDR, "unimplemented instruction address" },
+#endif
                       /*
                       { __ILL_BREAK, "illegal break" },
                       { __ILL_BNDMOD, "bundle-pudate (modification) in proress" }
@@ -1298,26 +1312,40 @@ std::ostream &operator << (std::ostream &os, const SigInfo &sip) {
                       { __FPE_INVASC, "invalid ASCII digit" },
                       { __FPE_INVDEC, "invalid decimal digit" },
                       */
+#ifdef FPE_FLTUNK
                       { FPE_FLTUNK, "undiagnosed floating point exception" },
+#endif
+#ifdef FPE_CONDTRAP
                       { FPE_CONDTRAP, "trap condition" },
+#endif
                    } },
          { SIGBUS, {
                       { BUS_ADRALN, "invalid address alignment" },
                       { BUS_ADRERR, "non-existent physical address" },
                       { BUS_OBJERR, "object specific hardware error" },
+#ifdef BUS_MCEERR_AR
                       { BUS_MCEERR_AR, "hardware memory error consumed on a machine check: action required" },
+#endif
+#ifdef BUS_MCEERR_AO
                       { BUS_MCEERR_AO, "hardware memory error consumed on a machine check: action optional" },
+#endif
                    }
          },
          { SIGTRAP, {
                        { TRAP_BRKPT, "process breakpoint" },
                        { TRAP_TRACE, "process trace trap" },
+#ifdef TRAP_BRANCH
                        { TRAP_BRANCH, "process taken branch trap" },
+#endif
+#ifdef TRAP_HWBKPT
                        { TRAP_HWBKPT, "hardware breakpoint/watchpoint" },
+#endif
+#ifdef TRAP_UNK
                        { TRAP_UNK, "undiagnosed trap" },
-                       /*
+#endif
+#ifdef TRAP_PERF
                        { TRAP_PERF, "perf event with sigtrap=1" },
-                       */
+#endif
                     }
          },
          {  SIGSYS, {
@@ -1329,8 +1357,17 @@ std::ostream &operator << (std::ostream &os, const SigInfo &sip) {
          },
    };
 
-   os << sigdescr_np( si.si_signo )
+#if defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 32))
+    #define HAVE_SIGXXX_NP
+#endif
+
+   os
+#ifdef HAVE_SIGXX_NP
+      << sigdescr_np( si.si_signo )
       << " SIG" << sigabbrev_np( si.si_signo )
+#else
+      << "si_signo " << si.si_signo
+#endif
       << ", si_code " << si.si_code;
 
    auto codesforsig = codes.find( si.si_signo );
