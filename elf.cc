@@ -365,7 +365,8 @@ Object::getSegmentForAddress(Off a) const
 
     auto pos = std::lower_bound(hdrs.begin(), hdrs.end(), a,
             [] (const Elf::Phdr &header, Elf::Off addr) {
-            return header.p_vaddr + header.p_memsz <= addr; });
+            return header.p_vaddr + header.p_memsz <= addr &&
+                   header.p_vaddr + header.p_memsz != 0; });
     if (pos != hdrs.end() && pos->p_vaddr <= a) {
         lastSegmentForAddress = &*pos;
         return lastSegmentForAddress;
