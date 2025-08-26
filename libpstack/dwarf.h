@@ -216,25 +216,34 @@ public:
         const DIE &die;
     public:
         using value_type = std::pair<AttrName, Attribute>;
+        using reference = value_type &;
         using mapped_type = Attribute;
         using key_type = AttrName;
+
         struct const_iterator {
-            const DIE &die;
+            using difference_type = std::ptrdiff_t;
+            using iterator_concept = std::input_iterator_tag;
+            using value_type = Attributes::value_type;
+
+            const DIE *diep = &null;
             Abbreviation::AttrNameMap::const_iterator rawIter;
-            std::pair<AttrName, Attribute> operator *() const;
+            value_type operator *() const;
             const_iterator &operator++() {
                 ++rawIter;
                 return *this;
             }
-            const_iterator(const DIE &die_, Abbreviation::AttrNameMap::const_iterator rawIter_) :
-                die(die_), rawIter(rawIter_) {}
-            bool operator == (const const_iterator &rhs) const {
-                return rawIter == rhs.rawIter;
+            const_iterator operator++(int) {
+                const_iterator ret { *this };
+                rawIter++;
+                return ret;
             }
-            bool operator != (const const_iterator &rhs) const {
-                return rawIter != rhs.rawIter;
-            }
+            const_iterator() {}
+            const_iterator(const DIE *diep_, Abbreviation::AttrNameMap::const_iterator rawIter_) :
+                diep(diep_), rawIter(rawIter_) {}
+            bool operator == (const const_iterator &rhs) const { return rawIter == rhs.rawIter; }
+            bool operator != (const const_iterator &rhs) const { return rawIter != rhs.rawIter; }
         };
+        using iterator = const_iterator;
         [[nodiscard]] const_iterator begin() const;
         [[nodiscard]] const_iterator end() const;
         explicit Attributes(const DIE &die) : die(die) {}
@@ -620,11 +629,12 @@ struct Units {
     public:
         using iterator_category = std::forward_iterator_tag;
         using value_type = Unit::sptr;
-        using difference_type = int;
+        using difference_type = std::ptrdiff_t;
         using pointer = Unit::sptr *;
         using reference = Unit::sptr &;
         Unit::sptr operator *() { return currentUnit; }
-        iterator operator ++();
+        iterator &operator ++();
+        iterator operator ++(int);
         bool operator == (const iterator &rhs) const {
             if (atend() || rhs.atend())
                 return atend() == rhs.atend();
@@ -749,7 +759,7 @@ public:
        : die{std::move(dieref_)}, formp{formp_} {}
     Attribute() noexcept : die(), formp(nullptr) {}
     ~Attribute() noexcept = default;
-    Attribute(const Attribute &) = delete;
+    Attribute(const Attribute &) = default;
     Attribute(Attribute &&) = default;
     Attribute &operator = (const Attribute &) = delete;
     Attribute &operator = (Attribute &&) = delete;
@@ -771,14 +781,23 @@ private:
 
 /* Iterator for direct children of a parent DIE, as returned by DIE::Children::begin() */
 class DIE::Children::const_iterator {
+
+private:
     friend DIE::Children;
-    const std::shared_ptr<const Unit> u;
-    const DIE parent;
+    std::shared_ptr<const Unit> u;
+    DIE parent;
     DIE currentDIE;
     const_iterator(const DIE &first, const DIE & parent_);
 public:
-    const DIE &operator *() const { return currentDIE; }
+    using value_type = DIE;
+    using reference = DIE &;
+    using difference_type = std::ptrdiff_t;
+    using iterator_concept = std::input_iterator_tag;
+
+    const DIE & operator *() { return currentDIE; }
     const_iterator &operator++();
+    const_iterator operator++(int);
+    const_iterator() {}
     bool operator == (const const_iterator &rhs) const {
         if (!currentDIE)
             return !rhs.currentDIE;
@@ -826,12 +845,22 @@ struct MacroVisitor {
 };
 
 inline
-Units::iterator Units::iterator::operator ++() {
+Units::iterator &Units::iterator::operator ++() {
     currentUnit = currentUnit->end == info->debugInfo.io()->size()
         ? nullptr
         : info->getUnit( currentUnit->end );
     return *this;
 }
+
+inline
+Units::iterator Units::iterator::operator ++(int) {
+    auto iter = *this;
+    currentUnit = currentUnit->end == info->debugInfo.io()->size()
+        ? nullptr
+        : info->getUnit( currentUnit->end );
+    return iter;
+}
+
 
 inline
 Units::iterator Units::begin() const {

@@ -58,6 +58,7 @@ add_definitions("-Wall -Wextra -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE")
 # Adding frame pointers makes things easy to run performance measurements with,
 # and doesn't cost much itself.
 add_definitions("-fno-omit-frame-pointer")
+add_definitions("-fconcepts-diagnostics-depth=8")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Make sure to use the local libpstack headers rather than what's installed.
 include_directories(${CMAKE_SOURCE_DIR})

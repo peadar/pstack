@@ -660,17 +660,17 @@ std::pair<AttrName, DIE::Attribute>
 DIE::Attributes::const_iterator::operator *() const {
     return std::make_pair(
             rawIter->first,
-            Attribute{ die, &die.raw->type->forms[rawIter->second] } );
+            Attribute{ *diep, &diep->raw->type->forms[rawIter->second] } );
 }
 
 DIE::Attributes::const_iterator
 DIE::Attributes::begin() const {
-    return { die, die.raw->type->attrName2Idx.begin() };
+    return { &die, die.raw->type->attrName2Idx.begin() };
 }
 
 DIE::Attributes::const_iterator
 DIE::Attributes::end() const {
-    return { die, die.raw->type->attrName2Idx.end() };
+    return { &die, die.raw->type->attrName2Idx.end() };
 }
 
 const DIE::Attribute::Value &DIE::Attribute::value() const {

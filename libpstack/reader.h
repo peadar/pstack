@@ -253,7 +253,11 @@ public:
          this->operator++();
          return self;
       };
-
+      iterator() {};
+      iterator(const iterator &rhs) = default;
+      iterator(iterator &&rhs) = default;
+      iterator &operator = (const iterator &rhs) = default;
+      iterator &operator = (iterator &&rhs) = default;
    };
 
    using const_iterator = iterator;

@@ -3,6 +3,7 @@
 #include <sys/procfs.h>
 #include <iomanip>
 #include <set>
+#include <ranges>
 #include <string.h>
 
 #if ELF_BITS == 64
@@ -24,6 +25,16 @@ struct DumpCFAInsns {
           , end(end_)
     {}
 };
+
+std::string
+to_string(Dwarf::AttrName code) {
+    switch (code) {
+#define DWARF_ATTR(x,y) case Dwarf::x: return #x;
+#include "libpstack/dwarf/attr.h"
+#undef DWARF_ATTR
+    default: return "unknown";
+    }
+}
 
 std::ostream &operator <<(std::ostream &os, const JSON<Dwarf::CFAInstruction> &j)
 {
@@ -252,13 +263,19 @@ std::ostream & operator << (std::ostream &os, const JSON<Dwarf::DIE> &jo) {
     auto &entry = jo.object;
     JObject o(os);
 
+
+    const auto &attrs = entry.attributes();
+    auto mappedattrs = std::views::transform(attrs, [](const auto &kv) {
+          return std::make_pair(to_string(kv.first), kv.second);
+          });
+
     o
         .field("name", entry.name())
         .field("type", entry.tag())
         .field("cuOffset", entry.getOffset() - entry.getUnit()->offset)
         .field("offset", entry.getOffset())
         .field("parent", entry.getParentOffset())
-        .field("attributes", entry.attributes());
+        .field("attributes", mappedattrs);
 
     if (entry.hasChildren())
         o.field("children", entry.children());
@@ -333,16 +350,6 @@ std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Form> &code) {
     default: return os << json("(unknown)");
     }
 #undef DWARF_FORM
-}
-
-std::ostream &
-operator << (std::ostream &os, const JSON<Dwarf::AttrName> &code) {
-#define DWARF_ATTR(x,y) case Dwarf::x: return os << json(#x) ;
-    switch (code.object) {
-#include "libpstack/dwarf/attr.h"
-    default: return os << '"' << int(code.object) << '"';
-    }
-#undef DWARF_ATTR
 }
 
 std::ostream &
@@ -470,7 +477,8 @@ operator <<(std::ostream &os, const JSON<Dwarf::CIE, const Dwarf::CFI *> &dcie)
     .field("return address reg", dcie.object.rar)
     .field("instruction length", dcie.object.end - dcie.object.initial_instructions)
     .field("LSDA encoding", int(dcie.object.lsdaEncoding))
-    .field("instructions", DumpCFAInsns(dcie.object.initial_instructions, dcie.object.end), dcie.context);
+    .field("instructions", DumpCFAInsns(dcie.object.initial_instructions, dcie.object.end), dcie.context)
+    ;
 }
 
 std::ostream &
@@ -482,24 +490,16 @@ operator << (std::ostream &os, const JSON<std::unique_ptr<Dwarf::FDE>, const Dwa
         .field("instructions", DumpCFAInsns(dfi.object->instructions, dfi.object->end), dfi.context);
 }
 
-struct AddrStr {
-    Elf::Addr addr;
-    explicit AddrStr(Elf::Addr addr_) : addr(addr_) {}
-};
-
-std::ostream &
-operator << (std::ostream &os, const JSON<AddrStr> &addr)
-{
-   return os << '"' << addr.object.addr << '"';
-}
-
 std::ostream &
 operator << (std::ostream &os, const JSON<Dwarf::CFI> &info)
 {
     const Dwarf::CFI::CIEs &cies = info.object.getCIEs();
-    Mapper<AddrStr, Dwarf::CFI::CIEs::mapped_type, Dwarf::CFI::CIEs> ciesByString(cies);
+    auto converted = std::views::transform( cies, [](const auto &stringcie) {
+          return std::make_pair(std::to_string(stringcie.first), stringcie.second);
+          });
+
     return JObject(os)
-        .field("cielist", ciesByString, &info.object)
+        .field("cielist", converted, &info.object)
         .field("fdelist", info.object.getFDEs(), &info.object)
         ;
    return os;
@@ -580,32 +580,22 @@ operator << (std::ostream &os, const JSON<Elf::NoteDesc> &note)
     return os;
 }
 
-struct ProgramHeaderName {
-   int type;
-   explicit ProgramHeaderName(int type_) : type(type_) {}
-};
-
-std::ostream &operator << (std::ostream &os, const JSON<ProgramHeaderName> &ph)
-{
-    static const std::map<int, const char *> names = {
-#define strpair(x) { x, #x }
-        strpair(PT_NULL),
-        strpair(PT_LOAD),
-        strpair(PT_DYNAMIC),
-        strpair(PT_INTERP),
-        strpair(PT_NOTE),
-        strpair(PT_SHLIB),
-        strpair(PT_PHDR),
-        strpair(PT_TLS),
-        strpair(PT_GNU_EH_FRAME),
-        strpair(PT_GNU_STACK),
-        strpair(PT_GNU_RELRO)
-#undef strpair
-    };
-    auto namei = names.find(ph.object.type);
-    if (namei != names.end())
-        return os << json(namei->second);
-    return os << '"' << ph.object.type << '"';
+std::string_view programHeaderName( int ph ) {
+    switch( ph ) {
+#define strpair(x) case x: return #x
+        strpair(PT_NULL);
+        strpair(PT_LOAD);
+        strpair(PT_DYNAMIC);
+        strpair(PT_INTERP);
+        strpair(PT_NOTE);
+        strpair(PT_SHLIB);
+        strpair(PT_PHDR);
+        strpair(PT_TLS);
+        strpair(PT_GNU_EH_FRAME);
+        strpair(PT_GNU_STACK);
+        strpair(PT_GNU_RELRO);
+        default: return "invalid program header type";
+    }
 }
 
 std::ostream &operator<< (std::ostream &os, const JSON<Elf::SymbolVersioning> &vi)
@@ -647,8 +637,7 @@ std::ostream &operator<< (std::ostream &os, const JSON<Elf::Object> &elf)
     auto &ehdr = elf.object.getHeader();
     auto brand = ehdr.e_ident[EI_OSABI];
 
-    Mapper<ProgramHeaderName, Elf::Object::ProgramHeadersByType::mapped_type, Elf::Object::ProgramHeadersByType>
-       mappedSegments(elf.object.programHeaders_);
+    auto mappedSegments = std::views::transform( elf.object.programHeaders_, [](const auto &pair) { return make_pair(programHeaderName( pair.first ), pair.second ); });
     JObject writer(os);
     writer
         .field("type", typeNames[ehdr.e_type])
@@ -865,7 +854,7 @@ operator<< (std::ostream &os, const JSON<Elf::Phdr, const Elf::Object *> &jo)
         .field("paddr", phdr.p_paddr)
         .field("filesz", phdr.p_filesz)
         .field("memsz", phdr.p_memsz)
-        .field("type", ProgramHeaderName(phdr.p_type))
+        .field("type", programHeaderName(phdr.p_type))
         .field("flags", flags)
         .field("alignment", phdr.p_align);
 

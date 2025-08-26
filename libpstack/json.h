@@ -1,11 +1,11 @@
 #ifndef _JSON_H_
 #define _JSON_H_
 #include <iostream>
-#include <functional>
 #include <type_traits>
 #include <cstdlib>
 #include <iomanip>
 #include <filesystem>
+#include <ranges>
 
 namespace pstack {
 /*
@@ -41,26 +41,21 @@ public:
    JSON() = delete;
 };
 
+
 /*
  * Easy way to create a JSON object, with a given context
  */
-template <typename T, typename C = char>
+template <typename T, typename C>
 JSON<T, C>
-json(const T &object, const C &context = C()) {
+json(const T &object, const C &context) {
    return JSON<T, C>(object, context);
 }
 
-/*
- * A field in a JSON object - arbitrary key and value.
- */
-template <typename K, typename V>
-struct Field {
-   const K &k;
-   const V &v;
-   Field(const K &k_, const V &v_) : k(k_), v(v_) {}
-   Field() = delete;
-   Field(const Field<K, V> &) = delete;
-};
+template <typename T>
+JSON<T, char>
+json(const T &object) {
+   return JSON<T, char>(object, {});
+}
 
 /*
  * A printer for JSON integral types - just serialize directly from C type.
@@ -102,6 +97,28 @@ operator << (std::ostream &os, const JSON<T[N], C> &j)
     return os << "]";
 }
 
+// String-like things.
+template <typename T> concept Stringish =
+      std::convertible_to<const T, std::string_view>;
+
+template <Stringish T>
+struct Escape {
+    const T &value;
+    Escape(const T &value_) : value(value_) { }
+};
+
+/*
+ * A field in a JSON object - "stringish" key, arbitrary value.
+ */
+template <Stringish K, typename V>
+struct Field {
+   const K &k;
+   const V &v;
+   Field(const K &k_, const V &v_) : k(k_), v(v_) {}
+   Field() = delete;
+   Field(const Field<K, V> &) = delete;
+};
+
 /*
  * Print a field of an object
  */
@@ -112,23 +129,43 @@ operator << (std::ostream &os, const JSON<Field<K,V>, C> &o)
    return os << json(o.object.k) << ":" << json(o.object.v, o.context);
 }
 
-/*
- * is_associative_container: returns true_type for containers with "mapped_type"
- */
-constexpr std::false_type is_associative_container(...) {
-    return std::false_type{};
+// A range  - render as a JSON list (except for StringKeyedRange, see below)
+// A string looks like a range, so special-case that.
+template <typename T> concept NonStringRange = !Stringish<T> && std::ranges::range<T>;
+
+// When printing containers, if the value_type is a pair of something
+// stringish, we assume its a string-keyed container/range.
+template <typename T>
+struct IsPair : std::false_type {
+};
+
+template <typename T1, typename T2>
+struct IsPair<std::pair<T1, T2>> : std::true_type {
+};
+
+// A range where the values are pairs, which have a stringish key. Render as a JSON object.
+template <typename T> concept StringKeyedRange =
+        NonStringRange<T> &&
+        IsPair<std::ranges::range_value_t<T>>::value &&
+        Stringish<typename std::ranges::range_value_t<T>::first_type> ;
+
+// Print an associative container as a JSON "object"
+template <StringKeyedRange Container, typename Context >
+void
+print_object_container(std::ostream &os, const Container &container, const Context &ctx)
+{
+   os << "{";
+   const char *sep = "";
+   for (const auto &field : container) {
+      os << sep << json( Field(field.first, field.second), ctx);
+      sep = ",\n";
+   }
+   os << "}";
 }
 
-template <typename C, typename = typename C::mapped_type>
-constexpr std::true_type is_associative_container(const C *) {
-    return std::true_type{};
-}
-
-/*
- * Print a non-associative container
- */
-template <typename Container, typename Context>
-void print_container(std::ostream &os, const Container &container, Context &&ctx, std::false_type)
+// Print a non-associative container
+template <NonStringRange Container, typename Context>
+void print_list_container(std::ostream &os, const Container &container, const Context &ctx)
 {
    os << "[ ";
    const char *sep = "";
@@ -139,42 +176,30 @@ void print_container(std::ostream &os, const Container &container, Context &&ctx
    os << " ]";
 }
 
-/*
- * Print an associative container
- */
-template <typename Container,
-         typename Context,
-         typename = std::true_type,
-         typename K = typename Container::key_type,
-         typename V = typename Container::mapped_type
-         >
-void
-print_container(std::ostream &os, const Container &container, Context ctx, std::true_type)
-{
-   os << "{";
-   const char *sep = "";
-   for (const auto &field : container) {
-      Field<K,V> jfield(field.first, field.second);
-      os << sep << json(jfield, ctx);
-      sep = ", ";
-   }
-   os << "}";
-}
-
-/*
- * Print any type of container
- */
-template <class Container, typename Context, typename = typename Container::value_type>
+// Reasonable printing of any container that is not just a string.
+template <NonStringRange Container, typename Context>
 std::ostream &
 operator << (std::ostream &os, const JSON<Container, Context> &container) {
-    print_container(os, container.object, container.context, is_associative_container(&container.object));
+    if constexpr (StringKeyedRange<Container>) {
+        print_object_container(os, container.object, container.context);
+    } else {
+        print_list_container(os, container.object, container.context);
+    }
     return os;
 }
 
-struct Escape {
-    std::string value;
-    Escape(std::string value_) : value(value_) { }
+template <NonStringRange T>
+struct NotAsObject {
+   const T &t;
 };
+
+template <typename Container, typename Context>
+std::ostream &
+operator << (std::ostream &os, const JSON<NotAsObject<Container>, Context> &container) {
+    print_list_container(os, container.object.t, container.context);
+    return os;
+}
+
 
 struct JSONEncodingError : public std::exception {
    std::string msg;
@@ -182,10 +207,12 @@ struct JSONEncodingError : public std::exception {
    JSONEncodingError(std::string &&rhs) : msg(std::move(rhs)) {}
 };
 
-inline std::ostream & operator << (std::ostream &o, const Escape &escape)
+template <typename T>
+inline std::ostream & operator << (std::ostream &o, const Escape<T> &escape)
 {
     auto flags(o.flags());
-    for (auto i = escape.value.begin(); i != escape.value.end();) {
+    std::string_view view{ escape.value };
+    for (auto i = view.begin(); i != view.end();) {
         int c;
         switch (c = (unsigned char)*i++) {
             case '\b': o << "\\b"; break;
@@ -225,23 +252,20 @@ inline std::ostream & operator << (std::ostream &o, const Escape &escape)
     return o;
 }
 
-
 /*
- * Print a JSON string (std::string, char *, etc)
+ * Print a JSON string
  */
-template <typename C>
+template <Stringish Str, typename C>
 std::ostream &
-operator << (std::ostream &os, const JSON<std::string, C> &json) {
+operator << (std::ostream &os, const JSON<Str, C> &json) {
    return os << "\"" << Escape(json.object) << "\"";
 }
 
-/*
- * Print a JSON string (std::filesystem::path, char *, etc)
- */
 template <typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<std::filesystem::path, C> &json) {
-   return os << "\"" << Escape(json.object) << "\"";
+   std::string pathStr = json.object;
+   return os << "\"" << Escape(pathStr) << "\"";
 }
 
 
@@ -250,40 +274,6 @@ std::ostream &
 operator << (std::ostream &os, const JSON<const char *, C> &json) {
    return os << "\"" << Escape(json.object) << "\"";
 }
-
-/*
- * A mapping type that converts the entries in a container to a different type
- * as you iterate over the original container.
- */
-template <class NK, class V, class Container> class Mapper {
-    const Container &container;
-public:
-    typedef typename Container::mapped_type mapped_type;
-    typedef typename std::pair<NK, const mapped_type &> value_type;
-    typedef NK key_type;
-    struct iterator {
-        typename Container::const_iterator realIterator;
-        value_type operator *() {
-            const auto &result = *realIterator;
-            return std::make_pair(NK(result.first), std::cref(result.second));
-        }
-        bool operator == (const iterator &lhs) {
-            return realIterator == lhs.realIterator;
-        }
-        bool operator != (const iterator &lhs) {
-            return realIterator != lhs.realIterator;
-        }
-        void operator ++() {
-            ++realIterator;
-        }
-        iterator(typename Container::const_iterator it_) : realIterator(it_) {}
-    };
-    typedef iterator const_iterator;
-
-    iterator begin() const { return iterator(container.begin()); }
-    iterator end() const { return iterator(container.end()); }
-    Mapper(const Container &container_): container(container_) {}
-};
 
 /* Helper for rendering compound types. */
 class JObject {
@@ -296,12 +286,18 @@ class JObject {
       ~JObject() {
          os << " }";
       }
-      template <typename K, typename V, typename C = char> JObject &field(const K &k, const V&v, const C &c = C()) {
-         Field<K,V> field(k, v);
+
+      template <typename K, typename V, typename C> JObject &field(const K &k, const V&v, const C &c) {
+         Field<K, V> field(k, v);
          os << sep << json(field, c);
          sep = ", ";
          return *this;
       }
+
+      template <typename K, typename V> JObject &field(const K &k, const V&v) {
+         return field(k, v, char(0));
+      }
+
       operator std::ostream &() { return os; }
 };
 
@@ -312,8 +308,8 @@ template <typename F, typename S, typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<std::pair<F, S>, C> &json) {
    return JObject(os)
-       .field("first", json.object.first)
-       .field("second", json.object.second);
+       .field("first", json.object.first, json.context)
+       .field("second", json.object.second, json.context);
 }
 
 

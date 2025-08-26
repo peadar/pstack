@@ -99,13 +99,15 @@ Notes::section_iterator::section_iterator(const Object *object_)
 
 Notes::segment_iterator::segment_iterator(const Object *object_)
     : object(object_)
-    , phdrs(object_->getSegments(PT_NOTE))
+    , phdrs(&object_->getSegments(PT_NOTE))
     , offset(0)
 {
-    phdrsi = phdrs.begin();
-    if (phdrsi != phdrs.end()) {
-        startSection();
-        readNote();
+    if (phdrs) {
+       phdrsi = phdrs->begin();
+       if (phdrsi != phdrs->end()) {
+           startSection();
+           readNote();
+       }
     }
 }
 
@@ -118,7 +120,7 @@ Notes::segment_iterator &Notes::segment_iterator::operator++()
 {
     auto newOff = offset + noteSize( curNote );
     if (newOff >= phdrsi->p_filesz) {
-        if (++phdrsi == phdrs.end()) {
+        if (++phdrsi == phdrs->end()) {
             offset = 0;
             return *this;
         }

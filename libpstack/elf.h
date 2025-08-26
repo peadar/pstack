@@ -416,6 +416,7 @@ class NoteDesc {
    Reader::csptr io;
 public:
 
+   NoteDesc() = default;
    NoteDesc(const NoteDesc &rhs) = default;
    NoteDesc(const Note &note_, Reader::csptr io_) : note(note_) , io(io_) { }
    [[nodiscard]] std::string name() const;
@@ -425,7 +426,7 @@ public:
 
 class Notes::segment_iterator {
     const Object *object;
-    const Object::ProgramHeaders &phdrs;
+    const Object::ProgramHeaders *phdrs{};
     Object::ProgramHeaders::const_iterator phdrsi;
     Off offset;
     Note curNote;
@@ -434,14 +435,19 @@ class Notes::segment_iterator {
     void startSection();
 public:
     segment_iterator(const Object *object_);
+    segment_iterator(const segment_iterator &rhs) = default;
+    segment_iterator(segment_iterator &&rhs) = default;
+    segment_iterator &operator = ( const segment_iterator &rhs ) = default;
+    segment_iterator &operator = ( segment_iterator &&rhs ) = default;
+
     bool operator == (const segment_iterator &rhs) const {
-        return &phdrs == &rhs.phdrs && phdrsi == rhs.phdrsi && offset == rhs.offset;
+        return phdrs == rhs.phdrs && phdrsi == rhs.phdrsi && ( phdrs == nullptr || offset == rhs.offset );
     }
     bool operator != (const segment_iterator &rhs) const {
         return !(*this == rhs);
     }
     bool operator == (const sentinel &) const {
-       return phdrsi == phdrs.end();
+       return phdrsi == phdrs->end();
     }
     segment_iterator &operator++();
     NoteDesc operator *() {
@@ -461,6 +467,11 @@ class Notes::section_iterator {
     void readNote() { section->io()->readObj(sectionOffset, &curNote); }
 public:
     section_iterator(const Object *object_ );
+    section_iterator(const section_iterator &rhs) = default;
+    section_iterator(section_iterator &&rhs) = default;
+    section_iterator &operator = (const section_iterator &rhs) = default;
+    section_iterator &operator = (section_iterator &&rhs) = default;
+    section_iterator() = default;
 
     bool operator == (const section_iterator &rhs) const {
         return object == rhs.object &&
@@ -483,10 +494,31 @@ public:
 };
 
 class Notes::iterator {
-   std::variant<Notes::section_iterator, Notes::segment_iterator> choice;
+   struct invalid{
+      bool operator == ( const auto & ) const { return false; }
+      invalid & operator ++ ( ) { return *this; }
+      invalid operator ++ ( int ) { return *this; }
+      invalid(const invalid &) { }
+      invalid(invalid &&) { }
+      invalid() {}
+      invalid &operator = (const invalid &) = default;
+      invalid &operator = (invalid &&) = default;
+      using difference_type = int;
+      NoteDesc operator *() { return NoteDesc{}; }
+   };
+   std::variant<Notes::section_iterator, Notes::segment_iterator, invalid> choice;
 public:
+    using difference_type = std::ptrdiff_t;
+
     iterator(Notes::section_iterator &&it) : choice( it ) {}
     iterator(Notes::segment_iterator &&it) : choice( it ) {}
+    iterator() : choice{invalid{}} {}
+    iterator(const iterator &rhs) : choice{rhs.choice} {}
+
+    iterator & operator = (const iterator &rhs) {
+       std::visit([this](auto &arg) { choice = arg; }, rhs.choice);
+       return *this;
+    }
 
     bool operator == (const sentinel &rhs) const {
        return std::visit([&rhs](auto &lhs) { return lhs == rhs; }, choice);
@@ -502,6 +534,12 @@ public:
        std::visit([](auto &arg) { ++arg; }, choice);
        return *this;
     }
+    iterator operator++(int) {
+       auto ret = *this;
+       std::visit([](auto &arg) { ++arg; }, choice);
+       return ret;
+    }
+
     NoteDesc operator *() {
        return std::visit([](auto &arg) { return *arg; }, choice);
     }

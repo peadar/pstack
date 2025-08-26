@@ -89,6 +89,23 @@ LiveProcess::getPID() const
     return pid;
 }
 
+std::string
+LiveProcess::getTaskName(lwpid_t tid) const {
+   std::filesystem::path task { context.procname( getPID(), "task" ) };
+   std::ifstream f { task / std::to_string( tid ) / "stat" };
+   if (f.good()) {
+      std::string line;
+      std::getline( f, line );
+      auto start = line.find( '(' );
+      auto end = line.rfind( ')' );
+      if (start != std::string::npos && end != std::string::npos ) {
+         return line.substr(start + 1, end - start - 1);
+      }
+   }
+   return Process::getTaskName( tid );
+}
+
+
 LiveProcess::~LiveProcess() {
    for (auto &lwp : stoppedLWPs) {
       if (lwp.second.stopCount > 0) {

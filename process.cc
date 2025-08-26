@@ -66,6 +66,7 @@ std::ostream &
 operator << (std::ostream &os, const JSON<Procman::ThreadStack, Procman::Process *> &ts)
 {
     return JObject(os)
+        .field("name", ts.object.name)
         .field("ti_tid", ts.object.info.ti_tid)
         .field("ti_lid", ts.object.info.ti_lid)
         .field("ti_type", ts.object.info.ti_type)
@@ -683,8 +684,11 @@ std::ostream &
 Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
 {
     os << std::dec;
-    os << "thread: " << (void *)thread.info.ti_tid << ", lwp: "
-       << thread.info.ti_lid << ", type: " << thread.info.ti_type << "\n";
+    os << "thread: " << (void *)thread.info.ti_tid
+       << ", lwp: " << thread.info.ti_lid
+       << ", type: " << thread.info.ti_type
+       << ", name: " << thread.name
+       << "\n";
     int frameNo = 0;
     for (auto &frame : thread.stack)
         dumpFrameText(os, frame, frameNo++);
@@ -1161,10 +1165,17 @@ Process::load(Context &context, Elf::Object::sptr exec, std::string id) {
     return proc;
 }
 
+std::string
+Process::getTaskName(lwpid_t lwp) const {
+   std::stringstream os;
+   os << "unnamed task " << lwp;
+   return os.str();
+}
+
 std::list<ThreadStack>
 Process::getStacks() {
     std::list<ThreadStack> threadStacks;
-    std::set<pid_t> tracedLwps;
+    std::set<lwpid_t> tracedLwps;
     StopProcess processSuspender(this);
 
     /*
@@ -1185,9 +1196,11 @@ Process::getStacks() {
 #endif
         if (the == TD_OK) {
             threadStacks.push_back(ThreadStack());
-            td_thr_get_info(thr, &threadStacks.back().info);
-            threadStacks.back().unwind(*this, regs);
-            tracedLwps.insert(threadStacks.back().info.ti_lid);
+            ThreadStack &back = threadStacks.back();
+            td_thr_get_info(thr, &back.info);
+            back.unwind(*this, regs);
+            back.name = getTaskName(back.info.ti_lid);
+            tracedLwps.insert(back.info.ti_lid);
         }
     });
 
@@ -1204,11 +1217,12 @@ Process::getStacks() {
       */
     listLWPs([this, &threadStacks, &tracedLwps](lwpid_t lwpid) {
         if (tracedLwps.find(lwpid) == tracedLwps.end()) {
-            threadStacks.push_back(ThreadStack());
+            threadStacks.emplace_back();
             threadStacks.back().info.ti_lid = lwpid;
             Elf::CoreRegisters regs;
             this->getRegset<Elf::CoreRegisters, NT_PRSTATUS>(lwpid,  regs);
             threadStacks.back().unwind(*this, regs);
+            threadStacks.back().name = getTaskName(lwpid);
         }
     });
 
@@ -1421,7 +1435,7 @@ operator << (std::ostream &os, const JSON<Procman::StackFrame, Procman::Process 
     else
         jo.field("symbol", JsonNull());
 
-    jo.field("source", location.source());
+    jo.field("source", NotAsObject{location.source()});
 
     return jo;
 }

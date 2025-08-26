@@ -3,21 +3,24 @@
 import pstack
 import json
 
-pstack, text = pstack.JSON(["tests/thread"])
+# We use the "live" strategy here, as that's the only one to support thread
+# names
+pstack, text = pstack.JSON(["tests/thread", "-w"], strategy="live")
 result = json.loads(text)
-threads = result["threads"]
-lwps = result["lwps"]
-assert_at = result["assert_at"]
+# Convert the threads list into a map keyed by numeric pthread_t
+threads = { thread["pthread_t"]: thread for thread in result["threads"] }
 
 # we have 10 threads + main
 assert len(threads) == 11
-for thread in pstack:
-    # this will throw an error if the thread or LWP is not in the output for
-    # the command, indicating a thread or LWP id from pstack was wrong.
-    threads.remove(thread["ti_tid"])
-    lwps.remove(thread["ti_lid"])
+assert len(pstack) == len(threads)
 
-    for frame in thread["ti_stack"]:
+for pstackThread in pstack:
+    expectedThread = threads[pstackThread["ti_tid"]]
+    assert expectedThread["name"] == pstackThread["name"]
+    assert expectedThread["pthread_t"] == pstackThread["ti_tid"]
+    assert expectedThread["lwp"] == pstackThread["ti_lid"]
+
+    for frame in pstackThread["ti_stack"]:
         if frame['die'] == 'entry':
             # the soruce for "entry" should be thread.c
             if not frame['source']:
@@ -26,9 +29,4 @@ for thread in pstack:
                 assert frame['source'][0]['file'].endswith( 'thread.cc' )
                 lineNo = frame['source'][0]['line']
                 # we should be between unlocking the mutex and pausing
-                assert lineNo == assert_at
-
-# When we are finished, pstack should have found all the threads and lwps that
-# reported in the output from the command.
-assert not lwps
-assert not threads
+                assert lineNo == result["assert_at"]

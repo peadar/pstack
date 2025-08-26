@@ -1,4 +1,5 @@
 import json
+import signal
 import subprocess
 import coremonitor
 import contextlib
@@ -7,30 +8,39 @@ import os
 import tempfile
 
 PSTACK_BIN = os.environ.get("PSTACK_BIN", "pstack")
-DO_CORE = os.environ.get("PSTACK_TEST_USECORE", None)
 
-def _run(cmd, args):
-    if DO_CORE:
+CORE_STRATEGY = os.environ.get("PSTACK_CORE_STRATEGY", "child")
+
+def _run(cmd, mode, strategy ):
+    pstackArgs = ["./%s" % PSTACK_BIN, mode ]
+    if strategy == "core":
         with coremonitor.CoreMonitor(cmd) as cm:
-            args.append(cm.core())
-            pstackOutput = subprocess.check_output(args, universal_newlines=True)
+            pstackArgs.append(cm.core())
+            pstackOutput = subprocess.check_output(pstackArgs, universal_newlines=True)
             return pstackOutput, cm.output
-    else:
+    elif strategy == "child":
         fd, fname = tempfile.mkstemp()
         pstackOutput = os.fdopen(fd, "r")
-        args.append("-o")
-        args.append(fname)
-        args.append("-x")
-        args.append(" ".join(cmd))
-        programOutput = subprocess.check_output(args, universal_newlines=True)
+        pstackArgs.append("-o")
+        pstackArgs.append(fname)
+        pstackArgs.append("-x")
+        pstackArgs.append(" ".join(cmd))
+        programOutput = subprocess.check_output(pstackArgs, universal_newlines=True)
         os.remove( fname )
         return pstackOutput.read(), programOutput
+    elif strategy == "live":
+        with subprocess.Popen( cmd, stdout=subprocess.PIPE) as proc:
+            procOutput = proc.stdout.read(1000)
+            pstackArgs.append( str( proc.pid ) )
+            pstackOutput = subprocess.check_output(pstackArgs, universal_newlines=True)
+            os.kill(proc.pid, signal.SIGINT)
+            return pstackOutput, procOutput
 
-def TEXT(cmd):
-    return _run(cmd, ["./%s" % PSTACK_BIN, "-a"])
+def TEXT(cmd, strategy=CORE_STRATEGY):
+    return _run(cmd, mode="-a", strategy=strategy)
 
-def JSON(cmd):
-    pstack, target = _run(cmd, ["./%s" % PSTACK_BIN, "-j" ])
+def JSON(cmd, strategy=CORE_STRATEGY):
+    pstack, target = _run(cmd, mode="-j", strategy=strategy)
     return json.loads(pstack), target
 
 def dumpJSON(image):
