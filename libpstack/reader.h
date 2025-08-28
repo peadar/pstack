@@ -222,7 +222,10 @@ class ReaderArray {
    mutable std::array<T, cachesize> cache;
 
 public:
-   class sentinel { }; // to return from 'end()'
+   class iterator;
+   struct sentinel {
+      bool operator == (const iterator &rhs) const noexcept;
+   }; // to return from 'end()'
    using value_type = T;
 
    class iterator {
@@ -274,6 +277,8 @@ public:
       }
    }
 };
+template <typename T, size_t sz>
+bool ReaderArray<T, sz>::sentinel::operator == (const iterator &rhs) const noexcept { return rhs.idx == rhs.arrayp->eof; }
 
 template<typename T, size_t cachesize>
 typename ReaderArray<T, cachesize>::iterator &ReaderArray<T, cachesize>::iterator::operator ++() noexcept {

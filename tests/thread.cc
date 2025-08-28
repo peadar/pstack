@@ -87,6 +87,11 @@ main(int argc, char *argv[])
             break;
       }
    }
+   int killsig = SIGTERM;
+   sigset_t mask;
+   sigemptyset(&mask);
+   sigaddset(&mask, killsig);
+   sigprocmask(SIG_BLOCK, &mask, nullptr);
 
    // the main thread will appear in the pstack output.
    lwps[pthread_self()] = syscall(SYS_gettid);
@@ -99,6 +104,7 @@ main(int argc, char *argv[])
       assert(rc == 0);
       threads.push_back(tid);
    }
+   sigprocmask(SIG_UNBLOCK, &mask, nullptr);
 
    // Make sure all threads have gotten to update in_entry.
    for (;;) {
