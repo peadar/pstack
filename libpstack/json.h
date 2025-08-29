@@ -70,7 +70,7 @@ operator << (std::ostream &os, const JSON<unsigned char, C>&json) {
 template <typename T, typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<T, C>&json)
-   requires (std::is_integral<T>::value && !std::is_same<T, unsigned char>::value)
+   requires (std::is_integral_v<T> && !std::is_same_v<T, unsigned char>)
 {
    return os << json.object;
 }
@@ -83,32 +83,13 @@ std::ostream &
 operator << (std::ostream &os, const JSON<bool, C> &json)
    { return os << (json.object ? "true" : "false"); }
 
-/*
- * printers for arrays. char[N] is special, we treat that as a string.
- */
-template <typename C, size_t N>
-std::ostream &
-operator << (std::ostream &os, const JSON<char[N], C> &json)
-    { return os << JSON<const char *, C>(&json.object[0], json.context); }
-
-template <typename T, size_t N, typename C>
-std::ostream &
-operator << (std::ostream &os, const JSON<T[N], C> &j)
-{
-    os << "[";
-    for (size_t i = 0; i < N; ++i) {
-        os << (i ? ",\n" : "") << json(j.object[i], j.context);
-    }
-    return os << "]";
-}
-
 // String-like things.
 template <typename T> concept Stringish = std::convertible_to<const T, std::string_view>;
 
 template <Stringish T>
 struct Escape {
     const T &value;
-    Escape(const T &value_) : value(value_) { }
+    explicit Escape(const T &value_) : value(value_) { }
 };
 
 /*
@@ -119,8 +100,13 @@ struct Field {
    const K &k;
    const V &v;
    Field(const K &k_, const V &v_) : k(k_), v(v_) {}
+
    Field() = delete;
    Field(const Field<K, V> &) = delete;
+   Field(Field<K, V> &&) = delete;
+   Field &operator = (const Field &) = delete;
+   Field &operator = (Field &&) = delete;
+   ~Field() = default;
 };
 
 /*
@@ -202,8 +188,8 @@ operator << (std::ostream &os, const JSON<NotAsObject<Container>, Context> &cont
 // Exception thrown when encoding error happens.
 struct JSONEncodingError : public std::exception {
    std::string msg;
-   const char *what() const noexcept { return msg.c_str(); }
-   JSONEncodingError(std::string &&rhs) : msg(std::move(rhs)) {}
+   [[nodiscard]] const char *what() const noexcept override { return msg.c_str(); }
+   explicit JSONEncodingError(std::string &&rhs) : msg(std::move(rhs)) {}
 };
 
 // Escape a string, and print it out.
@@ -213,8 +199,8 @@ inline std::ostream & operator << (std::ostream &o, const Escape<T> &escape)
     auto flags(o.flags());
     std::string_view view{ escape.value };
     for (auto i = view.begin(); i != view.end();) {
-        int c;
-        switch (c = (unsigned char)*i++) {
+        int c = (unsigned char)*i++;
+        switch (c) {
             case '\b': o << "\\b"; break;
             case '\f': o << "\\f"; break;
             case '\n': o << "\\n"; break;
@@ -277,6 +263,10 @@ class JObject {
    public:
       explicit JObject(std::ostream &os_) : os{os_} { os << "{ "; }
       ~JObject() { os << " }"; }
+      JObject(const JObject &) = delete;
+      JObject(JObject &&) = delete;
+      auto operator = (const JObject &) = delete;
+      auto operator = (JObject &&) = delete;
 
       template <typename K, typename V, typename C> JObject &field(const K &k, const V&v, const C &c) {
          Field<K, V> field(k, v);
@@ -310,7 +300,7 @@ class JsonNull {};
 
 template <typename C>
 std::ostream &
-operator << (std::ostream &os, const JSON<JsonNull, C> &) {
+operator << (std::ostream &os, [[maybe_unused]] const JSON<JsonNull, C> &null) {
    return os << "null";
 }
 }
