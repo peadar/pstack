@@ -5,7 +5,7 @@ import json
 
 # We use the "live" strategy here, as that's the only one to support thread
 # names
-pstack, text = pstack.JSON(["tests/thread", "-w"], strategy="live")
+pstack, text = pstack.JSON(["tests/thread"], strategy="child")
 result = json.loads(text)
 # Convert the threads list into a map keyed by numeric pthread_t
 threads = { thread["pthread_t"]: thread for thread in result["threads"] }
