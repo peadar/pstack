@@ -172,7 +172,7 @@ struct PrintableFrame {
 
 struct ThreadStack {
     td_thrinfo_t info {};
-    std::string name;
+    std::optional<std::string> name;
     std::vector<StackFrame> stack;
     void unwind(Process &, Elf::CoreRegisters &regs);
 };
@@ -252,7 +252,7 @@ protected:
     td_thragent_t *agent;
     static AddressSpace procAddressSpace(const std::string &fn); //  utility to parse contents of /proc/pid/maps
     virtual bool loadSharedObjectsFromFileNote() = 0;
-    virtual std::string getTaskName( lwpid_t ) const;
+    [[nodiscard]] virtual std::optional<std::string> getTaskName( lwpid_t ) const;
 
 public:
     [[nodiscard]] Elf::Addr getVdsoBase() const { return vdsoBase; };
@@ -360,7 +360,7 @@ public:
 protected:
     bool loadSharedObjectsFromFileNote() override;
     [[nodiscard]] std::vector<AddressRange> addressSpace() const override;
-    std::string getTaskName( lwpid_t task ) const override;
+    std::optional<std::string> getTaskName( lwpid_t task ) const override;
 };
 
 

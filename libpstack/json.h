@@ -303,5 +303,15 @@ std::ostream &
 operator << (std::ostream &os, [[maybe_unused]] const JSON<JsonNull, C> &null) {
    return os << "null";
 }
+
+template <typename T, typename C>
+std::ostream &
+operator << (std::ostream &os, [[maybe_unused]] const JSON<std::optional<T>, C> &optional) {
+   if (optional.object) {
+      return os << json(*optional.object, optional.context);
+   }
+   return os << json(JsonNull{}, optional.context);
+}
+
 }
 #endif

@@ -687,8 +687,11 @@ Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
     os << "thread: " << (void *)thread.info.ti_tid
        << ", lwp: " << thread.info.ti_lid
        << ", type: " << thread.info.ti_type
-       << ", name: " << thread.name
-       << "\n";
+       ;
+    if (thread.name)
+       os << ", name: " << *thread.name;
+    os << "\n";
+
     int frameNo = 0;
     for (auto &frame : thread.stack)
         dumpFrameText(os, frame, frameNo++);
@@ -1165,11 +1168,9 @@ Process::load(Context &context, Elf::Object::sptr exec, std::string id) {
     return proc;
 }
 
-std::string
-Process::getTaskName(lwpid_t lwp) const {
-   std::stringstream os;
-   os << "unnamed task " << lwp;
-   return os.str();
+std::optional<std::string>
+Process::getTaskName([[maybe_unused]] lwpid_t lwp) const {
+   return std::nullopt;
 }
 
 std::list<ThreadStack>
@@ -1419,25 +1420,14 @@ operator << (std::ostream &os, const JSON<Procman::StackFrame, Procman::Process 
     auto &frame =jt.object;
     Procman::ProcessLocation location = frame.scopeIP(*jt.context);
     Procman::PrintableFrame pframe(*jt.context, frame);
-
-    JObject jo(os);
-    jo
+    return JObject(os)
         .field("ip", frame.rawIP())
         .field("offset", pframe.functionOffset)
         .field("trampoline", frame.isSignalTrampoline)
         .field("die", pframe.dieName)
         .field("loadaddr", location.elfReloc())
-        ;
-
-    const auto &sym = location.symbol();
-    if (sym)
-        jo.field("symbol", *sym);
-    else
-        jo.field("symbol", JsonNull());
-
-    jo.field("source", NotAsObject{location.source()});
-
-    return jo;
+        .field("symbol", location.symbol())
+        .field("source", NotAsObject{location.source()});
 }
 
 }

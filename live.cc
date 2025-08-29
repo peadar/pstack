@@ -89,7 +89,7 @@ LiveProcess::getPID() const
     return pid;
 }
 
-std::string
+std::optional<std::string>
 LiveProcess::getTaskName(lwpid_t tid) const {
    std::filesystem::path task { context.procname( getPID(), "task" ) };
    std::ifstream f { task / std::to_string( tid ) / "stat" };
