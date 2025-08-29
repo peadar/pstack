@@ -41,7 +41,6 @@ public:
    JSON() = delete;
 };
 
-
 /*
  * Easy way to create a JSON object, with a given context
  */
@@ -67,9 +66,14 @@ operator << (std::ostream &os, const JSON<unsigned char, C>&json) {
    return os << int(json.object);
 }
 
+// Print an integer
 template <typename T, typename C>
-typename std::enable_if<std::is_integral<T>::value && !std::is_same<T, unsigned char>::value, std::ostream>::type &
-operator << (std::ostream &os, const JSON<T, C>&json) { return os << json.object; }
+std::ostream &
+operator << (std::ostream &os, const JSON<T, C>&json)
+   requires (std::is_integral<T>::value && !std::is_same<T, unsigned char>::value)
+{
+   return os << json.object;
+}
 
 /*
  * A printer for JSON boolean types: print "true" or "false"
@@ -99,8 +103,7 @@ operator << (std::ostream &os, const JSON<T[N], C> &j)
 }
 
 // String-like things.
-template <typename T> concept Stringish =
-      std::convertible_to<const T, std::string_view>;
+template <typename T> concept Stringish = std::convertible_to<const T, std::string_view>;
 
 template <Stringish T>
 struct Escape {
@@ -136,13 +139,8 @@ template <typename T> concept NonStringRange = !Stringish<T> && std::ranges::ran
 
 // When printing containers, if the value_type is a pair of something
 // stringish, we assume its a string-keyed container/range.
-template <typename T>
-struct IsPair : std::false_type {
-};
-
-template <typename T1, typename T2>
-struct IsPair<std::pair<T1, T2>> : std::true_type {
-};
+template <typename T> struct IsPair : std::false_type { };
+template <typename T1, typename T2> struct IsPair<std::pair<T1, T2>> : std::true_type { };
 
 // A range where the values are pairs, which have a stringish key. Render as a JSON object.
 template <typename T> concept StringKeyedRange =
@@ -189,11 +187,11 @@ operator << (std::ostream &os, const JSON<Container, Context> &container) {
     return os;
 }
 
-template <NonStringRange T>
-struct NotAsObject {
-   const T &t;
-};
+// If you have a container that just happens to be a container of pairs where
+// the first thing is a string, then wrap it in this ...
+template <NonStringRange T> struct NotAsObject { const T &t; };
 
+// ... and it will print as a list always.
 template <typename Container, typename Context>
 std::ostream &
 operator << (std::ostream &os, const JSON<NotAsObject<Container>, Context> &container) {
@@ -201,13 +199,14 @@ operator << (std::ostream &os, const JSON<NotAsObject<Container>, Context> &cont
     return os;
 }
 
-
+// Exception thrown when encoding error happens.
 struct JSONEncodingError : public std::exception {
    std::string msg;
    const char *what() const noexcept { return msg.c_str(); }
    JSONEncodingError(std::string &&rhs) : msg(std::move(rhs)) {}
 };
 
+// Escape a string, and print it out.
 template <typename T>
 inline std::ostream & operator << (std::ostream &o, const Escape<T> &escape)
 {
@@ -262,6 +261,8 @@ operator << (std::ostream &os, const JSON<Str, C> &json) {
    return os << "\"" << Escape(json.object) << "\"";
 }
 
+// std::filesystem::path's don't implicitly convert to strings, but its useful
+// to be able to jsonify them as if they do.
 template <typename C>
 std::ostream &
 operator << (std::ostream &os, const JSON<std::filesystem::path, C> &json) {
@@ -269,24 +270,13 @@ operator << (std::ostream &os, const JSON<std::filesystem::path, C> &json) {
    return os << "\"" << Escape(pathStr) << "\"";
 }
 
-
-template <typename C>
-std::ostream &
-operator << (std::ostream &os, const JSON<const char *, C> &json) {
-   return os << "\"" << Escape(json.object) << "\"";
-}
-
 /* Helper for rendering compound types. */
 class JObject {
    std::ostream &os;
-   const char *sep;
+   const char *sep{""};
    public:
-      JObject(std::ostream &os_) : os(os_), sep("") {
-         os << "{ ";
-      }
-      ~JObject() {
-         os << " }";
-      }
+      explicit JObject(std::ostream &os_) : os{os_} { os << "{ "; }
+      ~JObject() { os << " }"; }
 
       template <typename K, typename V, typename C> JObject &field(const K &k, const V&v, const C &c) {
          Field<K, V> field(k, v);
@@ -299,11 +289,13 @@ class JObject {
          return field(k, v, char(0));
       }
 
+      // implicit conversion to an std::ostream allows this to be returned from
+      // an operator<< output streaming function
       operator std::ostream &() { return os; }
 };
 
 /*
- * Fallback printer for pairs.
+ * Fallback printer for pairs - just print them as "first" and "second"
  */
 template <typename F, typename S, typename C>
 std::ostream &
@@ -313,7 +305,7 @@ operator << (std::ostream &os, const JSON<std::pair<F, S>, C> &json) {
        .field("second", json.object.second, json.context);
 }
 
-
+// Our null type.
 class JsonNull {};
 
 template <typename C>
@@ -322,6 +314,4 @@ operator << (std::ostream &os, const JSON<JsonNull, C> &) {
    return os << "null";
 }
 }
-
-
 #endif
