@@ -37,7 +37,7 @@ template <typename T, typename C = char> class JSON {
 public:
    const T& object;
    const C &context;
-   JSON(const T &object_, const C &context_ = C()) : object(object_), context(context_) {}
+   JSON(const T &object_, const C &context_) : object(object_), context(context_) {}
    JSON() = delete;
 };
 
@@ -54,7 +54,8 @@ json(const T &object, const C &context) {
 template <typename T>
 JSON<T, char>
 json(const T &object) {
-   return JSON<T, char>(object, {});
+   static char defaultContext; // we need a non-temporary for this.
+   return JSON<T, char>(object, defaultContext);
 }
 
 /*
