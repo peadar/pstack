@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
-set(PSTACK_SOVERSION 2.14)
-set(PSTACK_VERSION 2.14)
+set(PSTACK_SOVERSION 2.15)
+set(PSTACK_VERSION 2.15)
 project(pstack LANGUAGES C CXX VERSION "${PSTACK_VERSION}" )
 
 include (GNUInstallDirs)
