@@ -1011,7 +1011,14 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
         }
 
         case DW_CFA_restore: {
-            frame.registers[reg] = dframe.registers.at(reg);
+            // We may not support every DWARF register if we don't decode them
+            // from the machine context. Case in point - AARCH64 registers
+            // require parsing the _aarch64_ctx content in the reserved field
+            // of the m_context.t
+            auto iter = dframe.registers.find(reg);
+            if (iter != dframe.registers.end()) {
+               frame.registers[reg] = iter->second;
+            }
             break;
         }
 
@@ -1053,10 +1060,15 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
                 break;
             }
 
-            case DW_CFA_restore_extended:
+            case DW_CFA_restore_extended: {
+                // See caveat about supported registers in DW_CFA_restore case above.
                 reg = r.getuleb128();
-                frame.registers[reg] = dframe.registers.at(reg);
+                auto iter = dframe.registers.find( reg );
+                if (iter != dframe.registers.end()) {
+                   frame.registers[reg] = iter->second;
+                }
                 break;
+            }
 
             case DW_CFA_undefined:
                 reg = r.getuleb128();
