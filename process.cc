@@ -28,7 +28,7 @@
 #define SP(regs) regs.esp
 #define IP(regs) (regs.eip)
 #elif defined(__aarch64__)
-#define IP(regs) (regs.pc)
+#define IP(regs) (regs.user.pc)
 #endif
 namespace pstack {;
 
@@ -999,7 +999,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                 }
 #ifdef __aarch64__
                 auto &cur = stack.back();
-                if (newRegs.pc == trampoline)
+                if (newRegs.user.pc == trampoline)
                     cur.isSignalTrampoline = true;
 #endif
             }
@@ -1050,7 +1050,8 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                         }
 
 #elif defined(__aarch64__)
-                        newRegs.pc = prev.regs.regs[30]; // Copy old link register into new instruction pointer.
+                        // Copy old link register into new instruction pointer.
+                        newRegs.user.pc = prev.regs.user.regs[30];
                         stack.emplace_back(UnwindMechanism::BAD_IP_RECOVERY, newRegs);
                         continue;
 #endif
@@ -1065,12 +1066,38 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                        siginfo_t si;
                        ucontext_t uc;
                     };
-                    auto sigframe = p.io->readObj<rt_sigframe>(prev.regs.sp);
+                    auto sigframe = p.io->readObj<rt_sigframe>(prev.regs.user.sp);
                     Elf::CoreRegisters newRegs;
                     for (int i = 0; i < 31; ++i)
-                       newRegs.regs[i] = sigframe.uc.uc_mcontext.regs[i];
-                    newRegs.sp = sigframe.uc.uc_mcontext.sp;
-                    newRegs.pc = sigframe.uc.uc_mcontext.pc;
+                       newRegs.user.regs[i] = sigframe.uc.uc_mcontext.regs[i];
+                    newRegs.user.sp = sigframe.uc.uc_mcontext.sp;
+                    newRegs.user.pc = sigframe.uc.uc_mcontext.pc;
+                    // Copy any extension registers. (For now, just the FP/SIMD set.)
+                    const unsigned char *rawctx = sigframe.uc.uc_mcontext.__reserved;
+                    const struct _aarch64_ctx *aarchctx;
+                    for (bool done = false; !done; rawctx += aarchctx->size) {
+                       aarchctx = reinterpret_cast<const _aarch64_ctx *>(rawctx);
+                       switch (aarchctx->magic) {
+                          case 0:
+                             done = true;
+                             break;
+                          case FPSIMD_MAGIC: {
+                             auto fpsimd = reinterpret_cast<const user_fpsimd_struct *>(rawctx + aarchctx->size);
+                             newRegs.fpsimd = *fpsimd; // struct copy.
+
+                             break;
+                          }
+                          default:
+                             if (p.context.debug && p.context.verbose > 1) {
+                                *p.context.debug
+                                   << "ignoring unrecognized AARCH64 register set in signal frame: "
+                                   << "magic: " << reinterpret_cast<void *>(aarchctx->magic)
+                                   << ", len " << aarchctx->size <<"\n";
+                             }
+                             break;
+                       }
+                    }
+
                     stack.emplace_back(UnwindMechanism::TRAMPOLINE, newRegs);
                     continue;
                 }
