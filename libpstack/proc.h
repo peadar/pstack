@@ -19,6 +19,7 @@ extern "C" {
 
 #include "libpstack/ps_callback.h"
 #include "libpstack/dwarf.h"
+#include "libpstack/arch.h"
 
 struct ps_prochandle {};
 
@@ -133,10 +134,10 @@ public:
 
 class StackFrame {
 public:
-    [[nodiscard]] Elf::Addr rawIP() const;
+    [[nodiscard]] gpreg rawIP() const;
     ProcessLocation scopeIP(Process &) const;
-    Elf::CoreRegisters regs;
-    Elf::Addr cfa;
+    CoreRegisters regs;
+    gpreg cfa;
     UnwindMechanism mechanism;
 
     // This frame is a signal trampoline, eg, at a function like
@@ -147,11 +148,9 @@ public:
     // the function above it on the stack.
     bool unwoundFromTrampoline{};
 
-    StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs);
+    StackFrame(UnwindMechanism mechanism, const CoreRegisters &regs);
 
-    std::optional<Elf::CoreRegisters> unwind(Process &);
-    void setCoreRegs(const Elf::CoreRegisters &);
-    void getCoreRegs(Elf::CoreRegisters &) const;
+    std::optional<CoreRegisters> unwind(Process &);
     uintptr_t getFrameBase(Process &) const;
 };
 
@@ -177,7 +176,7 @@ struct ThreadStack {
     td_thrinfo_t info {};
     std::optional<std::string> name;
     std::vector<StackFrame> stack;
-    void unwind(Process &, Elf::CoreRegisters &regs);
+    void unwind(Process &, const CoreRegisters &regs);
 };
 
 struct DevNode {
@@ -274,6 +273,7 @@ public:
     template <typename T, int code> size_t getRegset(lwpid_t pid, T &reg) {
         return getRegs(pid, code, sizeof (T), reinterpret_cast<void *>( &reg ) );
     }
+    CoreRegisters getCoreRegs(lwpid_t lwp);
 
     [[nodiscard]] virtual std::optional<siginfo_t> getSignalInfo() const = 0;
 
@@ -467,9 +467,6 @@ struct SigInfo {
    const siginfo_t &si;
 };
 std::ostream &operator << (std::ostream &os, const SigInfo &);
-
-void gregset2core(Elf::CoreRegisters &core, const gregset_t greg);
-
 std::ostream &operator << (std::ostream &os, WaitStatus ws);
 }
 

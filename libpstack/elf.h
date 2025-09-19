@@ -44,6 +44,7 @@
 #include <optional>
 #include <utility>
 #include <variant>
+#include "libpstack/arch.h"
 #include "libpstack/context.h"
 #include "libpstack/json.h"
 #include "libpstack/reader.h"
@@ -382,35 +383,6 @@ private:
     SymHash *hash() const { return get_hash(hash_); }
     GnuHash *gnu_hash() const { return get_hash(gnu_hash_); }
     const Object *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
-};
-
-// These are the architecture specific types representing the NT_PRSTATUS registers.
-#if defined(__PPC)
-typedef struct pt_regs CoreRegisters;
-#elif defined(__aarch64__)
-struct CoreRegisters {
-   user_regs_struct user;
-   user_fpsimd_struct fpsimd;
-};
-#else
-typedef struct user_regs_struct CoreRegisters;
-#endif
-
-inline Addr getReg(const CoreRegisters &regs, int reg) {
-#define REGMAP(regno, field) case regno: return regs.field;
-    switch (reg) {
-#include "libpstack/archreg.h"
-    }
-#undef REGMAP
-    return 0;
-};
-
-inline void setReg(CoreRegisters &regs, int reg, Addr val) {
-#define REGMAP(regno, field) case regno: regs.field = val; break;
-    switch (reg) {
-#include "libpstack/archreg.h"
-    }
-#undef REGMAP
 };
 
 /*

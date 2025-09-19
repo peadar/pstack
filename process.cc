@@ -13,20 +13,20 @@
 #include <csignal>
 #include <sys/signal.h>
 
-#include "libpstack/archreg.h"
+#include "libpstack/arch.h"
 #include "libpstack/dwarf.h"
 #include "libpstack/proc.h"
 #include "libpstack/stringify.h"
 #include "libpstack/ioflag.h"
 
 #if defined(__amd64__)
-#define BP(regs) (regs.rbp)
-#define SP(regs) (regs.rsp)
-#define IP(regs) (regs.rip)
+#define BP(regs) (regs.user.rbp)
+#define SP(regs) (regs.user.rsp)
+#define IP(regs) (regs.user.rip)
 #elif defined(__i386__)
-#define BP(regs) regs.ebp
-#define SP(regs) regs.esp
-#define IP(regs) (regs.eip)
+#define BP(regs) (regs.user.ebp)
+#define SP(regs) (regs.user.esp)
+#define IP(regs) (regs.user.eip)
 #elif defined(__aarch64__)
 #define IP(regs) (regs.user.pc)
 #endif
@@ -103,7 +103,7 @@ namespace Procman {
  */
 #ifndef __aarch64__
 void
-gregset2core(Elf::CoreRegisters &core, const gregset_t greg) {
+gregset2user(user_regs_struct &core, const gregset_t greg) {
 #if defined(__i386__)
     core.edi = greg[REG_EDI];
     core.esi = greg[REG_ESI];
@@ -963,7 +963,7 @@ Process::~Process()
 }
 
 void
-ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
+ThreadStack::unwind(Process &p, const CoreRegisters &regs)
 {
     stack.clear();
     stack.reserve(20);
@@ -982,9 +982,6 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
 
     try {
         stack.emplace_back(UnwindMechanism::MACHINEREGS, regs);
-
-        // Set up the first frame using the machine context registers
-        stack.front().setCoreRegs(regs);
 
         for (int frameCount = 0; frameCount < p.context.options.maxframes; frameCount++) {
             auto &prev = stack.back();
@@ -1037,7 +1034,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                 if (prev.mechanism == UnwindMechanism::MACHINEREGS
                       || prev.mechanism == UnwindMechanism::TRAMPOLINE
                       || prev.unwoundFromTrampoline ) {
-                    ProcessLocation badip = { p, IP(prev.regs) };
+                    ProcessLocation badip { p, Elf::Addr(IP(prev.regs)) };
                     if (!badip.inObject() || (badip.codeloc->phdr().p_flags & PF_X) == 0) {
                         auto newRegs = prev.regs; // start with a copy of prev frames regs.
 #if defined(__amd64__) || defined(__i386__)
@@ -1070,7 +1067,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                        ucontext_t uc;
                     };
                     auto sigframe = p.io->readObj<rt_sigframe>(prev.regs.user.sp);
-                    Elf::CoreRegisters newRegs;
+                    CoreRegisters newRegs;
                     for (int i = 0; i < 31; ++i)
                        newRegs.user.regs[i] = sigframe.uc.uc_mcontext.regs[i];
                     newRegs.user.sp = sigframe.uc.uc_mcontext.sp;
@@ -1085,9 +1082,7 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                              done = true;
                              break;
                           case FPSIMD_MAGIC: {
-                             auto fpsimd = reinterpret_cast<const user_fpsimd_struct *>(rawctx + aarchctx->size);
-                             newRegs.fpsimd = *fpsimd; // struct copy.
-
+                             newRegs.fpsimd = *reinterpret_cast<const user_fpsimd_struct *>(rawctx + aarchctx->size);
                              break;
                           }
                           default:
@@ -1106,20 +1101,18 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                 }
                 // last ditch effort for ARM is to just replace the PC with the
                 // LR - this is useful for PLT entries, for example.
-                if (prev.regs.regs[30] != prev.regs.pc) {
-                   Elf::CoreRegisters newRegs = prev.regs;
-                   newRegs.pc = newRegs.regs[30];
+                if (prev.regs.user.regs[30] != prev.regs.user.pc) {
+                   CoreRegisters newRegs = prev.regs;
+                   newRegs.user.pc = newRegs.user.regs[30];
                    stack.emplace_back(UnwindMechanism::LINKREG, newRegs);
                    continue;
                 }
 
 #endif
+#if defined(__i386__) || defined(__amd64__)
+                auto [ reloc, obj, segment ] = p.findSegment(prev.rawIP());
 #if defined(__i386__)
                 // Deal with signal trampolines for i386
-                Elf::Addr reloc;
-                const Elf::Phdr *segment;
-                Elf::Object::sptr obj;
-                std::tie(reloc, obj, segment) = p.findSegment(prev.rawIP());
                 if (obj) {
                     Elf::Addr sigContextAddr = 0;
                     auto objip = prev.rawIP() - reloc;
@@ -1137,14 +1130,13 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                        // This mapping is based on DWARF regnos, and ucontext.h
                        gregset_t regs;
                        p.io->readObj(sigContextAddr, &regs);
-                       Elf::CoreRegisters core;
-                       gregset2core(core, regs);
+                       CoreRegisters core;
+                       gregset2user(core.user, regs);
                        stack.emplace_back(UnwindMechanism::TRAMPOLINE, core);
                        continue;
                     }
                 }
 #endif
-#if defined(__i386__) || defined(__amd64__)
                 // frame-pointer unwinding.
                 // Use ebp/rbp to find return address and saved BP.
                 // Restore those, and the stack pointer itself.
@@ -1154,21 +1146,29 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                 // a 0 ip on the call stack, it's a good indication the
                 // unwinding is finished.
                 if (prev.rawIP() != 0) {
-                   Elf::Addr newBp, newIp, oldBp;
-                   oldBp = BP(prev.regs);
+                   Elf::Addr oldBp = BP(prev.regs);
                    if (oldBp == 0) {
                       // null base pointer means we're done.
                       break;
                    }
-                   p.io->readObj(oldBp + ELF_BYTES, &newIp);
-                   p.io->readObj(oldBp, &newBp);
-                   if (newBp > oldBp && newIp > 4096) {
-                       Elf::CoreRegisters newRegs = prev.regs;
+                   auto newIp = p.io->readObj<Elf::Addr> (oldBp + ELF_BYTES);
+                   auto newBp = p.io->readObj<Elf::Addr>(oldBp);
+                   auto [ _1, _2, segment ] = p.findSegment(newIp);
+
+                   // If the value we got for the instruction pointer is in an
+                   // executable segment, then consider that good enough
+                   // evidence that we were probably successful with our
+                   // frame-pointer based unwind. This is the last chance
+                   // anyway, o worst case is you get some noisy junk stack
+                   // frames at the end.
+
+                   if (segment && segment->p_flags & PF_X) {
+                       CoreRegisters newRegs = prev.regs;
                        SP(newRegs) = oldBp + ELF_BYTES * 2;
-                       BP(newRegs) = newBp;
                        IP(newRegs) = newIp;
+                       BP(newRegs) = newBp;
+                       stack.back().cfa = SP(newRegs);
                        stack.emplace_back(UnwindMechanism::FRAMEPOINTER, newRegs);
-                       stack.back().cfa = newBp;
                        continue;
                    }
                 }
@@ -1227,7 +1227,7 @@ Process::getStacks() {
      */
     listThreads([this, &threadStacks, &tracedLwps] (
                        const td_thrhandle_t *thr) {
-        Elf::CoreRegisters regs;
+        CoreRegisters regs;
         td_err_e the;
 #ifdef __linux__
         the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
@@ -1259,9 +1259,7 @@ Process::getStacks() {
         if (tracedLwps.find(lwpid) == tracedLwps.end()) {
             threadStacks.emplace_back();
             threadStacks.back().info.ti_lid = lwpid;
-            Elf::CoreRegisters regs;
-            this->getRegset<Elf::CoreRegisters, NT_PRSTATUS>(lwpid,  regs);
-            threadStacks.back().unwind(*this, regs);
+            threadStacks.back().unwind(*this, getCoreRegs( lwpid ));
             threadStacks.back().name = getTaskName(lwpid);
         }
     });
@@ -1274,6 +1272,20 @@ Process::getStacks() {
     if (!context.options.doargs)
         processSuspender.clear();
     return threadStacks;
+}
+
+CoreRegisters
+Process::getCoreRegs(lwpid_t lwp) {
+   CoreRegisters coreRegs;
+   getRegset<user_regs_struct, NT_PRSTATUS>(lwp, coreRegs.user);
+#ifdef __aarch64__
+   getRegset<user_fpsimd_struct, NT_FPREGSET>(lwp, coreRegs.fpsimd);
+#elif defined(__x86_64__)
+   getRegset<user_fpregs_struct, NT_FPREGSET>(lwp, coreRegs.fp);
+#elif defined(__i386__)
+   getRegset<user_fpxregs_struct, NT_PRXFPREG>(lwp, coreRegs.fpx);
+#endif
+   return coreRegs;
 }
 
 std::ostream &

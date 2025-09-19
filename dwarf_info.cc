@@ -218,6 +218,8 @@ Abbreviation::Abbreviation(DWARFReader &r)
     , sorted(false)
     , nextSibIdx(-1)
 {
+    forms.reserve(4);
+    attrName2Idx.reserve(4);
     for (size_t i = 0;; ++i) {
         auto name = AttrName(r.getuleb128());
         auto form = Form(r.getuleb128());
@@ -229,6 +231,8 @@ Abbreviation::Abbreviation(DWARFReader &r)
         forms.emplace_back(form, value);
         attrName2Idx.emplace_back(name, i);
     }
+    attrName2Idx.shrink_to_fit();
+    forms.shrink_to_fit();
 }
 
 std::unique_ptr<LineInfo>
