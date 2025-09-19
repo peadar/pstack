@@ -520,7 +520,7 @@ enum RegisterType {
 // A regiser unwind indicates how to restore the state of a register in the
 // calling frame
 struct RegisterUnwind {
-    enum RegisterType type;
+    enum RegisterType type { ARCH };
     union {
         uintmax_t same;
         intmax_t offset;
@@ -534,7 +534,7 @@ struct RegisterUnwind {
 // it is the result of execting the location instructions in the FDE and CIE
 // to a specific address.
 struct CallFrame {
-    std::map<int, RegisterUnwind> registers;
+    std::unordered_map<int, RegisterUnwind> registers;
     int cfaReg;
     RegisterUnwind cfaValue;
     CallFrame();
@@ -1011,14 +1011,9 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
         }
 
         case DW_CFA_restore: {
-            // We may not support every DWARF register if we don't decode them
-            // from the machine context. Case in point - AARCH64 registers
-            // require parsing the _aarch64_ctx content in the reserved field
-            // of the m_context.t
-            auto iter = dframe.registers.find(reg);
-            if (iter != dframe.registers.end()) {
-               frame.registers[reg] = iter->second;
-            }
+            auto update = dframe.registers.find(reg);
+            if (update != dframe.registers.end())
+               frame.registers[reg] = update->second;
             break;
         }
 
@@ -1047,26 +1042,26 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
             case DW_CFA_offset_extended: {
                 auto reg = r.getuleb128();
                 auto offset = r.getuleb128();
-                frame.registers[reg].type = OFFSET;
-                frame.registers[reg].u.offset = offset * dataAlign;
+                auto &regdat = frame.registers[reg];
+                regdat.type = OFFSET;
+                regdat.u.offset = offset * dataAlign;
                 break;
             }
 
             case DW_CFA_offset_extended_sf: {
                 auto reg = r.getuleb128();
                 auto offset = r.getsleb128();
-                frame.registers[reg].type = OFFSET;
-                frame.registers[reg].u.offset = offset * dataAlign;
+                auto &regdat = frame.registers[reg];
+                regdat.type = OFFSET;
+                regdat.u.offset = offset * dataAlign;
                 break;
             }
 
             case DW_CFA_restore_extended: {
-                // See caveat about supported registers in DW_CFA_restore case above.
                 reg = r.getuleb128();
-                auto regi = dframe.registers.find(reg);
-                if (regi != dframe.registers.end()) {
-                   frame.registers[reg] = regi->second;
-                }
+                auto oldreg = dframe.registers.find(reg);
+                if (oldreg != dframe.registers.end())
+                   frame.registers[reg] = oldreg->second;
                 break;
             }
 
@@ -1083,8 +1078,9 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
             case DW_CFA_register: {
                 auto reg1 = r.getuleb128();
                 auto reg2 = r.getuleb128();
-                frame.registers[reg1].type = REG;
-                frame.registers[reg1].u.reg = reg2;
+                auto &regdat = frame.registers[reg1];
+                regdat.type = REG;
+                regdat.u.reg = reg2;
                 break;
             }
 
@@ -1181,10 +1177,12 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
     }
     return frame;
 }
+
 }
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Info> &);
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Macros> &);
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::DIE> &);
+
 }
 
 #endif

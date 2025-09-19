@@ -488,7 +488,7 @@ void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr
         const PyVarObject varargs = readPyObj<PyV, PyVarObject>(*pc->proc.io, Elf::Addr(tuplePtr));
 
         auto varargCount = varargs.ob_size;
-        if (varArgCount >= 0 && varArgCount < 128) {
+        if (varargCount >= 0 && varargCount < 128) {
 
            PyObject *objects[varargCount];
            pc->proc.io->readObj(Elf::Addr(tuplePtr) + offsetof(PyTupleObject, ob_item), objects, varargCount);
@@ -502,11 +502,11 @@ void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr
     }
 
     // keyword-only arguments: > 128 is likely an error, and we don't want to spend the memory on it.
-    if (kwonlyArgCount > 0 && kwonlyArgCout < 128) {
-        std::vector<PyObject *> kwonlyArgNames(kwOnlyArgNames);
-        std::vector<PyObject *> kwonlyArgs(kwOnlyArgNames);
-        pc->proc.io->readObj(varnamesAddr + argCount * sizeof(PyObject *), kwonlyArgNames.data(), kwonlyArgCount.size());
-        pc->proc.io->readObj(localsAddr + argCount * sizeof(PyObject *), kwonlyArgs.data(), kwonlyArgCount.size());
+    if (kwonlyArgCount > 0 && kwonlyArgCount < 128) {
+        std::vector<PyObject *> kwonlyArgNames(kwonlyArgCount);
+        std::vector<PyObject *> kwonlyArgs(kwonlyArgCount);
+        pc->proc.io->readObj(varnamesAddr + argCount * sizeof(PyObject *), kwonlyArgNames.data(), kwonlyArgNames.size());
+        pc->proc.io->readObj(localsAddr + argCount * sizeof(PyObject *), kwonlyArgs.data(), kwonlyArgs.size());
 
         for (int i = 0; i < kwonlyArgCount; i++) {
             pc->os << sep;

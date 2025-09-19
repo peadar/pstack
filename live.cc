@@ -143,7 +143,7 @@ LiveProcess::stopProcess()
             for (dirent *de; (de = readdir(d)) != nullptr; ) {
                 char *p;
                 lwpid_t tid = strtol(de->d_name, &p, 0);
-                if (*p == 0) {
+                if (*p == 0 && tid != 0) {
                     auto [_, isnew ] = suspended.insert(tid);
                     if (isnew)
                         stop(tid);

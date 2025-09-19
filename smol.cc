@@ -1,5 +1,5 @@
 #include "libpstack/proc.h"
-#include "libpstack/archreg.h"
+#include "libpstack/arch.h"
 #include <unistd.h>
 
 extern "C" {
