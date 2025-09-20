@@ -1,6 +1,6 @@
 #include "libpstack/proc.h"
 #include "libpstack/context.h"
-#include "libpstack/archreg.h"
+#include "libpstack/arch.h"
 #include <unistd.h>
 #include <cassert>
 

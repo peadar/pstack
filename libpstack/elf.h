@@ -44,6 +44,7 @@
 #include <optional>
 #include <utility>
 #include <variant>
+#include "libpstack/arch.h"
 #include "libpstack/context.h"
 #include "libpstack/json.h"
 #include "libpstack/reader.h"
@@ -387,31 +388,18 @@ private:
 // These are the architecture specific types representing the NT_PRSTATUS registers.
 #if defined(__PPC)
 typedef struct pt_regs CoreRegisters;
-#elif defined(__aarch64__)
+#else
 struct CoreRegisters {
    user_regs_struct user;
+#ifdef __aarch64__
    user_fpsimd_struct fpsimd;
-};
-#else
-typedef struct user_regs_struct CoreRegisters;
+#elif defined(__x86_64__)
+   user_fpregs_struct fp;
+#elif defined(__i386__)
+   user_fpxregs_struct fpx;
 #endif
-
-inline Addr getReg(const CoreRegisters &regs, int reg) {
-#define REGMAP(regno, field) case regno: return regs.field;
-    switch (reg) {
-#include "libpstack/archreg.h"
-    }
-#undef REGMAP
-    return 0;
 };
-
-inline void setReg(CoreRegisters &regs, int reg, Addr val) {
-#define REGMAP(regno, field) case regno: regs.field = val; break;
-    switch (reg) {
-#include "libpstack/archreg.h"
-    }
-#undef REGMAP
-};
+#endif
 
 /*
  * Describes a note. Notes have a name, a type, and some associated data.

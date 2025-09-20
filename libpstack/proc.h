@@ -147,8 +147,6 @@ public:
     StackFrame(UnwindMechanism mechanism, const Elf::CoreRegisters &regs);
 
     std::optional<Elf::CoreRegisters> unwind(Process &);
-    void setCoreRegs(const Elf::CoreRegisters &);
-    void getCoreRegs(Elf::CoreRegisters &) const;
     uintptr_t getFrameBase(Process &) const;
 };
 
@@ -174,7 +172,7 @@ struct ThreadStack {
     td_thrinfo_t info {};
     std::optional<std::string> name;
     std::vector<StackFrame> stack;
-    void unwind(Process &, Elf::CoreRegisters &regs);
+    void unwind(Process &, const Elf::CoreRegisters &regs);
 };
 
 struct DevNode {
@@ -271,6 +269,7 @@ public:
     template <typename T, int code> size_t getRegset(lwpid_t pid, T &reg) {
         return getRegs(pid, code, sizeof (T), reinterpret_cast<void *>( &reg ) );
     }
+    Elf::CoreRegisters getCoreRegs(lwpid_t lwp);
 
     [[nodiscard]] virtual std::optional<siginfo_t> getSignalInfo() const = 0;
 
@@ -465,7 +464,12 @@ struct SigInfo {
 };
 std::ostream &operator << (std::ostream &os, const SigInfo &);
 
-void gregset2core(Elf::CoreRegisters &core, const gregset_t greg);
+#ifndef __aarch64__
+void gregset2user(user_regs_struct &core, const gregset_t greg);
+#endif
+
+uintmax_t getReg(const Elf::CoreRegisters &regs, int reg);
+void setReg(Elf::CoreRegisters &regs, int reg, uintmax_t val);
 
 std::ostream &operator << (std::ostream &os, WaitStatus ws);
 }

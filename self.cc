@@ -47,7 +47,7 @@ SelfProcess::getRegs(lwpid_t, int code, size_t size, void *regs) // for now, we 
           memcpy(regs, &context.uc_mcontext.regs, size);
 #else
           assert(size == sizeof (user_regs_struct));
-          gregset2core(*reinterpret_cast<user_regs_struct *>(regs), context.uc_mcontext.gregs);
+          gregset2user(*reinterpret_cast<user_regs_struct *>(regs), context.uc_mcontext.gregs);
 #endif
           return size;
 #ifndef __aarch64__ // TODO

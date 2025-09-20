@@ -1,3 +1,4 @@
+#include "libpstack/arch.h"
 #include "libpstack/dwarf.h"
 #include "libpstack/elf.h"
 #include "libpstack/proc.h"
@@ -7,26 +8,11 @@
 extern std::ostream & operator << (std::ostream &os, const pstack::Dwarf::DIE &);
 
 namespace pstack::Procman {
-void
-StackFrame::setCoreRegs(const Elf::CoreRegisters &sys)
-{
-#define REGMAP(number, field) Elf::setReg(regs, number, sys.field);
-#include "libpstack/archreg.h"
-#undef REGMAP
-}
-
-void
-StackFrame::getCoreRegs(Elf::CoreRegisters &core) const
-{
-#define REGMAP(number, field) core.field = Elf::getReg(regs, number);
-#include "libpstack/archreg.h"
-#undef REGMAP
-}
 
 Elf::Addr
 StackFrame::rawIP() const
 {
-    return Elf::getReg(regs, IPREG);
+    return getReg(regs, IPREG);
 }
 
 ProcessLocation
@@ -278,7 +264,7 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
             case DW_OP_breg24: case DW_OP_breg25: case DW_OP_breg26: case DW_OP_breg27:
             case DW_OP_breg28: case DW_OP_breg29: case DW_OP_breg30: case DW_OP_breg31: {
                 auto offset = r.getsleb128();
-                push(Elf::getReg(frame->regs, op - DW_OP_breg0) + offset);
+                push(getReg(frame->regs, op - DW_OP_breg0) + offset);
                 break;
             }
 
@@ -439,10 +425,10 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
             case DW_OP_reg28: case DW_OP_reg29: case DW_OP_reg30: case DW_OP_reg31:
                 isValue = true;
                 inReg = op - DW_OP_reg0;
-                push(Elf::getReg(frame->regs, op - DW_OP_reg0));
+                push(getReg(frame->regs, op - DW_OP_reg0));
                 break;
             case DW_OP_regx:
-                push(Elf::getReg(frame->regs, int(r.getsleb128())));
+                push(getReg(frame->regs, int(r.getsleb128())));
                 break;
 
             case DW_OP_entry_value:
@@ -541,7 +527,7 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
         case SAME:
         case UNDEF:
         case ARCH:
-            cfa = Elf::getReg(regs, dcf.cfaReg);
+            cfa = getReg(regs, dcf.cfaReg);
             break;
         case VAL_OFFSET:
         case VAL_EXPRESSION:
@@ -549,7 +535,7 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
             throw (Exception() << "unhandled CFA value type " << dcf.cfaValue.type);
 
         case OFFSET:
-            cfa = Elf::getReg(regs, dcf.cfaReg) + dcf.cfaValue.u.offset;
+            cfa = getReg(regs, dcf.cfaReg) + dcf.cfaValue.u.offset;
             break;
 
         case EXPRESSION: {
@@ -565,29 +551,19 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     }
     auto rarInfo = dcf.registers.find(cie->rar);
 
-    for (const auto &entry : dcf.registers) {
-        const RegisterUnwind &unwind = entry.second;
-        int regno = entry.first;
+    out = regs;
+#ifdef CFA_RESTORE_REGNO
+    // "The CFA is defined to be the stack pointer in the calling frame."
+    setReg( out, CFA_RESTORE_REGNO, cfa );
+#endif
+ for (const auto &[regno, unwind] : dcf.registers) {
         try {
            switch (unwind.type) {
-               case ARCH:
-#ifdef CFA_RESTORE_REGNO
-                   // "The CFA is defined to be the stack pointer in the calling frame."
-                   if (regno == CFA_RESTORE_REGNO)
-                      Elf::setReg(out, regno, cfa);
-                   else
-                      Elf::setReg(out, regno, Elf::getReg(regs, regno));
-                   break;
-#endif
-               case UNDEF:
-               case SAME:
-                   Elf::setReg(out, regno, Elf::getReg(regs, regno));
-                   break;
                case OFFSET: // XXX: assume addrLen = sizeof Elf_Addr
-                   Elf::setReg(out, regno, p.io->readObj<Elf::Addr>(cfa + unwind.u.offset));
+                   setReg(out, regno, p.io->readObj<Elf::Addr>(cfa + unwind.u.offset));
                    break;
                case REG:
-                   Elf::setReg(out, regno, Elf::getReg(out,unwind.u.reg));
+                   setReg(out, regno, getReg(out,unwind.u.reg));
                    break;
                case VAL_EXPRESSION:
                case EXPRESSION: {
@@ -599,9 +575,10 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
                    // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                    if (unwind.type == EXPRESSION)
                        p.io->readObj(val, &val);
-                   Elf::setReg(out, regno, val);
+                   setReg(out, regno, val);
                    break;
                }
+               case ARCH:
                default:
                    break;
            }
@@ -615,13 +592,12 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     }
 
     // If the return address isn't defined, then we can't unwind.
-    if (rarInfo == dcf.registers.end() || rarInfo->second.type == UNDEF || cfa == 0) {
+    if (rarInfo != dcf.registers.end() && rarInfo->second.type == UNDEF || cfa == 0) {
         if (p.context.verbose > 1) {
            *p.context.debug << "DWARF unwinding stopped at "
               << std::hex << location.location() << std::dec
               << ": " <<
-              (rarInfo == dcf.registers.end() ? "no RAR register found"
-               : rarInfo->second.type == UNDEF ? "RAR register undefined"
+              (rarInfo == dcf.registers.end() ? "RAR register undefined"
                : "null CFA for frame")
               << std::endl;
         }
@@ -631,7 +607,7 @@ std::optional<Elf::CoreRegisters> StackFrame::unwind(Process &p) {
     // We know the RAR is defined, so make that the instruction pointer in the
     // new frame.
     if (cie && cie->rar != IPREG)
-       Elf::setReg(out, IPREG, Elf::getReg(out, cie->rar));
+       setReg(out, IPREG, getReg(out, cie->rar));
     return out;
 }
 
