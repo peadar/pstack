@@ -24,9 +24,9 @@
 #define SP(regs) (regs.user.rsp)
 #define IP(regs) (regs.user.rip)
 #elif defined(__i386__)
-#define BP(regs) regs.user.ebp
-#define SP(regs) regs.user.esp
-#define IP(regs) regs.user.eip
+#define BP(regs) reinterpret_cast<Elf::Addr&>(regs.user.ebp)
+#define SP(regs) reinterpret_cast<Elf::Addr&>(regs.user.esp)
+#define IP(regs) reinterpret_cast<Elf::Addr&>(regs.user.eip)
 #elif defined(__aarch64__)
 #define IP(regs) (regs.user.pc)
 #endif
@@ -962,7 +962,7 @@ Process::~Process()
 }
 
 void
-ThreadStack::unwind(Process &p, const Elf::CoreRegisters &regs)
+ThreadStack::unwind(Process &p, const CoreRegisters &regs)
 {
     stack.clear();
     stack.reserve(20);
@@ -1064,7 +1064,7 @@ ThreadStack::unwind(Process &p, const Elf::CoreRegisters &regs)
                        ucontext_t uc;
                     };
                     auto sigframe = p.io->readObj<rt_sigframe>(prev.regs.user.sp);
-                    Elf::CoreRegisters newRegs;
+                    CoreRegisters newRegs;
                     for (int i = 0; i < 31; ++i)
                        newRegs.user.regs[i] = sigframe.uc.uc_mcontext.regs[i];
                     newRegs.user.sp = sigframe.uc.uc_mcontext.sp;
@@ -1120,7 +1120,7 @@ ThreadStack::unwind(Process &p, const Elf::CoreRegisters &regs)
                        // This mapping is based on DWARF regnos, and ucontext.h
                        gregset_t regs;
                        p.io->readObj(sigContextAddr, &regs);
-                       Elf::CoreRegisters core;
+                       CoreRegisters core;
                        gregset2user(core.user, regs);
                        stack.emplace_back(UnwindMechanism::TRAMPOLINE, core);
                        continue;
@@ -1146,7 +1146,7 @@ ThreadStack::unwind(Process &p, const Elf::CoreRegisters &regs)
                    p.io->readObj(oldBp + ELF_BYTES, &newIp);
                    p.io->readObj(oldBp, &newBp);
                    if (newBp > oldBp && newIp > 4096) {
-                       Elf::CoreRegisters newRegs = prev.regs;
+                       CoreRegisters newRegs = prev.regs;
                        SP(newRegs) = oldBp + ELF_BYTES * 2;
                        BP(newRegs) = newBp;
                        IP(newRegs) = newIp;
@@ -1210,7 +1210,7 @@ Process::getStacks() {
      */
     listThreads([this, &threadStacks, &tracedLwps] (
                        const td_thrhandle_t *thr) {
-        Elf::CoreRegisters regs;
+        CoreRegisters regs;
         td_err_e the;
 #ifdef __linux__
         the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
@@ -1257,9 +1257,9 @@ Process::getStacks() {
     return threadStacks;
 }
 
-Elf::CoreRegisters
+CoreRegisters
 Process::getCoreRegs(lwpid_t lwp) {
-   Elf::CoreRegisters coreRegs;
+   CoreRegisters coreRegs;
    getRegset<user_regs_struct, NT_PRSTATUS>(lwp, coreRegs.user);
 #ifdef __aarch64__
    getRegset<user_fpsimd_struct, NT_FPREGSET>(lwp, coreRegs.fpsimd);

@@ -2,13 +2,25 @@
 // Arista Networks, Inc. Confidential and Proprietary.
 
 #include <cstdint>
-struct RegSet {
-   std::uintmax_t value;
-   RegSet( std::uintmax_t value_) : value(value_) {}
-   template<typename Arg> void operator() (Arg &arg) { 
-      arg = value;
-   }
+#include "libpstack/arch.h"
+
+namespace pstack::Procman {
+struct Setter {
+   const RegisterValue &from;
+   template <typename T> using cv_t = T;
+   template <typename T> void operator()(T &to) const {
+         to = std::get<T>(from);
+   };
 };
+
+struct Getter {
+   RegisterValue &to;
+   template <typename T> using cv_t = const T;
+   template <typename T> void operator()(const T &from) const {
+         to = from;
+   };
+};
+}
 
 #ifdef __x86_64__
 #include "x86_64.cc"
@@ -19,3 +31,15 @@ struct RegSet {
 #ifdef __i386__
 #include "i386.cc"
 #endif
+
+namespace pstack::Procman {
+void CoreRegisters::setDwarf(int regId, RegisterValue value) {
+   opReg(*this, regId, Setter(value) );
+};
+
+RegisterValue CoreRegisters::getDwarf(int regId) const {
+   RegisterValue rv;
+   opReg(*this, regId, Getter{rv});
+   return rv;
+};
+}

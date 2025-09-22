@@ -385,22 +385,6 @@ private:
     const Object *getDebug() const; // Gets linked debug object. Note that getSection indirects through this.
 };
 
-// These are the architecture specific types representing the NT_PRSTATUS registers.
-#if defined(__PPC)
-typedef struct pt_regs CoreRegisters;
-#else
-struct CoreRegisters {
-   user_regs_struct user;
-#ifdef __aarch64__
-   user_fpsimd_struct fpsimd;
-#elif defined(__x86_64__)
-   user_fpregs_struct fp;
-#elif defined(__i386__)
-   user_fpxregs_struct fpx;
-#endif
-};
-#endif
-
 /*
  * Describes a note. Notes have a name, a type, and some associated data.
  */
