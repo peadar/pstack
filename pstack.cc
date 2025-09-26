@@ -382,9 +382,7 @@ emain(int argc, char **argv, Context &context)
              out = std::ofstream(opt, std::ofstream::out|std::ofstream::trunc);
              context.output = &out;
           })
-#ifdef DEBUGINFOD
     .add("debuginfod", 'R', "use debuginfod client", Flags::setf( context.options.withDebuginfod ) )
-#endif
     .add("no-local-files", Flags::LONGONLY,
           "don't assume local files match the process's view, and don't open them",
           Flags::setf( context.options.noLocalFiles ) )

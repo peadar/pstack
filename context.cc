@@ -9,16 +9,14 @@
 #include <filesystem>
 #include <ranges>
 
-#ifdef DEBUGINFOD
-#include <elfutils/debuginfod.h>
-#endif
 #include <dlfcn.h>
 #include <stdexcept>
 
 namespace pstack {
 
-#ifdef DEBUGINFOD
-
+// If requested, we will attempt to dynamically load the debuginfod API from
+// libdebuginfod.so.1
+namespace {
 struct DebuginfodRuntime {
     template <typename callable_t> struct LoadFunc {
         callable_t callable;
@@ -44,6 +42,7 @@ struct DebuginfodRuntime {
     LoadFunc<int (*)(debuginfod_client *, const unsigned char *, int, char ** )> find_executable;
     LoadFunc<int (*)(debuginfod_client *, const unsigned char *, int, char ** )> find_source;
     LoadFunc<int (*)(debuginfod_client *, const unsigned char *, int, const char *, char **)> find_section;
+    using debuginfod_progressfn_t = int (*)(debuginfod_client *, long, long);
     LoadFunc<int (*)(debuginfod_client *, debuginfod_progressfn_t )> set_progressfn;
     LoadFunc<void (*)(debuginfod_client *, int)> set_verbose_fd;
     LoadFunc<void (*)(debuginfod_client *, void *)> set_user_data;
@@ -83,17 +82,12 @@ const DebuginfodRuntime *debuginfod() {
     static DebuginfodRuntime *once = DebuginfodRuntime::create();
     return once;
 }
-
-#endif
-
-
+}
 
 void Context::DidClose::operator() ( [[maybe_unused]] struct debuginfod_client *client )
 {
-#ifdef DEBUGINFOD
     if (client)
         debuginfod()->end( client );
-#endif
 }
 
 Context::Context()
@@ -111,7 +105,6 @@ Context::findDwarf(const std::filesystem::path &filename)
 debuginfod_client *
 Context::getDebuginfodClient()
 {
-#ifdef DEBUGINFOD
     if (!options.withDebuginfod || debuginfod() == nullptr)
         return nullptr;
     if (!debuginfodClient_) {
@@ -131,9 +124,6 @@ Context::getDebuginfodClient()
         }
     }
     return (*debuginfodClient_).get();
-#else
-    return nullptr;
-#endif
 }
 
 std::shared_ptr<Dwarf::Info>
@@ -318,7 +308,6 @@ std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, boo
         std::filesystem::path bidpath = std::filesystem::path( bucket.str() ) / std::filesystem::path( rest.str() );
         res = getImageInPath(paths, nameContainer, bidpath, isDebug, true);
     }
-#ifdef DEBUGINFOD
     if (!res && getDebuginfodClient()) {
         char *path = nullptr;
         int progress = 0;
@@ -339,7 +328,6 @@ std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, boo
         }
     }
     container[bid] = res; // cache it.
-#endif
     return res;
 }
 
