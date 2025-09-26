@@ -9,7 +9,6 @@ add_subdirectory(tests)
 
 option(PYTHON3 "Compile with python 3 support" OFF)
 option(PYTHON2 "Compile with python 2 support" ON)
-option(DEBUGINFOD "Compile with debuginfod support" ON)
 
 math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 set(PSTACK_BIN "pstack" CACHE STRING "Name of the 'pstack' binary")
@@ -146,21 +145,6 @@ endif()
 
 if (NOT (Python2_Development_FOUND) AND PYTHON2)
    message(WARNING "no python2 support found")
-endif()
-
-if (DEBUGINFOD)
-find_path (
-   DEBUGINFOD_INCLUDE_DIR NAMES elfutils/debuginfod.h
-   HINTS /usr/include/ ${CMAKE_INSTALL_FULL_INCLUDEDIR} )
-find_library ( DEBUGINFOD_LIB NAMES debuginfod )
-
-if(DEBUGINFOD_INCLUDE_DIR AND DEBUGINFOD_LIB)
-   message(STATUS "found debuginfod header at ${DEBUGINFOD_INCLUDE_DIR}, lib at ${DEBUGINFOD_LIB}")
-   # target_link_libraries(dwelf ${DEBUGINFOD_LIB}) - we find this dynamically to avoid depending on curl, etc.
-   add_definitions(-DDEBUGINFOD)
-else()
-   message(WARNING "no debuginod support found")
-endif()
 endif()
 
 # bonus: heap debugger
