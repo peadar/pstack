@@ -13,9 +13,6 @@
 #include <iostream>
 #include <cassert>
 #include <cstring>
-#ifdef DEBUGINFOD
-#include <elfutils/debuginfod.h>
-#endif
 
 #include <unistd.h>
 

@@ -12,14 +12,87 @@
 #ifdef DEBUGINFOD
 #include <elfutils/debuginfod.h>
 #endif
+#include <dlfcn.h>
+#include <stdexcept>
 
 namespace pstack {
+
+#ifdef DEBUGINFOD
+
+struct DebuginfodRuntime {
+    template <typename callable_t> struct LoadFunc {
+        callable_t callable;
+        LoadFunc(void *lib, const char *funcname) : callable{callable_t(dlsym(lib, funcname))} {
+            if (!callable) {
+                throw std::runtime_error(stringify("failed to find '", funcname, "': ", dlerror()));
+            }
+        }
+        template <typename ...Args> auto operator()(Args...args) const { return (*callable)(std::forward<Args>(args)...); }
+    };
+
+    static void *dlopenOrThrow(const char *p, int flags) {
+        void *lib = dlopen(p, flags);
+        if (!lib)
+            throw std::runtime_error(stringify("failed to load library '", p, "': ", dlerror()));
+        return lib;
+    }
+
+    void *lib;
+    LoadFunc<debuginfod_client *(*)(void)> begin;
+    LoadFunc<void (*)(debuginfod_client *)> end;
+    LoadFunc<int (*)(debuginfod_client *, const unsigned char *, int, char ** )> find_debuginfo;
+    LoadFunc<int (*)(debuginfod_client *, const unsigned char *, int, char ** )> find_executable;
+    LoadFunc<int (*)(debuginfod_client *, const unsigned char *, int, char ** )> find_source;
+    LoadFunc<int (*)(debuginfod_client *, const unsigned char *, int, const char *, char **)> find_section;
+    LoadFunc<int (*)(debuginfod_client *, debuginfod_progressfn_t )> set_progressfn;
+    LoadFunc<void (*)(debuginfod_client *, int)> set_verbose_fd;
+    LoadFunc<void (*)(debuginfod_client *, void *)> set_user_data;
+    LoadFunc<void*(*)(debuginfod_client *)> get_user_data;
+    LoadFunc<char* (*)(debuginfod_client *)> get_url;
+    LoadFunc<int (*)(debuginfod_client *, const char* )> add_http_header;
+    LoadFunc<const char* (*)(debuginfod_client *)> get_headers;
+
+    DebuginfodRuntime()
+        : lib(dlopenOrThrow("libdebuginfod.so.1", RTLD_NOW))
+          , begin(lib, "debuginfod_begin")
+          , end(lib, "debuginfod_end")
+          , find_debuginfo(lib, "debuginfod_find_debuginfo")
+          , find_executable(lib, "debuginfod_find_executable")
+          , find_source(lib, "debuginfod_find_source")
+          , find_section(lib, "debuginfod_find_section")
+          , set_progressfn(lib, "debuginfod_set_progressfn")
+          , set_verbose_fd(lib, "debuginfod_set_verbose_fd")
+          , set_user_data(lib, "debuginfod_set_user_data")
+          , get_user_data(lib, "debuginfod_get_user_data")
+          , get_url(lib, "debuginfod_get_url")
+          , add_http_header(lib, "debuginfod_add_http_header")
+          , get_headers(lib, "debuginfod_get_headers")
+    { }
+    static DebuginfodRuntime *create() {
+        try {
+            return new DebuginfodRuntime();
+        }
+        catch (const std::exception &ex) {
+            std::cerr << "failed to load debuginfod: " << ex.what() << "\n";
+            return nullptr;
+        }
+    }
+};
+
+const DebuginfodRuntime *debuginfod() { 
+    static DebuginfodRuntime *once = DebuginfodRuntime::create();
+    return once;
+}
+
+#endif
+
+
 
 void Context::DidClose::operator() ( [[maybe_unused]] struct debuginfod_client *client )
 {
 #ifdef DEBUGINFOD
     if (client)
-        debuginfod_end( client );
+        debuginfod()->end( client );
 #endif
 }
 
@@ -36,19 +109,19 @@ Context::findDwarf(const std::filesystem::path &filename)
 }
 
 debuginfod_client *
-Context::debuginfod()
+Context::getDebuginfodClient()
 {
 #ifdef DEBUGINFOD
-    if (!options.withDebuginfod)
+    if (!options.withDebuginfod || debuginfod() == nullptr)
         return nullptr;
-    if (!debuginfod_) {
-        debuginfod_ = std::unique_ptr<debuginfod_client, DidClose>(debuginfod_begin());
-        if (debuginfod_ && isatty(2)) {
-            debuginfod_set_progressfn( debuginfod_->get(),
+    if (!debuginfodClient_) {
+        debuginfodClient_ = std::unique_ptr<debuginfod_client, DidClose>(debuginfod()->begin());
+        if (debuginfodClient_ && isatty(2)) {
+            debuginfod()->set_progressfn( debuginfodClient_->get(),
                     [] (debuginfod_client *client, long num, long denom) {
-                        int *progress = (int *)debuginfod_get_user_data(client);
+                        int *progress = (int *)debuginfod()->get_user_data(client);
                         ++*progress;
-                        const char *url =  debuginfod_get_url( client );
+                        const char *url =  debuginfod()->get_url( client );
                         if (url == nullptr)
                             url = "<unknown>";
                         std::cerr << "debuginfod download " << url << ". progress: "
@@ -56,14 +129,12 @@ Context::debuginfod()
                             << " (" << num << " of " << denom << ")" << "\r";
                             return 0; });
         }
-
     }
-    return (*debuginfod_).get();
+    return (*debuginfodClient_).get();
 #else
     return nullptr;
 #endif
 }
-
 
 std::shared_ptr<Dwarf::Info>
 Context::findDwarf(const Elf::BuildID &bid)
@@ -248,12 +319,12 @@ std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, boo
         res = getImageInPath(paths, nameContainer, bidpath, isDebug, true);
     }
 #ifdef DEBUGINFOD
-    if (!res && debuginfod()) {
+    if (!res && getDebuginfodClient()) {
         char *path = nullptr;
         int progress = 0;
-        debuginfod_set_user_data(debuginfod(), &progress);
-        int fd = (isDebug ? debuginfod_find_debuginfo : debuginfod_find_executable)
-            (debuginfod(), bid.data(), int( bid.size() ), &path);
+        debuginfod()->set_user_data(getDebuginfodClient(), &progress);
+        int fd = (isDebug ? debuginfod()->find_debuginfo : debuginfod()->find_executable)
+            (getDebuginfodClient(), bid.data(), int( bid.size() ), &path);
         if (progress > 0) {
             // If we reported progress at least once, move to the next line
             std::cerr << "\n";
@@ -276,14 +347,6 @@ std::shared_ptr<Elf::Object>
 Context::findDebugImage(const std::filesystem::path &name) {
     return getImageInPath(debugPrefixes, debugImageByName, name, true, false);
 }
-
-#ifndef DEBUGINFOD
-// dummy functions in case we have no debuginfod.
-namespace {
-int debuginfod_find_debuginfo (debuginfod_client *, const unsigned char *, int, char **) { return -ENOSYS; }
-int debuginfod_find_executable (debuginfod_client *, const unsigned char *, int, char **) { return -ENOSYS; }
-}
-#endif
 
 std::shared_ptr<Elf::Object> Context::findDebugImage(const Elf::BuildID &bid) { return getImageImpl(bid, true); }
 std::shared_ptr<Elf::Object> Context::findImage(const Elf::BuildID &bid) { return getImageImpl(bid, false); }

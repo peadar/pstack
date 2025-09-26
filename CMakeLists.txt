@@ -156,7 +156,7 @@ find_library ( DEBUGINFOD_LIB NAMES debuginfod )
 
 if(DEBUGINFOD_INCLUDE_DIR AND DEBUGINFOD_LIB)
    message(STATUS "found debuginfod header at ${DEBUGINFOD_INCLUDE_DIR}, lib at ${DEBUGINFOD_LIB}")
-   target_link_libraries(dwelf ${DEBUGINFOD_LIB})
+   # target_link_libraries(dwelf ${DEBUGINFOD_LIB}) - we find this dynamically to avoid depending on curl, etc.
    add_definitions(-DDEBUGINFOD)
 else()
    message(WARNING "no debuginod support found")
