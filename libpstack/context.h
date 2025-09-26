@@ -57,8 +57,8 @@ class Context {
    std::shared_ptr<Elf::Object> getImageImpl( const Elf::BuildID &bid, bool isDebug);
 
    struct DidClose { void operator() ( struct debuginfod_client *client ); };
-   std::optional<std::unique_ptr<debuginfod_client, DidClose>> debuginfod_;
-   debuginfod_client *debuginfod();
+   std::optional<std::unique_ptr<debuginfod_client, DidClose>> debuginfodClient_;
+   debuginfod_client *getDebuginfodClient();
 
 public:
    std::vector<std::filesystem::path> debugPrefixes { "/usr/lib/debug", "/usr/lib/debug/usr" };
