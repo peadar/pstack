@@ -1061,11 +1061,18 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
             }
 
             case DW_CFA_restore_extended: {
+<<<<<<< HEAD
                 // See caveat about supported registers in DW_CFA_restore case above.
                 reg = r.getuleb128();
                 auto iter = dframe.registers.find( reg );
                 if (iter != dframe.registers.end()) {
                    frame.registers[reg] = iter->second;
+=======
+                reg = r.getuleb128();
+                auto regi = dframe.registers.find(reg);
+                if (regi != dframe.registers.end()) {
+                   frame.registers[reg] = regi->second;
+>>>>>>> c0467ce (Don't assume we can restore every register.)
                 }
                 break;
             }
