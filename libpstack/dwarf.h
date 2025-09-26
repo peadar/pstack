@@ -982,7 +982,11 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
         }
 
         case DW_CFA_restore: {
-            frame.registers[reg] = dframe.registers.at(reg);
+            // Careful - we may not support every register.
+            auto regi = dframe.registers.find(reg);
+            if (regi != dframe.registers.end()) {
+               frame.registers[reg] = regi->second;
+            }
             break;
         }
 
@@ -1024,10 +1028,14 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
                 break;
             }
 
-            case DW_CFA_restore_extended:
+            case DW_CFA_restore_extended: {
                 reg = r.getuleb128();
-                frame.registers[reg] = dframe.registers.at(reg);
+                auto regi = dframe.registers.find(reg);
+                if (regi != dframe.registers.end()) {
+                   frame.registers[reg] = regi->second;
+                }
                 break;
+            }
 
             case DW_CFA_undefined:
                 reg = r.getuleb128();
