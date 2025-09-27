@@ -2,9 +2,9 @@ name: C/C++ CI
 
 on:
   push:
-    branches: [ "master", "clang-ci", "bid" ]
+    branches: [ "master", "v2.14-maint" ]
   pull_request:
-    branches: [ "master", "clang-ci" ]
+    branches: [ "master", "v2.14-maint" ]
 
 jobs:
   build-gcc:
