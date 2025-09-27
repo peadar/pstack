@@ -66,6 +66,9 @@ enum class UnwindMechanism {
     // The stack frame was built up by scanning a log file.
     LOGFILE,
 
+    // For ARM - last-ditch effort - link register
+    LINKREG,
+
     INVALID,
 };
 
