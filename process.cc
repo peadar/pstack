@@ -675,6 +675,7 @@ std::ostream &operator << (std::ostream &os, UnwindMechanism mech) {
       case UnwindMechanism::BAD_IP_RECOVERY: return os << "popped faulting IP";
       case UnwindMechanism::TRAMPOLINE: return os << "signal trampoline";
       case UnwindMechanism::LOGFILE: return os << "log file";
+      case UnwindMechanism::LINKREG: return os << "link register";
       case UnwindMechanism::INVALID: return os << "invalid";
    }
    abort();
@@ -1101,6 +1102,15 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                     stack.emplace_back(UnwindMechanism::TRAMPOLINE, newRegs);
                     continue;
                 }
+                // last ditch effort for ARM is to just replace the PC with the
+                // LR - this is useful for PLT entries, for example.
+                if (prev.regs.regs[30] != prev.regs.pc) {
+                   Elf::CoreRegisters newRegs = prev.regs;
+                   newRegs.pc = newRegs.regs[30];
+                   stack.emplace_back(UnwindMechanism::LINKREG, newRegs);
+                   continue;
+                }
+
 #endif
 #if defined(__i386__)
                 // Deal with signal trampolines for i386
