@@ -87,28 +87,28 @@ const ArchRegs registers {
    },
 };
 
-template <typename Regs, typename Op>
-auto opReg(Regs &regs, int reg, Op op) {
-   uintmax_t notused{};
+template <typename Regs, typename Op, typename Value>
+void opReg(Regs &regs, Op op, int reg, Value &value ) {
    switch (reg) {
       case -2:
-         return op(regs.fpsimd.fpsr);
+         return op(regs.fpsimd.fpsr, value);
 
       case -1:
-         return op(regs.fpsimd.fpcr);
+         return op(regs.fpsimd.fpcr, value);
 
       case 0 ... 30:
          // Treat these as an Elf::Addr - they are 'unsigned long long', which
          // for this platform is the same as "unsigned long", which is
          // "Elf::Addr", but it is a distinct type. For the sake of the
          // std::variant we hold the register values in, make them match up.
-         return op(reinterpret_cast<typename Op::cv_t<Elf::Addr>&>(regs.user.regs[reg]));
+         return op(regs.user.regs[reg], value);
 
       case 31:
-         return op(reinterpret_cast<typename Op::cv_t<Elf::Addr>&>(regs.user.sp));
+         return op(regs.user.sp, value);
 
       case 32:
-         return op(reinterpret_cast<typename Op::cv_t<Elf::Addr>&>(regs.user.pc));
+         op(regs.user.pc, value);
+	 return;
 
       case 33: // ELR_mode
       case 34: //RA_SIGN_STATE
@@ -118,15 +118,14 @@ auto opReg(Regs &regs, int reg, Op op) {
       case 46: // VG
       case 47: // FFR
       case 48 ... 63: // VG x 8-bit SVE predicate registers.
-         return op(notused);
+         return;
 
       case 64 ...  95:
-         return op(reinterpret_cast<typename Op::cv_t<Simd128>&>(regs.fpsimd.vregs[reg - 64]));
+         return op(regs.fpsimd.vregs[reg - 64], value);
 
       case 96 ... 127: // VG x 64-bit vector regs.
       default:
-         return op(notused);
-
+         return;
    }
 };
 

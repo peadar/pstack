@@ -22,25 +22,6 @@ struct Simd128Space {
    template <typename T> requires std::is_integral_v<T> operator T () const { return 0; }
 };
 
-struct RegGet {
-   template <typename T> void operator()(const T &from, RegisterValue &to) const {
-      to = from;
-   }
-   operator long () {
-      return 0;
-   }
-   void operator()(const Simd128Space<const CoreRegisters> &from, RegisterValue &to) const;
-   void operator()(const Simd64Space<const CoreRegisters> &from, RegisterValue &to) const;
-};
-
-struct RegSet {
-   template <typename T> void operator()(T &to, const RegisterValue &from) const {
-      std::visit([&to](auto branch) { to = branch; } , from);
-   }
-   void operator()(Simd128Space<CoreRegisters> &&to, const RegisterValue &from) const;
-   void operator()(Simd64Space<CoreRegisters> &&to, const RegisterValue &from) const;
-};
-
 // see https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf
 // Figure 3.36, page 57
 const ArchRegs registers {

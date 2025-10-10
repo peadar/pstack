@@ -277,14 +277,6 @@ Context::findDebugImage(const std::filesystem::path &name) {
     return getImageInPath(debugPrefixes, debugImageByName, name, true, false);
 }
 
-#ifndef DEBUGINFOD
-// dummy functions in case we have no debuginfod.
-namespace {
-int debuginfod_find_debuginfo (debuginfod_client *, const unsigned char *, int, char **) { return -ENOSYS; }
-int debuginfod_find_executable (debuginfod_client *, const unsigned char *, int, char **) { return -ENOSYS; }
-}
-#endif
-
 std::shared_ptr<Elf::Object> Context::findDebugImage(const Elf::BuildID &bid) { return getImageImpl(bid, true); }
 std::shared_ptr<Elf::Object> Context::findImage(const Elf::BuildID &bid) { return getImageImpl(bid, false); }
 

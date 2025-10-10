@@ -28,7 +28,7 @@ using gpreg = unsigned long long;
 
 #elif defined( __ARM_ARCH )
 #ifdef __aarch64__
-using gpreg = uint64_t;
+using gpreg = unsigned long long;
 #define IPREG 32
 #define CFA_RESTORE_REGNO 31
 #else
@@ -112,6 +112,19 @@ struct CoreRegisters {
    RegisterValue getDwarf(int reg) const;
    void setDwarf(int reg, const RegisterValue &val);
 };
+
+struct RegGet {
+   template <typename T> void operator()(const T &from, RegisterValue &to) const {
+      to = from;
+   }
+};
+
+struct RegSet {
+   template <typename T> void operator()(T &to, const RegisterValue &from) const {
+      std::visit([&to](auto branch) { to = branch; } , from);
+   }
+};
+
 
 // Maps a name to its dwarf register index.
 using DwarfNames = std::map<int, std::string_view>;

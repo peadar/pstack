@@ -42,7 +42,7 @@ StackFrame::scopeIP(Process &proc) const
     // Finally, for the function that was running when the signal was invoked -
     // The signal was invoked asynchronously, so again, we have no call
     // instruction to walk back into.
-    auto raw = Elf::Addr(rawIP());
+    auto raw = gpreg(rawIP());
     if (raw == 0)
        return { proc, raw };
     if (mechanism == UnwindMechanism::MACHINEREGS
