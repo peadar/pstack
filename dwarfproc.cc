@@ -12,7 +12,11 @@ namespace pstack::Procman {
 gpreg
 StackFrame::rawIP() const
 {
+#ifdef __aarch64__
+    return 0xffffffffffff & std::get<gpreg>(regs.getDwarf(IPREG));
+#else
     return std::get<gpreg>(regs.getDwarf(IPREG));
+#endif
 }
 
 ProcessLocation

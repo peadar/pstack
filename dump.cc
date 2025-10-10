@@ -191,9 +191,6 @@ dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
             jo.field("size", r->getuleb128());
             break;
 
-        case DW_CFA_GNU_window_save:
-            break;
-
         case DW_CFA_GNU_negative_offset_extended:
         case DW_CFA_offset_extended_sf: {
             auto reg = r->getuleb128();
@@ -208,6 +205,14 @@ dumpCFAInsn(std::ostream &os, Dwarf::DWARFReader *r)
         case DW_CFA_remember_state:
         case DW_CFA_restore_state:
             break;
+
+#ifndef __aarch64__
+        case DW_CFA_GNU_window_save:
+            break;
+#else
+	case DW_CFA_AARCH64_negate_ra_state:
+            break;
+#endif
 
         default:
             throw (Exception() << "unknown CFA op " << std::hex << int(op)) << std::dec;
