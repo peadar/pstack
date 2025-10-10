@@ -19,6 +19,7 @@ extern "C" {
 
 #include "libpstack/ps_callback.h"
 #include "libpstack/dwarf.h"
+#include "libpstack/arch.h"
 
 struct ps_prochandle {};
 
@@ -130,7 +131,7 @@ public:
 
 class StackFrame {
 public:
-    [[nodiscard]] Elf::Addr rawIP() const;
+    [[nodiscard]] gpreg rawIP() const;
     ProcessLocation scopeIP(Process &) const;
     CoreRegisters regs;
     Elf::Addr cfa;

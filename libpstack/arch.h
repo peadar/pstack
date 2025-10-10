@@ -8,18 +8,27 @@
 #include <unordered_map>
 #include <string_view>
 #include <cstdint>
+#include <stdexcept>
 
 #if defined( __i386__ )
 #define IPREG 8
 #define CFA_RESTORE_REGNO 4
+// we need this because Elf::Addr is a different type to what's stored in the
+// user_regs_struct . We'll conver this to an Elf::Addr as required, but we
+// must extract values from the general purpose regsisters in CoreRegisters as
+// this type
+using gpreg = long;
 
 #elif defined( __x86_64__ )
 #define CFA_RESTORE_REGNO 7
 #define IPREG 16
 
+using gpreg = unsigned long long;
+
 
 #elif defined( __ARM_ARCH )
 #ifdef __aarch64__
+using gpreg = uint64_t;
 #define IPREG 32
 #define CFA_RESTORE_REGNO 31
 #else
@@ -35,9 +44,9 @@ namespace pstack::Procman {
 // Many platforms will have a 128-bit SIMD register that can be treated as 2
 // doubles or 4 floats, 4 integers, etc. Create a specific type for it. By
 // "many platforms", I mean this fits x86_64 XMM registers well, and maybe the
-// ARM fpsimd ones.
+// ARM fpsimd ones. Also, note that i386 has access to these, but not the
+// 128-bit fields
 
-#ifndef __i386__ // doesn't have 128-bit registers / doesn't support 128-bit ints.
 union Simd128 {
    float f32[4];
    double f64[2];
@@ -49,10 +58,12 @@ union Simd128 {
    uint32_t u32[4];
    int64_t i64[2];
    uint64_t u64[2];
+#ifndef __i386__ // doesn't have 128-bit registers / doesn't support 128-bit ints.
    __int128_t i128;
    __uint128_t u128;
-};
 #endif
+   operator long() const { throw std::logic_error("cannot convert SIMD value to scalar"); }
+};
 
 // This is for MMX.
 union SimdInt64 {
@@ -64,10 +75,10 @@ union SimdInt64 {
    uint32_t u32[4];
    int64_t i64[2];
    uint64_t u64[2];
+   operator long() const { throw std::logic_error("cannot convert SIMD value to scalar"); }
 };
 
 using RegisterValue = std::variant<
-   char,
    short,
    unsigned short,
    int,
@@ -79,12 +90,13 @@ using RegisterValue = std::variant<
    float,
    double,
    long double,
-   SimdInt64
+   SimdInt64,
 #ifndef __i386__
    Simd128,
    __uint128_t,
    __int128_t,
 #endif
+   char
       >;
 
 // These are the architecture specific types representing the NT_PRSTATUS registers.
@@ -98,7 +110,7 @@ struct CoreRegisters {
    user_fpxregs_struct fpx;
 #endif
    RegisterValue getDwarf(int reg) const;
-   void setDwarf(int reg, RegisterValue val);
+   void setDwarf(int reg, const RegisterValue &val);
 };
 
 // Maps a name to its dwarf register index.

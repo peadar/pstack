@@ -6,6 +6,40 @@
 #include "libpstack/elf.h"
 namespace pstack::Procman {
 
+template <typename Regs>
+struct Simd64Space {
+   int regno;
+   Regs &regs;
+   template <typename T> auto operator = (const T &) { return *this; }
+   template <typename T> requires std::is_integral_v<T> operator T () const { return 0; }
+};
+
+template <typename Regs>
+struct Simd128Space {
+   int regno;
+   Regs &regs;
+   template <typename T> auto operator = (const T &) { return *this; }
+   template <typename T> requires std::is_integral_v<T> operator T () const { return 0; }
+};
+
+struct RegGet {
+   template <typename T> void operator()(const T &from, RegisterValue &to) const {
+      to = from;
+   }
+   operator long () {
+      return 0;
+   }
+   void operator()(const Simd128Space<const CoreRegisters> &from, RegisterValue &to) const;
+   void operator()(const Simd64Space<const CoreRegisters> &from, RegisterValue &to) const;
+};
+
+struct RegSet {
+   template <typename T> void operator()(T &to, const RegisterValue &from) const {
+      std::visit([&to](auto branch) { to = branch; } , from);
+   }
+   void operator()(Simd128Space<CoreRegisters> &&to, const RegisterValue &from) const;
+   void operator()(Simd64Space<CoreRegisters> &&to, const RegisterValue &from) const;
+};
 
 // see https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf
 // Figure 3.36, page 57
@@ -46,9 +80,7 @@ const ArchRegs registers {
       {
          { 65, "cwd" },
          { 66, "swd" },
-
          { 64, "mxcsr" },
-         
          { 33, "st[0]" },
          { 34, "st[1]" },
          { 35, "st[2]" },
@@ -57,7 +89,6 @@ const ArchRegs registers {
          { 38, "st[5]" },
          { 39, "st[6]" },
          { 40, "st[7]" },
-
          // Does not appear in the ABI spec.
          { -1, "ftw" },
          { -2, "fop" },
@@ -65,7 +96,6 @@ const ArchRegs registers {
          { -4, "rdp" },
          { -5, "mxcr_mask" },
       }
-
    },
 
    { "mmx",
@@ -102,78 +132,81 @@ const ArchRegs registers {
       }
    }
 };
-
-inline Elf::Addr &asaddr(unsigned long long &rhs) {
-   return *reinterpret_cast<Elf::Addr *>(&rhs);
-}
-
-inline const Elf::Addr &asaddr(const unsigned long long &rhs) {
-   return *reinterpret_cast<const Elf::Addr *>(&rhs);
-}
-
-
-template <typename Regs, typename Op>
-void opReg(Regs &regs, int reg, Op op) {
-   uintmax_t notused{};
-
-
+template <typename Regs, typename Op, typename Value>
+void opReg(Regs &regs, Op op, int reg, Value &value) {
+   char notused{};
    // Note the values below for the registers are cast to Elf::Addr. Elf::Addr
    // is `unsigned long`, while the user_regs_struct uses the distinct type
    // `unsigned long long`, which is also a 64-bit unsigned integer. Casting to
    // the common Elf type loses no information and allows our variants to
    // behave sanely
+   //
    switch (reg) {
-      case 0: return op(asaddr(regs.user.rax));
-      case 1: return op(asaddr(regs.user.rdx));
-      case 2: return op(asaddr(regs.user.rcx));
-      case 3: return op(asaddr(regs.user.rbx));
-      case 4: return op(asaddr(regs.user.rsi));
-      case 5: return op(asaddr(regs.user.rdi));
-      case 6: return op(asaddr(regs.user.rbp));
-      case 7: return op(asaddr(regs.user.rsp));
-      case 8: return op(asaddr(regs.user.r8));
-      case 9: return op(asaddr(regs.user.r9));
-      case 10: return op(asaddr(regs.user.r10));
-      case 11: return op(asaddr(regs.user.r11));
-      case 12: return op(asaddr(regs.user.r12));
-      case 13: return op(asaddr(regs.user.r13));
-      case 14: return op(asaddr(regs.user.r14));
-      case 15: return op(asaddr(regs.user.r15));
-      case 16: return op(asaddr(regs.user.rip));
-
-      case 17 ... 32: {
-         auto ptr = reinterpret_cast<typename Op::cv_t<Simd128> *>(regs.fp.xmm_space);
-         return op( ptr[reg - 17] );
-      }
-
-      case 33 ... 40: {
+      case 0:
+         return op(regs.user.rax, value);
+      case 1:
+         return op(regs.user.rdx, value);
+      case 2:
+         return op(regs.user.rcx, value);
+      case 3:
+         return op(regs.user.rbx, value);
+      case 4:
+         return op(regs.user.rsi, value);
+      case 5:
+         return op(regs.user.rdi, value);
+      case 6:
+         return op(regs.user.rbp, value);
+      case 7:
+         return op(regs.user.rsp, value);
+      case 8:
+         return op(regs.user.r8, value);
+      case 9:
+         return op(regs.user.r9, value);
+      case 10:
+         return op(regs.user.r10, value);
+      case 11:
+         return op(regs.user.r11, value);
+      case 12:
+         return op(regs.user.r12, value);
+      case 13:
+         return op(regs.user.r13, value);
+      case 14:
+         return op(regs.user.r14, value);
+      case 15:
+         return op(regs.user.r15, value);
+      case 16:
+         return op(regs.user.rip, value);
+      case 17 ... 32:
+         return op(Simd128Space(reg, regs), value);
+      case 33 ... 40:
          // i387 floating point regs st0-st7. The "long double" on x86_64 is
          // stored using the 128-bit extension of the 80-bit value in st0-7,
          // just like st_space.
-         auto ptr = reinterpret_cast<typename Op::cv_t<long double> *>(regs.fp.st_space);
-         return op( ptr[reg - 33] );
-      }
-
-      case 41 ... 48: {
+         return op( Simd64Space(reg - 33, regs), value );
+#if 0
+      case 41 ... 48:
          // MMX registers. These alias the st0-st7 regs above, but only provide
          // 64-bit SIMD state.
-         auto ptr = reinterpret_cast<typename Op::cv_t<SimdInt64> *>(regs.fp.st_space);
-         return op(ptr[(reg - 41) * 2]);
-      }
-
-      case 49: return op(asaddr(regs.user.eflags));
-      case 50: return op(asaddr(regs.user.es));
-      case 51: return op(asaddr(regs.user.cs));
-      case 52: return op(asaddr(regs.user.ss));
-      case 53: return op(asaddr(regs.user.ds));
-      case 54: return op(asaddr(regs.user.fs));
-      case 55: return op(asaddr(regs.user.gs));
-
-      case 56 ... 57: // reserved.
-               return op(notused);
-
-      case 58: return op(asaddr(regs.user.fs_base));
-      case 59: return op(asaddr(regs.user.gs_base));
+         return op( Simd64Space((reg - 41) * 2), value);
+#endif
+      case 49:
+         return op(regs.user.eflags, value);
+      case 50:
+         return op(regs.user.es, value);
+      case 51:
+         return op(regs.user.cs, value);
+      case 52:
+         return op(regs.user.ss, value);
+      case 53:
+         return op(regs.user.ds, value);
+      case 54:
+         return op(regs.user.fs, value);
+      case 55:
+         return op(regs.user.gs, value);
+      case 58:
+         return op(regs.user.fs_base, value);
+      case 59:
+         return op(regs.user.gs_base, value);
 
       // most of what's below are not available in the registers we hold on to
       // Support would require putting the XSAVE state in CoreRegisters, and 
@@ -183,46 +216,47 @@ void opReg(Regs &regs, int reg, Op op) {
       // that support that via IFUNCs, but we won't return register state
       // for those for now.
       case 60 ... 61: // reserved
-               return op(notused);
+         return op(notused, value);
 
       // The CPU registers for the following three entries are smaller than the
       // type used in the user_regs_struct, but we represent them as what's in
       // there for consistency 
       case 64:
-               return op(regs.fp.mxcsr);
+         return op(regs.fp.mxcsr, value);
       case 65:
-               return op(regs.fp.cwd);
+         return op(regs.fp.cwd, value);
       case 66:
-               return op(regs.fp.swd);
+         return op(regs.fp.swd, value);
       case 67 ... 82: // xmm16-31
-               return op(notused);
+         return op(notused, value);
       case 83 ... 117: // reserved
-               return op(notused);
+         return op(notused, value);
       case 118 ... 125: // k0-k7
-               return op(notused);
+         return op(notused, value);
       case 126 ... 129: // reserved
-               return op(notused);
+         return op(notused, value);
       case 130 ... 145: // APX integer registers
-               return op(notused);
+         return op(notused, value);
       case 146 ... 153: // tile regs.
-               return op(notused);
+         return op(notused, value);
       case 154: // tilecfg.
-               return op(notused);
+         return op(notused, value);
 
       // Not provided in spec.
       case  -1:
-               return op(regs.fp.ftw);
+         return op(regs.fp.ftw, value);
       case  -2:
-               return op(regs.fp.fop);
+         return op(regs.fp.fop, value);
       case  -3:
-               return op(regs.fp.rip);
+         return op(regs.fp.rip, value);
       case  -4:
-               return op(regs.fp.rdp);
+         return op(regs.fp.rdp, value);
       case  -5:
-               return op(regs.fp.mxcr_mask);
-
+         return op(regs.fp.mxcr_mask, value);
+      case 56 ... 57:
+         throw std::logic_error(stringify("unsupported register ", reg));
       default:
-               throw std::logic_error("invalid register number");
+         throw std::logic_error(stringify("invalid register ", reg));
    }
 };
 

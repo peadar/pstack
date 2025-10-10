@@ -9,10 +9,10 @@ extern std::ostream & operator << (std::ostream &os, const pstack::Dwarf::DIE &)
 
 namespace pstack::Procman {
 
-Elf::Addr
+gpreg
 StackFrame::rawIP() const
 {
-    return std::get<Elf::Addr>(regs.getDwarf(IPREG));
+    return std::get<gpreg>(regs.getDwarf(IPREG));
 }
 
 ProcessLocation
@@ -38,7 +38,7 @@ StackFrame::scopeIP(Process &proc) const
     // Finally, for the function that was running when the signal was invoked -
     // The signal was invoked asynchronously, so again, we have no call
     // instruction to walk back into.
-    auto raw = rawIP();
+    auto raw = Elf::Addr(rawIP());
     if (raw == 0)
        return { proc, raw };
     if (mechanism == UnwindMechanism::MACHINEREGS
@@ -264,7 +264,7 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
             case DW_OP_breg24: case DW_OP_breg25: case DW_OP_breg26: case DW_OP_breg27:
             case DW_OP_breg28: case DW_OP_breg29: case DW_OP_breg30: case DW_OP_breg31: {
                 auto offset = r.getsleb128();
-                push(std::get<Elf::Addr>(frame->regs.getDwarf(op - DW_OP_breg0)) + offset);
+                push(std::get<gpreg>(frame->regs.getDwarf(op - DW_OP_breg0)) + offset);
                 break;
             }
 
@@ -425,10 +425,10 @@ ExpressionStack::eval(Process &proc, Dwarf::DWARFReader &r, const StackFrame *fr
             case DW_OP_reg28: case DW_OP_reg29: case DW_OP_reg30: case DW_OP_reg31:
                 isValue = true;
                 inReg = op - DW_OP_reg0;
-                push(std::get<Elf::Addr>(frame->regs.getDwarf(op - DW_OP_reg0)));
+                push(std::get<gpreg>(frame->regs.getDwarf(op - DW_OP_reg0)));
                 break;
             case DW_OP_regx:
-                push(std::get<Elf::Addr>(frame->regs.getDwarf(size_t(r.getsleb128()))));
+                push(std::get<gpreg>(frame->regs.getDwarf(size_t(r.getsleb128()))));
                 break;
 
             case DW_OP_entry_value:
@@ -527,7 +527,7 @@ std::optional<CoreRegisters> StackFrame::unwind(Process &p) {
         case SAME:
         case UNDEF:
         case ARCH:
-            cfa = std::get<Elf::Addr>(regs.getDwarf(dcf.cfaReg));
+            cfa = std::get<gpreg>(regs.getDwarf(dcf.cfaReg));
             break;
         case VAL_OFFSET:
         case VAL_EXPRESSION:
@@ -535,7 +535,7 @@ std::optional<CoreRegisters> StackFrame::unwind(Process &p) {
             throw (Exception() << "unhandled CFA value type " << dcf.cfaValue.type);
 
         case OFFSET:
-            cfa = std::get<Elf::Addr>(regs.getDwarf(dcf.cfaReg)) + dcf.cfaValue.u.offset;
+            cfa = std::get<gpreg>(regs.getDwarf(dcf.cfaReg)) + dcf.cfaValue.u.offset;
             break;
 
         case EXPRESSION: {
@@ -574,7 +574,7 @@ std::optional<CoreRegisters> StackFrame::unwind(Process &p) {
                    stack.push(cfa);
                    DWARFReader reader(cfi->io, unwind.u.expression.offset,
                          unwind.u.expression.offset + unwind.u.expression.length);
-                   auto val = stack.eval(p, reader, this, location.elfReloc());
+                   auto val = Elf::Addr(stack.eval(p, reader, this, location.elfReloc()));
                    // EXPRESSIONs give an address, VAL_EXPRESSION gives a literal.
                    if (unwind.type == EXPRESSION)
                        p.io->readObj(val, &val);
