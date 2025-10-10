@@ -26,7 +26,12 @@ StackFrame::getCoreRegs(Elf::CoreRegisters &core) const
 Elf::Addr
 StackFrame::rawIP() const
 {
+#ifdef __aarch64__
+    // remove RA signing artefacts.
+    return 0xffffffffffff & Elf::getReg(regs, IPREG);
+#else
     return Elf::getReg(regs, IPREG);
+#endif
 }
 
 ProcessLocation

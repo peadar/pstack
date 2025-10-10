@@ -29,7 +29,12 @@ DWARF_CFA_INSN(DW_CFA_val_expression, 0x16)
     // }
 
 DWARF_CFA_INSN(DW_CFA_lo_user, 0x1c)
+#ifdef __aarch64__
+DWARF_CFA_INSN(DW_CFA_AARCH64_negate_ra_state, 0x2d)
+#else
 DWARF_CFA_INSN(DW_CFA_GNU_window_save, 0x2d)
+#endif
+
 DWARF_CFA_INSN(DW_CFA_GNU_args_size, 0x2e)
 DWARF_CFA_INSN(DW_CFA_GNU_negative_offset_extended, 0x2f)
 DWARF_CFA_INSN(DW_CFA_hi_user, 0x3f)

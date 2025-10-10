@@ -1168,7 +1168,14 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
             }
 
             // Can't deal with anything else yet.
+#ifdef __aarch64__
+	    case DW_CFA_AARCH64_negate_ra_state:
+	       break;
+
+#else
+	    // systems with register windows, i.e., sparc
             case DW_CFA_GNU_window_save:
+#endif
             case DW_CFA_GNU_negative_offset_extended:
             default:
                 throw (Exception() << "unhandled secondary CFA instruction " << op);
