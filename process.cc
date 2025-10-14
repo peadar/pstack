@@ -986,9 +986,11 @@ ThreadStack::unwind(Process &p, Elf::CoreRegisters &regs)
                 auto maybeNewRegs = prev.unwind(p);
                 if (!maybeNewRegs)
                     break;
+                // XXX: the emplace_back below invalidates prev
+                bool isSignal = prev.isSignalTrampoline;
                 auto &newRegs = *maybeNewRegs;
                 stack.emplace_back(UnwindMechanism::DWARF, newRegs);
-                if (prev.isSignalTrampoline) {
+                if (isSignal) {
                    stack.back().unwoundFromTrampoline = true;
                 }
 #ifdef __aarch64__
