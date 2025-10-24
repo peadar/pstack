@@ -203,23 +203,5 @@ ps_err_e ps_lstop(const struct ps_prochandle *ph, lwpid_t lwpid)
         return PS_ERR;
     }
 }
-#if defined(__FreeBSD__)
-ps_err_e
-ps_linfo(struct ps_prochandle *p, lwpid_t pid, void *info)
-{
-    if (p->pid == -1) {
-        if (ptrace(PT_LWPINFO, pid, info,
-            sizeof (struct ptrace_lwpinfo)) == -1)
-                return (PS_ERR);
-        else
-                return (PS_OK);
-    } else {
-        memset(info, 0, sizeof(struct ptrace_lwpinfo));
-        return PS_OK;
-    }
-}
-
-#endif
-
 
 }
