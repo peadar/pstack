@@ -1,6 +1,5 @@
 #include "libpstack/proc.h"
 
-#include <sys/ptrace.h>
 #include <sys/types.h>
 
 #include <dirent.h>
