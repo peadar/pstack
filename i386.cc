@@ -119,13 +119,13 @@ void opReg(Regs &regs, Op op, int reg, Value &value) {
          break;
 
       case 11 ... 18: {
-         auto &st = *reinterpret_cast< typename Op::Reg<i387Float> *> (regs.fpx.st_space + (reg-11) * 4);
+         auto &st = *reinterpret_cast< typename Op::template Reg<i387Float> *> (regs.fpx.st_space + (reg-11) * 4);
          regop(op, st, value);
          break;
       }
 
       case 21 ... 28: {
-         auto &st = *reinterpret_cast< typename Op::Reg<Simd128> *> (regs.fpx.xmm_space + (reg-21) * 4);
+         auto &st = *reinterpret_cast< typename Op::template Reg<Simd128> *> (regs.fpx.xmm_space + (reg-21) * 4);
          regop(op, st, value);
          break;
       }

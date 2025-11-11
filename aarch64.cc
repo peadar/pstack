@@ -119,7 +119,7 @@ void opReg(Regs &regs, Op op, int reg, Value &value) {
          break;
 
       case 64 ...  95: {
-         auto &simd = *reinterpret_cast< typename Op::Reg<Simd128> *>(&regs.fpsimd.vregs[reg-64]);
+         auto &simd = *reinterpret_cast< typename Op::template Reg<Simd128> *>(&regs.fpsimd.vregs[reg-64]);
          regop(op, simd, value);
          break;
       }

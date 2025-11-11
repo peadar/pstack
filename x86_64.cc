@@ -155,19 +155,19 @@ void opReg(Regs &regs, Op op, int reg, Value &value) {
          regop(op, regs.user.rip, value);
          break;
       case 17 ... 32: {
-         auto &xmm = *reinterpret_cast< typename Op::Reg<Simd128> *> (regs.fp.xmm_space + (reg-17) * 4);
+         auto &xmm = *reinterpret_cast< typename Op::template Reg<Simd128> *> (regs.fp.xmm_space + (reg-17) * 4);
          regop(op, xmm, value);
          break;
       }
       case 33 ... 40: {
-         auto &st = *reinterpret_cast< typename Op::Reg<i387Float> *> (regs.fp.st_space + (reg-33) * 4);
+         auto &st = *reinterpret_cast< typename Op::template Reg<i387Float> *> (regs.fp.st_space + (reg-33) * 4);
          regop(op, st, value);
          break;
       }
       case 41 ... 48: {
          // MMX registers. These alias the st0-st7 regs above, but only provide
          // 64-bit SIMD state.
-         auto &st = *reinterpret_cast< typename Op::Reg<Simd64> *> (regs.fp.xmm_space + (reg-41) * 4);
+         auto &st = *reinterpret_cast< typename Op::template Reg<Simd64> *> (regs.fp.xmm_space + (reg-41) * 4);
          regop(op, st, value);
          break;
       }
