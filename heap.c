@@ -351,6 +351,8 @@ getframe(void ***bp, void  ***ip) {
 void
 getframe(void ***bp, void  ***ip) {
    //XXX: TODO: support aarch64
+   (void)bp;
+   (void)ip;
 }
 #else
 
