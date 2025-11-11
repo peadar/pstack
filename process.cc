@@ -1034,7 +1034,7 @@ ThreadStack::unwind(Process &p, const CoreRegisters &regs)
                 if (prev.mechanism == UnwindMechanism::MACHINEREGS
                       || prev.mechanism == UnwindMechanism::TRAMPOLINE
                       || prev.unwoundFromTrampoline ) {
-                    ProcessLocation badip { p, IP(prev.regs) };
+                    ProcessLocation badip { p, Elf::Addr(IP(prev.regs)) };
                     if (!badip.inObject() || (badip.codeloc->phdr().p_flags & PF_X) == 0) {
                         auto newRegs = prev.regs; // start with a copy of prev frames regs.
 #if defined(__amd64__) || defined(__i386__)
@@ -1109,12 +1109,10 @@ ThreadStack::unwind(Process &p, const CoreRegisters &regs)
                 }
 
 #endif
+#if defined(__i386__) || defined(__amd64__)
+                auto [ reloc, obj, segment ] = p.findSegment(prev.rawIP());
 #if defined(__i386__)
                 // Deal with signal trampolines for i386
-                Elf::Addr reloc;
-                const Elf::Phdr *segment;
-                Elf::Object::sptr obj;
-                std::tie(reloc, obj, segment) = p.findSegment(prev.rawIP());
                 if (obj) {
                     Elf::Addr sigContextAddr = 0;
                     auto objip = prev.rawIP() - reloc;
@@ -1139,7 +1137,6 @@ ThreadStack::unwind(Process &p, const CoreRegisters &regs)
                     }
                 }
 #endif
-#if defined(__i386__) || defined(__amd64__)
                 // frame-pointer unwinding.
                 // Use ebp/rbp to find return address and saved BP.
                 // Restore those, and the stack pointer itself.
@@ -1149,21 +1146,31 @@ ThreadStack::unwind(Process &p, const CoreRegisters &regs)
                 // a 0 ip on the call stack, it's a good indication the
                 // unwinding is finished.
                 if (prev.rawIP() != 0) {
-                   Elf::Addr newBp, newIp, oldBp;
-                   oldBp = BP(prev.regs);
+                   Elf::Addr oldBp = BP(prev.regs);
                    if (oldBp == 0) {
                       // null base pointer means we're done.
                       break;
                    }
-                   p.io->readObj(oldBp + ELF_BYTES, &newIp);
-                   p.io->readObj(oldBp, &newBp);
-                   if (newBp > oldBp && newIp > 4096) {
+                   auto newIp = p.io->readObj<Elf::Addr> (oldBp + ELF_BYTES);
+                   auto newBp = p.io->readObj<Elf::Addr>(oldBp);
+                   auto [ _1, _2, segment ] = p.findSegment(newIp);
+
+                   // If the value we got for the instruction pointer is in an
+                   // executable segment, then consider that good enough
+                   // evidence that we were probably successful with our
+                   // frame-pointer based unwind. This is the last chance
+                   // anyway, o worst case is you get some noisy junk stack
+                   // frames at the end.
+
+                   if (segment && segment->p_flags & PF_X) {
                        CoreRegisters newRegs = prev.regs;
+                       stack.back().cfa = newBp; // BP is the CFA of the previous frame.
+
                        SP(newRegs) = oldBp + ELF_BYTES * 2;
-                       BP(newRegs) = newBp;
                        IP(newRegs) = newIp;
+                       BP(newRegs) = newBp;
+
                        stack.emplace_back(UnwindMechanism::FRAMEPOINTER, newRegs);
-                       stack.back().cfa = newBp;
                        continue;
                    }
                 }
