@@ -330,6 +330,7 @@ public:
     const SymbolVersioning &symbolVersions() const;
 
     BuildID getBuildID() const;
+    Object::sptr debugData() const; // gets the embedded .gnu_debugdata image
 
     std::optional<VersionIdx> versionIdxForSymbol( size_t symbolIdx ) const;
     Context &context;
@@ -363,7 +364,6 @@ private:
     Dynamic &dynamic() const;
 
     const SectionHeaders &sectionHeaders() const;
-    Object::sptr debugData() const;
 
     // Section plumbing for hash and gnu_hash is the same, just with different
     // types and section names, so share the code.
