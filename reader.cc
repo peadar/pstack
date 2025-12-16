@@ -228,6 +228,7 @@ public:
       , upstream(upstream_->shared_from_this())
    {
    }
+   std::string filename() const override { return upstream->filename(); }
 };
 
 MemReader::csptr
