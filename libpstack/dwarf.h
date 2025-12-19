@@ -1014,6 +1014,8 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
             auto update = dframe.registers.find(reg);
             if (update != dframe.registers.end())
                frame.registers[reg] = update->second;
+            else
+               frame.registers[reg] = { };
             break;
         }
 
@@ -1062,6 +1064,8 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
                 auto oldreg = dframe.registers.find(reg);
                 if (oldreg != dframe.registers.end())
                    frame.registers[reg] = oldreg->second;
+                else
+                   frame.registers[reg] = { };
                 break;
             }
 
