@@ -1,5 +1,4 @@
 #include "libpstack/proc.h"
-#include "libpstack/ps_callback.h"
 #include "libpstack/stringify.h"
 
 #include <sys/ptrace.h>
@@ -31,7 +30,6 @@ LiveProcess::LiveProcess(Context &context, Elf::Object::sptr &ex, pid_t pid_, bo
     : Process( context, ex, std::make_shared<CacheReader>(std::make_shared<LiveReader>(context, pid_, "mem")))
     , pid(pid_)
 {
-    (void)ps_getpid(this);
     if (alreadyStopped)
        stoppedLWPs[pid].stopCount = 1;
 }

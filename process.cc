@@ -63,15 +63,23 @@ std::ostream &
 operator << (std::ostream &os, const JSON<Procman::StackFrame, Procman::Process *> &jt);
 
 std::ostream &
-operator << (std::ostream &os, const JSON<Procman::ThreadStack, Procman::Process *> &ts)
+operator << (std::ostream &os, const JSON<Procman::Lwp, Procman::Process *> &ts)
 {
-    return JObject(os)
-        .field("name", ts.object.name)
-        .field("ti_tid", ts.object.info.ti_tid)
-        .field("ti_lid", ts.object.info.ti_lid)
-        .field("ti_type", ts.object.info.ti_type)
-        .field("ti_pri", ts.object.info.ti_pri)
-        .field("ti_stack", ts.object.stack, ts.context);
+   JObject jo(os);
+   auto &lwp = ts.object;
+
+   if (ts.object.threadInfo.has_value()) {
+      auto &ti = *lwp.threadInfo;
+      jo
+         .field("ti_tid", ti.ti_tid)
+         .field("ti_type", ti.ti_type)
+         .field("ti_pri", ti.ti_pri)
+         ;
+   }
+   return jo
+      .field("ti_lid", lwp.id)
+      .field("name", *lwp.name)
+      .field("ti_stack", lwp.stack, ts.context);
 }
 
 }
@@ -682,19 +690,22 @@ std::ostream &operator << (std::ostream &os, UnwindMechanism mech) {
 }
 
 std::ostream &
-Process::dumpStackText(std::ostream &os, const ThreadStack &thread)
+Process::dumpStackText(std::ostream &os, const Lwp &lwp)
 {
     os << std::dec;
-    os << "thread: " << (void *)thread.info.ti_tid
-       << ", lwp: " << thread.info.ti_lid
-       << ", type: " << thread.info.ti_type
-       ;
-    if (thread.name)
-       os << ", name: " << *thread.name;
+    if (lwp.threadInfo.has_value()) {
+       auto &ti = *lwp.threadInfo;
+       os << "lwp: " << (void *)ti.ti_tid
+          << ", type: " << ti.ti_type
+          ;
+    }
+    os << ", lwp: " << lwp.id;
+    if (lwp.name.has_value())
+       os << ", name: " << *lwp.name;
     os << "\n";
 
     int frameNo = 0;
-    for (auto &frame : thread.stack)
+    for (auto &frame : lwp.stack)
         dumpFrameText(os, frame, frameNo++);
     return os;
 }
@@ -963,7 +974,7 @@ Process::~Process()
 }
 
 void
-ThreadStack::unwind(Process &p, const CoreRegisters &regs)
+Lwp::unwind(Process &p, const CoreRegisters &regs)
 {
     stack.clear();
     stack.reserve(20);
@@ -973,214 +984,211 @@ ThreadStack::unwind(Process &p, const CoreRegisters &regs)
     // stack frame
     Elf::Addr trampoline = 0;
     if (p.vdsoImage) {
-       auto [sigreturnSym,idx] = p.vdsoImage->findDynamicSymbol("__kernel_rt_sigreturn");
-       if (sigreturnSym.st_shndx != SHN_UNDEF) {
-          trampoline = sigreturnSym.st_value + p.getVdsoBase();
-       }
+        auto [sigreturnSym,idx] = p.vdsoImage->findDynamicSymbol("__kernel_rt_sigreturn");
+        if (sigreturnSym.st_shndx != SHN_UNDEF) {
+            trampoline = sigreturnSym.st_value + p.getVdsoBase();
+        }
     }
 #endif
 
-    try {
-        stack.emplace_back(UnwindMechanism::MACHINEREGS, regs);
+    stack.emplace_back(UnwindMechanism::MACHINEREGS, regs);
 
-        for (int frameCount = 0; frameCount < p.context.options.maxframes; frameCount++) {
-            auto &prev = stack.back();
+    for (int frameCount = 0; frameCount < p.context.options.maxframes; frameCount++) {
+        auto &prev = stack.back();
 
-            try {
-                auto maybeNewRegs = prev.unwind(p);
-                if (!maybeNewRegs)
-                    break;
-                // XXX: the emplace_back below invalidates prev
-                bool isSignal = prev.isSignalTrampoline;
-                auto &newRegs = *maybeNewRegs;
-                stack.emplace_back(UnwindMechanism::DWARF, newRegs);
-                if (isSignal) {
-                   stack.back().unwoundFromTrampoline = true;
-                }
-#ifdef __aarch64__
-                auto &cur = stack.back();
-                if (newRegs.user.pc == trampoline)
-                    cur.isSignalTrampoline = true;
-#endif
+        try {
+            auto maybeNewRegs = prev.unwind(p);
+            if (!maybeNewRegs)
+                break;
+            // XXX: the emplace_back below invalidates prev
+            bool isSignal = prev.isSignalTrampoline;
+            auto &newRegs = *maybeNewRegs;
+            stack.emplace_back(UnwindMechanism::DWARF, newRegs);
+            if (isSignal) {
+                stack.back().unwoundFromTrampoline = true;
             }
-            catch (const std::exception &ex) {
+#ifdef __aarch64__
+            auto &cur = stack.back();
+            if (newRegs.user.pc == trampoline)
+                cur.isSignalTrampoline = true;
+#endif
+        }
+        catch (const std::exception &ex) {
 
-                if (p.context.verbose > 2)
-                    *p.context.debug << "failed to unwind frame with DWARF: "
-                           << ex.what() << std::endl;
+            if (p.context.verbose > 2)
+                *p.context.debug << "failed to unwind frame with DWARF: "
+                    << ex.what() << std::endl;
 
-                // Some machine specific methods of unwinding if DWARF fails.
+            // Some machine specific methods of unwinding if DWARF fails.
 
-                // if we're the top-of-stack, or there's a signal handler just
-                // above, and the instruction pointer in the current frame
-                // doesn't look like it comes from a code segment, then there's
-                // a strong likelihood that we jumped to an invalid location
-                // from an indirect call. The only action carried out for the
-                // frame is that the call instruction pushed the return address
-                // onto the stack. The calling frame is an exact copy of the
-                // called one, but with the instruction pointer read from the
-                // TOS, and the stack pointer adjusted.
-                //
-                // If we're wrong here, it's possible we do worse than we would
-                // have done had we fallen down to frame pointer unwinding, but
-                // we'd need to be executing an instruction in a piece of
-                // runtime-generated code, or something else that wasn't in a
-                // normal ELF phdr, so it seems more likely this is the best
-                // thing to do.
-                //
-                // For ARM, the concept is the same, but we look at the link
-                // register rather than a pushd return address
+            // if we're the top-of-stack, or there's a signal handler just
+            // above, and the instruction pointer in the current frame
+            // doesn't look like it comes from a code segment, then there's
+            // a strong likelihood that we jumped to an invalid location
+            // from an indirect call. The only action carried out for the
+            // frame is that the call instruction pushed the return address
+            // onto the stack. The calling frame is an exact copy of the
+            // called one, but with the instruction pointer read from the
+            // TOS, and the stack pointer adjusted.
+            //
+            // If we're wrong here, it's possible we do worse than we would
+            // have done had we fallen down to frame pointer unwinding, but
+            // we'd need to be executing an instruction in a piece of
+            // runtime-generated code, or something else that wasn't in a
+            // normal ELF phdr, so it seems more likely this is the best
+            // thing to do.
+            //
+            // For ARM, the concept is the same, but we look at the link
+            // register rather than a pushd return address
 
-                if (prev.mechanism == UnwindMechanism::MACHINEREGS
-                      || prev.mechanism == UnwindMechanism::TRAMPOLINE
-                      || prev.unwoundFromTrampoline ) {
-                    ProcessLocation badip { p, Elf::Addr(IP(prev.regs)) };
-                    if (!badip.inObject() || (badip.codeloc->phdr().p_flags & PF_X) == 0) {
-                        auto newRegs = prev.regs; // start with a copy of prev frames regs.
+            if (prev.mechanism == UnwindMechanism::MACHINEREGS
+                    || prev.mechanism == UnwindMechanism::TRAMPOLINE
+                    || prev.unwoundFromTrampoline ) {
+                ProcessLocation badip { p, Elf::Addr(IP(prev.regs)) };
+                if (!badip.inObject() || (badip.codeloc->phdr().p_flags & PF_X) == 0) {
+                    auto newRegs = prev.regs; // start with a copy of prev frames regs.
 #if defined(__amd64__) || defined(__i386__)
-                        // get stack pointer in the current frame, and read content of TOS
-                        auto sp = SP(prev.regs);
-                        Elf::Addr ip;
-                        auto in = p.io->read(sp, sizeof ip, (char *)&ip);
-                        if (in == sizeof ip) {
-                            SP(newRegs) = sp + sizeof ip;
-                            IP(newRegs) = ip;             // .. insn pointer.
-                            stack.emplace_back(UnwindMechanism::BAD_IP_RECOVERY, newRegs);
-                            continue;
-                        }
-
-#elif defined(__aarch64__)
-                        // Copy old link register into new instruction pointer.
-                        newRegs.user.pc = prev.regs.user.regs[30];
+                    // get stack pointer in the current frame, and read content of TOS
+                    auto sp = SP(prev.regs);
+                    Elf::Addr ip;
+                    auto in = p.io->read(sp, sizeof ip, (char *)&ip);
+                    if (in == sizeof ip) {
+                        SP(newRegs) = sp + sizeof ip;
+                        IP(newRegs) = ip;             // .. insn pointer.
                         stack.emplace_back(UnwindMechanism::BAD_IP_RECOVERY, newRegs);
                         continue;
-#endif
-                    }
-                }
-#if defined(__aarch64__)
-                // Deal with unwinding through an ARM signal handler
-                if (trampoline && trampoline == prev.rawIP()) {
-                    // the stack pointer is pointing directly at rt_sigframe. This is
-                    // as per arch/arm64/kernel/signal.c
-                    struct rt_sigframe {
-                       siginfo_t si;
-                       ucontext_t uc;
-                    };
-                    auto sigframe = p.io->readObj<rt_sigframe>(prev.regs.user.sp);
-                    CoreRegisters newRegs;
-                    for (int i = 0; i < 31; ++i)
-                       newRegs.user.regs[i] = sigframe.uc.uc_mcontext.regs[i];
-                    newRegs.user.sp = sigframe.uc.uc_mcontext.sp;
-                    newRegs.user.pc = sigframe.uc.uc_mcontext.pc;
-                    // Copy any extension registers. (For now, just the FP/SIMD set.)
-                    const unsigned char *rawctx = sigframe.uc.uc_mcontext.__reserved;
-                    const struct _aarch64_ctx *aarchctx;
-                    for (bool done = false; !done; rawctx += aarchctx->size) {
-                       aarchctx = reinterpret_cast<const _aarch64_ctx *>(rawctx);
-                       switch (aarchctx->magic) {
-                          case 0:
-                             done = true;
-                             break;
-                          case FPSIMD_MAGIC: {
-                             newRegs.fpsimd = *reinterpret_cast<const user_fpsimd_struct *>(rawctx + aarchctx->size);
-                             break;
-                          }
-                          default:
-                             if (p.context.debug && p.context.verbose > 1) {
-                                *p.context.debug
-                                   << "ignoring unrecognized AARCH64 register set in signal frame: "
-                                   << "magic: " << reinterpret_cast<void *>(aarchctx->magic)
-                                   << ", len " << aarchctx->size <<"\n";
-                             }
-                             break;
-                       }
                     }
 
-                    stack.emplace_back(UnwindMechanism::TRAMPOLINE, newRegs);
+#elif defined(__aarch64__)
+                    // Copy old link register into new instruction pointer.
+                    newRegs.user.pc = prev.regs.user.regs[30];
+                    stack.emplace_back(UnwindMechanism::BAD_IP_RECOVERY, newRegs);
                     continue;
+#endif
                 }
-                // last ditch effort for ARM is to just replace the PC with the
-                // LR - this is useful for PLT entries, for example.
-                if (prev.regs.user.regs[30] != prev.regs.user.pc) {
-                   CoreRegisters newRegs = prev.regs;
-                   newRegs.user.pc = newRegs.user.regs[30];
-                   stack.emplace_back(UnwindMechanism::LINKREG, newRegs);
-                   continue;
+            }
+#if defined(__aarch64__)
+            // Deal with unwinding through an ARM signal handler
+            if (trampoline && trampoline == prev.rawIP()) {
+                // the stack pointer is pointing directly at rt_sigframe. This is
+                // as per arch/arm64/kernel/signal.c
+                struct rt_sigframe {
+                    siginfo_t si;
+                    ucontext_t uc;
+                };
+                auto sigframe = p.io->readObj<rt_sigframe>(prev.regs.user.sp);
+                CoreRegisters newRegs;
+                for (int i = 0; i < 31; ++i)
+                    newRegs.user.regs[i] = sigframe.uc.uc_mcontext.regs[i];
+                newRegs.user.sp = sigframe.uc.uc_mcontext.sp;
+                newRegs.user.pc = sigframe.uc.uc_mcontext.pc;
+                // Copy any extension registers. (For now, just the FP/SIMD set.)
+                const unsigned char *rawctx = sigframe.uc.uc_mcontext.__reserved;
+                const struct _aarch64_ctx *aarchctx;
+                for (bool done = false; !done; rawctx += aarchctx->size) {
+                    aarchctx = reinterpret_cast<const _aarch64_ctx *>(rawctx);
+                    switch (aarchctx->magic) {
+                        case 0:
+                            done = true;
+                            break;
+                        case FPSIMD_MAGIC: {
+                            newRegs.fpsimd = *reinterpret_cast<const user_fpsimd_struct *>(rawctx + aarchctx->size);
+                            break;
+                        }
+                        default:
+                            if (p.context.debug && p.context.verbose > 1) {
+                                *p.context.debug
+                                    << "ignoring unrecognized AARCH64 register set in signal frame: "
+                                    << "magic: " << reinterpret_cast<void *>(aarchctx->magic)
+                                    << ", len " << aarchctx->size <<"\n";
+                            }
+                            break;
+                    }
                 }
+
+                stack.emplace_back(UnwindMechanism::TRAMPOLINE, newRegs);
+                continue;
+            }
+            // last ditch effort for ARM is to just replace the PC with the
+            // LR - this is useful for PLT entries, for example.
+            if (prev.regs.user.regs[30] != prev.regs.user.pc) {
+                CoreRegisters newRegs = prev.regs;
+                newRegs.user.pc = newRegs.user.regs[30];
+                stack.emplace_back(UnwindMechanism::LINKREG, newRegs);
+                continue;
+            }
 
 #endif
 #if defined(__i386__) || defined(__amd64__)
-                auto [ reloc, obj, segment ] = p.findSegment(prev.rawIP());
+            auto [ reloc, obj, segment ] = p.findSegment(prev.rawIP());
 #if defined(__i386__)
-                // Deal with signal trampolines for i386
-                if (obj) {
-                    Elf::Addr sigContextAddr = 0;
-                    auto objip = prev.rawIP() - reloc;
-                    // Find the gregset on the stack - it differs depending on
-                    // whether this is realtime or "classic" frame
-                    auto [restoreSym,idx] = obj->findDebugSymbol("__restore");
-                    if (restoreSym.st_shndx != SHN_UNDEF && objip == restoreSym.st_value)
-                        sigContextAddr = SP(prev.regs) + 4;
-                    else {
-                        auto [restoreRtSym,idx] = obj->findDebugSymbol("__restore_rt");
-                        if (restoreRtSym.st_shndx != SHN_UNDEF && objip == restoreRtSym.st_value)
-                            sigContextAddr = p.io->readObj<Elf::Addr>(SP(prev.regs) + 8) + 20;
-                    }
-                    if (sigContextAddr != 0) {
-                       // This mapping is based on DWARF regnos, and ucontext.h
-                       gregset_t regs;
-                       p.io->readObj(sigContextAddr, &regs);
-                       CoreRegisters core;
-                       gregset2user(core.user, regs);
-                       stack.emplace_back(UnwindMechanism::TRAMPOLINE, core);
-                       continue;
-                    }
+            // Deal with signal trampolines for i386
+            if (obj) {
+                Elf::Addr sigContextAddr = 0;
+                auto objip = prev.rawIP() - reloc;
+                // Find the gregset on the stack - it differs depending on
+                // whether this is realtime or "classic" frame
+                auto [restoreSym,idx] = obj->findDebugSymbol("__restore");
+                if (restoreSym.st_shndx != SHN_UNDEF && objip == restoreSym.st_value)
+                    sigContextAddr = SP(prev.regs) + 4;
+                else {
+                    auto [restoreRtSym,idx] = obj->findDebugSymbol("__restore_rt");
+                    if (restoreRtSym.st_shndx != SHN_UNDEF && objip == restoreRtSym.st_value)
+                        sigContextAddr = p.io->readObj<Elf::Addr>(SP(prev.regs) + 8) + 20;
                 }
-#endif
-                // frame-pointer unwinding.
-                // Use ebp/rbp to find return address and saved BP.
-                // Restore those, and the stack pointer itself.
-                //
-                // We skip this if the instruction pointer is zero - we hope
-                // we'd have resolved null-pointer calls above, and if we find
-                // a 0 ip on the call stack, it's a good indication the
-                // unwinding is finished.
-                if (prev.rawIP() != 0) {
-                   Elf::Addr oldBp = BP(prev.regs);
-                   if (oldBp == 0) {
-                      // null base pointer means we're done.
-                      break;
-                   }
-                   auto newIp = p.io->readObj<Elf::Addr> (oldBp + ELF_BYTES);
-                   auto newBp = p.io->readObj<Elf::Addr>(oldBp);
-                   auto [ _1, _2, segment ] = p.findSegment(newIp);
-
-                   // If the value we got for the instruction pointer is in an
-                   // executable segment, then consider that good enough
-                   // evidence that we were probably successful with our
-                   // frame-pointer based unwind. This is the last chance
-                   // anyway, o worst case is you get some noisy junk stack
-                   // frames at the end.
-
-                   if (segment && segment->p_flags & PF_X) {
-                       CoreRegisters newRegs = prev.regs;
-                       SP(newRegs) = oldBp + ELF_BYTES * 2;
-                       IP(newRegs) = newIp;
-                       BP(newRegs) = newBp;
-                       stack.back().cfa = SP(newRegs);
-                       stack.emplace_back(UnwindMechanism::FRAMEPOINTER, newRegs);
-                       continue;
-                   }
+                if (sigContextAddr != 0) {
+                    // This mapping is based on DWARF regnos, and ucontext.h
+                    gregset_t regs;
+                    p.io->readObj(sigContextAddr, &regs);
+                    CoreRegisters core;
+                    gregset2user(core.user, regs);
+                    stack.emplace_back(UnwindMechanism::TRAMPOLINE, core);
+                    continue;
                 }
-#endif
-
-                throw;
             }
+#endif
+            // frame-pointer unwinding.
+            // Use ebp/rbp to find return address and saved BP.
+            // Restore those, and the stack pointer itself.
+            //
+            // We skip this if the instruction pointer is zero - we hope
+            // we'd have resolved null-pointer calls above, and if we find
+            // a 0 ip on the call stack, it's a good indication the
+            // unwinding is finished.
+            if (prev.rawIP() != 0) {
+                Elf::Addr oldBp = BP(prev.regs);
+                if (oldBp == 0) {
+                    // null base pointer means we're done.
+                    break;
+                }
+                auto newIp = p.io->readObj<Elf::Addr> (oldBp + ELF_BYTES);
+                auto newBp = p.io->readObj<Elf::Addr>(oldBp);
+                auto [ _1, _2, segment ] = p.findSegment(newIp);
+
+                // If the value we got for the instruction pointer is in an
+                // executable segment, then consider that good enough
+                // evidence that we were probably successful with our
+                // frame-pointer based unwind. This is the last chance
+                // anyway, o worst case is you get some noisy junk stack
+                // frames at the end.
+
+                if (segment && segment->p_flags & PF_X) {
+                    CoreRegisters newRegs = prev.regs;
+                    SP(newRegs) = oldBp + ELF_BYTES * 2;
+                    IP(newRegs) = newIp;
+                    BP(newRegs) = newBp;
+                    stack.back().cfa = SP(newRegs);
+                    stack.emplace_back(UnwindMechanism::FRAMEPOINTER, newRegs);
+                    continue;
+                }
+            }
+#endif
+            // We can't unwind this frame: give up, and return what we've
+            // already unwound.
+            *p.context.debug << "warning: stack unwinding terminated with error: "
+               << ex.what() << "\n";
+            break;
         }
-    }
-    catch (const std::exception &ex) {
-        if (p.context.debug)
-           *p.context.debug << "warning: exception unwinding stack: " << ex.what() << std::endl;
     }
 }
 
@@ -1212,66 +1220,44 @@ Process::getTaskName([[maybe_unused]] lwpid_t lwp) const {
    return std::nullopt;
 }
 
-std::list<ThreadStack>
+Stacks
 Process::getStacks() {
-    std::list<ThreadStack> threadStacks;
-    std::set<lwpid_t> tracedLwps;
+    Stacks stacks;
     StopProcess processSuspender(this);
 
     /*
-     * First find "threads", the userland pthread_t concept. This uses the
-     * pthread "agent". This is the userland-visible part of the threading
-     * system, and allows us to find pthread ids, and (in theory) deal with
-     * threading systems where there is not a 1:1 correspondence between
-     * userland pthreads and kernel LWPs
+     * Find LWPs, the kernel scheduled entities.
      */
-    listThreads([this, &threadStacks, &tracedLwps] (
-                       const td_thrhandle_t *thr) {
-        CoreRegisters regs;
-        td_err_e the;
-#ifdef __linux__
-        the = td_thr_getgregs(thr, (elf_greg_t *) &regs);
-#else
-        the = td_thr_getgregs(thr, &regs);
-#endif
-        if (the == TD_OK) {
-            threadStacks.push_back(ThreadStack());
-            ThreadStack &back = threadStacks.back();
-            td_thr_get_info(thr, &back.info);
-            back.unwind(*this, regs);
-            back.name = getTaskName(back.info.ti_lid);
-            tracedLwps.insert(back.info.ti_lid);
-        }
-    });
-
-     /*
-      * Now find LWPs, the kernel scheduled entities.  If we saw a thread above
-      * with this LWP assigned as its `ti_lid` field then that thread was the
-      * one actively scheduled on this LWP, so there's no need to print out its
-      * backtrace. We assume that in a system where N(threads) != N(lwps), then
-      * threads that are not currently scheduled would get their register set
-      * from somewhere other than the LWP (eg, cached in some structure that
-      * td_thr_getregs would have found without resorting to ps_lgetregs().
-      * There are no extant linux systems that I'm aware of that use a non-1:1
-      * thread model, so we can't really test this.
-      */
-    listLWPs([this, &threadStacks, &tracedLwps](lwpid_t lwpid) {
-        if (tracedLwps.find(lwpid) == tracedLwps.end()) {
-            threadStacks.emplace_back();
-            threadStacks.back().info.ti_lid = lwpid;
-            threadStacks.back().unwind(*this, getCoreRegs( lwpid ));
-            threadStacks.back().name = getTaskName(lwpid);
-        }
-    });
+    listLWPs([this, &stacks ](lwpid_t lwpid) {
+          Lwp lwp;
+          lwp.id = lwpid;
+          try {
+             lwp.unwind(*this, getCoreRegs(lwpid));
+             lwp.name = getTaskName(lwpid);
+             stacks.emplace(std::make_pair(lwpid, std::move(lwp)));
+          }
+          catch (const Exception &ex) {
+            *context.debug << "failed to unwind stack for  " << lwpid << ": " << ex.what() << "\n";
+          }
+       });
 
     /*
-     * if we don't need to print arguments to functions, we now have the full
-     * backtrace and don't need to read anything more from the process.
-     * Everything else is just parsing debug data, so we can resume now.
+     * Use the thread db to find at least the thread ids for each lwp. We
+     * assume that we are in the modern linux 1:1 threading world, and punt on
+     * anything more sophisticated here.
      */
-    if (!context.options.doargs)
-        processSuspender.clear();
-    return threadStacks;
+    if (agent) {
+       listThreads([this, &stacks] ( const td_thrhandle_t *thr) {
+          td_thrinfo_t info;
+          if (td_thr_get_info(thr, &info) == TD_OK) {
+             auto stack = stacks.find(info.ti_lid);
+             if (stack != stacks.end()) {
+             stack->second.threadInfo = info;
+          } else {
+             *context.debug << "warning: no stack for thread " << info.ti_tid << ", for alleged LWP " << info.ti_lid << "\n";
+       } } });
+ }
+    return stacks;
 }
 
 CoreRegisters

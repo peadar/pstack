@@ -1,6 +1,7 @@
 #include "libpstack/proc.h"
-#include "libpstack/ps_callback.h"
 
+#include <thread_db.h>
+#include <proc_service.h>
 #include <cstdarg>
 
 using pstack::Procman::Process;
@@ -9,9 +10,9 @@ using namespace pstack;
 extern "C" {
 
 ps_err_e
-ps_pcontinue(const struct ps_prochandle *ph)
+ps_pcontinue(struct ps_prochandle *ph)
 {
-    auto p = const_cast<Process *>(static_cast<const Process *>(ph));
+    auto p = static_cast<Process *>(ph);
     try {
         p->resumeProcess();
         return PS_OK;
@@ -22,9 +23,9 @@ ps_pcontinue(const struct ps_prochandle *ph)
 }
 
 ps_err_e
-ps_lcontinue(const struct ps_prochandle *ph, lwpid_t pid)
+ps_lcontinue(struct ps_prochandle *ph, lwpid_t pid)
 {
-    auto p = const_cast<Process *>(static_cast<const Process *>(ph));
+    auto p = static_cast<Process *>(ph);
     try {
         p->resume(pid);
         return PS_OK;
@@ -87,9 +88,9 @@ ps_pread(struct ps_prochandle *ph, psaddr_t addr, void *buf, size_t len)
 }
 
 ps_err_e
-ps_pstop(const struct ps_prochandle *ph)
+ps_pstop(struct ps_prochandle *ph)
 {
-    auto *p = const_cast<Process *>(static_cast<const Process *>(ph));
+    auto *p = static_cast<Process *>(ph);
     try {
         p->stopProcess();
         return PS_OK;
@@ -174,8 +175,15 @@ ps_err_e ps_lgetfpregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */
 
 ps_err_e ps_lgetregs(struct ps_prochandle *ph, lwpid_t pid, prgregset_t gregset)
 {
-    auto p = static_cast<Process *>(ph);
-    return p->getRegset<user_regs_struct, NT_PRSTATUS>(pid, *reinterpret_cast<user_regs_struct *>(gregset)) ? PS_OK : PS_ERR;
+   auto p = static_cast<Process *>(ph);
+   auto gregs = reinterpret_cast<user_regs_struct *>(gregset);
+   try {
+      p->getRegset<user_regs_struct, NT_PRSTATUS>(pid, *gregs);
+      return PS_OK;
+   }
+   catch (const Exception &ex) {
+      return PS_ERR;
+   }
 }
 
 ps_err_e ps_lsetfpregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */,
@@ -192,9 +200,9 @@ ps_err_e ps_lsetregs(struct ps_prochandle * /* unused */, lwpid_t /* unused */,
     return (PS_ERR);
 }
 
-ps_err_e ps_lstop(const struct ps_prochandle *ph, lwpid_t lwpid)
+ps_err_e ps_lstop(struct ps_prochandle *ph, lwpid_t lwpid)
 {
-    Process *p = const_cast<Process *>(static_cast<const Process *>(ph));
+    auto p = static_cast<Process *>(ph);
     try {
         p->stop(lwpid);
         return PS_OK;

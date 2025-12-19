@@ -35,7 +35,7 @@ pstack(Procman::Process &proc)
     const auto &threadStacks = proc.getStacks();
     auto &os = *proc.context.output;
     if (doJson) {
-        os << json(threadStacks, &proc);
+        os << json(std::views::transform(threadStacks, [](const auto &pair) { return pair.second; } ), &proc);
     } else {
         os << "process: " << *proc.io;
         std::optional<siginfo_t> sig = proc.getSignalInfo();
@@ -43,7 +43,7 @@ pstack(Procman::Process &proc)
            os << " (terminated with " << Procman::SigInfo{*sig} << ")";
         os << "\n";
         for (auto &s : threadStacks) {
-            proc.dumpStackText(os, s);
+            proc.dumpStackText(os, s.second);
             os << "\n";
         }
     }

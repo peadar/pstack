@@ -3,10 +3,6 @@
 #include <elf.h>
 #include <signal.h>
 #include <memory.h>
-extern "C" {
-    // Some thread_db headers are not safe to include unwrapped in extern "C"
-#include <thread_db.h>
-}
 
 #include <map>
 #include <set>
@@ -16,8 +12,10 @@ extern "C" {
 #include <string_view>
 #include <sys/stat.h> // for ino_t
 #include <ucontext.h> // for gregset_t
+extern "C" { // sigh.
+#include <thread_db.h>
+}
 
-#include "libpstack/ps_callback.h"
 #include "libpstack/dwarf.h"
 #include "libpstack/arch.h"
 
@@ -172,12 +170,15 @@ struct PrintableFrame {
     
 };
 
-struct ThreadStack {
-    td_thrinfo_t info {};
+struct Lwp {
+    lwpid_t id;
     std::optional<std::string> name;
+    std::optional<td_thrinfo_t> threadInfo;
     std::vector<StackFrame> stack;
     void unwind(Process &, const CoreRegisters &regs);
 };
+
+using Stacks = std::map<lwpid_t, Lwp>;
 
 struct DevNode {
     int major = -1;
@@ -270,8 +271,20 @@ public:
 
     virtual size_t getRegs(lwpid_t pid, int code, size_t size, void *data) = 0;
 
-    template <typename T, int code> size_t getRegset(lwpid_t pid, T &reg) {
-        return getRegs(pid, code, sizeof (T), reinterpret_cast<void *>( &reg ) );
+    template <typename T, int code> void getRegset(lwpid_t pid, T &reg) {
+        size_t rc = getRegs(pid, code, sizeof (T), reinterpret_cast<void *>( &reg ) );
+        if (rc == 0) {
+           // Failed
+           throw (Exception()
+                 << "failed to get register set " << code << " for " << pid
+                 << ": " << strerror(errno));
+        }
+        if (rc < sizeof (T)) {
+           // worked, but size doesn't match.
+           throw (Exception()
+                 << "invalid register set size, got " << rc
+                 << ", expected " << sizeof(T));
+        }
     }
     CoreRegisters getCoreRegs(lwpid_t lwp);
 
@@ -287,7 +300,7 @@ public:
     virtual void resumeProcess() = 0;
     virtual void resume(pid_t lwpid) = 0;
     virtual Elf::Object::sptr executableImage() { return nullptr; }
-    std::ostream &dumpStackText(std::ostream &, const ThreadStack &);
+    std::ostream &dumpStackText(std::ostream &, const Lwp &);
     std::ostream &dumpFrameText(std::ostream &, const StackFrame &, int);
     template <typename T> void listThreads(const T &invokeable);
     virtual void listLWPs(const std::function<void(lwpid_t)> &) {};
@@ -301,7 +314,7 @@ public:
     std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Sym>
         resolveSymbolDetail(const char *name, bool includeDebug,
                 std::function<bool(std::string_view)> match = [](std::string_view) { return true; });
-    virtual std::list<ThreadStack> getStacks();
+    virtual Stacks getStacks();
     void load();
     [[nodiscard]] virtual pid_t getPID() const = 0;
     [[nodiscard]] virtual AddressSpace addressSpace() const = 0;
@@ -471,7 +484,7 @@ std::ostream &operator << (std::ostream &os, WaitStatus ws);
 }
 
 std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::StackFrame, pstack::Procman::Process *> &jt);
-std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::ThreadStack, pstack::Procman::Process *> &jt);
+std::ostream &operator << (std::ostream &os, const JSON<pstack::Procman::Lwp, pstack::Procman::Process *> &jt);
 
 }
 
