@@ -695,11 +695,11 @@ Process::dumpStackText(std::ostream &os, const Lwp &lwp)
     os << std::dec;
     if (lwp.threadInfo.has_value()) {
        auto &ti = *lwp.threadInfo;
-       os << "lwp: " << (void *)ti.ti_tid
+       os << "thread: " << (void *)ti.ti_tid
           << ", type: " << ti.ti_type
-          ;
+          << ", ";
     }
-    os << ", lwp: " << lwp.id;
+    os << "lwp: " << lwp.id;
     if (lwp.name.has_value())
        os << ", name: " << *lwp.name;
     os << "\n";
