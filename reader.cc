@@ -157,9 +157,9 @@ CacheReader::getPage(Off pageoff) const
     } else {
         p = std::make_unique<Page>();
     }
-     p->load(*upstream, pageoff);
-     pages.push_front(std::move(p));
-     return **pages.begin();
+    p->load(*upstream, pageoff);
+    pages.push_front(std::move(p));
+    return **pages.begin();
 }
 
 size_t
@@ -175,6 +175,8 @@ CacheReader::read(Off off, size_t count, char *ptr) const
         Off offsetOfPageInFile = off - offsetOfDataInPage;
         try {
            Page &page = getPage(offsetOfPageInFile);
+           if (offsetOfDataInPage >= page.len)
+              break;
            size_t chunk = std::min(page.len - offsetOfDataInPage, count);
            memcpy(ptr, page.data.data() + offsetOfDataInPage, chunk);
            off += chunk;
