@@ -154,18 +154,6 @@ LiveProcess::stopProcess()
             *context.debug << "found " << suspended.size() - lastStopCount << " new LWPs after first " << lastStopCount << "\n";
     } while (lastStopCount != suspended.size());
 
-    /*
-     * Attempt to enumerate the threads and suspend with pthread_db. This will
-     * probably just fail, but all the LWPs are suspended now, anyway.
-     */
-    listThreads([this] (const td_thrhandle_t *thr) {
-        td_thrinfo_t info;
-        td_thr_get_info(thr, &info);
-        int suspendError = td_thr_dbsuspend(thr);
-        if (suspendError != 0 && suspendError != TD_NOCAPAB)
-            *context.debug << "can't suspend thread "  << thr << ": will suspend it's LWP " << info.ti_lid << "\n";
-        });
-
     if (context.verbose >= 2)
         *context.debug << "stopped process " << pid << "\n";
 }
@@ -173,25 +161,9 @@ LiveProcess::stopProcess()
 void
 LiveProcess::resumeProcess()
 {
-    // this doesn't work on Linux nptl, but it's ok, we'll resume the LWP below.
-    listThreads([this] (const td_thrhandle_t *thr) {
-        int rc = td_thr_dbresume(thr);
-        if (rc != 0 && rc != TD_NOCAPAB)
-            *context.debug << "can't resume thread "  << thr << " (will resume it's LWP)\n";
-    });
-
     for (auto &lwp : stoppedLWPs)
         resume(lwp.first);
-
-    // C++17: remove all LWPs that are now resumed)
-    for (auto it = stoppedLWPs.begin(); it != stoppedLWPs.end(); )
-        if (it->second.stopCount == 0)
-            it = stoppedLWPs.erase(it);
-        else
-            ++it;
-    /* C++20:
-       std::erase_if(stoppedLWPs, [](auto &&entry) { return entry.stopCount == 0; } );
-       */
+    std::erase_if(stoppedLWPs, [](auto &&entry) { return entry.second.stopCount == 0; } );
 }
 
 void

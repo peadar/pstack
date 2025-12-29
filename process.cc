@@ -1252,11 +1252,13 @@ Process::getStacks() {
           if (td_thr_get_info(thr, &info) == TD_OK) {
              auto stack = stacks.find(info.ti_lid);
              if (stack != stacks.end()) {
-             stack->second.threadInfo = info;
-          } else {
-             *context.debug << "warning: no stack for thread " << info.ti_tid << ", for alleged LWP " << info.ti_lid << "\n";
-       } } });
- }
+                stack->second.threadInfo = info;
+             } else {
+                *context.debug << "warning: no LWP for thread " << info.ti_tid << ", alleged LWP id " << info.ti_lid << "\n";
+             }
+          }
+       });
+    }
     return stacks;
 }
 
