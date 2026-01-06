@@ -7,7 +7,6 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
-#include <set>
 #include <sys/ucontext.h>
 #include <sys/wait.h>
 #include <csignal>

@@ -30,7 +30,7 @@ if (PYTHON2)
    find_package(Python2 COMPONENTS Development)
 endif()
 if (PYTHON3)
-   find_package(Python3 COMPONENTS Development)
+   find_package(Python3 3.14 EXACT COMPONENTS Development)
 endif()
 
 find_package(Git)
@@ -82,8 +82,9 @@ if (PYTHON3 AND Python3_Development_FOUND)
    set(pyinc "-I${Python3_INCLUDE_DIRS}")
    message(STATUS  "Python3_INCLUDE_DIRS are ${pyinc}")
    add_definitions("-DWITH_PYTHON3")
-   set(pysrc ${pysrc} python3.cc pythonc.c)
+   set(pysrc ${pysrc} python314.cc pythonc.c)
    set_source_files_properties(python3.cc PROPERTIES COMPILE_FLAGS ${pyinc})
+   set_source_files_properties(python314.cc PROPERTIES COMPILE_FLAGS ${pyinc})
    set_source_files_properties(pythonc.c PROPERTIES COMPILE_FLAGS ${pyinc})
    set_source_files_properties(canal.cc PROPERTIES COMPILE_FLAGS ${pyinc})
 endif()
@@ -121,9 +122,13 @@ add_executable(canal canal.cc)
 
 add_executable(${PSTACK_BIN} pstack.cc)
 
+add_executable(mkpyoff mkpyoff.cc)
+
+
 target_link_libraries(procman ${LTHREADDB} dwelf dl)
 target_link_libraries(${PSTACK_BIN} dwelf procman)
 target_link_libraries(canal dwelf procman)
+target_link_libraries(mkpyoff dwelf procman)
 
 set_target_properties(dwelf PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "${PSTACK_SOVERSION}" )
 set_target_properties(procman PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "${PSTACK_SOVERSION}" )
