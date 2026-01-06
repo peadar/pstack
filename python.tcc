@@ -435,14 +435,8 @@ PythonPrinter<PyV>::printInterp(Elf::Addr ptr, bool showModules)
     State state;
     proc.io->readObj(ptr, &state);
     os << "---- interpreter @" << std::hex << ptr << std::dec << " -----\n";
-    std::set<Elf::Addr> threads;
-    threads.insert(state.head);
     for (Elf::Addr tsp = state.head; tsp; ) {
         tsp = printThread(tsp);
-        if (auto [iter, inserted] = threads.insert( tsp ); !inserted )
-            break;
-        if (threads.size() > 128)
-            break;
         os << "\n";
     }
     if (showModules) {
@@ -533,5 +527,6 @@ void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr
     }
     pc->os << ")";
 }
+
 
 }

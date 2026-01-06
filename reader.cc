@@ -4,9 +4,10 @@
 #include <unistd.h>
 #include <cassert>
 #include <cstdint>
-#include "libpstack/reader.h"
 #include <cstring>
 #include <utility>
+
+#include "libpstack/reader.h"
 
 namespace pstack {
 using std::string;

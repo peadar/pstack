@@ -83,10 +83,10 @@ LzmaReader::LzmaReader(Reader::csptr upstream_)
    if (rc != LZMA_OK)
        throw (Exception() << "LZMA error reading footer: " << rc);
    off -= options.backward_size;
-   uint8_t indexBuffer[options.backward_size];
-   upstream->readObj(off, indexBuffer, options.backward_size);
-   rc = lzma->index_buffer_decode(&index, &memlimit, allocator(), indexBuffer, &pos,
-         options.backward_size);
+   std::vector<uint8_t> indexBuffer(options.backward_size);
+   upstream->readObj(off, indexBuffer.data(), indexBuffer.size());
+   rc = lzma->index_buffer_decode(&index, &memlimit, allocator(),
+           indexBuffer.data(), &pos, indexBuffer.size());
    if (rc != LZMA_OK)
        throw (Exception() << "can't decode index buffer");
 }

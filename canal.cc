@@ -18,8 +18,6 @@
 #include "libpstack/context.h"
 #include "libpstack/proc.h"
 #include "libpstack/elf.h"
-#include "libpstack/dwarf.h"
-#include "libpstack/stringify.h"
 #include "libpstack/ioflag.h"
 #include "libpstack/flags.h"
 #if defined( WITH_PYTHON3 )

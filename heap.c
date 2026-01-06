@@ -21,7 +21,9 @@
 // There are a number of problems optimization can cause in here. For example,
 // folding calls to "malloc" + "memset" into calls to calloc, mucking with the
 // layout of the stack, etc.
+#ifdef __gcc__
 #pragma GCC optimize("O0")
+#endif
 
 // types of functions we'll interpose.
 typedef void *(*malloc_t)(size_t);
