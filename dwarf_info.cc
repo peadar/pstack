@@ -1,5 +1,4 @@
 #include "libpstack/dwarf.h"
-#include "libpstack/stringify.h"
 #include <memory>
 #include <filesystem>
 
@@ -251,6 +250,8 @@ std::filesystem::path
 Info::getAltImageName() const
 {
     const Elf::Section &section = elf->getDebugSection(".gnu_debugaltlink", SHT_NULL);
+    if (!section)
+        return {};
     const auto &name = section.io()->readString(0);
     if (name[0] == '/')
         return name;
@@ -266,7 +267,8 @@ Info::sptr
 Info::getAltDwarf() const
 {
     if (!altImageLoaded) {
-        altDwarf = elf->context.findDwarf(getAltImageName());
+        auto name = getAltImageName();
+        altDwarf = name.empty() ? nullptr : elf->context.findDwarf(name);
         altImageLoaded = true;
     }
     return altDwarf;

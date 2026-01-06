@@ -517,7 +517,6 @@ operator << (std::ostream &os, const JSON<Dwarf::Macros> &mi)
         .field("version", mi.object.version)
         .field("debug_line_offset", mi.object.debug_line_offset)
         .field("opcodes", mi.object.opcodes);
-    // XXX: use a visitor to generate details?
 }
 
 std::ostream &

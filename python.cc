@@ -4,7 +4,6 @@
 #include <string>
 #include <regex.h>
 #include "libpstack/proc.h"
-#include "libpstack/stringify.h"
 
 namespace pstack {
 static std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr> getInterpHead(Procman::Process &);

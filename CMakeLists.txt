@@ -2,12 +2,14 @@ cmake_minimum_required(VERSION 3.10)
 set(PSTACK_SOVERSION 2.17)
 set(PSTACK_VERSION 2.17.7)
 project(pstack LANGUAGES C CXX VERSION "${PSTACK_VERSION}" )
+set(Python3_DEBUG_OUTPUT ON)
 
 include (GNUInstallDirs)
 enable_testing()
 
 option(PYTHON3 "Compile with python 3 support" OFF)
-option(PYTHON2 "Compile with python 2 support" ON)
+option(PYTHON2 "Compile with python 2 support" OFF)
+option(PYRDB "Compile with modern python 3 remote debugging" ON)
 option(PTRACE_TESTS "Run extra tests that require unrestricted access to ptrace" OFF)
 
 math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
@@ -26,7 +28,7 @@ find_package(ZLIB REQUIRED)
 if (PYTHON2)
    find_package(Python2 COMPONENTS Development)
 endif()
-if (PYTHON3)
+if (PYTHON3 OR PYRDB)
    find_package(Python3 COMPONENTS Development)
 endif()
 
@@ -67,17 +69,23 @@ if (Python3_Development_FOUND OR Python2_Development_FOUND)
    set(pysrc python.cc)
 endif()
 
-if (PYTHON3 AND Python3_Development_FOUND)
-   set(pyinc "-I${Python3_INCLUDE_DIRS}")
-   message(STATUS  "Python3_INCLUDE_DIRS are ${pyinc}")
-   add_definitions("-DWITH_PYTHON3")
-   set(pysrc ${pysrc} python3.cc pythonc.c)
-   set_source_files_properties(python3.cc PROPERTIES COMPILE_FLAGS ${pyinc})
-   set_source_files_properties(pythonc.c PROPERTIES COMPILE_FLAGS ${pyinc})
-   set_source_files_properties(canal.cc PROPERTIES COMPILE_FLAGS ${pyinc})
+if (PYRDB)
+   message(STATUS  "will compile python remote debugging support")
+   add_definitions("-DWITH_PYRDB")
+   set(pysrc ${pysrc} pyrdb.cc)
 endif()
 
-if (Python2_Development_FOUND)
+if (PYTHON3 AND Python3_Development_FOUND)
+    message(STATUS  "Python3_INCLUDE_DIRS are ${pyinc}")
+    add_definitions("-DWITH_PYTHON3")
+    set(pyinc "-I${Python3_INCLUDE_DIRS}")
+    set(pysrc ${pysrc} pythonc.c python3.cc)
+    set_source_files_properties(python3.cc PROPERTIES COMPILE_FLAGS ${pyinc})
+    set_source_files_properties(pythonc.c PROPERTIES COMPILE_FLAGS ${pyinc})
+    set_source_files_properties(canal.cc PROPERTIES COMPILE_FLAGS ${pyinc})
+endif()
+
+if (PYTHON2 AND Python2_Development_FOUND)
    set(pysrc ${pysrc} python2.cc)
    add_definitions("-DWITH_PYTHON2")
    set_source_files_properties(python2.cc PROPERTIES COMPILE_FLAGS -I${Python2_INCLUDE_DIRS})
@@ -122,13 +130,14 @@ else()
 endif()
 
 add_executable(canal canal.cc)
-
+add_executable(mkpyoff mkpyoff.cc)
 add_executable(${PSTACK_BIN} pstack.cc)
 
 target_link_libraries(procman dwelf dl)
 target_link_libraries(procman_static dwelf_static dl)
 target_link_libraries(${PSTACK_BIN} ${PSTACK_LINK_LIBS})
 target_link_libraries(canal ${PSTACK_LINK_LIBS})
+target_link_libraries(mkpyoff dwelf)
 target_link_options(${PSTACK_BIN} PRIVATE -Wl,--export-dynamic)
 target_link_options(canal PRIVATE -Wl,--export-dynamic)
 
@@ -137,7 +146,7 @@ set_target_properties(procman PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "$
 
 
 
-if ((NOT (Python3_Development_FOUND)) AND PYTHON3)
+if ((NOT (Python3_Development_FOUND)) AND (PYTHON3 OR PYRDB))
    message(WARNING "no python3 support found")
 endif()
 

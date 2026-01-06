@@ -1,9 +1,7 @@
-#include "libpstack/dwarf.h"
 #include "libpstack/elf.h"
 #include "libpstack/proc.h"
 
 #include <iostream>
-
 
 namespace pstack::Procman {
 

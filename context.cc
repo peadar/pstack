@@ -1,5 +1,3 @@
-// vim: expandtab:ts=4:sw=4
-
 #include "libpstack/context.h"
 #include "libpstack/dwarf.h"
 #include "libpstack/reader.h"
@@ -132,7 +130,10 @@ Context::getDebuginfodClient()
 std::shared_ptr<Dwarf::Info>
 Context::findDwarf(const Elf::BuildID &bid)
 {
-    return findDwarf(findImage(bid));
+   Elf::Object::sptr obj = findImage(bid);
+   if (!obj)
+      return nullptr;
+   return findDwarf(obj);
 }
 
 Dwarf::Info::sptr
