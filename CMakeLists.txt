@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 set(PSTACK_SOVERSION 2.16)
-set(PSTACK_VERSION 2.16)
+set(PSTACK_VERSION 2.16.1)
 project(pstack LANGUAGES C CXX VERSION "${PSTACK_VERSION}" )
 
 include (GNUInstallDirs)
@@ -9,6 +9,7 @@ add_subdirectory(tests)
 
 option(PYTHON3 "Compile with python 3 support" OFF)
 option(PYTHON2 "Compile with python 2 support" ON)
+option(PTRACE_TESTS "Run extra tests that require unrestricted access to ptrace" OFF)
 
 math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 set(PSTACK_BIN "pstack" CACHE STRING "Name of the 'pstack' binary")
@@ -175,7 +176,11 @@ add_test(NAME segv COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_SOURCE_DIR}/test
 add_test(NAME thread COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/thread-test.py)
 add_test(NAME jsondump COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/dump-test.py)
 add_test(NAME procself COMMAND tests/procself)
+
+# need to remove this test for environments with more restrictive ptrace
+if (PTRACE_TESTS)
 add_test(NAME suspend COMMAND tests/suspend)
+endif()
 if (PYTHON3 AND Python3_Development_FOUND)
    add_test(NAME pydict COMMAND env PSTACK_BIN=${PSTACK_BIN}${CMAKE_CURRENT_SOURCE_DIR}/tests/pydict_test.py)
 endif()

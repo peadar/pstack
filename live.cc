@@ -180,12 +180,44 @@ LiveProcess::stop(lwpid_t tid) {
    }
    tcb.ptraceErr = 0;
 
-   int status = 0;
-   pid_t waitedpid = waitpid(tid, &status, tid == this->pid ? 0 : __WCLONE);
-   if (waitedpid == -1)
-      *context.debug << "failed to stop LWP " << tid << ": wait failed: " << strerror(errno) << "\n";
-   else if (context.verbose >= 1)
-      *context.debug << "suspend LWP " << tid << std::endl;
+   // If anything breaks from here on, we'll PT_DETACH, and send a SIGCONT in
+   // case there's any confusion
+
+   for (int count = 0; tcb.ptraceErr == 0; ++count) {
+      int status = 0;
+      pid_t waitedpid = waitpid(tid, &status, tid == this->pid ? 0 : __WCLONE);
+      if (waitedpid == -1) {
+         if (errno != EINTR) {
+            tcb.ptraceErr = errno;
+            *context.debug << "failed to stop LWP " << tid << ": wait failed: " << strerror(errno) << "\n";
+         } else {
+            *context.debug << "interrupted stopping LWP " << tid << ": retry\n";
+         }
+      } else if (!WIFSTOPPED(status)) {
+         tcb.ptraceErr = EINVAL;
+         *context.debug << "wait doesn't report LWP stopped? " << status << "\n";
+      } else if (WSTOPSIG(status) != SIGSTOP) {
+         *context.debug << "got signal " << WSTOPSIG(status)
+            << " while waiting for " << tid << " to stop - deliver and retry.";
+         siginfo_t si;
+         if (ptrace(PTRACE_GETSIGINFO, tid, nullptr, &si) != -1) {
+            *context.debug << " new siginfo: " << SigInfo{si};
+         }
+         *context.debug << "\n";
+
+         if (ptrace(PTRACE_CONT, tid, nullptr, WSTOPSIG(status)) == -1) {
+            tcb.ptraceErr = errno;
+            *context.debug << "...failed " << errno << "\n";
+         }
+      } else {
+         if (context.verbose >= 1)
+            *context.debug << "suspended LWP " << tid << " (attempt " << count+1 << ")" << std::endl;
+         return;
+      }
+   }
+   *context.debug << "sending SIGCONT to " << tid << " and detaching\n";
+   kill(tid, SIGCONT); // don't leave it hanging if we messed up.
+   ptrace(PT_DETACH, tid, caddr_t(1), 0);
 }
 
 // Parse [s]maps for this pid. We use "smaps" just for vmflags for now.

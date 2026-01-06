@@ -1422,7 +1422,11 @@ std::ostream &operator << (std::ostream &os, const SigInfo &sip) {
 #else
       << "si_signo " << si.si_signo
 #endif
-      << ", si_code " << si.si_code;
+      << ", si_code " << si.si_code
+      << ", si_pid " << si.si_pid
+      << ", si_fd " << si.si_fd
+      << ", si_addr " << si.si_addr
+        ;
 
    auto codesforsig = codes.find( si.si_signo );
    if (codesforsig == codes.end()) {
@@ -1433,22 +1437,6 @@ std::ostream &operator << (std::ostream &os, const SigInfo &sip) {
       auto code = codesforsig->second.find( si.si_code );
       if (code != codesforsig->second.end())
             os << " - " << code->second;
-   }
-
-   switch (si.si_signo) {
-      case SIGILL:
-      case SIGFPE:
-      case SIGBUS:
-      case SIGTRAP:
-#ifdef SIGEMT
-      case SIGEMT:
-#endif
-      case SIGSEGV: {
-         os << ", fault address " << std::hex << si.si_addr << std::dec;
-         break;
-      }
-
-
    }
    return os;
 }}
