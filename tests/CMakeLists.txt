@@ -23,6 +23,7 @@ add_executable(args args.cc)
 add_executable(noreturn noreturn.c noreturn-ext.c)
 add_executable(cpp cpp.cc)
 add_executable(procself procself.cc)
+add_executable(suspend suspend.cc)
 
 target_link_libraries(thread pthread testhelper)
 target_link_libraries(badfp testhelper)
@@ -33,6 +34,7 @@ target_link_libraries(noreturn testhelper)
 target_link_libraries(cpp testhelper)
 target_link_libraries(inline testhelper)
 target_link_libraries(procself dwelf procman)
+target_link_libraries(suspend dwelf procman)
 SET_TARGET_PROPERTIES(noreturn PROPERTIES COMPILE_FLAGS "-O2 -g")
 
 
