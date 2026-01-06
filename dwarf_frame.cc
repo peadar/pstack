@@ -1,6 +1,5 @@
 #include "libpstack/dwarf.h"
 #include <algorithm>
-#include <stack>
 
 namespace pstack::Dwarf {
 std::pair<uintmax_t, bool>

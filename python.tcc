@@ -4,9 +4,11 @@
 #include <stddef.h>
 
 #include "libpstack/python.h"
+#include <cpython/code.h>
 
 namespace pstack {
 // This reimplements PyCode_Addr2Line
+#if 0
 template<int PyV> int
 getLine(const Reader &proc, const PyCodeObject *code, const PyFrameObject *frame)
 {
@@ -418,34 +420,6 @@ PythonPrinter<PyV>::printThread(Elf::Addr ptr)
     return Elf::Addr(thread.next);
 }
 
-/*
- * Process one python interpreter in the process at remote address ptr
- * Returns the address of the next interpreter on on the process's list.
- */
-template <int PyV>
-Elf::Addr
-PythonPrinter<PyV>::printInterp(Elf::Addr ptr, bool showModules)
-{
-    // these are the first two fields in PyInterpreterState - next and tstate_head.
-    struct State {
-        Elf::Addr next;
-        Elf::Addr head;
-        Elf::Addr modules;
-    };
-    State state;
-    proc.io->readObj(ptr, &state);
-    os << "---- interpreter @" << std::hex << ptr << std::dec << " -----\n";
-    for (Elf::Addr tsp = state.head; tsp; ) {
-        tsp = printThread(tsp);
-        os << "\n";
-    }
-    if (showModules) {
-       os << "---- modules:\n";
-       print(state.modules);
-    }
-    return state.next;
-}
-
 template <int PyV>
 void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr remoteAddr) {
     const PyFrameObject* pfo = (PyFrameObject *)pyo;
@@ -527,5 +501,35 @@ void printArguments(const PythonPrinter<PyV> *pc, const PyObject *pyo, Elf::Addr
     }
     pc->os << ")";
 }
+#endif
+
+/*
+ * Process one python interpreter in the process at remote address ptr
+ * Returns the address of the next interpreter on on the process's list.
+ */
+template <int PyV>
+Elf::Addr
+PythonPrinter<PyV>::printInterp(Elf::Addr ptr, bool showModules)
+{
+    // these are the first two fields in PyInterpreterState - next and tstate_head.
+    struct State {
+        Elf::Addr next;
+        Elf::Addr head;
+        Elf::Addr modules;
+    };
+    State state;
+    proc.io->readObj(ptr, &state);
+    os << "---- interpreter @" << std::hex << ptr << std::dec << " -----\n";
+    for (Elf::Addr tsp = state.head; tsp; ) {
+        tsp = printThread(tsp);
+        os << "\n";
+    }
+    if (showModules) {
+       os << "---- modules:\n";
+       print(state.modules);
+    }
+    return state.next;
+}
+
 
 }

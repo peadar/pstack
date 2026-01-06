@@ -1,5 +1,3 @@
-// vim: expandtab:ts=4:sw=4
-
 #include "libpstack/context.h"
 #include "libpstack/dwarf.h"
 #include "libpstack/reader.h"

@@ -1,5 +1,4 @@
 #include "libpstack/proc.h"
-#include "libpstack/stringify.h"
 
 #include <sys/ptrace.h>
 #include <sys/types.h>
