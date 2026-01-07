@@ -5,6 +5,9 @@
 #define WITH_PYTHON
 #include "libpstack/python.h"
 #endif
+#ifdef WITH_PYRDB
+#include "libpstack/pyrdb.h"
+#endif
 
 #include <sys/types.h>
 #include <sys/signal.h>
@@ -158,6 +161,7 @@ doPy(Procman::Process &proc, bool showModules, const PyInterpInfo &info) {
         throw Exception() << "no python interpreter found";
     printer.printInterpreters(showModules);
 }
+#endif
 
 /**
  * @brief Given a process, tries to print the Python strack trace of it.
@@ -171,12 +175,17 @@ doPy(Procman::Process &proc, bool showModules, const PyInterpInfo &info) {
  * @return              boolean of whether the process was a Python process or not
  */
 bool pystack(Procman::Process &proc, bool showModules) {
+#ifdef WITH_PYRDB
+        pstack::Py::Remote remote(proc);
+#endif
+#ifdef WITH_PYTHON
     PyInterpInfo info = getPyInterpInfo(proc);
 
     if (info.libpython == nullptr) // not a python process or python interpreter not found
         return false;
 
     if (info.versionHex < V2HEX(3, 0)) { // Python 2.x
+
 #ifdef WITH_PYTHON2
         doPy<2>(proc, showModules, info);
 #else
@@ -189,9 +198,9 @@ bool pystack(Procman::Process &proc, bool showModules) {
         throw (Exception() << "no support for discovered python 3 interpreter");
 #endif
     }
+#endif
     return true;
 }
-#endif
 
 int
 usage(std::ostream &os, const char *name, const Flags &options)
@@ -213,7 +222,7 @@ emain(int argc, char **argv, Context &context)
     std::ofstream out;
     bool failures = false;
 
-#if defined(WITH_PYTHON)
+#if defined(WITH_PYTHON) || defined(WITH_PYRDB)
     bool doPython = false;
     bool pythonModules = false;
 #endif
@@ -337,7 +346,7 @@ emain(int argc, char **argv, Context &context)
                std::clog << STR(VERSION) << "\n";
                exitCode = 0; })
 
-#ifdef WITH_PYTHON
+#if defined(WITH_PYTHON) ||defined(WITH_PYRDB)
     .add("python-modules",
             'm',
             "print contents of all python modules when tracing",
@@ -410,7 +419,7 @@ emain(int argc, char **argv, Context &context)
 
     auto doStack = [=] (Procman::Process &proc) {
         while (!interrupted) {
-#if defined(WITH_PYTHON)
+#if defined(WITH_PYTHON) || defined (WITH_PYRDB)
             if (doPython || printAllStacks) {
                 bool isPythonProcess = pystack(proc, pythonModules);
                 // error if -p but not python process
