@@ -9,6 +9,7 @@ add_subdirectory(tests)
 
 option(PYTHON3 "Compile with python 3 support" OFF)
 option(PYTHON2 "Compile with python 2 support" ON)
+option(PYRDB "Compile with modern python 3 remote debugging" ON)
 option(PTRACE_TESTS "Run extra tests that require unrestricted access to ptrace" OFF)
 
 math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
@@ -87,6 +88,12 @@ if (PYTHON3 AND Python3_Development_FOUND)
    set_source_files_properties(python314.cc PROPERTIES COMPILE_FLAGS ${pyinc})
    set_source_files_properties(pythonc.c PROPERTIES COMPILE_FLAGS ${pyinc})
    set_source_files_properties(canal.cc PROPERTIES COMPILE_FLAGS ${pyinc})
+endif()
+
+if (PYRDB)
+   message(STATUS  "will compile python remote debugging support")
+   add_definitions("-DWITH_PYRDB")
+   set(pysrc ${pysrc} pyrdb.cc)
 endif()
 
 if (Python2_Development_FOUND)
