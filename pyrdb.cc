@@ -12,12 +12,16 @@ struct Header {
 };
 std::string_view Header::expectedCookie { "xdebugpy" };
 
+// Hidden internal python types.
 struct PyInterpreterState;
 struct PyThreadState;
 struct PyObject;
 struct _PyInterpreterFrame;
 struct _PyStackRef;
+struct _gc_runtime_state;
 struct DebugFieldContainer;
+struct _PyStackChunk;
+struct _gil_runtime_state;
 
 struct AbstractDebugField {
     virtual void parse(std::istream &is, const Reader::csptr &) = 0;
@@ -29,7 +33,6 @@ struct AbstractOffset : public AbstractDebugField {
     void parse(std::istream &is, const Reader::csptr &io) override {
         auto fieldOff = parseInt<size_t>(is);
         io->readObj(fieldOff, &off);
-        std::clog << "read offset " << off << " at offset " << fieldOff << "\n";
     }
     AbstractOffset(DebugFieldContainer *container, std::string_view name_);
 };
@@ -38,7 +41,6 @@ template <typename Datum> struct Offset : AbstractOffset {
     Datum value(const Reader::csptr &io) {
         return io->readObj<Datum>(off);
     }
-
     using AbstractOffset::AbstractOffset;
 };
 
@@ -106,15 +108,39 @@ struct RuntimeStateOffsets : DebugFieldContainer {
 };
 
 struct InterpreterStateOffsets : DebugFieldContainer {
+    Offset<void*> size;
+    Offset<int64_t> id;
     Offset<PyInterpreterState*> next;
     Offset<PyThreadState*> threads_head;
     Offset<PyThreadState*> threads_main;
+    Offset<_gc_runtime_state> gc;
+    Offset<PyObject *> imports_modules;
     Offset<PyObject *> sysdict;
+    Offset<PyObject *> builtins;
+    Offset<_gil_runtime_state *> ceval_gil;
+    Offset<_gil_runtime_state> gil_runtime_state;
+    Offset<int> gil_runtime_state_locked;
+    Offset<void *> gil_runtime_state_enabled; // XXX? zero.
+    Offset<PyThreadState *> gil_runtime_state_holder;
+    Offset<uint64_t> code_object_generation;
+    Offset<uint64_t> tlbc_generation;
     InterpreterStateOffsets()
-    : next(this, "next")
+    : size(this, "size")
+        , id(this, "id")
+        , next(this, "next")
         , threads_head(this, "threads_head")
         , threads_main(this, "threads_main")
+        , gc(this, "gc")
+        , imports_modules(this, "imports_modules")
         , sysdict(this, "sysdict")
+        , builtins(this, "builtins")
+        , ceval_gil(this, "ceval_gil")
+        , gil_runtime_state(this, "gil_runtime_state")
+        , gil_runtime_state_locked(this, "gil_runtime_state_locked")
+        , gil_runtime_state_enabled(this, "gil_runtime_state_enabled")
+        , gil_runtime_state_holder(this, "gil_runtime_state_holder")
+        , code_object_generation(this, "code_object_generation")
+        , tlbc_generation(this, "tlbc_generation")
     {}
 };
 
@@ -124,12 +150,20 @@ struct ThreadStateOffsets : DebugFieldContainer {
     Offset<PyThreadState *> next;
     Offset<PyInterpreterState *> interp;
     Offset<_PyInterpreterFrame *> current_frame;
+    Offset<unsigned long> thread_id;
+    Offset<unsigned long> native_thread_id;
+    Offset<_PyStackChunk *> datastack_chunk;
+    Offset<unsigned int> status;
     ThreadStateOffsets()
     :size(this, "size")
         , prev(this, "prev")
         , next(this, "next")
         , interp(this, "interp")
         , current_frame(this, "current_frame")
+        , thread_id(this, "thread_id")
+        , native_thread_id(this, "native_thread_id")
+        , datastack_chunk(this, "datastack_chunk")
+        , status(this, "status")
     {}
 };
 
@@ -165,24 +199,23 @@ Remote::Remote(Procman::Process &proc_) : proc{proc_} {
 
     for (auto &[addr, mapped] : proc.objects) {
         auto &sec = mapped.object(ctx)->getSection(".PyRuntime", SHT_PROGBITS);
-        if (sec)
+        if (!sec)
             continue;
         auto io = sec.io();
         auto h = io->readObj<Header>(0);
 
-        debugOffsetsAddr = addr + sec.shdr.sh_addr;
-        *ctx.debug << "found python runtime in " << mapped.name() << "\n";
+        pyRuntimeAddr = addr + sec.shdr.sh_addr;
 
-        auto proch = proc.io->readObj<Header>(debugOffsetsAddr);
-        if (proch != h) {
+        auto proch = proc.io->readObj<Header>(pyRuntimeAddr);
+        if (proch != h)
             *ctx.debug << "note - in memory offsets != on-disk offsets\n";
-        }
-        auto pyruntime = proc.io->view("debug offsets", debugOffsetsAddr);
+        auto pyruntime = proc.io->view("debug offsets", pyRuntimeAddr);
         auto offsets = RootOffsets(proch.version, pyruntime);
 
-        std::cout << "version from offsets is " << offsets.version.off << "\n";
-        std::cout << "interpreters_head is " << offsets.runtime_state.subs.interpreters_head.value(pyruntime) << "\n";
-
+        *ctx.debug << "python interpreter at " << pyRuntimeAddr << "\n"
+                   << "version from offsets is " << offsets.version.off << "\n"
+                   << "interpreters_head is " << offsets.runtime_state.subs.interpreters_head.value(pyruntime) << "\n"
+        ;
     }
 
 } }
