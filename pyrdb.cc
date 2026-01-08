@@ -5,60 +5,59 @@
 
 namespace pstack::Py {
 
+// Minimal header from _PyRuntime to find the version, and verify the magic cookie.
 struct Header {
-    char cookie[8];
+    std::array<char, 8> cookie;
     static std::string_view expectedCookie;
     uint64_t version;
     auto operator <=> (const Header &rhs) const = default;
 };
+
 std::string_view Header::expectedCookie { "xdebugpy" };
-AbstractDebugField::AbstractDebugField(DebugFieldContainer *container_, std::string_view name_)
-{
+
+RawOffset::RawOffset(OffsetContainer *container_, std::string_view name_) {
     container_->fields[name_] = this;
 }
 
-AbstractOffset::AbstractOffset(DebugFieldContainer *container_, std::string_view name_)
-        : AbstractDebugField{container_, name_}
-{
-}
-
 void
-DebugFieldContainer::parseField(std::istream &is, Reader::csptr reader, std::string_view fieldName) {
-    auto fieldi = fields.find(fieldName);
-    if (fieldi != fields.end()) {
-        fieldi->second->parse(is, reader);
-        fields.erase(fieldi);
-    } else {
-        std::cerr << "unsupported/duplicate field " << fieldName << "\n";
-        skip<uintptr_t>(is);
-    }
-}
-
-void
-DebugFieldContainer::parse(std::istream &is, const Reader::csptr &reader) {
-    parseObject(is, [&](std::istream &is, std::string_view field) {
-        parseField(is, reader, field);
+OffsetContainer::parse(std::istream &is, const Reader::csptr &reader, uintptr_t object) {
+    parseObject(is, [&](std::istream &is, std::string_view fieldName) {
+        if (fieldName == "size") {
+            auto sizeoff = parseInt<size_t>(is);
+            reader->readObj(object + sizeoff, &size);
+        } else {
+            auto fieldi = fields.find(fieldName);
+            if (fieldi != fields.end()) {
+                fieldi->second->parse(is, reader, object);
+                fields.erase(fieldi);
+            } else {
+                std::cerr << "unsupported/duplicate field " << fieldName << "\n";
+                skip<uintptr_t>(is);
+            }
+        }
     });
     for (auto &[name, value] : fields) {
         std::cerr << "field " << name << " not found\n";
     }
 }
 
-struct RuntimeStateOffsets : DebugFieldContainer {
+// Containers for offsets, as found in substructures of PyDebugOffsets
+// For each, we create an Offset object with appropriate container and field
+// types for each offset. As we parse the JSON, we will populate the offsets as
+// we find them in the process.
+
+struct RuntimeStateOffsets : OffsetContainer {
     template<typename Field> using Off = Offset<_PyRuntimeState, Field>;
-    Off<size_t> size;
     Off<PyThreadState *> finalizing;
     Off<PyInterpreterState *> interpreters_head;
     RuntimeStateOffsets() 
-       : size(this, "size")
-        , finalizing(this, "finalizing")
+        : finalizing(this, "finalizing")
         , interpreters_head(this, "interpreters_head")
     {}
 };
 
-struct InterpreterStateOffsets : DebugFieldContainer {
+struct InterpreterStateOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<PyInterpreterState, Field>;
-    Off<void*> size;
     Off<int64_t> id;
     Off<PyInterpreterState*> next;
     Off<PyThreadState*> threads_head;
@@ -75,8 +74,7 @@ struct InterpreterStateOffsets : DebugFieldContainer {
     Off<uint64_t> code_object_generation;
     Off<uint64_t> tlbc_generation;
     InterpreterStateOffsets()
-    : size(this, "size")
-        , id(this, "id")
+        : id(this, "id")
         , next(this, "next")
         , threads_head(this, "threads_head")
         , threads_main(this, "threads_main")
@@ -94,9 +92,8 @@ struct InterpreterStateOffsets : DebugFieldContainer {
     {}
 };
 
-struct ThreadStateOffsets : DebugFieldContainer {
+struct ThreadStateOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<PyThreadState, Field>;
-    Off<size_t> size;
     Off<PyThreadState *> prev;
     Off<PyThreadState *> next;
     Off<PyInterpreterState *> interp;
@@ -106,8 +103,7 @@ struct ThreadStateOffsets : DebugFieldContainer {
     Off<_PyStackChunk *> datastack_chunk;
     Off<unsigned int> status;
     ThreadStateOffsets()
-    :size(this, "size")
-        , prev(this, "prev")
+        : prev(this, "prev")
         , next(this, "next")
         , interp(this, "interp")
         , current_frame(this, "current_frame")
@@ -118,77 +114,124 @@ struct ThreadStateOffsets : DebugFieldContainer {
     {}
 };
 
+struct InterpreterFrameOffsets : OffsetContainer {
+    template <typename Field> using Off = Offset<_PyInterpreterFrame, Field>;
+    Off<_PyInterpreterFrame *> previous;
+    Off<PyCodeObject *> executable;
+    Off<_Py_CODEUNIT> instr_ptr;
+    Off<_PyStackRef> localsplus;
+    Off<char> owner;
+    Off<_PyStackRef *> stackpointer;
+    Off<void *> tlbc_index; // XXX?
+    InterpreterFrameOffsets()
+        : previous(this, "previous")
+        , executable(this, "executable")
+        , instr_ptr(this, "instr_ptr")
+        , localsplus(this, "localsplus")
+        , owner(this, "owner")
+        , stackpointer(this, "stackpointer")
+        , tlbc_index(this, "tlbc_index")
+    {}
+};
 
-struct RootOffsets : DebugFieldContainer {
-    template <typename Field> using Off = Offset<_PyDebugOffsets, Field>;
-    Off<uint64_t> version;
-    Off<size_t> free_threaded;
-    SubFields<RuntimeStateOffsets> runtime_state;
-    SubFields<InterpreterStateOffsets> interpreter_state;
-    SubFields<ThreadStateOffsets> thread_state;
-    RootOffsets(uint64_t version, Reader::csptr io);
+// We parse this out of the JSON file representing the _PyDebugOffsets type.
+struct RootOffsets {
+    RuntimeStateOffsets runtime_state;
+    InterpreterStateOffsets interpreter_state;
+    ThreadStateOffsets thread_state;
+    InterpreterFrameOffsets interpreter_frame;
+    RootOffsets(uint64_t version, Reader::csptr io, uintptr_t object);
     ~RootOffsets();
 };
 
-RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io)
-    : version(this, "version")
-    , free_threaded(this, "free_threaded")
-    , runtime_state(this, "runtime_state")
-    , interpreter_state(this, "interpreter_state")
-    , thread_state(this, "thread_state")
+RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t object)
 {
     std::array<char, 16> chars;
     auto [ end, ec ] = std::to_chars(chars.begin(), chars.end(), versionExpected, 16);
     std::string name = std::string(chars.begin(), end) + ".pydbg";
     std::cout << "reading offsets from " << name << "\n";
     std::ifstream in(name);
-    parse(in, io);
-    assert(version.off == versionExpected);
+    parseObject(in, [&](std::istream &is, std::string_view field) {
+        if (field == "interpreter_state")
+            interpreter_state.parse(is, io, object);
+        else if (field == "thread_state")
+            thread_state.parse(is, io, object);
+        else if (field == "runtime_state")
+            runtime_state.parse(is, io, object);
+        else if (field == "interpreter_frame")
+            interpreter_frame.parse(is, io, object);
+        else
+            skip<unsigned>(is);
+    });
 }
 
 RootOffsets::~RootOffsets() {}
 
 Target::Target(Procman::Process &proc_)
-: proc{proc_}
+    : proc{proc_}
 {
-    // First find a python interpreter. The first thing with the right section will do.
-    pstack::Context &ctx = proc.context;
-
+    // find a python interpreter. The first thing with the right section with the right contents will do.
     for (auto &[addr, mapped] : proc.objects) {
-        auto &sec = mapped.object(ctx)->getSection(".PyRuntime", SHT_PROGBITS);
+        auto &sec = mapped.object(proc.context)->getSection(".PyRuntime", SHT_PROGBITS);
         if (!sec)
             continue;
-        auto io = sec.io();
-        auto headerOnDisk = io->readObj<Header>(0);
 
-        pyRuntimeAddr.remote = reinterpret_cast<_PyRuntimeState *>(addr + sec.shdr.sh_addr);
-        Remote<Header *> remoteHeader{reinterpret_cast<Header *>(addr + sec.shdr.sh_addr)};
-        Header headerInProc = remoteHeader.fetch(proc.io);
+        // The start of the section has three distinct uses:
+        // 1: the "header", which is the magic number and version. That
+        // structure is hard-coded here
+        //
+        // 2: the _Py_DebugOffsets, which must
+        // start with the header, but the rest of the content is defined by
+        // offsets in the JSON file
+        //
+        // 3: The _PyRuntime - which must start with _PyDebugOffsets. We know
+        // this has certain fields, and the JSON file says where they are, along
+        // with locating fields in other types we may have to walk
+        //
+        auto secaddr = addr + sec.shdr.sh_addr;
+        auto headerInProc = Remote<Header *>{reinterpret_cast<Header *>(secaddr)}.fetch(proc.io);
 
-        if (headerInProc != headerOnDisk)
-            *ctx.debug << "note - in memory offsets != on-disk offsets\n";
-        offsets = make_unique<RootOffsets>(headerInProc.version, proc.io);
-        auto &threadOffs = offsets->thread_state.subs;
-        for (auto i : interpreters()) {
-            for (auto t : threads(i)) {
-                auto id = threadOffs.thread_id.value(proc.io, t);
-                auto native_id = threadOffs.native_thread_id.value(proc.io, t);
-                std::cerr << "thread id: " << id << "\n";
-                std::cerr << "native id: " << native_id << "\n";
+        auto cookieInProc = std::string_view(headerInProc.cookie.begin(), headerInProc.cookie.end());
+        if (cookieInProc != Header::expectedCookie) {
+            *proc.context.debug << "bad cookie in " << sec.io()->filename() << ", skipping\n";
+            getppid();
+            continue;
+        }
+
+        pyRuntimeAddr.remote = reinterpret_cast<_PyRuntimeState *>(secaddr);
+        offsets = make_unique<RootOffsets>(headerInProc.version, proc.io, secaddr);
+        dumpBacktrace(std::cerr);
+        return;
+    }
+    throw (Exception() << "no python interpreter found");
+
+}
+
+void Target::dumpBacktrace(std::ostream &os) const {
+    auto &threadOffs = offsets->thread_state;
+    auto &frameOffs = offsets->interpreter_frame;
+    for (auto i : interpreters()) {
+        for (auto t : threads(i)) {
+            auto id = threadOffs.thread_id.value(proc.io, t);
+            auto native_id = threadOffs.native_thread_id.value(proc.io, t);
+            std::cerr << "interp " << i << ": thread id: " << id << ", native id: " << native_id << "\n";
+            auto frame = threadOffs.current_frame.value(proc.io, t);
+            while (frame.remote) {
+                auto code = frameOffs.executable.value(proc.io, frame);
+                frame = frameOffs.previous.value(proc.io, frame);
+                std::cerr << "\tframe " << frame << ", code:" << code << "\n";
             }
         }
     }
 }
 
 std::vector<Remote<PyInterpreterState *>>
-Target::interpreters() {
+Target::interpreters() const {
     std::vector<Remote<PyInterpreterState *>> interps;
-    auto &runtimeOffs = offsets->runtime_state.subs;
-    auto &interpOffs = offsets->interpreter_state.subs;
+    auto &runtimeOffs = offsets->runtime_state;
+    auto &interpOffs = offsets->interpreter_state;
     auto head = runtimeOffs.interpreters_head.value(proc.io, pyRuntimeAddr);
-
     while (head.remote) {
-        std::cerr << "found interpreter " << head << "\n";
         interps.push_back(head);
         head = interpOffs.next.value(proc.io, head);
     }
@@ -196,20 +239,16 @@ Target::interpreters() {
 }
 
 std::vector<Remote<PyThreadState *>>
-Target::threads(Remote<PyInterpreterState *> interp) {
+Target::threads(Remote<PyInterpreterState *> interp) const {
     std::vector<Remote<PyThreadState *>> threads;
-    auto &interpOffs = offsets->interpreter_state.subs;
-    auto &threadOffs = offsets->thread_state.subs;
+    auto &interpOffs = offsets->interpreter_state;
+    auto &threadOffs = offsets->thread_state;
     auto head = interpOffs.threads_head.value(proc.io, interp);
     while (head.remote) {
-        std::cerr << "found thread " << head << "\n";
         threads.push_back(head);
         head = threadOffs.next.value(proc.io, head);
     }
     return threads;
 }
-
-
 Target::~Target() = default;
-
 }
