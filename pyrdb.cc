@@ -4,6 +4,7 @@
 #include <string_view>
 
 namespace pstack::Py {
+
 struct Header {
     char cookie[8];
     static std::string_view expectedCookie;
@@ -11,40 +12,6 @@ struct Header {
     auto operator <=> (const Header &rhs) const = default;
 };
 std::string_view Header::expectedCookie { "xdebugpy" };
-
-struct AbstractDebugField {
-    virtual void parse(std::istream &is, const Reader::csptr &) = 0;
-    AbstractDebugField(DebugFieldContainer *container, std::string_view name_);
-};
-
-template <typename T> std::ostream &operator << (std::ostream &os, const Remote<T> &rt) {
-    return os << "Remote<" << rt.remote << ">";
-}
-
-struct AbstractOffset : public AbstractDebugField {
-    uint64_t off{0xbaadf00d};
-    void parse(std::istream &is, const Reader::csptr &io) override {
-        auto fieldOff = parseInt<size_t>(is);
-        io->readObj(fieldOff, &off);
-    }
-    AbstractOffset(DebugFieldContainer *container, std::string_view name_);
-};
-
-template <typename Datum> struct Offset : AbstractOffset {
-    using RemoteDatum = std::conditional_t<std::is_pointer_v<Datum>, Remote<Datum>, Datum>;
-
-    RemoteDatum value(const Reader::csptr &io) {
-        return io->readObj<RemoteDatum>(off);
-    }
-    using AbstractOffset::AbstractOffset;
-};
-
-struct DebugFieldContainer {
-    std::map<std::string_view, AbstractDebugField *> fields;
-    void parseField(std::istream &is, Reader::csptr, std::string_view fieldName);
-    void parse(std::istream &is, const Reader::csptr &);
-};
-
 AbstractDebugField::AbstractDebugField(DebugFieldContainer *container_, std::string_view name_)
 {
     container_->fields[name_] = this;
@@ -77,24 +44,11 @@ DebugFieldContainer::parse(std::istream &is, const Reader::csptr &reader) {
     }
 }
 
-struct SubFieldContainer : public AbstractDebugField {
-    DebugFieldContainer *child;
-    SubFieldContainer(DebugFieldContainer *parent, std::string_view name_, DebugFieldContainer *child_) :
-    AbstractDebugField{parent, name_}, child{child_} {}
-    virtual void parse(std::istream &is, const Reader::csptr &reader) {
-        child->parse(is, reader);
-    }
-};
-
-template <typename Subs> struct SubFields : SubFieldContainer {
-    Subs subs;
-    SubFields(DebugFieldContainer *parent, std::string_view name_) : SubFieldContainer(parent, name_, &subs) {}
-};
-
 struct RuntimeStateOffsets : DebugFieldContainer {
-    Offset<size_t> size;
-    Offset<PyThreadState *> finalizing;
-    Offset<PyInterpreterState *> interpreters_head;
+    template<typename Field> using Off = Offset<_PyRuntimeState, Field>;
+    Off<size_t> size;
+    Off<PyThreadState *> finalizing;
+    Off<PyInterpreterState *> interpreters_head;
     RuntimeStateOffsets() 
        : size(this, "size")
         , finalizing(this, "finalizing")
@@ -103,22 +57,23 @@ struct RuntimeStateOffsets : DebugFieldContainer {
 };
 
 struct InterpreterStateOffsets : DebugFieldContainer {
-    Offset<void*> size;
-    Offset<int64_t> id;
-    Offset<PyInterpreterState*> next;
-    Offset<PyThreadState*> threads_head;
-    Offset<PyThreadState*> threads_main;
-    Offset<_gc_runtime_state> gc;
-    Offset<PyObject *> imports_modules;
-    Offset<PyObject *> sysdict;
-    Offset<PyObject *> builtins;
-    Offset<_gil_runtime_state *> ceval_gil;
-    Offset<_gil_runtime_state> gil_runtime_state;
-    Offset<int> gil_runtime_state_locked;
-    Offset<void *> gil_runtime_state_enabled; // XXX? zero.
-    Offset<PyThreadState *> gil_runtime_state_holder;
-    Offset<uint64_t> code_object_generation;
-    Offset<uint64_t> tlbc_generation;
+    template <typename Field> using Off = Offset<PyInterpreterState, Field>;
+    Off<void*> size;
+    Off<int64_t> id;
+    Off<PyInterpreterState*> next;
+    Off<PyThreadState*> threads_head;
+    Off<PyThreadState*> threads_main;
+    Off<_gc_runtime_state> gc;
+    Off<PyObject *> imports_modules;
+    Off<PyObject *> sysdict;
+    Off<PyObject *> builtins;
+    Off<_gil_runtime_state *> ceval_gil;
+    Off<_gil_runtime_state> gil_runtime_state;
+    Off<int> gil_runtime_state_locked;
+    Off<void *> gil_runtime_state_enabled; // XXX? zero.
+    Off<PyThreadState *> gil_runtime_state_holder;
+    Off<uint64_t> code_object_generation;
+    Off<uint64_t> tlbc_generation;
     InterpreterStateOffsets()
     : size(this, "size")
         , id(this, "id")
@@ -140,15 +95,16 @@ struct InterpreterStateOffsets : DebugFieldContainer {
 };
 
 struct ThreadStateOffsets : DebugFieldContainer {
-    Offset<size_t> size;
-    Offset<PyThreadState *> prev;
-    Offset<PyThreadState *> next;
-    Offset<PyInterpreterState *> interp;
-    Offset<_PyInterpreterFrame *> current_frame;
-    Offset<unsigned long> thread_id;
-    Offset<unsigned long> native_thread_id;
-    Offset<_PyStackChunk *> datastack_chunk;
-    Offset<unsigned int> status;
+    template <typename Field> using Off = Offset<PyThreadState, Field>;
+    Off<size_t> size;
+    Off<PyThreadState *> prev;
+    Off<PyThreadState *> next;
+    Off<PyInterpreterState *> interp;
+    Off<_PyInterpreterFrame *> current_frame;
+    Off<unsigned long> thread_id;
+    Off<unsigned long> native_thread_id;
+    Off<_PyStackChunk *> datastack_chunk;
+    Off<unsigned int> status;
     ThreadStateOffsets()
     :size(this, "size")
         , prev(this, "prev")
@@ -164,8 +120,9 @@ struct ThreadStateOffsets : DebugFieldContainer {
 
 
 struct RootOffsets : DebugFieldContainer {
-    Offset<uint64_t> version;
-    Offset<size_t> free_threaded;
+    template <typename Field> using Off = Offset<_PyDebugOffsets, Field>;
+    Off<uint64_t> version;
+    Off<size_t> free_threaded;
     SubFields<RuntimeStateOffsets> runtime_state;
     SubFields<InterpreterStateOffsets> interpreter_state;
     SubFields<ThreadStateOffsets> thread_state;
@@ -202,28 +159,22 @@ Target::Target(Procman::Process &proc_)
         if (!sec)
             continue;
         auto io = sec.io();
-        auto h = io->readObj<Header>(0);
+        auto headerOnDisk = io->readObj<Header>(0);
 
-        pyRuntimeAddr = addr + sec.shdr.sh_addr;
+        pyRuntimeAddr.remote = reinterpret_cast<_PyRuntimeState *>(addr + sec.shdr.sh_addr);
+        Remote<Header *> remoteHeader{reinterpret_cast<Header *>(addr + sec.shdr.sh_addr)};
+        Header headerInProc = remoteHeader.fetch(proc.io);
 
-        auto proch = proc.io->readObj<Header>(pyRuntimeAddr);
-        if (proch != h)
+        if (headerInProc != headerOnDisk)
             *ctx.debug << "note - in memory offsets != on-disk offsets\n";
-        auto pyruntime = proc.io->view("debug offsets", pyRuntimeAddr);
-        offsets = make_unique<RootOffsets>(proch.version, pyruntime);
-        *ctx.debug << "python interpreter at " << pyRuntimeAddr << "\n"
-            << "version from offsets is " << offsets->version.off << "\n"
-            << "interpreters_head is " << offsets->runtime_state.subs.interpreters_head.value(pyruntime) << "\n"
-        ;
+        offsets = make_unique<RootOffsets>(headerInProc.version, proc.io);
         auto &threadOffs = offsets->thread_state.subs;
         for (auto i : interpreters()) {
             for (auto t : threads(i)) {
-                auto view = proc.io->view("thread", uintptr_t(t.remote));
-                auto id = threadOffs.thread_id.value(view);
-                auto native_id = threadOffs.native_thread_id.value(view);
+                auto id = threadOffs.thread_id.value(proc.io, t);
+                auto native_id = threadOffs.native_thread_id.value(proc.io, t);
                 std::cerr << "thread id: " << id << "\n";
                 std::cerr << "native id: " << native_id << "\n";
-
             }
         }
     }
@@ -232,15 +183,14 @@ Target::Target(Procman::Process &proc_)
 std::vector<Remote<PyInterpreterState *>>
 Target::interpreters() {
     std::vector<Remote<PyInterpreterState *>> interps;
-    auto io = proc.io->view("runtime", pyRuntimeAddr);
     auto &runtimeOffs = offsets->runtime_state.subs;
     auto &interpOffs = offsets->interpreter_state.subs;
-    auto head = runtimeOffs.interpreters_head.value(io);
+    auto head = runtimeOffs.interpreters_head.value(proc.io, pyRuntimeAddr);
+
     while (head.remote) {
         std::cerr << "found interpreter " << head << "\n";
         interps.push_back(head);
-        io = proc.io->view("next", uintptr_t(head.remote));
-        head = interpOffs.next.value(io);
+        head = interpOffs.next.value(proc.io, head);
     }
     return interps;
 }
@@ -248,15 +198,13 @@ Target::interpreters() {
 std::vector<Remote<PyThreadState *>>
 Target::threads(Remote<PyInterpreterState *> interp) {
     std::vector<Remote<PyThreadState *>> threads;
-    auto io = proc.io->view("interp", uintptr_t(interp.remote));
     auto &interpOffs = offsets->interpreter_state.subs;
     auto &threadOffs = offsets->thread_state.subs;
-    auto head = interpOffs.threads_head.value(io);
+    auto head = interpOffs.threads_head.value(proc.io, interp);
     while (head.remote) {
         std::cerr << "found thread " << head << "\n";
         threads.push_back(head);
-        io = proc.io->view("next", uintptr_t(head.remote));
-        head = threadOffs.next.value(io);
+        head = threadOffs.next.value(proc.io, head);
     }
     return threads;
 }
