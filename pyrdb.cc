@@ -12,21 +12,14 @@ struct Header {
 };
 std::string_view Header::expectedCookie { "xdebugpy" };
 
-// Hidden internal python types.
-struct PyInterpreterState;
-struct PyThreadState;
-struct PyObject;
-struct _PyInterpreterFrame;
-struct _PyStackRef;
-struct _gc_runtime_state;
-struct DebugFieldContainer;
-struct _PyStackChunk;
-struct _gil_runtime_state;
-
 struct AbstractDebugField {
     virtual void parse(std::istream &is, const Reader::csptr &) = 0;
     AbstractDebugField(DebugFieldContainer *container, std::string_view name_);
 };
+
+template <typename T> std::ostream &operator << (std::ostream &os, const Remote<T> &rt) {
+    return os << "Remote<" << rt.remote << ">";
+}
 
 struct AbstractOffset : public AbstractDebugField {
     uint64_t off{0xbaadf00d};
@@ -38,8 +31,10 @@ struct AbstractOffset : public AbstractDebugField {
 };
 
 template <typename Datum> struct Offset : AbstractOffset {
-    Datum value(const Reader::csptr &io) {
-        return io->readObj<Datum>(off);
+    using RemoteDatum = std::conditional_t<std::is_pointer_v<Datum>, Remote<Datum>, Datum>;
+
+    RemoteDatum value(const Reader::csptr &io) {
+        return io->readObj<RemoteDatum>(off);
     }
     using AbstractOffset::AbstractOffset;
 };
@@ -175,6 +170,7 @@ struct RootOffsets : DebugFieldContainer {
     SubFields<InterpreterStateOffsets> interpreter_state;
     SubFields<ThreadStateOffsets> thread_state;
     RootOffsets(uint64_t version, Reader::csptr io);
+    ~RootOffsets();
 };
 
 RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io)
@@ -193,7 +189,11 @@ RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io)
     assert(version.off == versionExpected);
 }
 
-Remote::Remote(Procman::Process &proc_) : proc{proc_} {
+RootOffsets::~RootOffsets() {}
+
+Target::Target(Procman::Process &proc_)
+: proc{proc_}
+{
     // First find a python interpreter. The first thing with the right section will do.
     pstack::Context &ctx = proc.context;
 
@@ -210,12 +210,58 @@ Remote::Remote(Procman::Process &proc_) : proc{proc_} {
         if (proch != h)
             *ctx.debug << "note - in memory offsets != on-disk offsets\n";
         auto pyruntime = proc.io->view("debug offsets", pyRuntimeAddr);
-        auto offsets = RootOffsets(proch.version, pyruntime);
-
+        offsets = make_unique<RootOffsets>(proch.version, pyruntime);
         *ctx.debug << "python interpreter at " << pyRuntimeAddr << "\n"
-                   << "version from offsets is " << offsets.version.off << "\n"
-                   << "interpreters_head is " << offsets.runtime_state.subs.interpreters_head.value(pyruntime) << "\n"
+            << "version from offsets is " << offsets->version.off << "\n"
+            << "interpreters_head is " << offsets->runtime_state.subs.interpreters_head.value(pyruntime) << "\n"
         ;
-    }
+        auto &threadOffs = offsets->thread_state.subs;
+        for (auto i : interpreters()) {
+            for (auto t : threads(i)) {
+                auto view = proc.io->view("thread", uintptr_t(t.remote));
+                auto id = threadOffs.thread_id.value(view);
+                auto native_id = threadOffs.native_thread_id.value(view);
+                std::cerr << "thread id: " << id << "\n";
+                std::cerr << "native id: " << native_id << "\n";
 
-} }
+            }
+        }
+    }
+}
+
+std::vector<Remote<PyInterpreterState *>>
+Target::interpreters() {
+    std::vector<Remote<PyInterpreterState *>> interps;
+    auto io = proc.io->view("runtime", pyRuntimeAddr);
+    auto &runtimeOffs = offsets->runtime_state.subs;
+    auto &interpOffs = offsets->interpreter_state.subs;
+    auto head = runtimeOffs.interpreters_head.value(io);
+    while (head.remote) {
+        std::cerr << "found interpreter " << head << "\n";
+        interps.push_back(head);
+        io = proc.io->view("next", uintptr_t(head.remote));
+        head = interpOffs.next.value(io);
+    }
+    return interps;
+}
+
+std::vector<Remote<PyThreadState *>>
+Target::threads(Remote<PyInterpreterState *> interp) {
+    std::vector<Remote<PyThreadState *>> threads;
+    auto io = proc.io->view("interp", uintptr_t(interp.remote));
+    auto &interpOffs = offsets->interpreter_state.subs;
+    auto &threadOffs = offsets->thread_state.subs;
+    auto head = interpOffs.threads_head.value(io);
+    while (head.remote) {
+        std::cerr << "found thread " << head << "\n";
+        threads.push_back(head);
+        io = proc.io->view("next", uintptr_t(head.remote));
+        head = threadOffs.next.value(io);
+    }
+    return threads;
+}
+
+
+Target::~Target() = default;
+
+}

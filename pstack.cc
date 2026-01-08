@@ -174,9 +174,9 @@ doPy(Procman::Process &proc, bool showModules, const PyInterpInfo &info) {
  * @param showModules   Whether to show modules
  * @return              boolean of whether the process was a Python process or not
  */
-bool pystack(Procman::Process &proc, bool showModules) {
+bool pystack(Procman::Process &proc, [[maybe_unused]] bool showModules) {
 #ifdef WITH_PYRDB
-        pstack::Py::Remote remote(proc);
+        pstack::Py::Target remote(proc);
 #endif
 #ifdef WITH_PYTHON
     PyInterpInfo info = getPyInterpInfo(proc);
