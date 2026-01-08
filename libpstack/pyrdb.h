@@ -14,11 +14,20 @@ struct _PyStackChunk;
 struct _gil_runtime_state;
 struct _PyRuntimeState;
 struct _PyDebugOffsets;
+struct PyCodeObject;
+union _Py_CODEUNIT;
 
+struct OffsetContainer;
+
+// A remote object. We use this to wrap pointers in the target, so they are not dereferenceable locally.
 template <typename T> struct Remote;
+
+// An object read from the remote - for pointers, it's wrapped in Remote. For
+// non-pointers, it's "raw".
 template <typename Field>
 using FromRemote = std::conditional_t<std::is_pointer_v<Field>, Remote<Field>, Field>;
 
+// Simple wrapper. For pointer types, you can dereference in the remote process.
 template <typename T> struct Remote {
     T remote;
     using PointedTo = FromRemote<std::remove_pointer_t<T>>;
@@ -27,51 +36,48 @@ template <typename T> struct Remote {
     }
 };
 
-struct AbstractDebugField {
-    virtual void parse(std::istream &is, const Reader::csptr &) = 0;
-    AbstractDebugField(DebugFieldContainer *container, std::string_view name_);
-};
-
 template <typename T> inline std::ostream &operator << (std::ostream &os, const Remote<T> &rt) {
     return os << "Remote<" << rt.remote << ">";
 }
 
-struct AbstractOffset : public AbstractDebugField {
+// An offset field. This has no typing associated with it and is just an offset
+// somewhere in memory, as found inthe _Py_DebugOffsets structure at the start
+// of _PyRuntime - we read the offsets themselves out of the process, based on
+// the offets of those offsets presented in the JSON input file for the given
+// python interpreter.
+//
+// Eg - the JSON files has
+// ```
+// ... "interpreter_state": { "id" : 56 ... } ...
+// ```
+//
+// This indicates that the "id" field of the interpreter_state object has an
+// offset stored 56 bytes into the _PyRuntime section
+//
+struct RawOffset {
     uint64_t off{0xbaadf00d};
-    void parse(std::istream &is, const Reader::csptr &io) override {
-        auto fieldOff = parseInt<size_t>(is);
-        io->readObj(fieldOff, &off);
+    void parse(std::istream &is, const Reader::csptr &io, uintptr_t object) {
+        io->readObj(object + parseInt<size_t>(is), &off);
     }
-    AbstractOffset(DebugFieldContainer *container, std::string_view name_);
+    RawOffset(OffsetContainer *container, std::string_view name_);
 };
 
-template <typename Container, typename Field> struct Offset : AbstractOffset {
-
+// A concrete offset of a field of Container of type Field. "value()"
+// essentially deferences the field of a remote pointer in a remote process to
+// give the content back.
+// POD objects will come back as those POD objects. Pointer types "T*" will come
+// back as "Remote<T *>"
+template <typename Container, typename Field> struct Offset : RawOffset {
     FromRemote<Field> value(const Reader::csptr &io, Remote<Container *> rm) {
-        return io->readObj<FromRemote<Field>>(uintptr_t(rm.remote));
+        return io->readObj<FromRemote<Field>>(uintptr_t(rm.remote) + off);
     }
-    using AbstractOffset::AbstractOffset;
+    using RawOffset::RawOffset;
 };
 
-struct DebugFieldContainer {
-    std::map<std::string_view, AbstractDebugField *> fields;
-    void parseField(std::istream &is, Reader::csptr, std::string_view fieldName);
-    void parse(std::istream &is, const Reader::csptr &);
-};
-
-
-struct SubFieldContainer : public AbstractDebugField {
-    DebugFieldContainer *child;
-    SubFieldContainer(DebugFieldContainer *parent, std::string_view name_, DebugFieldContainer *child_) :
-    AbstractDebugField{parent, name_}, child{child_} {}
-    virtual void parse(std::istream &is, const Reader::csptr &reader) {
-        child->parse(is, reader);
-    }
-};
-
-template <typename Subs> struct SubFields : SubFieldContainer {
-    Subs subs;
-    SubFields(DebugFieldContainer *parent, std::string_view name_) : SubFieldContainer(parent, name_, &subs) {}
+struct OffsetContainer {
+    size_t size;
+    std::map<std::string_view, RawOffset *> fields;
+    void parse(std::istream &is, const Reader::csptr &, uintptr_t object);
 };
 
 struct RootOffsets;
@@ -80,9 +86,10 @@ struct Target {
     Remote<_PyRuntimeState *> pyRuntimeAddr;
     std::unique_ptr<RootOffsets> offsets;
     Target(Procman::Process & proc_);
-    std::vector<Remote<PyInterpreterState *>> interpreters();
-    std::vector<Remote<PyThreadState *>> threads(Remote<PyInterpreterState *>);
+    std::vector<Remote<PyInterpreterState *>> interpreters() const;
+    std::vector<Remote<PyThreadState *>> threads(Remote<PyInterpreterState *>) const;
     ~Target();
+    void dumpBacktrace(std::ostream &os) const;
 };
 
 }
