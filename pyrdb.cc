@@ -155,7 +155,7 @@ struct InterpreterFrameOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<_PyInterpreterFrame, Field>;
     Off<_PyInterpreterFrame *> previous;
     Off<PyObject *> executable;
-    Off<_Py_CODEUNIT> instr_ptr;
+    Off<uint16_t *> instr_ptr; // actually, _Py_CODEUNIT *
     Off<_PyStackRef> localsplus;
     Off<char> owner;
     Off<_PyStackRef *> stackpointer;
@@ -176,7 +176,7 @@ struct CodeObjectOffsets : OffsetContainer {
     Off<PyObject *> filename;
     Off<PyUnicodeObject *> name;
     Off<PyObject *> qualname;
-    Off<PyObject *> linetable;
+    Off<PyBytesObject *> linetable;
     Off<int> firstlineno;
     Off<int> argcount;
     Off<PyObject *> localsplusnames;
@@ -194,6 +194,17 @@ struct CodeObjectOffsets : OffsetContainer {
         , localspluskinds(this, "localspluskinds")
         , co_code_adaptive(this, "co_code_adaptive")
         , co_tlbc(this, "co_tlbc")
+    {}
+};
+
+
+struct PyBytesObjectOffsets : OffsetContainer {
+    template <typename Field> using Off = Offset<PyBytesObject, Field>;
+    Off<ssize_t> ob_size;
+    Off<char> ob_sval;
+    PyBytesObjectOffsets()
+        : ob_size(this, "ob_size")
+        , ob_sval(this, "ob_sval")
     {}
 };
 
@@ -218,13 +229,14 @@ struct RootOffsets {
     CodeObjectOffsets code_object;
     UnicodeObjectOffsets unicode_object;
     PyObjectOffsets pyobject;
+    PyBytesObjectOffsets bytes_object;
     RootOffsets(uint64_t version, Reader::csptr io, uintptr_t object);
     ~RootOffsets();
 };
 
 void
 Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
-    if (remote.remote == 0) {
+    if (!remote) {
         os << "<null>";
         return;
     }
@@ -258,20 +270,6 @@ Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
         data = dataptr.fetchArray(proc.io, length);
     }
     os << std::string_view{data.data(), data.size()};
-
-    #if 0
-    os
-        << remote << "{ state: { "
-            << "{ kind: " << state.kind
-            << ", interned: " << state.interned
-            << ", compact: " << state.compact
-            << ", ascii: " << state.ascii
-            << ", statically_allocated: " << state.statically_allocated
-            << " }"
-        << ", length: " << length
-        << ", asciiobject_size: " << asciiobject_size
-        << " }";
-    #endif
 }
 
 RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t object)
@@ -295,6 +293,8 @@ RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t o
             unicode_object.parse(is, io, object);
         else if (field == "pyobject")
             pyobject.parse(is, io, object);
+        else if (field == "bytes_object")
+            bytes_object.parse(is, io, object);
         else {
             skip<unsigned>(is);
         }
@@ -345,7 +345,6 @@ Target::Target(Procman::Process &proc_)
         auto cookieInProc = std::string_view(headerInProc.cookie.begin(), headerInProc.cookie.end());
         if (cookieInProc != Header::expectedCookie) {
             *proc.context.debug << "bad cookie in " << sec.io()->filename() << ", skipping\n";
-            getppid();
             continue;
         }
 
@@ -358,6 +357,7 @@ Target::Target(Procman::Process &proc_)
 }
 
 void Target::dumpBacktrace(std::ostream &os) const {
+    Procman::StopProcess here(&proc);
     auto &threadOffs = offsets->thread_state;
     auto &frameOffs = offsets->interpreter_frame;
     for (auto i : interpreters()) {
@@ -367,17 +367,32 @@ void Target::dumpBacktrace(std::ostream &os) const {
             auto native_id = threadOffs.native_thread_id.value(proc.io, t);
             os << "thread id: " << id << ", native id: " << native_id << "\n";
             auto frame = threadOffs.current_frame.value(proc.io, t);
-            while (frame.remote) {
+            while (frame) {
                 auto executable = frameOffs.executable.value(proc.io, frame);
                 auto clear = (uintptr_t)executable.remote;
                 [[maybe_unused]] auto mode = clear & (8-1);
                 clear &= -8LL;
-                executable.remote = reinterpret_cast<PyObject *>(clear);
+                executable = { reinterpret_cast<PyObject *>(clear) };
                 auto code = cast(types->pyCode_Type, executable);
                 os << "\t";
                 if (code) {
                     auto name = offsets->code_object.name.value(proc.io, code);
+                    os << "code: " << code;
+                    os << ", func: ";
                     dump(os, name);
+                    auto file = offsets->code_object.filename.value(proc.io, code);
+
+                    auto instr_ptr = offsets->interpreter_frame.instr_ptr.value(proc.io, frame);
+                    auto instr_off = uintptr_t(instr_ptr.remote) - uintptr_t(code.remote) - offsets->code_object.co_code_adaptive.off;
+                    auto linetable = offsets->code_object.linetable.value(proc.io, code);
+
+                    // Read the entire line table into memory.
+                    auto linetable_size = offsets->bytes_object.ob_size.value(proc.io, linetable);
+                    auto linetable_data = offsets->bytes_object.ob_sval.ptr(linetable).fetchArray(proc.io, linetable_size);
+                    os << ", file: ";
+                    dump(os, file);
+                    os << ", bytecode offset " << instr_off;
+                    os << ", line data size " << linetable_size;
                 } else {
                     os << "(unknown frame type " << typeName(pyType(executable)) << ")";
                 }
