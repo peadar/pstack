@@ -3,25 +3,30 @@
 
 namespace pstack::Py {
 
-// Hidden internal python types.
-struct PyInterpreterState;
-struct PyThreadState;
-struct PyObject;
-struct _PyInterpreterFrame;
-struct _PyStackRef;
-struct _gc_runtime_state;
+// Forward declarations.
+struct OffsetContainer;
+
+// Declared structures named as the hidden internal python types. We don't read
+// these directly, but we have offsets in them from the _PyRuntime debug offsets
+// field. (keep sorted!)
 struct DebugFieldContainer;
-struct _PyStackChunk;
+struct _gc_runtime_state;
 struct _gil_runtime_state;
-struct _PyRuntimeState;
-struct _PyDebugOffsets;
+struct PyBytesObject;
 struct PyCodeObject;
-struct PyUnicodeObject;
+struct _PyDebugOffsets;
+struct _PyInterpreterFrame;
+struct PyInterpreterState;
+struct PyObject;
+struct _PyRuntimeState;
+struct _PyStackChunk;
+struct _PyStackRef;
+struct PyThreadState;
 struct PyTypeObject;
+struct PyUnicodeObject;
 
 union _Py_CODEUNIT;
 
-struct OffsetContainer;
 
 // A remote object. We use this to wrap pointers in the target, so they are not dereferenceable locally.
 template <typename T> struct Remote;
@@ -86,6 +91,9 @@ struct RawOffset {
 template <typename Container, typename Field> struct Offset : RawOffset {
     FromRemote<Field> value(const Reader::csptr &io, Remote<Container *> rm) {
         return io->readObj<FromRemote<Field>>(uintptr_t(rm.remote) + off);
+    }
+    Remote<Field *> ptr(Remote<Container *> container) {
+        return { reinterpret_cast<Field *>( uintptr_t(container.remote) + off ) };
     }
     using RawOffset::RawOffset;
 };
