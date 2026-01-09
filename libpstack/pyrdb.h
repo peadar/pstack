@@ -1,4 +1,5 @@
 #include "libpstack/proc.h"
+#include <vector>
 
 namespace pstack::Py {
 
@@ -15,6 +16,9 @@ struct _gil_runtime_state;
 struct _PyRuntimeState;
 struct _PyDebugOffsets;
 struct PyCodeObject;
+struct PyUnicodeObject;
+struct PyTypeObject;
+
 union _Py_CODEUNIT;
 
 struct OffsetContainer;
@@ -34,6 +38,18 @@ template <typename T> struct Remote {
     PointedTo fetch(const Reader::csptr &as) requires std::is_pointer_v<T> {
         return as->readObj<PointedTo>(reinterpret_cast<uintptr_t>(remote));
     }
+    std::vector<PointedTo> fetchArray(const Reader::csptr &as, size_t len) requires std::is_pointer_v<T> {
+        std::vector<PointedTo> v(len);
+        as->readObj<PointedTo>(reinterpret_cast<uintptr_t>(remote), v.data(), v.size());
+        return v;
+    }
+    auto operator <=> (const Remote<T> &rhs) const = default;
+    operator bool() const { return bool(remote); }
+};
+
+template <typename To>
+struct PyType {
+    Remote<PyTypeObject *> typeObject;
 };
 
 template <typename T> inline std::ostream &operator << (std::ostream &os, const Remote<T> &rt) {
@@ -81,15 +97,26 @@ struct OffsetContainer {
 };
 
 struct RootOffsets;
+
+struct PyTypes;
+
 struct Target {
     Procman::Process &proc;
     Remote<_PyRuntimeState *> pyRuntimeAddr;
     std::unique_ptr<RootOffsets> offsets;
+    std::unique_ptr<PyTypes> types;
     Target(Procman::Process & proc_);
     std::vector<Remote<PyInterpreterState *>> interpreters() const;
     std::vector<Remote<PyThreadState *>> threads(Remote<PyInterpreterState *>) const;
     ~Target();
     void dumpBacktrace(std::ostream &os) const;
+    Remote<PyTypeObject *> pyType(Remote<PyObject *>) const;
+    std::string_view typeName(Remote<PyTypeObject *>) const;
+
+    template<typename To> Remote<To *> cast(const PyType<To> &to, Remote<PyObject *> from) const;
+
+    void dump(std::ostream &os, const Remote<PyObject *> &remote) const;
+    void dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const;
 };
 
 }
