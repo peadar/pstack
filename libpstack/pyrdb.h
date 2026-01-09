@@ -89,9 +89,6 @@ struct RawOffset {
 // POD objects will come back as those POD objects. Pointer types "T*" will come
 // back as "Remote<T *>"
 template <typename Container, typename Field> struct Offset : RawOffset {
-    FromRemote<Field> value(const Reader::csptr &io, Remote<Container *> rm) {
-        return io->readObj<FromRemote<Field>>(uintptr_t(rm.remote) + off);
-    }
     Remote<Field *> ptr(Remote<Container *> container) {
         return { reinterpret_cast<Field *>( uintptr_t(container.remote) + off ) };
     }
