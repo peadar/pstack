@@ -201,7 +201,7 @@ struct CodeObjectOffsets : OffsetContainer {
 struct PyBytesObjectOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<PyBytesObject, Field>;
     Off<ssize_t> ob_size;
-    Off<char> ob_sval;
+    Off<unsigned char> ob_sval;
     PyBytesObjectOffsets()
         : ob_size(this, "ob_size")
         , ob_sval(this, "ob_sval")
@@ -247,11 +247,11 @@ Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
 
 void
 Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
-    auto state = offsets->unicode_object.state.value(proc.io, remote);
+    auto state = offsets->unicode_object.state.ptr(remote).fetch(proc.io);
 
     Remote<char *> dataptr;
     auto rawptr = uintptr_t(remote.remote);
-    auto length = offsets->unicode_object.length.value(proc.io, remote);
+    auto length = offsets->unicode_object.length.ptr(remote).fetch(proc.io);
     if (state.compact) {
         // Compaact form. Data follows the object.
         size_t dataoff = state.ascii ?
@@ -314,7 +314,7 @@ Target::typeName(Remote<PyTypeObject *> remote) const {
 
 Remote<PyTypeObject *>
 Target::pyType(Remote<PyObject *> remote) const {
-    return offsets->pyobject.ob_type.value(proc.io, remote);
+    return offsets->pyobject.ob_type.ptr(remote).fetch(proc.io);
 }
 
 Target::Target(Procman::Process &proc_)
@@ -356,6 +356,81 @@ Target::Target(Procman::Process &proc_)
     throw (Exception() << "no python interpreter found");
 }
 
+
+struct LineDelta {
+    int line;
+    unsigned code;
+    bool nocode;
+};
+
+auto checknext(auto &i, auto e) {
+    if (i == e)
+        throw (Exception() << "end of data reachged decoding varint");
+    auto rv = *i++;
+    return rv;
+}
+
+static inline int
+read_varint(auto &i, auto e) {
+    unsigned int read = checknext(i, e);
+    unsigned int val = read & 63;
+    unsigned int shift = 0;
+    while (read & 64) {
+        read = checknext(i, e);
+        shift += 6;
+        val |= (read & 63) << shift;
+    }
+    return val;
+}
+
+static int
+read_signed_varint(auto &i, auto e) {
+    unsigned int uval = read_varint(i, e);
+    if (uval & 1) {
+        return -(int)(uval >> 1);
+    }
+    else {
+        return uval >> 1;
+    }
+}
+
+
+LineDelta read_deltas(auto &cur, auto end) {
+    auto header = checknext(cur, end);
+    auto insn = (header >> 3) & 0xf; // get bits 3-6.
+    unsigned code_delta = (header & 0x7) * sizeof(uint16_t);
+
+    switch (insn) {
+        case 0 ... 9: // PY_CODE_LOCATION_INFO_SHORT0...9. Only impact column.
+            checknext(cur, end); // short column - byte value for column.
+            return { 0, code_delta, false };
+
+        case 10 ... 12: // PY_CODE_LOCATION_INFO_ONE_LINE0...2;
+            checknext(cur, end); // column data - two bytes for start/end.
+            checknext(cur, end);
+            return { insn - 10, code_delta, false };
+
+        case 13: // PY_CODE_LOCATION_INFO_NO_COLUMNS:
+            return { read_signed_varint( cur, end ), code_delta, false };
+
+        case 14: { // PY_CODE_LOCATION_INFO_LONG:
+            auto line_delta = read_signed_varint( cur, end );
+            // discard the "end" line data, and column data.
+            read_signed_varint( cur, end );
+            read_signed_varint( cur, end );
+            read_signed_varint( cur, end );
+            return { line_delta, code_delta, false };
+        }
+
+        case 15: // PY_CODE_LOCATION_INFO_NONE:
+            return { 0, code_delta, true };
+
+        default:
+            throw Exception() << "unexpected instruction in line table: " << int(header) << "\n";
+    }
+}
+
+
 void Target::dumpBacktrace(std::ostream &os) const {
     Procman::StopProcess here(&proc);
     auto &threadOffs = offsets->thread_state;
@@ -363,12 +438,12 @@ void Target::dumpBacktrace(std::ostream &os) const {
     for (auto i : interpreters()) {
         os << "interp " << i << "\n";
         for (auto t : threads(i)) {
-            auto id = threadOffs.thread_id.value(proc.io, t);
-            auto native_id = threadOffs.native_thread_id.value(proc.io, t);
+            auto id = threadOffs.thread_id.ptr(t).fetch(proc.io);
+            auto native_id = threadOffs.native_thread_id.ptr(t).fetch(proc.io);
             os << "thread id: " << id << ", native id: " << native_id << "\n";
-            auto frame = threadOffs.current_frame.value(proc.io, t);
+            auto frame = threadOffs.current_frame.ptr(t).fetch(proc.io);
             while (frame) {
-                auto executable = frameOffs.executable.value(proc.io, frame);
+                auto executable = frameOffs.executable.ptr(frame).fetch(proc.io);
                 auto clear = (uintptr_t)executable.remote;
                 [[maybe_unused]] auto mode = clear & (8-1);
                 clear &= -8LL;
@@ -376,28 +451,39 @@ void Target::dumpBacktrace(std::ostream &os) const {
                 auto code = cast(types->pyCode_Type, executable);
                 os << "\t";
                 if (code) {
-                    auto name = offsets->code_object.name.value(proc.io, code);
+                    auto name = offsets->code_object.name.ptr(code).fetch(proc.io);
                     os << "code: " << code;
                     os << ", func: ";
                     dump(os, name);
-                    auto file = offsets->code_object.filename.value(proc.io, code);
+                    auto file = offsets->code_object.filename.ptr(code).fetch(proc.io);
 
-                    auto instr_ptr = offsets->interpreter_frame.instr_ptr.value(proc.io, frame);
+                    auto instr_ptr = offsets->interpreter_frame.instr_ptr.ptr(frame).fetch(proc.io);
                     auto instr_off = uintptr_t(instr_ptr.remote) - uintptr_t(code.remote) - offsets->code_object.co_code_adaptive.off;
-                    auto linetable = offsets->code_object.linetable.value(proc.io, code);
+                    auto firstline = offsets->code_object.firstlineno.ptr(code).fetch(proc.io);
+                    auto linetable = offsets->code_object.linetable.ptr(code).fetch(proc.io);
 
                     // Read the entire line table into memory.
-                    auto linetable_size = offsets->bytes_object.ob_size.value(proc.io, linetable);
+                    auto linetable_size = offsets->bytes_object.ob_size.ptr(linetable).fetch(proc.io);
                     auto linetable_data = offsets->bytes_object.ob_sval.ptr(linetable).fetchArray(proc.io, linetable_size);
                     os << ", file: ";
                     dump(os, file);
-                    os << ", bytecode offset " << instr_off;
-                    os << ", line data size " << linetable_size;
+
+                    int line = firstline;
+                    auto i = linetable_data.begin();
+                    auto e = linetable_data.end();
+                    for (unsigned codeloc = 0; i != e; ) {
+                        auto deltas = read_deltas(i, e);
+                        line += deltas.line;
+                        codeloc += deltas.code;
+                        if (codeloc >= instr_off || deltas.nocode)
+                            break;
+                    }
+                    os << ", line: " << line;
                 } else {
                     os << "(unknown frame type " << typeName(pyType(executable)) << ")";
                 }
                 os << "\n";
-                frame = frameOffs.previous.value(proc.io, frame);
+                frame = frameOffs.previous.ptr(frame).fetch(proc.io);
             }
         }
         os << "\n";
@@ -409,10 +495,10 @@ Target::interpreters() const {
     std::vector<Remote<PyInterpreterState *>> interps;
     auto &runtimeOffs = offsets->runtime_state;
     auto &interpOffs = offsets->interpreter_state;
-    auto head = runtimeOffs.interpreters_head.value(proc.io, pyRuntimeAddr);
+    auto head = runtimeOffs.interpreters_head.ptr(pyRuntimeAddr).fetch(proc.io);
     while (head.remote) {
         interps.push_back(head);
-        head = interpOffs.next.value(proc.io, head);
+        head = interpOffs.next.ptr(head).fetch(proc.io);
     }
     return interps;
 }
@@ -422,10 +508,10 @@ Target::threads(Remote<PyInterpreterState *> interp) const {
     std::vector<Remote<PyThreadState *>> threads;
     auto &interpOffs = offsets->interpreter_state;
     auto &threadOffs = offsets->thread_state;
-    auto head = interpOffs.threads_head.value(proc.io, interp);
+    auto head = interpOffs.threads_head.ptr(interp).fetch(proc.io);
     while (head.remote) {
         threads.push_back(head);
-        head = threadOffs.next.value(proc.io, head);
+        head = threadOffs.next.ptr(head).fetch(proc.io);
     }
     return threads;
 }
