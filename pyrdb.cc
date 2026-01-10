@@ -155,7 +155,7 @@ struct InterpreterFrameOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<_PyInterpreterFrame, Field>;
     Off<_PyInterpreterFrame *> previous;
     Off<PyObject *> executable;
-    Off<uint16_t *> instr_ptr; // actually, _Py_CODEUNIT *
+    Off<char *> instr_ptr; // actually, _Py_CODEUNIT *, but line tables etc treat offsets as character pointers.
     Off<_PyStackRef> localsplus;
     Off<char> owner;
     Off<_PyStackRef *> stackpointer;
@@ -350,7 +350,7 @@ Target::Target(Procman::Process &proc_)
 
         pyRuntimeAddr.remote = reinterpret_cast<_PyRuntimeState *>(secaddr);
         offsets = make_unique<RootOffsets>(headerInProc.version, proc.io, secaddr);
-        dumpBacktrace(std::cerr);
+        dumpBacktrace(std::cout);
         return;
     }
     throw (Exception() << "no python interpreter found");
@@ -452,32 +452,34 @@ void Target::dumpBacktrace(std::ostream &os) const {
                 os << "\t";
                 if (code) {
                     auto name = offsets->code_object.name.ptr(code).fetch(proc.io);
-                    os << "code: " << code;
-                    os << ", func: ";
-                    dump(os, name);
                     auto file = offsets->code_object.filename.ptr(code).fetch(proc.io);
 
                     auto instr_ptr = offsets->interpreter_frame.instr_ptr.ptr(frame).fetch(proc.io);
-                    auto instr_off = uintptr_t(instr_ptr.remote) - uintptr_t(code.remote) - offsets->code_object.co_code_adaptive.off;
+                    auto instr_off = instr_ptr.remote - offsets->code_object.co_code_adaptive.ptr(code).remote;
                     auto firstline = offsets->code_object.firstlineno.ptr(code).fetch(proc.io);
                     auto linetable = offsets->code_object.linetable.ptr(code).fetch(proc.io);
 
                     // Read the entire line table into memory.
                     auto linetable_size = offsets->bytes_object.ob_size.ptr(linetable).fetch(proc.io);
                     auto linetable_data = offsets->bytes_object.ob_sval.ptr(linetable).fetchArray(proc.io, linetable_size);
-                    os << ", file: ";
-                    dump(os, file);
 
                     int line = firstline;
                     auto i = linetable_data.begin();
                     auto e = linetable_data.end();
                     for (unsigned codeloc = 0; i != e; ) {
+                        os << "\t\t\tline: " << line << ", code: " << codeloc;
                         auto deltas = read_deltas(i, e);
+                        os << " ( line += " << deltas.line << ", code += " << deltas.code << ")\n";
                         line += deltas.line;
                         codeloc += deltas.code;
                         if (codeloc >= instr_off || deltas.nocode)
                             break;
                     }
+                    os << "code: " << code;
+                    os << ", func: ";
+                    dump(os, name);
+                    os << ", file: ";
+                    dump(os, file);
                     os << ", line: " << line;
                 } else {
                     os << "(unknown frame type " << typeName(pyType(executable)) << ")";
