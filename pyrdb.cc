@@ -86,117 +86,64 @@ struct PyObjectOffsets : OffsetContainer {
 
 struct InterpreterStateOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<PyInterpreterState, Field>;
-    Off<int64_t> id;
-    Off<PyInterpreterState*> next;
-    Off<PyThreadState*> threads_head;
-    Off<PyThreadState*> threads_main;
-    Off<_gc_runtime_state> gc;
-    Off<PyObject *> imports_modules;
-    Off<PyObject *> sysdict;
-    Off<PyObject *> builtins;
-    Off<_gil_runtime_state *> ceval_gil;
-    Off<_gil_runtime_state> gil_runtime_state;
-    Off<int> gil_runtime_state_locked;
-    Off<void *> gil_runtime_state_enabled; // XXX? zero.
-    Off<PyThreadState *> gil_runtime_state_holder;
-    Off<uint64_t> code_object_generation;
-    Off<uint64_t> tlbc_generation;
-    InterpreterStateOffsets()
-        : id(this, "id")
-        , next(this, "next")
-        , threads_head(this, "threads_head")
-        , threads_main(this, "threads_main")
-        , gc(this, "gc")
-        , imports_modules(this, "imports_modules")
-        , sysdict(this, "sysdict")
-        , builtins(this, "builtins")
-        , ceval_gil(this, "ceval_gil")
-        , gil_runtime_state(this, "gil_runtime_state")
-        , gil_runtime_state_locked(this, "gil_runtime_state_locked")
-        , gil_runtime_state_enabled(this, "gil_runtime_state_enabled")
-        , gil_runtime_state_holder(this, "gil_runtime_state_holder")
-        , code_object_generation(this, "code_object_generation")
-        , tlbc_generation(this, "tlbc_generation")
-    {}
+    Off<int64_t> id{this,"id"};
+    Off<PyInterpreterState*> next{this,"next"};
+    Off<PyThreadState*> threads_head{this, "threads_head"};
+    Off<PyThreadState*> threads_main{this, "threads_main"};
+    Off<_gc_runtime_state> gc{this, "gc"};
+    Off<PyObject *> imports_modules{this, "imports_modules"};
+    Off<PyObject *> sysdict{this, "sysdict"};
+    Off<PyObject *> builtins{this, "builtins"};
+    Off<_gil_runtime_state *> ceval_gil{this, "ceval_gil"};
+    Off<_gil_runtime_state> gil_runtime_state{this, "gil_runtime_state"};
+    Off<int> gil_runtime_state_locked{this, "gil_runtime_state_locked"};
+    Off<void *> gil_runtime_state_enabled{this, "gil_runtime_state_enabled"}; // XXX? zero.
+    Off<PyThreadState *> gil_runtime_state_holder{this, "gil_runtime_state_holder"};
+    Off<uint64_t> code_object_generation{this, "code_object_generation"};
+    Off<uint64_t> tlbc_generation{this, "tlbc_generation"};
 };
 
 struct ThreadStateOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<PyThreadState, Field>;
-    Off<PyThreadState *> prev;
-    Off<PyThreadState *> next;
-    Off<PyInterpreterState *> interp;
-    Off<_PyInterpreterFrame *> current_frame;
-    Off<unsigned long> thread_id;
-    Off<unsigned long> native_thread_id;
-    Off<_PyStackChunk *> datastack_chunk;
-    Off<unsigned int> status;
-    ThreadStateOffsets()
-        : prev(this, "prev")
-        , next(this, "next")
-        , interp(this, "interp")
-        , current_frame(this, "current_frame")
-        , thread_id(this, "thread_id")
-        , native_thread_id(this, "native_thread_id")
-        , datastack_chunk(this, "datastack_chunk")
-        , status(this, "status")
-    {}
+    Off<PyThreadState *> prev{this, "prev"};
+    Off<PyThreadState *> next{this, "next"};
+    Off<PyInterpreterState *> interp{this, "interp"};
+    Off<_PyInterpreterFrame *> current_frame{this, "current_frame"};
+    Off<unsigned long> thread_id{this, "thread_id"};
+    Off<unsigned long> native_thread_id{this, "native_thread_id"};
+    Off<_PyStackChunk *> datastack_chunk{this, "datastack_chunk"};
+    Off<unsigned int> status{this, "status"};
 };
 
 struct InterpreterFrameOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<_PyInterpreterFrame, Field>;
-    Off<_PyInterpreterFrame *> previous;
-    Off<PyObject *> executable;
-    Off<char *> instr_ptr; // actually, _Py_CODEUNIT *, but line tables etc treat offsets as character pointers.
-    Off<_PyStackRef> localsplus;
-    Off<char> owner;
-    Off<_PyStackRef *> stackpointer;
-    Off<void *> tlbc_index; // XXX?
-    InterpreterFrameOffsets()
-        : previous(this, "previous")
-        , executable(this, "executable")
-        , instr_ptr(this, "instr_ptr")
-        , localsplus(this, "localsplus")
-        , owner(this, "owner")
-        , stackpointer(this, "stackpointer")
-        , tlbc_index(this, "tlbc_index")
-    {}
+    Off<_PyInterpreterFrame *> previous{this, "previous"};
+    Off<PyObject *> executable{this, "executable"};
+    Off<char *> instr_ptr{this, "instr_ptr"}; // actually, _Py_CODEUNIT *, but line tables etc treat offsets as character pointers.
+    Off<_PyStackRef> localsplus{this, "localsplus"};
+    Off<char> owner{this, "owner"};
+    Off<_PyStackRef *> stackpointer{this, "stackpointer"};
+    Off<void *> tlbc_index{this, "tlbc_index"}; // XXX?
 };
 
 struct CodeObjectOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<PyCodeObject, Field>;
-    Off<PyObject *> filename;
-    Off<PyUnicodeObject *> name;
-    Off<PyObject *> qualname;
-    Off<PyBytesObject *> linetable;
-    Off<int> firstlineno;
-    Off<int> argcount;
-    Off<PyObject *> localsplusnames;
-    Off<PyObject *> localspluskinds;
-    Off<char> co_code_adaptive;
-    Off<void> co_tlbc; // XXX?
-    CodeObjectOffsets() 
-        : filename(this, "filename")
-        , name(this, "name")
-        , qualname(this, "qualname")
-        , linetable(this, "linetable")
-        , firstlineno(this, "firstlineno")
-        , argcount(this, "argcount")
-        , localsplusnames(this, "localsplusnames")
-        , localspluskinds(this, "localspluskinds")
-        , co_code_adaptive(this, "co_code_adaptive")
-        , co_tlbc(this, "co_tlbc")
-    {}
+    Off<PyObject *> filename{this, "filename"};
+    Off<PyUnicodeObject *> name{this, "name"};
+    Off<PyObject *> qualname{this, "qualname"};
+    Off<PyBytesObject *> linetable{this, "linetable"};
+    Off<int> firstlineno{this, "firstlineno"};
+    Off<int> argcount{this, "argcount"};
+    Off<PyObject *> localsplusnames{this, "localsplusnames"};
+    Off<PyObject *> localspluskinds{this, "localspluskinds"};
+    Off<char> co_code_adaptive{this, "co_code_adaptive"};
+    Off<void> co_tlbc{this, "co_tlbc"}; // XXX?
 };
-
 
 struct PyBytesObjectOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<PyBytesObject, Field>;
-    Off<ssize_t> ob_size;
-    Off<unsigned char> ob_sval;
-    PyBytesObjectOffsets()
-        : ob_size(this, "ob_size")
-        , ob_sval(this, "ob_sval")
-    {}
+    Off<ssize_t> ob_size{this, "ob_size"};
+    Off<unsigned char> ob_sval{this, "ob_sval"};
 };
 
 struct PyASCIIState {
@@ -209,14 +156,9 @@ struct PyASCIIState {
 
 struct UnicodeObjectOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<PyUnicodeObject, Field>;
-    Off<ssize_t> asciiobject_size;
-    Off<PyASCIIState> state;
-    Off<ssize_t> length;
-    UnicodeObjectOffsets()
-        : asciiobject_size(this, "asciiobject_size")
-        , state(this, "state")
-        , length(this, "length")
-    {}
+    Off<ssize_t> asciiobject_size{this, "asciiobject_size"};
+    Off<PyASCIIState> state{this, "state"};
+    Off<ssize_t> length{this, "length"};
 };
 
 // We parse this out of the JSON file representing the _PyDebugOffsets type.
