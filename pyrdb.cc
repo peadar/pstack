@@ -6,12 +6,12 @@
 
 namespace pstack::Py {
 
-struct PyASCIIState {
-    unsigned int interned : 2;
-    unsigned int kind : 3;
-    unsigned int compact : 1;
-    unsigned int ascii : 1;
-    unsigned int statically_allocated : 1;
+// Minimal header from _PyRuntime to find the version, and verify the magic cookie.
+struct Header {
+    std::array<char, 8> cookie;
+    static constexpr std::string_view expectedCookie { "xdebugpy" };
+    uint64_t version;
+    auto operator <=> (const Header &rhs) const = default;
 };
 
 struct PyTypes {
@@ -37,14 +37,6 @@ PyTypes::lookupTypeSymbol(const char *name) {
     names[remote] = name;
     return remote;
 }
-
-// Minimal header from _PyRuntime to find the version, and verify the magic cookie.
-struct Header {
-    std::array<char, 8> cookie;
-    static constexpr std::string_view expectedCookie { "xdebugpy" };
-    uint64_t version;
-    auto operator <=> (const Header &rhs) const = default;
-};
 
 RawOffset::RawOffset(OffsetContainer *container_, std::string_view name_) {
     container_->fields[name_] = this;
@@ -76,7 +68,6 @@ OffsetContainer::parse(std::istream &is, const Reader::csptr &reader, uintptr_t 
 // For each, we create an Offset object with appropriate container and field
 // types for each offset. As we parse the JSON, we will populate the offsets as
 // we find them in the process.
-
 struct RuntimeStateOffsets : OffsetContainer {
     template<typename Field> using Off = Offset<_PyRuntimeState, Field>;
     Off<PyThreadState *> finalizing;
@@ -208,13 +199,21 @@ struct PyBytesObjectOffsets : OffsetContainer {
     {}
 };
 
+struct PyASCIIState {
+    unsigned int interned : 2;
+    unsigned int kind : 3;
+    unsigned int compact : 1;
+    unsigned int ascii : 1;
+    unsigned int statically_allocated : 1;
+};
+
 struct UnicodeObjectOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<PyUnicodeObject, Field>;
     Off<ssize_t> asciiobject_size;
     Off<PyASCIIState> state;
     Off<ssize_t> length;
     UnicodeObjectOffsets()
-    : asciiobject_size(this, "asciiobject_size")
+        : asciiobject_size(this, "asciiobject_size")
         , state(this, "state")
         , length(this, "length")
     {}
@@ -236,19 +235,15 @@ struct RootOffsets {
 
 void
 Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
-    if (!remote) {
+    if (!remote)
         os << "<null>";
-        return;
-    }
-    if (auto str = cast(types->pyUnicode_Type, remote); str) {
+    else if (auto str = cast(types->pyUnicode_Type, remote); str)
         dump(os, str);
-    }
 }
 
 void
 Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
     auto state = offsets->unicode_object.state.ptr(remote).fetch(proc.io);
-
     Remote<char *> dataptr;
     auto rawptr = uintptr_t(remote.remote);
     auto length = offsets->unicode_object.length.ptr(remote).fetch(proc.io);
@@ -258,7 +253,6 @@ Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
             offsets->unicode_object.asciiobject_size.off :
             offsets->unicode_object.size - sizeof (uintptr_t);
         dataptr.remote = reinterpret_cast<char *>(rawptr + dataoff);
-
     } else {
         // non-compact form - data is pointed to by the pointer at the end of the PyUnicodeObject.
         Remote<char **> dataptrptr;
@@ -266,9 +260,8 @@ Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
         dataptr = dataptrptr.fetch(proc.io);
     }
     std::vector<char> data;
-    if (state.kind == 1) {
+    if (state.kind == 1)
         data = dataptr.fetchArray(proc.io, length);
-    }
     os << std::string_view{data.data(), data.size()};
 }
 
@@ -295,9 +288,8 @@ RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t o
             pyobject.parse(is, io, object);
         else if (field == "bytes_object")
             bytes_object.parse(is, io, object);
-        else {
+        else
             skip<unsigned>(is);
-        }
     });
 }
 
@@ -306,9 +298,8 @@ RootOffsets::~RootOffsets() {}
 std::string_view
 Target::typeName(Remote<PyTypeObject *> remote) const {
     auto it = types->names.find(remote);
-    if (it != types->names.end()) {
+    if (it != types->names.end())
         return it->second;
-    }
     return "(unknown)";
 }
 
@@ -360,7 +351,7 @@ Target::Target(Procman::Process &proc_)
 struct LineDelta {
     int line;
     unsigned code;
-    bool nocode;
+    bool noline;
 };
 
 auto checknext(auto &i, auto e) {
@@ -386,19 +377,15 @@ read_varint(auto &i, auto e) {
 static int
 read_signed_varint(auto &i, auto e) {
     unsigned int uval = read_varint(i, e);
-    if (uval & 1) {
+    if (uval & 1)
         return -(int)(uval >> 1);
-    }
-    else {
-        return uval >> 1;
-    }
+    return uval >> 1;
 }
-
 
 LineDelta read_deltas(auto &cur, auto end) {
     auto header = checknext(cur, end);
     auto insn = (header >> 3) & 0xf; // get bits 3-6.
-    unsigned code_delta = (header & 0x7) * sizeof(uint16_t);
+    unsigned code_delta = ((header & 0x7) + 1) * sizeof(uint16_t);
 
     switch (insn) {
         case 0 ... 9: // PY_CODE_LOCATION_INFO_SHORT0...9. Only impact column.
@@ -430,7 +417,6 @@ LineDelta read_deltas(auto &cur, auto end) {
     }
 }
 
-
 void Target::dumpBacktrace(std::ostream &os) const {
     Procman::StopProcess here(&proc);
     auto &threadOffs = offsets->thread_state;
@@ -449,11 +435,9 @@ void Target::dumpBacktrace(std::ostream &os) const {
                 clear &= -8LL;
                 executable = { reinterpret_cast<PyObject *>(clear) };
                 auto code = cast(types->pyCode_Type, executable);
-                os << "\t";
                 if (code) {
                     auto name = offsets->code_object.name.ptr(code).fetch(proc.io);
                     auto file = offsets->code_object.filename.ptr(code).fetch(proc.io);
-
                     auto instr_ptr = offsets->interpreter_frame.instr_ptr.ptr(frame).fetch(proc.io);
                     auto instr_off = instr_ptr.remote - offsets->code_object.co_code_adaptive.ptr(code).remote;
                     auto firstline = offsets->code_object.firstlineno.ptr(code).fetch(proc.io);
@@ -467,16 +451,17 @@ void Target::dumpBacktrace(std::ostream &os) const {
                     auto i = linetable_data.begin();
                     auto e = linetable_data.end();
                     for (unsigned codeloc = 0; i != e; ) {
-                        os << "\t\t\tline: " << line << ", code: " << codeloc;
+                        //os << "\t\t\tline: " << line << ", code: " << codeloc;
                         auto deltas = read_deltas(i, e);
-                        os << " ( line += " << deltas.line << ", code += " << deltas.code << ")\n";
+                        //os << " ( line += " << deltas.line << ", code += " << deltas.code << ")\n";
                         line += deltas.line;
                         codeloc += deltas.code;
-                        if (codeloc >= instr_off || deltas.nocode)
+                        if (codeloc >= instr_off)
                             break;
                     }
-                    os << "code: " << code;
-                    os << ", func: ";
+                    //os << "\tcode: " << code;
+                    //os << ", loc: " << instr_off;
+                    os << "\tfunc: ";
                     dump(os, name);
                     os << ", file: ";
                     dump(os, file);
@@ -518,12 +503,5 @@ Target::threads(Remote<PyInterpreterState *> interp) const {
     return threads;
 }
 Target::~Target() = default;
-
-template<typename To> Remote<To *> Target::cast(const PyType<To> &to, Remote<PyObject *> from) const {
-    if (pyType(from) == to.typeObject) {
-        return { reinterpret_cast<To *>(from.remote) };
-    }
-    return {0};
-}
 
 }

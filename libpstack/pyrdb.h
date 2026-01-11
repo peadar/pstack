@@ -113,16 +113,20 @@ struct Target {
     Target(Procman::Process & proc_);
     std::vector<Remote<PyInterpreterState *>> interpreters() const;
     std::vector<Remote<PyThreadState *>> threads(Remote<PyInterpreterState *>) const;
-    ~Target();
     void dumpBacktrace(std::ostream &os) const;
     Remote<PyTypeObject *> pyType(Remote<PyObject *>) const;
     std::string_view typeName(Remote<PyTypeObject *>) const;
-
     template<typename To> Remote<To *> cast(const PyType<To> &to, Remote<PyObject *> from) const;
-
     void dump(std::ostream &os, const Remote<PyObject *> &remote) const;
     void dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const;
+
+    ~Target();
 };
 
+template<typename To> Remote<To *> Target::cast(const PyType<To> &to, Remote<PyObject *> from) const {
+    if (pyType(from) == to.typeObject)
+        return { reinterpret_cast<To *>(from.remote) };
+    return {0};
 }
 
+}
