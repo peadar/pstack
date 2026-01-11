@@ -100,6 +100,13 @@ struct InterpreterStateOffsets : OffsetContainer {
     OFF(uint64_t, tlbc_generation);
 };
 
+struct PyTypeObjectOffsets : OffsetContainer {
+    template <typename Field> using Off = Offset<PyTypeObject, Field>;
+    OFF(char *, tp_name);
+    OFF(void *, tp_repr);
+    OFF(PyObject *, tp_flags);
+};
+
 struct ThreadStateOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<PyThreadState, Field>;
     OFF(PyThreadState *, prev);
@@ -131,7 +138,7 @@ struct CodeObjectOffsets : OffsetContainer {
     OFF(PyBytesObject *, linetable);
     OFF(int, firstlineno);
     OFF(int, argcount);
-    OFF(PyObject *, localsplusnames);
+    OFF(PyTupleObject *, localsplusnames);
     OFF(PyObject *, localspluskinds);
     OFF(char, co_code_adaptive);
     OFF(void, co_tlbc); // XXX?
@@ -158,6 +165,13 @@ struct UnicodeObjectOffsets : OffsetContainer {
     OFF(ssize_t, length);
 };
 
+struct PyTupleObjectOffsets : OffsetContainer {
+    template <typename Field> using Off = Offset<PyTupleObject, Field>;
+    OFF(PyObject *, ob_item);
+    OFF(ssize_t, ob_size);
+};
+
+
 // We parse this out of the JSON file representing the _PyDebugOffsets type.
 struct RootOffsets {
     RuntimeStateOffsets runtime_state;
@@ -168,6 +182,8 @@ struct RootOffsets {
     UnicodeObjectOffsets unicode_object;
     PyObjectOffsets pyobject;
     PyBytesObjectOffsets bytes_object;
+    PyTupleObjectOffsets tuple_object;
+    PyTypeObjectOffsets type_object;
     RootOffsets(uint64_t version, Reader::csptr io, uintptr_t object);
     ~RootOffsets();
 };
@@ -195,6 +211,10 @@ RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t o
             pyobject.parse(is, io, object);
         else if (field == "bytes_object")
             bytes_object.parse(is, io, object);
+        else if (field == "tuple_object")
+            tuple_object.parse(is, io, object);
+        else if (field == "type_object")
+            type_object.parse(is, io, object);
         else
             skip<unsigned>(is);
     });
@@ -203,19 +223,36 @@ RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t o
 RootOffsets::~RootOffsets() = default;
 
 void
+Target::dump(std::ostream &os, const Remote<char *> &charptr) const {
+    os << '"' << proc.io->readString(reinterpret_cast<Elf::Addr>(charptr.remote)) << '"';
+}
+
+void
 Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
     if (!remote)
-        os << "<null>";
+        os << "(null)";
     else if (auto str = cast(types->pyUnicode_Type, remote); str)
         dump(os, str);
+    else {
+        auto type = pyType(remote);
+        os << remote << " - opaque type " ;
+        try {
+            auto charptr = offsets->type_object.tp_name(type);
+            dump(os, charptr.fetch(proc.io));
+        }
+        catch (...) {
+            os << "(unknown)";
+        }
+    }
+
 }
 
 void
 Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
-    auto state = offsets->unicode_object.state.ptr(remote).fetch(proc.io);
+    auto state = offsets->unicode_object.state(remote).fetch(proc.io);
     Remote<char *> dataptr;
     auto rawptr = uintptr_t(remote.remote);
-    auto length = offsets->unicode_object.length.ptr(remote).fetch(proc.io);
+    auto length = offsets->unicode_object.length(remote).fetch(proc.io);
     if (state.compact) {
         // Compaact form. Data follows the object.
         size_t dataoff = state.ascii ?
@@ -231,7 +268,7 @@ Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
     std::vector<char> data;
     if (state.kind == 1)
         data = dataptr.fetchArray(proc.io, length);
-    os << std::string_view{data.data(), data.size()};
+    os << '"' << std::string_view{data.data(), data.size()} << '"';
 }
 
 std::string_view
@@ -244,7 +281,7 @@ Target::typeName(Remote<PyTypeObject *> remote) const {
 
 Remote<PyTypeObject *>
 Target::pyType(Remote<PyObject *> remote) const {
-    return offsets->pyobject.ob_type.ptr(remote).fetch(proc.io);
+    return offsets->pyobject.ob_type(remote).fetch(proc.io);
 }
 
 Target::Target(Procman::Process &proc_)
@@ -278,7 +315,7 @@ Target::Target(Procman::Process &proc_)
             continue;
         }
 
-        pyRuntimeAddr.remote = reinterpret_cast<_PyRuntimeState *>(secaddr);
+        pyRuntime.remote = reinterpret_cast<_PyRuntimeState *>(secaddr);
         offsets = make_unique<RootOffsets>(headerInProc.version, proc.io, secaddr);
         dumpBacktrace(std::cout);
         return;
@@ -354,6 +391,7 @@ LineDelta read_deltas(auto &cur, auto end) {
     }
 }
 
+
 void Target::dumpBacktrace(std::ostream &os) const {
     Procman::StopProcess here(&proc);
     auto &threadOffs = offsets->thread_state;
@@ -361,28 +399,28 @@ void Target::dumpBacktrace(std::ostream &os) const {
     for (auto i : interpreters()) {
         os << "interp " << i << "\n";
         for (auto t : threads(i)) {
-            auto id = threadOffs.thread_id.ptr(t).fetch(proc.io);
-            auto native_id = threadOffs.native_thread_id.ptr(t).fetch(proc.io);
+            auto id = fetch(threadOffs.thread_id(t));
+            auto native_id = fetch(threadOffs.native_thread_id(t));
             os << "thread id: " << id << ", native id: " << native_id << "\n";
-            auto frame = threadOffs.current_frame.ptr(t).fetch(proc.io);
+            auto frame = fetch(threadOffs.current_frame(t));
             while (frame) {
-                auto executable = frameOffs.executable.ptr(frame).fetch(proc.io);
+                auto executable = fetch(frameOffs.executable(frame));
                 auto clear = (uintptr_t)executable.remote;
                 [[maybe_unused]] auto mode = clear & (8-1);
                 clear &= -8LL;
                 executable = { reinterpret_cast<PyObject *>(clear) };
                 auto code = cast(types->pyCode_Type, executable);
                 if (code) {
-                    auto name = offsets->code_object.name.ptr(code).fetch(proc.io);
-                    auto file = offsets->code_object.filename.ptr(code).fetch(proc.io);
-                    auto instr_ptr = offsets->interpreter_frame.instr_ptr.ptr(frame).fetch(proc.io);
-                    auto instr_off = instr_ptr.remote - offsets->code_object.co_code_adaptive.ptr(code).remote;
-                    auto firstline = offsets->code_object.firstlineno.ptr(code).fetch(proc.io);
-                    auto linetable = offsets->code_object.linetable.ptr(code).fetch(proc.io);
+                    auto name = fetch(offsets->code_object.name(code));
+                    auto file = fetch(offsets->code_object.filename(code));
+                    auto instr_ptr = fetch(offsets->interpreter_frame.instr_ptr(frame));
+                    auto instr_off = instr_ptr.remote - offsets->code_object.co_code_adaptive(code).remote;
+                    auto firstline = fetch(offsets->code_object.firstlineno(code));
+                    auto linetable = fetch(offsets->code_object.linetable(code));
 
                     // Read the entire line table into memory.
-                    auto linetable_size = offsets->bytes_object.ob_size.ptr(linetable).fetch(proc.io);
-                    auto linetable_data = offsets->bytes_object.ob_sval.ptr(linetable).fetchArray(proc.io, linetable_size);
+                    auto linetable_size = fetch(offsets->bytes_object.ob_size(linetable));
+                    auto linetable_data = fetchArray(offsets->bytes_object.ob_sval(linetable), linetable_size);
 
                     int line = firstline;
                     auto i = linetable_data.begin();
@@ -403,11 +441,34 @@ void Target::dumpBacktrace(std::ostream &os) const {
                     os << ", file: ";
                     dump(os, file);
                     os << ", line: " << line;
+                    auto argCount = fetch(offsets->code_object.argcount(code));
+                    auto lnames = fetch(offsets->code_object.localsplusnames(code));
+                    auto localCount = fetch(offsets->tuple_object.ob_size(lnames));
+                    std::cout << ", localcount: " << localCount;
+                    std::cout << ", argcount: " << argCount;
+                    auto nameVec = fetchArray(offsets->tuple_object.ob_item(lnames), localCount);
+                    auto valueVec = fetchArray(offsets->interpreter_frame.localsplus(frame), localCount);
+                    os << "\n";
+                    for (ssize_t i = 0; i < localCount; ++i) {
+                        auto name = nameVec[i];
+                        auto value = valueVec[i];
+                        os << "\t\t";
+                        dump(os, name);
+                        os << " : ";
+                        if ((value & 3) == 3) {
+                            os << (value >> 2);
+                        } else {
+                            auto tval = Remote{reinterpret_cast<PyObject *>(value & ~3)};
+                            dump(os, tval);
+                        }
+                        os << "\n";
+                    }
+
                 } else {
                     os << "(unknown frame type " << typeName(pyType(executable)) << ")";
                 }
                 os << "\n";
-                frame = frameOffs.previous.ptr(frame).fetch(proc.io);
+                frame = fetch(frameOffs.previous(frame));
             }
         }
         os << "\n";
@@ -416,29 +477,14 @@ void Target::dumpBacktrace(std::ostream &os) const {
 
 std::vector<Remote<PyInterpreterState *>>
 Target::interpreters() const {
-    std::vector<Remote<PyInterpreterState *>> interps;
-    auto &runtimeOffs = offsets->runtime_state;
-    auto &interpOffs = offsets->interpreter_state;
-    auto head = runtimeOffs.interpreters_head.ptr(pyRuntimeAddr).fetch(proc.io);
-    while (head.remote) {
-        interps.push_back(head);
-        head = interpOffs.next.ptr(head).fetch(proc.io);
-    }
-    return interps;
+    return followList(pyRuntime, offsets->runtime_state.interpreters_head, offsets->interpreter_state.next);
 }
 
 std::vector<Remote<PyThreadState *>>
 Target::threads(Remote<PyInterpreterState *> interp) const {
-    std::vector<Remote<PyThreadState *>> threads;
-    auto &interpOffs = offsets->interpreter_state;
-    auto &threadOffs = offsets->thread_state;
-    auto head = interpOffs.threads_head.ptr(interp).fetch(proc.io);
-    while (head.remote) {
-        threads.push_back(head);
-        head = threadOffs.next.ptr(head).fetch(proc.io);
-    }
-    return threads;
+    return followList(interp, offsets->interpreter_state.threads_head, offsets->thread_state.next);
 }
+
 Target::~Target() = default;
 
 }

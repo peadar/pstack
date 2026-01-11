@@ -20,10 +20,11 @@ struct PyInterpreterState;
 struct PyObject;
 struct _PyRuntimeState;
 struct _PyStackChunk;
-struct _PyStackRef;
+using _PyStackRef = uintptr_t;
 struct PyThreadState;
 struct PyTypeObject;
 struct PyUnicodeObject;
+struct PyTupleObject;
 
 union _Py_CODEUNIT;
 
@@ -89,7 +90,7 @@ struct RawOffset {
 // POD objects will come back as those POD objects. Pointer types "T*" will come
 // back as "Remote<T *>"
 template <typename Container, typename Field> struct Offset : RawOffset {
-    Remote<Field *> ptr(Remote<Container *> container) {
+    Remote<Field *> operator()(Remote<Container *> container) const {
         return { reinterpret_cast<Field *>( uintptr_t(container.remote) + off ) };
     }
     using RawOffset::RawOffset;
@@ -107,7 +108,7 @@ struct PyTypes;
 
 struct Target {
     Procman::Process &proc;
-    Remote<_PyRuntimeState *> pyRuntimeAddr;
+    Remote<_PyRuntimeState *> pyRuntime;
     std::unique_ptr<RootOffsets> offsets;
     std::unique_ptr<PyTypes> types;
     Target(Procman::Process & proc_);
@@ -118,9 +119,27 @@ struct Target {
     std::string_view typeName(Remote<PyTypeObject *>) const;
     template<typename To> Remote<To *> cast(const PyType<To> &to, Remote<PyObject *> from) const;
     void dump(std::ostream &os, const Remote<PyObject *> &remote) const;
+    void dump(std::ostream &os, const Remote<char *> &remote) const;
     void dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const;
 
+    // syntactic shortcut for Remote<T>::fetch
+    template <typename T> Remote<T *>::PointedTo fetch(Remote<T *> remote) const { return remote.fetch(proc.io); }
+    template <typename T> std::vector<typename Remote<T *>::PointedTo> fetchArray(Remote<T *> remote, size_t sz) const
+    { return remote.fetchArray(proc.io, sz); }
     ~Target();
+
+
+    // follows a list starting with a pointer in one object
+    template <typename Container, typename Field>
+    std::vector<Remote<Field *>> followList(
+        const Remote<Container*> &container,
+        const Offset<Container, Field *> &headField,
+        const Offset<Field, Field *> &nextField) const {
+        std::vector<Remote<Field *>> result;
+        for (auto cur = fetch(headField(container)); cur; cur = fetch(nextField(cur)))
+            result.push_back(cur);
+        return result;
+    }
 };
 
 template<typename To> Remote<To *> Target::cast(const PyType<To> &to, Remote<PyObject *> from) const {
