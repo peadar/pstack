@@ -74,10 +74,6 @@ struct RuntimeStateOffsets : OffsetContainer {
     template<typename Field> using Off = Offset<_PyRuntimeState, Field>;
     OFF(PyThreadState *, finalizing);
     OFF(PyInterpreterState *, interpreters_head);
-    RuntimeStateOffsets() 
-        : finalizing(this, "finalizing")
-        , interpreters_head(this, "interpreters_head")
-    {}
 };
 
 struct PyObjectOffsets : OffsetContainer {
@@ -176,6 +172,36 @@ struct RootOffsets {
     ~RootOffsets();
 };
 
+RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t object)
+{
+    std::array<char, 16> chars;
+    auto [ end, ec ] = std::to_chars(chars.begin(), chars.end(), versionExpected, 16);
+    std::string name = std::string(chars.begin(), end) + ".json";
+    std::ifstream in(name);
+    parseObject(in, [&](std::istream &is, std::string_view field) {
+        if (field == "interpreter_state")
+            interpreter_state.parse(is, io, object);
+        else if (field == "thread_state")
+            thread_state.parse(is, io, object);
+        else if (field == "runtime_state")
+            runtime_state.parse(is, io, object);
+        else if (field == "interpreter_frame")
+            interpreter_frame.parse(is, io, object);
+        else if (field == "code_object")
+            code_object.parse(is, io, object);
+        else if (field == "unicode_object")
+            unicode_object.parse(is, io, object);
+        else if (field == "pyobject")
+            pyobject.parse(is, io, object);
+        else if (field == "bytes_object")
+            bytes_object.parse(is, io, object);
+        else
+            skip<unsigned>(is);
+    });
+}
+
+RootOffsets::~RootOffsets() = default;
+
 void
 Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
     if (!remote)
@@ -208,36 +234,6 @@ Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
     os << std::string_view{data.data(), data.size()};
 }
 
-RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t object)
-{
-    std::array<char, 16> chars;
-    auto [ end, ec ] = std::to_chars(chars.begin(), chars.end(), versionExpected, 16);
-    std::string name = std::string(chars.begin(), end) + ".json";
-    std::ifstream in(name);
-    parseObject(in, [&](std::istream &is, std::string_view field) {
-        if (field == "interpreter_state")
-            interpreter_state.parse(is, io, object);
-        else if (field == "thread_state")
-            thread_state.parse(is, io, object);
-        else if (field == "runtime_state")
-            runtime_state.parse(is, io, object);
-        else if (field == "interpreter_frame")
-            interpreter_frame.parse(is, io, object);
-        else if (field == "code_object")
-            code_object.parse(is, io, object);
-        else if (field == "unicode_object")
-            unicode_object.parse(is, io, object);
-        else if (field == "pyobject")
-            pyobject.parse(is, io, object);
-        else if (field == "bytes_object")
-            bytes_object.parse(is, io, object);
-        else
-            skip<unsigned>(is);
-    });
-}
-
-RootOffsets::~RootOffsets() {}
-
 std::string_view
 Target::typeName(Remote<PyTypeObject *> remote) const {
     auto it = types->names.find(remote);
@@ -261,7 +257,7 @@ Target::Target(Procman::Process &proc_)
         if (!sec)
             continue;
 
-        // The start of the section has three distinct uses:
+        // The start of the section has three distinct interpretations:
         // 1: the "header", which is the magic number and version. That
         // structure is hard-coded here
         //
@@ -290,7 +286,6 @@ Target::Target(Procman::Process &proc_)
     throw (Exception() << "no python interpreter found");
 }
 
-
 struct LineDelta {
     int line;
     unsigned code;
@@ -299,9 +294,8 @@ struct LineDelta {
 
 auto checknext(auto &i, auto e) {
     if (i == e)
-        throw (Exception() << "end of data reachged decoding varint");
-    auto rv = *i++;
-    return rv;
+        throw (Exception() << "end of data reached while decoding varint");
+    return *i++;
 }
 
 static inline int
