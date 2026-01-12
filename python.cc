@@ -19,21 +19,7 @@ getPyInterpInfo(Procman::Process &proc) {
     if (libpython == nullptr)
         return PyInterpInfo {nullptr, 0, 0, "", 0};
 
-    std::string filename = libpython->io->filename();
-
-    auto index = filename.find("python");
-
-    if (filename.length() < index + 9) //index + len("pythonX.Y")
-        throw Exception() << "Can't parse python version from lib/exec name: " << filename;
-
-    char majorChar = filename[index + 6];
-    char minorChar = filename[index + 8];
-
-    if (!isdigit(majorChar) || !isdigit(minorChar))
-        throw Exception() << "lib/exec name doesn't match \"*pythonX.Y.*\" format";
-
-    int major = majorChar - '0';
-    int minor = minorChar - '0';
+    auto [major, minor] = getPythonVersionFromFilename(libpython->io->filename());
 
     if (proc.context.verbose > 0)
         *proc.context.debug << "python version is: " << major << "." << minor << std::endl;
@@ -42,6 +28,32 @@ getPyInterpInfo(Procman::Process &proc) {
         libpython, libpythonAddr, interpreterHead,
         "v" + std::to_string(major) + "." + std::to_string(minor),
         V2HEX(major, minor)};
+}
+
+std::pair<int, int>
+getPythonVersionFromFilename(const std::string &filename) {
+    auto lastSlash = filename.rfind('/');
+    auto index = filename.find("python", lastSlash == std::string::npos ? 0 : lastSlash);
+
+    if (index == std::string::npos)
+        throw Exception() << "Could not find 'python' in filename: " << filename;
+
+    if (filename.length() < index + 9) //index + len("pythonX.Y")
+        throw Exception() << "Can't parse python version from lib/exec name: "
+            << filename << " (too short)";
+
+    char majorChar = filename[index + 6];
+    char minorChar = filename[index + 8];
+
+    if (!isdigit(majorChar) || !isdigit(minorChar))
+        throw Exception()
+            << "lib/exec name " << filename
+            << " doesn't match \"*pythonX.Y.*\" format. Found '"
+            << majorChar << "' and '" << minorChar << "' where digits were expected.";
+
+    int major = majorChar - '0';
+    int minor = minorChar - '0';
+    return {major, minor};
 }
 
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>

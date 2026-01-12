@@ -85,6 +85,7 @@ struct PythonPrinter {
 };
 bool pthreadTidOffset(Procman::Process &proc, size_t *offsetp);
 PyInterpInfo getPyInterpInfo(Procman::Process &proc);
+std::pair<int, int> getPythonVersionFromFilename(const std::string &filename);
 template <int PyV, typename T> ssize_t pyRefcnt(const T *t);
 
 template <int V>
