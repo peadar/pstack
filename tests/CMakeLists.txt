@@ -37,6 +37,8 @@ target_link_libraries(procself dwelf procman)
 target_link_libraries(suspend dwelf procman)
 SET_TARGET_PROPERTIES(noreturn PROPERTIES COMPILE_FLAGS "-O2 -g")
 
+add_executable(python_path_test python_path_test.cc)
+target_link_libraries(python_path_test procman dwelf)
 
 add_custom_command(
    OUTPUT basic-no-unwind-gen
