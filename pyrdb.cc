@@ -17,15 +17,25 @@ struct Header {
 struct PyTypes {
     std::map<Remote<PyTypeObject *>, std::string> names;
     Target &target;
+    PyType<PyLongObject> pyLong_Type;
+    PyType<PyLongObject> pyBool_Type;
     PyType<PyUnicodeObject> pyUnicode_Type;
     PyType<PyCodeObject> pyCode_Type;
-    PyType<PyObject> pyNone_Type;
+    PyType<PyNoneType> pyNone_Type;
+    PyType<PyTupleObject> pyTuple_Type;
+    PyType<PyListObject> pyList_Type;
+    PyType<PyBytesObject> pyBytes_Type;
     Remote<PyTypeObject *> lookupTypeSymbol(const char *name);
     PyTypes(Target &target_)
      : target(target_)
+     , pyLong_Type{lookupTypeSymbol("PyLong_Type")}
+     , pyBool_Type{lookupTypeSymbol("PyBool_Type")}
      , pyUnicode_Type{lookupTypeSymbol("PyUnicode_Type")}
      , pyCode_Type{lookupTypeSymbol("PyCode_Type")}
      , pyNone_Type{lookupTypeSymbol("_PyNone_Type")}
+     , pyTuple_Type{lookupTypeSymbol("PyTuple_Type")}
+     , pyList_Type{lookupTypeSymbol("PyList_Type")}
+     , pyBytes_Type{lookupTypeSymbol("PyBytes_Type")}
     {
     }
 };
@@ -33,6 +43,9 @@ struct PyTypes {
 Remote<PyTypeObject *>
 PyTypes::lookupTypeSymbol(const char *name) {
     auto value = reinterpret_cast<PyTypeObject *>(target.proc.resolveSymbol(name, false));
+    if (value == nullptr) {
+        std::cerr << "no type for " << name << "\n";
+    }
     Remote<PyTypeObject *> remote {value};
     names[remote] = name;
     return remote;
@@ -171,6 +184,17 @@ struct PyTupleObjectOffsets : OffsetContainer {
     OFF(ssize_t, ob_size);
 };
 
+struct PyLongObjectOffsets : OffsetContainer {
+    template <typename Field> using Off = Offset<PyLongObject, Field>;
+    OFF(uintptr_t, lv_tag);
+    OFF(unsigned int, ob_digit);
+};
+
+struct PyListObjectOffsets : OffsetContainer {
+    template <typename Field> using Off = Offset<PyListObject, Field>;
+    OFF(ssize_t, ob_size);
+    OFF(PyObject **, ob_item);
+};
 
 // We parse this out of the JSON file representing the _PyDebugOffsets type.
 struct RootOffsets {
@@ -181,9 +205,11 @@ struct RootOffsets {
     CodeObjectOffsets code_object;
     UnicodeObjectOffsets unicode_object;
     PyObjectOffsets pyobject;
-    PyBytesObjectOffsets bytes_object;
     PyTupleObjectOffsets tuple_object;
     PyTypeObjectOffsets type_object;
+    PyLongObjectOffsets long_object;
+    PyListObjectOffsets list_object;
+    PyBytesObjectOffsets bytes_object;
     RootOffsets(uint64_t version, Reader::csptr io, uintptr_t object);
     ~RootOffsets();
 };
@@ -215,6 +241,10 @@ RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t o
             tuple_object.parse(is, io, object);
         else if (field == "type_object")
             type_object.parse(is, io, object);
+        else if (field == "long_object")
+            long_object.parse(is, io, object);
+        else if (field == "list_object")
+            list_object.parse(is, io, object);
         else
             skip<unsigned>(is);
     });
@@ -228,11 +258,52 @@ Target::dump(std::ostream &os, const Remote<char *> &charptr) const {
 }
 
 void
+Target::dump(std::ostream &os, const Remote<PyTupleObject *> &charptr) const {
+    auto count = fetch(offsets->tuple_object.ob_size(charptr));
+    auto items = fetchArray(offsets->tuple_object.ob_item(charptr), count);
+    os << "( ";
+    const char *sep = "";
+    for (auto &item : items) {
+        os << sep << str(item);
+        sep = ", ";
+    }
+    os << " )";
+}
+
+void
+Target::dump(std::ostream &os, const Remote<PyListObject *> &listobj) const {
+    auto count = fetch(offsets->list_object.ob_size(listobj));
+    auto items = fetch(offsets->list_object.ob_item(listobj));
+    auto itemsVec = fetchArray(items, count);
+    os << "[ ";
+    const char *sep = "";
+    for (auto &item : itemsVec) {
+        os << sep << str(item);
+        sep = ", ";
+    }
+    os << " ]";
+}
+
+
+
+void
 Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
     if (!remote)
         os << "(null)";
     else if (auto str = cast(types->pyUnicode_Type, remote); str)
         dump(os, str);
+    else if (auto l = cast(types->pyLong_Type, remote); l)
+        dump(os, l);
+    else if (auto t = cast(types->pyTuple_Type, remote); t)
+        dump(os, t);
+    else if (auto l = cast(types->pyList_Type, remote); l)
+        dump(os, l);
+    else if (auto l = cast(types->pyBool_Type, remote); l)
+        dump(os, l);
+    else if (auto l = cast(types->pyBytes_Type, remote); l)
+        dump(os, l);
+    else if (auto l = cast(types->pyNone_Type, remote); l)
+        os << "None";
     else {
         auto type = pyType(remote);
         os << remote << " - opaque type " ;
@@ -246,26 +317,73 @@ Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
 }
 
 void
+Target::dump(std::ostream &os, const Remote<PyLongObject *> &remote) const {
+    auto type = pyType(Remote<PyObject *>(reinterpret_cast<PyObject *>(remote.remote)));
+    if (type == types->pyBool_Type.typeObject) {
+        os << (fetch(offsets->long_object.ob_digit(remote)) ? "True" : "False");
+    } else {
+        os << fetch(offsets->long_object.ob_digit(remote));
+    }
+}
+
+struct Escape { unsigned char c; };
+std::ostream &
+operator << (std::ostream &os, const Escape &e) {
+    if (e.c < 128 && e.c >= 32) {
+        return os << char(e.c);
+    }
+    return os << "\\x" << std::setw(2) << std::setfill('0') << std::hex << int(e.c) << std::dec;
+}
+
+
+void
+Target::dump(std::ostream &os, const Remote<PyBytesObject *> &remote) const {
+    auto sz = fetch(offsets->bytes_object.ob_size(remote));
+    auto vec = fetchArray(offsets->bytes_object.ob_sval(remote), sz);
+    for (auto c : vec) {
+        os << Escape{c};
+    }
+
+}
+
+
+void
 Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
     const auto &unicode = offsets->unicode_object;
     auto state = fetch(unicode.state(remote));
-    Remote<char *> dataptr;
-    auto rawptr = uintptr_t(remote.remote);
+    auto objoff = uintptr_t(remote.remote);
     auto length = fetch(unicode.length(remote));
+
+    uintptr_t dataAddr;
     if (state.compact) {
         // Compaact form. Data follows the object.
-        size_t dataoff = state.ascii ? unicode.asciiobject_size.off : unicode.size - sizeof (uintptr_t);
-        dataptr.remote = reinterpret_cast<char *>(rawptr + dataoff);
+        dataAddr = objoff + (state.ascii ? unicode.asciiobject_size.off : unicode.size - sizeof (uintptr_t));
+
     } else {
         // non-compact form - data is pointed to by the pointer at the end of the PyUnicodeObject.
-        Remote<char **> dataptrptr;
-        dataptrptr.remote = reinterpret_cast<char **>(rawptr + unicode.size - sizeof(uintptr_t));
-        dataptr = fetch(dataptrptr);
+        Remote<uintptr_t *> dataAddrPtr;
+        dataAddrPtr.remote = reinterpret_cast<uintptr_t *>(objoff + unicode.size - sizeof(uintptr_t));
+        dataAddr = fetch(dataAddrPtr);
     }
     if (state.kind == 1) {
+        Remote<char *> dataptr { reinterpret_cast<char *>(dataAddr) };
         std::vector<char> data;
         data = fetchArray(dataptr, length);
         os << std::string_view{data.data(), data.size()};
+    } else if (state.kind == 2) {
+        // data is 2-byte unicode. Convert to UTF-8
+        Remote<uint16_t *> dataptr { reinterpret_cast<uint16_t *>(dataAddr) };
+        std::vector<uint16_t> data;
+        data = fetchArray(dataptr, length);
+        for (auto c : data)
+            os << UTF8(c);
+    } else if (state.kind == 4) {
+        // data is 4-byte unicode. Convert to UTF-8
+        Remote<uint32_t *> dataptr { reinterpret_cast<uint32_t *>(dataAddr) };
+        std::vector<uint32_t> data;
+        data = fetchArray(dataptr, length);
+        for (auto c : data)
+            os << UTF8(c);
     } else {
         os << "<string of unsupported kind " << state.kind << ">";
     }

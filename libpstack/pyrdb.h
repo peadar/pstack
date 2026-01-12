@@ -28,6 +28,9 @@ struct PyThreadState;
 struct PyTypeObject;
 struct PyUnicodeObject;
 struct PyTupleObject;
+struct PyListObject;
+struct PyLongObject;
+struct PyNoneType;
 
 union _Py_CODEUNIT;
 
@@ -143,8 +146,12 @@ public:
     std::vector<Remote<PyInterpreterState *>> interpreters() const;
     std::vector<Remote<PyThreadState *>> threads(Remote<PyInterpreterState *>) const;
     void dump(std::ostream &os, const Remote<PyObject *> &remote) const;
+    void dump(std::ostream &os, const Remote<PyBytesObject *> &remote) const;
+    void dump(std::ostream &os, const Remote<PyListObject *> &remote) const;
+    void dump(std::ostream &os, const Remote<PyTupleObject *> &remote) const;
     void dump(std::ostream &os, const Remote<char *> &remote) const;
     void dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const;
+    void dump(std::ostream &os, const Remote<PyLongObject *> &remote) const;
     template <typename T> DumpStream<T> str(const T &t) const { return DumpStream (*this, t); }
     ~Target();
 };
