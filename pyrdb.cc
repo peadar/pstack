@@ -237,38 +237,38 @@ Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
         auto type = pyType(remote);
         os << remote << " - opaque type " ;
         try {
-            auto charptr = offsets->type_object.tp_name(type);
-            dump(os, charptr.fetch(proc.io));
+            dump(os, fetch(offsets->type_object.tp_name(type)));
         }
         catch (...) {
             os << "(unknown)";
         }
     }
-
 }
 
 void
 Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
-    auto state = offsets->unicode_object.state(remote).fetch(proc.io);
+    const auto &unicode = offsets->unicode_object;
+    auto state = fetch(unicode.state(remote));
     Remote<char *> dataptr;
     auto rawptr = uintptr_t(remote.remote);
-    auto length = offsets->unicode_object.length(remote).fetch(proc.io);
+    auto length = fetch(unicode.length(remote));
     if (state.compact) {
         // Compaact form. Data follows the object.
-        size_t dataoff = state.ascii ?
-            offsets->unicode_object.asciiobject_size.off :
-            offsets->unicode_object.size - sizeof (uintptr_t);
+        size_t dataoff = state.ascii ? unicode.asciiobject_size.off : unicode.size - sizeof (uintptr_t);
         dataptr.remote = reinterpret_cast<char *>(rawptr + dataoff);
     } else {
         // non-compact form - data is pointed to by the pointer at the end of the PyUnicodeObject.
         Remote<char **> dataptrptr;
-        dataptrptr.remote = reinterpret_cast<char **>(rawptr + offsets->unicode_object.size - sizeof(uintptr_t));
-        dataptr = dataptrptr.fetch(proc.io);
+        dataptrptr.remote = reinterpret_cast<char **>(rawptr + unicode.size - sizeof(uintptr_t));
+        dataptr = fetch(dataptrptr);
     }
-    std::vector<char> data;
-    if (state.kind == 1)
-        data = dataptr.fetchArray(proc.io, length);
-    os << '"' << std::string_view{data.data(), data.size()} << '"';
+    if (state.kind == 1) {
+        std::vector<char> data;
+        data = fetchArray(dataptr, length);
+        os << std::string_view{data.data(), data.size()};
+    } else {
+        os << "<string of unsupported kind " << state.kind << ">";
+    }
 }
 
 std::string_view
@@ -281,7 +281,7 @@ Target::typeName(Remote<PyTypeObject *> remote) const {
 
 Remote<PyTypeObject *>
 Target::pyType(Remote<PyObject *> remote) const {
-    return offsets->pyobject.ob_type(remote).fetch(proc.io);
+    return fetch(offsets->pyobject.ob_type(remote));
 }
 
 Target::Target(Procman::Process &proc_)
@@ -307,7 +307,7 @@ Target::Target(Procman::Process &proc_)
         // with locating fields in other types we may have to walk
         //
         auto secaddr = addr + sec.shdr.sh_addr;
-        auto headerInProc = Remote<Header *>{reinterpret_cast<Header *>(secaddr)}.fetch(proc.io);
+        auto headerInProc = fetch(Remote<Header *>{reinterpret_cast<Header *>(secaddr)});
 
         auto cookieInProc = std::string_view(headerInProc.cookie.begin(), headerInProc.cookie.end());
         if (cookieInProc != Header::expectedCookie) {
@@ -391,13 +391,12 @@ LineDelta read_deltas(auto &cur, auto end) {
     }
 }
 
-
 void Target::dumpBacktrace(std::ostream &os) const {
     Procman::StopProcess here(&proc);
     auto &threadOffs = offsets->thread_state;
     auto &frameOffs = offsets->interpreter_frame;
     for (auto i : interpreters()) {
-        os << "interp " << i << "\n";
+        os << "interpreter " << i << "\n";
         for (auto t : threads(i)) {
             auto id = fetch(threadOffs.thread_id(t));
             auto native_id = fetch(threadOffs.native_thread_id(t));
@@ -406,7 +405,6 @@ void Target::dumpBacktrace(std::ostream &os) const {
             while (frame) {
                 auto executable = fetch(frameOffs.executable(frame));
                 auto clear = (uintptr_t)executable.remote;
-                [[maybe_unused]] auto mode = clear & (8-1);
                 clear &= -8LL;
                 executable = { reinterpret_cast<PyObject *>(clear) };
                 auto code = cast(types->pyCode_Type, executable);
@@ -417,53 +415,38 @@ void Target::dumpBacktrace(std::ostream &os) const {
                     auto instr_off = instr_ptr.remote - offsets->code_object.co_code_adaptive(code).remote;
                     auto firstline = fetch(offsets->code_object.firstlineno(code));
                     auto linetable = fetch(offsets->code_object.linetable(code));
-
                     // Read the entire line table into memory.
                     auto linetable_size = fetch(offsets->bytes_object.ob_size(linetable));
                     auto linetable_data = fetchArray(offsets->bytes_object.ob_sval(linetable), linetable_size);
-
                     int line = firstline;
                     auto i = linetable_data.begin();
                     auto e = linetable_data.end();
                     for (unsigned codeloc = 0; i != e; ) {
-                        //os << "\t\t\tline: " << line << ", code: " << codeloc;
                         auto deltas = read_deltas(i, e);
-                        //os << " ( line += " << deltas.line << ", code += " << deltas.code << ")\n";
                         line += deltas.line;
                         codeloc += deltas.code;
                         if (codeloc >= instr_off)
                             break;
                     }
-                    //os << "\tcode: " << code;
-                    //os << ", loc: " << instr_off;
-                    os << "\tfunc: ";
-                    dump(os, name);
-                    os << ", file: ";
-                    dump(os, file);
-                    os << ", line: " << line;
-                    auto argCount = fetch(offsets->code_object.argcount(code));
+                    os << str(name) << " in " << str(file) << ":" << line;
+                    [[maybe_unused]] auto argCount = fetch(offsets->code_object.argcount(code));
                     auto lnames = fetch(offsets->code_object.localsplusnames(code));
                     auto localCount = fetch(offsets->tuple_object.ob_size(lnames));
-                    std::cout << ", localcount: " << localCount;
-                    std::cout << ", argcount: " << argCount;
                     auto nameVec = fetchArray(offsets->tuple_object.ob_item(lnames), localCount);
                     auto valueVec = fetchArray(offsets->interpreter_frame.localsplus(frame), localCount);
                     os << "\n";
                     for (ssize_t i = 0; i < localCount; ++i) {
                         auto name = nameVec[i];
                         auto value = valueVec[i];
-                        os << "\t\t";
-                        dump(os, name);
-                        os << " : ";
+                        os << "\t\t" << str(name) << ": ";
                         if ((value & 3) == 3) {
                             os << (value >> 2);
                         } else {
                             auto tval = Remote{reinterpret_cast<PyObject *>(value & ~3)};
-                            dump(os, tval);
+                            os << str(tval);
                         }
                         os << "\n";
                     }
-
                 } else {
                     os << "(unknown frame type " << typeName(pyType(executable)) << ")";
                 }
