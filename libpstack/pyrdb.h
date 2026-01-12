@@ -5,6 +5,9 @@ namespace pstack::Py {
 
 // Forward declarations.
 struct OffsetContainer;
+struct RootOffsets;
+struct PyTypes;
+class Target;
 
 // Declared structures named as the hidden internal python types. We don't read
 // these directly, but we have offsets in them from the _PyRuntime debug offsets
@@ -41,14 +44,6 @@ using FromRemote = std::conditional_t<std::is_pointer_v<Field>, Remote<Field>, F
 template <typename T> struct Remote {
     T remote;
     using PointedTo = FromRemote<std::remove_pointer_t<T>>;
-    PointedTo fetch(const Reader::csptr &as) requires std::is_pointer_v<T> {
-        return as->readObj<PointedTo>(reinterpret_cast<uintptr_t>(remote));
-    }
-    std::vector<PointedTo> fetchArray(const Reader::csptr &as, size_t len) requires std::is_pointer_v<T> {
-        std::vector<PointedTo> v(len);
-        as->readObj<PointedTo>(reinterpret_cast<uintptr_t>(remote), v.data(), v.size());
-        return v;
-    }
     auto operator <=> (const Remote<T> &rhs) const = default;
     operator bool() const { return bool(remote); }
 };
@@ -102,32 +97,27 @@ struct OffsetContainer {
     void parse(std::istream &is, const Reader::csptr &, uintptr_t object);
 };
 
-struct RootOffsets;
 
-struct PyTypes;
-
-struct Target {
+class Target {
+public:
     Procman::Process &proc;
+private:
     Remote<_PyRuntimeState *> pyRuntime;
     std::unique_ptr<RootOffsets> offsets;
     std::unique_ptr<PyTypes> types;
-    Target(Procman::Process & proc_);
-    std::vector<Remote<PyInterpreterState *>> interpreters() const;
-    std::vector<Remote<PyThreadState *>> threads(Remote<PyInterpreterState *>) const;
     void dumpBacktrace(std::ostream &os) const;
     Remote<PyTypeObject *> pyType(Remote<PyObject *>) const;
     std::string_view typeName(Remote<PyTypeObject *>) const;
     template<typename To> Remote<To *> cast(const PyType<To> &to, Remote<PyObject *> from) const;
-    void dump(std::ostream &os, const Remote<PyObject *> &remote) const;
-    void dump(std::ostream &os, const Remote<char *> &remote) const;
-    void dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const;
 
-    // syntactic shortcut for Remote<T>::fetch
-    template <typename T> Remote<T *>::PointedTo fetch(Remote<T *> remote) const { return remote.fetch(proc.io); }
-    template <typename T> std::vector<typename Remote<T *>::PointedTo> fetchArray(Remote<T *> remote, size_t sz) const
-    { return remote.fetchArray(proc.io, sz); }
-    ~Target();
-
+    template <typename T> Remote<T *>::PointedTo fetch(Remote<T *> remote) const {
+        return proc.io->readObj<typename Remote<T *>::PointedTo>(reinterpret_cast<uintptr_t>(remote.remote));
+    }
+    template <typename T> std::vector<typename Remote<T *>::PointedTo> fetchArray(Remote<T *> remote, size_t sz) const {
+        std::vector<typename Remote<T *>::PointedTo> v(sz);
+        proc.io->readObj<typename Remote<T *>::PointedTo>(reinterpret_cast<uintptr_t>(remote.remote), v.data(), v.size());
+        return v;
+    }
 
     // follows a list starting with a pointer in one object
     template <typename Container, typename Field>
@@ -140,7 +130,26 @@ struct Target {
             result.push_back(cur);
         return result;
     }
+
+public:
+
+    template <typename T> struct DumpStream {
+        const Target &target;
+        const T &object;
+        DumpStream(const Target &target, const T &object) : target(target), object(object) {}
+    };
+
+    Target(Procman::Process & proc_);
+    std::vector<Remote<PyInterpreterState *>> interpreters() const;
+    std::vector<Remote<PyThreadState *>> threads(Remote<PyInterpreterState *>) const;
+    void dump(std::ostream &os, const Remote<PyObject *> &remote) const;
+    void dump(std::ostream &os, const Remote<char *> &remote) const;
+    void dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const;
+    template <typename T> DumpStream<T> str(const T &t) const { return DumpStream (*this, t); }
+    ~Target();
 };
+
+template <typename T> std::ostream & operator << (std::ostream &os, const Target::DumpStream<T> &t) { t.target.dump(os, t.object); return os; }
 
 template<typename To> Remote<To *> Target::cast(const PyType<To> &to, Remote<PyObject *> from) const {
     if (pyType(from) == to.typeObject)
