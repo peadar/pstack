@@ -25,6 +25,7 @@ struct PyTypes {
     PyType<PyTupleObject> pyTuple_Type;
     PyType<PyListObject> pyList_Type;
     PyType<PyBytesObject> pyBytes_Type;
+    PyType<PyDictObject> pyDict_Type;
     Remote<PyTypeObject *> lookupTypeSymbol(const char *name);
     PyTypes(Target &target_)
      : target(target_)
@@ -36,6 +37,7 @@ struct PyTypes {
      , pyTuple_Type{lookupTypeSymbol("PyTuple_Type")}
      , pyList_Type{lookupTypeSymbol("PyList_Type")}
      , pyBytes_Type{lookupTypeSymbol("PyBytes_Type")}
+     , pyDict_Type{lookupTypeSymbol("PyDict_Type")}
     {
     }
 };
@@ -118,6 +120,7 @@ struct PyTypeObjectOffsets : OffsetContainer {
     OFF(char *, tp_name);
     OFF(void *, tp_repr);
     OFF(PyObject *, tp_flags);
+    OFF(ssize_t, tp_dictoffset);
 };
 
 struct ThreadStateOffsets : OffsetContainer {
@@ -196,6 +199,12 @@ struct PyListObjectOffsets : OffsetContainer {
     OFF(PyObject **, ob_item);
 };
 
+struct PyDictObjectOffsets : OffsetContainer {
+    template <typename Field> using Off = Offset<PyDictObject, Field>;
+    OFF(PyDictKeysObject *, ma_keys);
+    OFF(PyObject **, ma_values);
+};
+
 // We parse this out of the JSON file representing the _PyDebugOffsets type.
 struct RootOffsets {
     RuntimeStateOffsets runtime_state;
@@ -210,6 +219,7 @@ struct RootOffsets {
     PyLongObjectOffsets long_object;
     PyListObjectOffsets list_object;
     PyBytesObjectOffsets bytes_object;
+    PyDictObjectOffsets dict_object;
     RootOffsets(uint64_t version, Reader::csptr io, uintptr_t object);
     ~RootOffsets();
 };
@@ -245,6 +255,8 @@ RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t o
             long_object.parse(is, io, object);
         else if (field == "list_object")
             list_object.parse(is, io, object);
+        else if (field == "dict_object")
+            dict_object.parse(is, io, object);
         else
             skip<unsigned>(is);
     });
@@ -284,6 +296,97 @@ Target::dump(std::ostream &os, const Remote<PyListObject *> &listobj) const {
     os << " ]";
 }
 
+void
+Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
+    // Debug: print dict object address
+    // os << "{dictobj=" << std::hex << reinterpret_cast<uintptr_t>(dictobj.remote) << std::dec;
+
+    auto ma_keys = fetch(offsets->dict_object.ma_keys(dictobj));
+    auto ma_values = fetch(offsets->dict_object.ma_values(dictobj));
+
+    if (!ma_keys) {
+        os << "{}";
+        return;
+    }
+
+    // Validate the pointer looks reasonable (basic sanity check)
+    uintptr_t keys_addr = reinterpret_cast<uintptr_t>(ma_keys.remote);
+    if (keys_addr < 0x1000 || keys_addr == 0x7FF7F7F7F7F7F7F7ULL) {
+        os << "{<invalid dict, ma_keys=" << std::hex << keys_addr << std::dec << ">}";
+        return;
+    }
+
+    // Hardcoded structure of PyDictKeysObject for Python 3.14
+    // struct layout: dk_refcnt(8), dk_log2_size(1), dk_kind(1), [2 bytes padding], dk_usable(4), dk_nentries(8)
+    // Total header: 24 bytes before dk_indices
+
+    uint8_t dk_log2_size;
+    ssize_t dk_nentries;
+
+    try {
+        // Read dk_log2_size (offset 8) and dk_nentries (offset 16 with proper alignment)
+        dk_log2_size = proc.io->readObj<uint8_t>(keys_addr + 8);
+        dk_nentries = proc.io->readObj<ssize_t>(keys_addr + 16);
+    } catch (...) {
+        os << "{<failed to read dict keys structure>}";
+        return;
+    }
+
+    // Sanity check values
+    if (dk_log2_size > 30 || dk_nentries < 0 || dk_nentries > 1000000) {
+        os << "{<invalid dict structure: log2_size=" << int(dk_log2_size)
+           << ", nentries=" << dk_nentries << ">}";
+        return;
+    }
+
+    // Calculate size of the dict
+    size_t dict_size = size_t(1) << dk_log2_size;
+
+    // dk_indices starts at offset 24 (after the fixed header)
+    // Size of indices array depends on dict_size
+    size_t indices_size;
+    if (dict_size <= 0xff) {
+        indices_size = dict_size * sizeof(int8_t);
+    } else if (dict_size <= 0xffff) {
+        indices_size = dict_size * sizeof(int16_t);
+    } else if (dict_size <= 0xffffffff) {
+        indices_size = dict_size * sizeof(int32_t);
+    } else {
+        indices_size = dict_size * sizeof(int64_t);
+    }
+
+    // dk_entries starts after dk_indices
+    uintptr_t entries_addr = keys_addr + 24 + indices_size;
+
+    os << "{ ";
+    const char *sep = "";
+
+    // Iterate directly through the entries (they're stored in insertion order)
+    // dk_nentries tells us how many valid entries there are
+    for (ssize_t i = 0; i < dk_nentries; ++i) {
+        // Each entry: me_hash(8), me_key(8), me_value(8)
+        uintptr_t entry_addr = entries_addr + i * 24;
+
+        auto key = proc.io->readObj<PyObject *>(entry_addr + 8);
+
+        os << sep << str(Remote<PyObject *>{key}) << ": ";
+
+        if (ma_values) {
+            // Split dict: values are in ma_values array
+            auto value = proc.io->readObj<PyObject *>(reinterpret_cast<uintptr_t>(ma_values.remote) + i * sizeof(PyObject *));
+            os << str(Remote<PyObject *>{value});
+        } else {
+            // Combined dict: value is in the entry
+            auto value = proc.io->readObj<PyObject *>(entry_addr + 16);
+            os << str(Remote<PyObject *>{value});
+        }
+
+        sep = ", ";
+    }
+
+    os << " }";
+}
+
 
 
 void
@@ -302,16 +405,45 @@ Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
         dump(os, l);
     else if (auto l = cast(types->pyBytes_Type, remote); l)
         dump(os, l);
+    else if (auto d = cast(types->pyDict_Type, remote); d)
+        dump(os, d);
     else if (auto l = cast(types->pyNone_Type, remote); l)
         os << "None";
     else {
+        // User-defined type or other type
         auto type = pyType(remote);
-        os << remote << " - opaque type " ;
+        os << "<";
         try {
             dump(os, fetch(offsets->type_object.tp_name(type)));
+            os << " object";
+
+            // For user-defined types, try to get the instance dictionary
+            // tp_dictoffset tells us where the __dict__ is in the instance
+            try {
+                auto dictoffset = fetch(offsets->type_object.tp_dictoffset(type));
+                // Check if dictoffset is valid (not the default sentinel and not zero)
+                if (dictoffset > 0 && dictoffset != 0xbaadf00d) {
+                    // Get the __dict__ pointer from the instance
+                    uintptr_t instance_addr = reinterpret_cast<uintptr_t>(remote.remote);
+                    auto dict_ptr_addr = instance_addr + dictoffset;
+                    auto dict_ptr = proc.io->readObj<PyObject *>(dict_ptr_addr);
+
+                    if (dict_ptr) {
+                        auto dict_remote = Remote<PyObject *>{dict_ptr};
+                        if (auto d = cast(types->pyDict_Type, dict_remote); d) {
+                            os << " ";
+                            dump(os, d);
+                        }
+                    }
+                }
+            } catch (...) {
+                // If we can't get the dict, just continue
+            }
+
+            os << ">";
         }
         catch (...) {
-            os << "(unknown)";
+            os << "(unknown)>";
         }
     }
 }
