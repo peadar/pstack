@@ -53,7 +53,7 @@ PyTypes::lookupTypeSymbol(const char *name) {
     return remote;
 }
 
-RawOffset::RawOffset(OffsetContainer *container_, std::string_view name_) {
+RawOffset::RawOffset(OffsetContainer *container_, std::string_view name_, uint64_t default_off) : off(default_off) {
     container_->fields[name_] = this;
 }
 
@@ -75,7 +75,10 @@ OffsetContainer::parse(std::istream &is, const Reader::csptr &reader, uintptr_t 
         }
     });
     for (auto &[name, value] : fields) {
-        std::cerr << "field " << name << " not found\n";
+        // Only warn if the field doesn't have a hardcoded default
+        if (value->off == 0xbaadf00d) {
+            std::cerr << "field " << name << " not found\n";
+        }
     }
 }
 
@@ -84,6 +87,7 @@ OffsetContainer::parse(std::istream &is, const Reader::csptr &reader, uintptr_t 
 // types for each offset. As we parse the JSON, we will populate the offsets as
 // we find them in the process.
 #define OFF(type, k) Off<type> k{this, #k}
+#define OFF_DEFAULT(type, k, def) Off<type> k{this, #k, def}
 
 struct RuntimeStateOffsets : OffsetContainer {
     template<typename Field> using Off = Offset<_PyRuntimeState, Field>;
@@ -120,7 +124,8 @@ struct PyTypeObjectOffsets : OffsetContainer {
     OFF(char *, tp_name);
     OFF(void *, tp_repr);
     OFF(PyObject *, tp_flags);
-    OFF(ssize_t, tp_dictoffset);
+    // tp_dictoffset not in debug offsets, hardcode for Python 3.14 64-bit (0x120)
+    OFF_DEFAULT(ssize_t, tp_dictoffset, 288);
 };
 
 struct ThreadStateOffsets : OffsetContainer {
@@ -298,8 +303,6 @@ Target::dump(std::ostream &os, const Remote<PyListObject *> &listobj) const {
 
 void
 Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
-    // Debug: print dict object address
-    // os << "{dictobj=" << std::hex << reinterpret_cast<uintptr_t>(dictobj.remote) << std::dec;
 
     auto ma_keys = fetch(offsets->dict_object.ma_keys(dictobj));
     auto ma_values = fetch(offsets->dict_object.ma_values(dictobj));
@@ -387,13 +390,14 @@ Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
     os << " }";
 }
 
-
-
 void
 Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
-    if (!remote)
+    if (!remote) {
         os << "(null)";
-    else if (auto str = cast(types->pyUnicode_Type, remote); str)
+        return;
+    }
+    os << typeName(pyType(remote)) << "@" << reinterpret_cast<void *>(remote.remote) << "=";
+    if (auto str = cast(types->pyUnicode_Type, remote); str)
         dump(os, str);
     else if (auto l = cast(types->pyLong_Type, remote); l)
         dump(os, l);
@@ -414,6 +418,11 @@ Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
         auto type = pyType(remote);
         os << "<";
         try {
+            // Debug: check what the actual offset values are
+            // os << "[tp_name.off=" << offsets->type_object.tp_name.off << "]";
+            // os << "[tp_flags.off=" << offsets->type_object.tp_flags.off << "]";
+            // os << "[tp_dictoffset.off=" << offsets->type_object.tp_dictoffset.off << "]";
+
             dump(os, fetch(offsets->type_object.tp_name(type)));
             os << " object";
 
@@ -421,8 +430,17 @@ Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
             // tp_dictoffset tells us where the __dict__ is in the instance
             try {
                 auto dictoffset = fetch(offsets->type_object.tp_dictoffset(type));
-                // Check if dictoffset is valid (not the default sentinel and not zero)
-                if (dictoffset > 0 && dictoffset != 0xbaadf00d) {
+
+                // For heap types, tp_dictoffset might be -1, meaning we need to check standard locations
+                // or compute it from the type. For simple heap types, __dict__ is often at offset 16
+                // (right after PyObject header)
+                if (dictoffset == -1) {
+                    // Try standard heap type instance dict offset (after PyObject header)
+                    dictoffset = 16;  // sizeof(PyObject) on 64-bit
+                }
+
+                // Check if dictoffset is valid (positive means instance dict)
+                if (dictoffset > 0) {
                     // Get the __dict__ pointer from the instance
                     uintptr_t instance_addr = reinterpret_cast<uintptr_t>(remote.remote);
                     auto dict_ptr_addr = instance_addr + dictoffset;
@@ -521,12 +539,16 @@ Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
     }
 }
 
-std::string_view
+std::string
 Target::typeName(Remote<PyTypeObject *> remote) const {
+    #if 0
     auto it = types->names.find(remote);
     if (it != types->names.end())
         return it->second;
-    return "(unknown)";
+    #endif
+    std::ostringstream os;
+    os << proc.io->readString((uintptr_t)fetch(offsets->type_object.tp_name(remote)).remote);
+    return os.str();
 }
 
 Remote<PyTypeObject *>

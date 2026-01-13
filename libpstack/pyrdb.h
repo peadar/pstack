@@ -81,7 +81,7 @@ struct RawOffset {
     void parse(std::istream &is, const Reader::csptr &io, uintptr_t object) {
         io->readObj(object + parseInt<size_t>(is), &off);
     }
-    RawOffset(OffsetContainer *container, std::string_view name_);
+    RawOffset(OffsetContainer *container, std::string_view name_, uint64_t default_off = 0xbaadf00d);
 };
 
 // A concrete offset of a field of Container of type Field. "value()"
@@ -112,7 +112,7 @@ private:
     std::unique_ptr<PyTypes> types;
     void dumpBacktrace(std::ostream &os) const;
     Remote<PyTypeObject *> pyType(Remote<PyObject *>) const;
-    std::string_view typeName(Remote<PyTypeObject *>) const;
+    std::string typeName(Remote<PyTypeObject *>) const;
     template<typename To> Remote<To *> cast(const PyType<To> &to, Remote<PyObject *> from) const;
 
     template <typename T> Remote<T *>::PointedTo fetch(Remote<T *> remote) const {
