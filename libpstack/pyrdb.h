@@ -31,6 +31,8 @@ struct PyTupleObject;
 struct PyListObject;
 struct PyLongObject;
 struct PyNoneType;
+struct PyDictObject;
+struct PyDictKeysObject;
 
 union _Py_CODEUNIT;
 
@@ -152,6 +154,7 @@ public:
     void dump(std::ostream &os, const Remote<char *> &remote) const;
     void dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const;
     void dump(std::ostream &os, const Remote<PyLongObject *> &remote) const;
+    void dump(std::ostream &os, const Remote<PyDictObject *> &remote) const;
     template <typename T> DumpStream<T> str(const T &t) const { return DumpStream (*this, t); }
     ~Target();
 };
