@@ -5,7 +5,6 @@ project(pstack LANGUAGES C CXX VERSION "${PSTACK_VERSION}" )
 
 include (GNUInstallDirs)
 enable_testing()
-add_subdirectory(tests)
 
 option(PYTHON3 "Compile with python 3 support" OFF)
 option(PYTHON2 "Compile with python 2 support" ON)
@@ -187,6 +186,8 @@ endif()
 if (PYTHON3 AND Python3_Development_FOUND)
    add_test(NAME pydict COMMAND env PSTACK_BIN=${PSTACK_BIN}${CMAKE_CURRENT_SOURCE_DIR}/tests/pydict_test.py)
 endif()
+
+add_subdirectory(tests)
 
 # for automake and rpmbuild
 add_custom_target(check COMMAND make test)
