@@ -155,6 +155,7 @@ public:
     void dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const;
     void dump(std::ostream &os, const Remote<PyLongObject *> &remote) const;
     void dump(std::ostream &os, const Remote<PyDictObject *> &remote) const;
+    void dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) const;
     template <typename T> DumpStream<T> str(const T &t) const { return DumpStream (*this, t); }
     ~Target();
 };

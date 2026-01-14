@@ -6,6 +6,7 @@ print(os.getpid())
 class User:
     def __init__(self):
         self.field = 42
+        self.anotherField = "hello world"
 
 def frame(n):
     adict = { 'twice' : n * 2 }
