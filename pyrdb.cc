@@ -427,35 +427,35 @@ struct PyMemberDescrObject {
     PyMemberDef *d_member;
 };
 
+// Walk dict entries and call visitor for each key/value pair
+template<typename Visitor>
 void
-Target::dumpKeyValues(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const {
+Target::walkDictEntries(Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values, Visitor visitor) const {
     uintptr_t keys_addr = reinterpret_cast<uintptr_t>(keys_remote.remote);
     auto keys = fetch(keys_remote);
     size_t dict_size = size_t(1) << keys.dk_log2_size;
     size_t index_size = dict_size <= 0xff ? 1 : dict_size <= 0xffff ? 2 : dict_size <= 0xffffffff ? 4 : 8;
 
     auto scanDictEntries = [&]( auto &entries ) {
-        const char *sep = "";
         for (ssize_t i = 0; i < keys.dk_nentries; ++i) {
             auto entry = fetch(Remote{ entries.remote + i });
             intptr_t entryInt = reinterpret_cast<intptr_t>(entry.me_key);
             // Skip DKIX_{EMPTY,DUMMY,ERROR,KEY_CHANGED,....}
             if (entryInt < 0 && entryInt > -16)
                 continue;
-            os << sep;
-            dump(os, Remote{entry.me_key});
-            os << ": ";
+
+            PyObject *value_ptr;
             if (values) {
                 // Split dict or inline values: values are in separate array
                 Remote<PyObject **> values_array = Remote<PyObject **>{reinterpret_cast<PyObject **>(
                 reinterpret_cast<uintptr_t>(values.remote) + offsetof(PyDictValues, values))};
-                auto value = fetch(Remote<PyObject **>{values_array.remote + i});
-                dump(os, Remote<PyObject *>{value});
+                value_ptr = fetch(Remote<PyObject **>{values_array.remote + i}).remote;
             } else {
                 // Combined dict: value is in the entry
-                dump(os, Remote<PyObject *>{entry.me_value});
+                value_ptr = entry.me_value;
             }
-            sep = ", ";
+
+            visitor(entry.me_key, value_ptr);
         }
     };
     // Dispatch based on key kind
@@ -467,6 +467,18 @@ Target::dumpKeyValues(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, 
         auto entries = Remote<PyDictKeyEntry *>{reinterpret_cast<PyDictKeyEntry *>(entries_addr)};
         scanDictEntries(entries);
     }
+}
+
+void
+Target::dumpKeyValues(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const {
+    const char *sep = "";
+    walkDictEntries(keys_remote, values, [&](PyObject *key, PyObject *value) {
+        os << sep;
+        dump(os, Remote<PyObject *>{key});
+        os << ": ";
+        dump(os, Remote<PyObject *>{value});
+        sep = ", ";
+    });
 }
 
 void
@@ -506,6 +518,8 @@ Target::dumpSlots(std::ostream &os, Remote<PyTypeObject *> type, const Remote<Py
         return;
 
     auto slot_names = fetchArray(offsets->tuple_object.ob_item(slots_tuple), ob_size);
+    auto ma_keys = fetch(offsets->dict_object.ma_keys(dict));
+    auto ma_values = fetch(offsets->dict_object.ma_values(dict));
 
     const char *sep = "";
     os << " ";
@@ -520,42 +534,13 @@ Target::dumpSlots(std::ostream &os, Remote<PyTypeObject *> type, const Remote<Py
             continue;
 
         // Look up this slot name in tp_dict to get the member descriptor
-        auto ma_keys = fetch(offsets->dict_object.ma_keys(dict));
-        if (!ma_keys.remote)
-            continue;
-
-        auto keys = fetch(ma_keys);
-        auto ma_values = fetch(offsets->dict_object.ma_values(dict));
-
-        uintptr_t keys_addr = reinterpret_cast<uintptr_t>(ma_keys.remote);
-        size_t dict_size = size_t(1) << keys.dk_log2_size;
-        size_t index_size = dict_size <= 0xff ? 1 : dict_size <= 0xffff ? 2 : dict_size <= 0xffffffff ? 4 : 8;
-
-        uintptr_t entries_offset = sizeof(PyDictKeysObject) + dict_size * index_size;
-
-        // Find the member descriptor for this slot name
         PyMemberDef *member_def_ptr = nullptr;
-        if (keys.dk_kind == DICT_KEYS_UNICODE || keys.dk_kind == DICT_KEYS_SPLIT) {
-            Remote<PyDictUnicodeEntry *> entries{reinterpret_cast<PyDictUnicodeEntry *>(keys_addr + entries_offset)};
-            for (ssize_t j = 0; j < keys.dk_nentries; ++j) {
-                auto entry = fetch(Remote{entries.remote + j});
-                if (entry.me_key == slot_name_remote.remote) {
-                    // Found the slot name in the dict
-                    PyObject *value_obj;
-                    if (ma_values.remote) {
-                        value_obj = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(reinterpret_cast<uintptr_t>(ma_values.remote) + offsetof(PyDictValues, values)) + j}).remote;
-                    } else {
-                        value_obj = entry.me_value;
-                    }
-
-                    if (value_obj) {
-                        auto member_descr = fetch(Remote<PyMemberDescrObject *>{reinterpret_cast<PyMemberDescrObject *>(value_obj)});
-                        member_def_ptr = member_descr.d_member;
-                    }
-                    break;
-                }
+        walkDictEntries(ma_keys, ma_values, [&](PyObject *key, PyObject *value_obj) {
+            if (key == slot_name_remote.remote && value_obj) {
+                auto member_descr = fetch(Remote<PyMemberDescrObject *>{reinterpret_cast<PyMemberDescrObject *>(value_obj)});
+                member_def_ptr = member_descr.d_member;
             }
-        }
+        });
 
         if (!member_def_ptr)
             continue;

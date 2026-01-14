@@ -148,6 +148,9 @@ public:
     Target(Procman::Process & proc_);
     std::vector<Remote<PyInterpreterState *>> interpreters() const;
     std::vector<Remote<PyThreadState *>> threads(Remote<PyInterpreterState *>) const;
+    // Helper to walk dict entries and call visitor for each key/value pair
+    template<typename Visitor>
+    void walkDictEntries(Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values, Visitor visitor) const;
     // Helper to dump dict contents given keys and values
     void dumpKeyValues(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const;
     // Helper to dump slots from a type's tp_dict
