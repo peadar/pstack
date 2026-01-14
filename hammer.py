@@ -21,6 +21,8 @@ def frame(n):
     aShort32BitInt = 1 << 29
     a32BitInt = 1 << 31
     abigint = 1 << 60
+    auserWithARealizedDict = User()
+    auserWithARealizedDict.__dict__
     if n < 2:
         os.system(f"./pstack -p {os.getpid()}")
         print(f"pid {os.getpid()}")
