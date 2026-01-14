@@ -212,6 +212,7 @@ struct PyDictObjectOffsets : OffsetContainer {
 
 // We parse this out of the JSON file representing the _PyDebugOffsets type.
 struct RootOffsets {
+    uint64_t free_threaded = 0;  // Read from JSON: 1 for free-threaded build, 0 otherwise
     RuntimeStateOffsets runtime_state;
     InterpreterStateOffsets interpreter_state;
     ThreadStateOffsets thread_state;
@@ -236,7 +237,11 @@ RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t o
     std::string name = std::string(chars.begin(), end) + ".json";
     std::ifstream in(name);
     parseObject(in, [&](std::istream &is, std::string_view field) {
-        if (field == "interpreter_state")
+        if (field == "free_threaded") {
+            auto offset = parseInt<uint64_t>(is);
+            io->readObj(object + offset, &free_threaded);
+        }
+        else if (field == "interpreter_state")
             interpreter_state.parse(is, io, object);
         else if (field == "thread_state")
             thread_state.parse(is, io, object);
@@ -338,8 +343,66 @@ struct PyDictValues {
     PyObject *values[1];
 };
 
-// Forward declaration - we don't need the full structure
-struct PyHeapTypeObject;
+// Local structure definitions to calculate offsets with offsetof()
+// These mirror the real Python structures but only include fields we need
+
+struct LocalPyObject {
+    ssize_t ob_refcnt;
+    PyTypeObject *ob_type;
+};
+
+struct LocalPyVarObject {
+    LocalPyObject ob_base;
+    ssize_t ob_size;
+};
+
+// PyTypeObject - only fields up to tp_basicsize which we need
+struct LocalPyTypeObject {
+    LocalPyVarObject ob_base;
+    const char *tp_name;
+    ssize_t tp_basicsize;
+    // ... rest not needed for offset calculation
+};
+
+// Slot structures - we just need their sizes for offset calculation
+struct LocalPyAsyncMethods {
+    void *am_await;
+    void *am_aiter;
+    void *am_anext;
+    void *am_send;
+};
+
+struct LocalPyNumberMethods {
+    void *slots[36];  // 36 function pointers in Python 3.14
+};
+
+struct LocalPyMappingMethods {
+    void *mp_length;
+    void *mp_subscript;
+    void *mp_ass_subscript;
+};
+
+struct LocalPySequenceMethods {
+    void *slots[10];  // 10 function pointers
+};
+
+struct LocalPyBufferProcs {
+    void *bf_getbuffer;
+    void *bf_releasebuffer;
+};
+
+// Fields that come after PyTypeObject in PyHeapTypeObject
+struct PyHeapTypeFields {
+    LocalPyAsyncMethods as_async;
+    LocalPyNumberMethods as_number;
+    LocalPyMappingMethods as_mapping;
+    LocalPySequenceMethods as_sequence;
+    LocalPyBufferProcs as_buffer;
+    PyObject *ht_name;
+    PyObject *ht_slots;
+    PyObject *ht_qualname;
+    PyDictKeysObject *ht_cached_keys;
+};
 
 void
 Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
@@ -417,143 +480,134 @@ Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) cons
     // User-defined type or other type
     auto type = pyType(remote);
     os << "<";
-    try {
-        dump(os, fetch(offsets->type_object.tp_name(type)));
-        os << " object";
+    dump(os, fetch(offsets->type_object.tp_name(type)));
+    os << " object";
 
-        // For user-defined types, try to get the instance dictionary
-        try {
-            auto tp_flags = fetch(offsets->type_object.tp_flags(type));
-            auto dictoffset = fetch(offsets->type_object.tp_dictoffset(type));
+    // For user-defined types, try to get the instance dictionary
+    auto tp_flags = fetch(offsets->type_object.tp_flags(type));
+    auto dictoffset = fetch(offsets->type_object.tp_dictoffset(type));
 
-            constexpr uintptr_t Py_TPFLAGS_MANAGED_DICT = 0x10;  // 1 << 4
-            constexpr uintptr_t Py_TPFLAGS_INLINE_VALUES = 0x4;   // 1 << 2
-            constexpr ssize_t MANAGED_DICT_OFFSET = -3 * sizeof(PyObject*);  // -24 on 64-bit
+    constexpr uintptr_t Py_TPFLAGS_MANAGED_DICT = 0x10;  // 1 << 4
+    constexpr uintptr_t Py_TPFLAGS_INLINE_VALUES = 0x4;   // 1 << 2
 
-            if (tp_flags & Py_TPFLAGS_MANAGED_DICT) {
-                uintptr_t instance_addr = reinterpret_cast<uintptr_t>(remote.remote);
+    // MANAGED_DICT_OFFSET depends on whether this is a free-threaded build
+    // Free-threaded: -1 * sizeof(PyObject*) = -8 bytes
+    // Standard: -3 * sizeof(PyObject*) = -24 bytes
+    ssize_t MANAGED_DICT_OFFSET = offsets->free_threaded
+        ? -1 * sizeof(PyObject*)
+        : -3 * sizeof(PyObject*);
 
-                // Check if we have inline values (Python 3.13+)
-                if (tp_flags & Py_TPFLAGS_INLINE_VALUES) {
-                    // Inline values: try materialized dict first
-                    auto dict_ptr_addr = instance_addr + MANAGED_DICT_OFFSET;
-                    auto dict_ptr = proc.io->readObj<PyObject *>(dict_ptr_addr);
+    if (tp_flags & Py_TPFLAGS_MANAGED_DICT) {
+        uintptr_t instance_addr = reinterpret_cast<uintptr_t>(remote.remote);
 
-                    if (dict_ptr) {
-                        auto dict_remote = Remote<PyObject *>{dict_ptr};
-                        if (auto d = cast(types->pyDict_Type, dict_remote); d) {
-                            os << " ";
-                            dump(os, d);
+        // Check if we have inline values (Python 3.13+)
+        if (tp_flags & Py_TPFLAGS_INLINE_VALUES) {
+            // Inline values: try materialized dict first
+            auto dict_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(instance_addr + MANAGED_DICT_OFFSET)});
+
+            if (dict_ptr) {
+                auto dict_remote = Remote<PyObject *>{dict_ptr};
+                if (auto d = cast(types->pyDict_Type, dict_remote); d) {
+                    os << " ";
+                    dump(os, d);
+                }
+            } else {
+                // Dict not materialized - read inline values
+                // Get ht_cached_keys from PyHeapTypeObject
+                // Offset = sizeof(PyTypeObject) + offset within PyHeapTypeFields
+                size_t ht_cached_keys_offset = offsets->type_object.size + offsetof(PyHeapTypeFields, ht_cached_keys);
+
+                // Read tp_basicsize and ht_cached_keys using Remote<>
+                auto local_type = Remote<LocalPyTypeObject *>{reinterpret_cast<LocalPyTypeObject *>(type.remote)};
+                auto tp_basicsize = fetch(local_type).tp_basicsize;
+
+                uintptr_t type_addr = reinterpret_cast<uintptr_t>(type.remote);
+                auto cached_keys_remote = fetch(Remote<PyDictKeysObject **>{reinterpret_cast<PyDictKeysObject **>(type_addr + ht_cached_keys_offset)});
+
+                if (cached_keys_remote) {
+                    // Read the shared keys object
+                    auto keys = fetch(cached_keys_remote);
+
+                    // Now read the inline values array
+                    uintptr_t inline_values_addr = instance_addr + tp_basicsize;
+
+                    // Calculate where entries are in the keys object
+                    size_t dict_size = size_t(1) << keys.dk_log2_size;
+                    size_t index_size =
+                        dict_size <= 0xff ? 1 :
+                        dict_size <= 0xffff ? 2 :
+                        dict_size <= 0xffffffff ? 4 : 8;
+
+                    uintptr_t keys_addr = reinterpret_cast<uintptr_t>(cached_keys_remote.remote);
+                    uintptr_t entries_addr = keys_addr + sizeof(PyDictKeysObject) + dict_size * index_size;
+
+                    os << " { ";
+
+                    // Iterate through entries and print key-value pairs
+                    const char *sep = "";
+                    if (keys.dk_kind == DICT_KEYS_UNICODE || keys.dk_kind == DICT_KEYS_SPLIT) {
+                        // Unicode or split keys use PyDictUnicodeEntry
+                        for (ssize_t i = 0; i < keys.dk_nentries; ++i) {
+                            auto entry = fetch(Remote<PyDictUnicodeEntry *>{reinterpret_cast<PyDictUnicodeEntry *>(entries_addr + i * sizeof(PyDictUnicodeEntry))});
+
+                            // Get the value from inline values array
+                            auto value_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(inline_values_addr + offsetof(PyDictValues, values) + i * sizeof(PyObject *))});
+
+                            if (entry.me_key && value_ptr) {
+                                os << sep;
+                                dump(os, Remote<PyObject *>{entry.me_key});
+                                os << ": ";
+                                dump(os, Remote<PyObject *>{value_ptr});
+                                sep = ", ";
+                            }
                         }
                     } else {
-                        // Dict not materialized - read inline values
-                        // Get ht_cached_keys from PyHeapTypeObject
-                        // Offset: 880 bytes from start (PyTypeObject=416 + PyAsyncMethods=32 + PyNumberMethods=288 + PyMappingMethods=24 + PySequenceMethods=80 + PyBufferProcs=16 + 3*PyObject*=24)
-                        size_t pytypeobject_size = offsets->type_object.size;
-                        size_t ht_cached_keys_offset = pytypeobject_size + (880 - 416);  // 880 is offsetof(PyHeapTypeObject, ht_cached_keys)
+                        // General keys use PyDictKeyEntry
+                        for (ssize_t i = 0; i < keys.dk_nentries; ++i) {
+                            auto entry = fetch(Remote<PyDictKeyEntry *>{reinterpret_cast<PyDictKeyEntry *>(entries_addr + i * sizeof(PyDictKeyEntry))});
 
-                        uintptr_t type_addr = reinterpret_cast<uintptr_t>(type.remote);
-                        auto cached_keys_ptr = proc.io->readObj<PyDictKeysObject *>(type_addr + ht_cached_keys_offset);
+                            auto value_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(inline_values_addr + offsetof(PyDictValues, values) + i * sizeof(PyObject *))});
 
-                        if (cached_keys_ptr) {
-                            // Read the shared keys object
-                            auto keys = fetch(Remote<PyDictKeysObject *>{cached_keys_ptr});
-
-                            // Read inline values from object
-                            // Inline values are stored at object + tp_basicsize
-                            // tp_basicsize is at offset 32 in PyTypeObject (PyVarObject header=24 bytes, tp_name=8 bytes)
-                            auto tp_basicsize = proc.io->readObj<ssize_t>(type_addr + 32);
-
-                            // Now read the inline values array
-                            uintptr_t inline_values_addr = instance_addr + tp_basicsize;
-
-                            // Calculate where entries are in the keys object
-                            size_t dict_size = size_t(1) << keys.dk_log2_size;
-                            size_t index_size =
-                                dict_size <= 0xff ? 1 :
-                                dict_size <= 0xffff ? 2 :
-                                dict_size <= 0xffffffff ? 4 : 8;
-
-                            uintptr_t keys_addr = reinterpret_cast<uintptr_t>(cached_keys_ptr);
-                            uintptr_t entries_addr = keys_addr + sizeof(PyDictKeysObject) + dict_size * index_size;
-
-                            os << " { ";
-
-                            // Iterate through entries and print key-value pairs
-                            const char *sep = "";
-                            if (keys.dk_kind == DICT_KEYS_UNICODE || keys.dk_kind == DICT_KEYS_SPLIT) {
-                                // Unicode or split keys use PyDictUnicodeEntry
-                                for (ssize_t i = 0; i < keys.dk_nentries; ++i) {
-                                    auto entry = fetch(Remote<PyDictUnicodeEntry *>{reinterpret_cast<PyDictUnicodeEntry *>(entries_addr + i * sizeof(PyDictUnicodeEntry))});
-
-                                    // Get the value from inline values array
-                                    auto value_ptr = proc.io->readObj<PyObject *>(inline_values_addr + offsetof(PyDictValues, values) + i * sizeof(PyObject *));
-
-                                    if (entry.me_key && value_ptr) {
-                                        os << sep;
-                                        dump(os, Remote<PyObject *>{entry.me_key});
-                                        os << ": ";
-                                        dump(os, Remote<PyObject *>{value_ptr});
-                                        sep = ", ";
-                                    }
-                                }
-                            } else {
-                                // General keys use PyDictKeyEntry
-                                for (ssize_t i = 0; i < keys.dk_nentries; ++i) {
-                                    auto entry = fetch(Remote<PyDictKeyEntry *>{reinterpret_cast<PyDictKeyEntry *>(entries_addr + i * sizeof(PyDictKeyEntry))});
-
-                                    auto value_ptr = proc.io->readObj<PyObject *>(inline_values_addr + offsetof(PyDictValues, values) + i * sizeof(PyObject *));
-
-                                    if (entry.me_key && value_ptr) {
-                                        os << sep;
-                                        dump(os, Remote<PyObject *>{entry.me_key});
-                                        os << ": ";
-                                        dump(os, Remote<PyObject *>{value_ptr});
-                                        sep = ", ";
-                                    }
-                                }
+                            if (entry.me_key && value_ptr) {
+                                os << sep;
+                                dump(os, Remote<PyObject *>{entry.me_key});
+                                os << ": ";
+                                dump(os, Remote<PyObject *>{value_ptr});
+                                sep = ", ";
                             }
-
-                            os << " }";
-                        } else {
-                            os << " {<no cached keys>}";
                         }
                     }
+
+                    os << " }";
                 } else {
-                    // Managed dict without inline values
-                    auto dict_ptr_addr = instance_addr + MANAGED_DICT_OFFSET;
-                    auto dict_ptr = proc.io->readObj<PyObject *>(dict_ptr_addr);
-
-                    if (dict_ptr) {
-                        auto dict_remote = Remote<PyObject *>{dict_ptr};
-                        if (auto d = cast(types->pyDict_Type, dict_remote); d) {
-                            os << " ";
-                            dump(os, d);
-                        }
-                    }
-                }
-            } else  if (dictoffset > 0) {
-                uintptr_t instance_addr = reinterpret_cast<uintptr_t>(remote.remote);
-                auto dict_ptr_addr = instance_addr + dictoffset;
-                auto dict_ptr = proc.io->readObj<PyObject *>(dict_ptr_addr);
-
-                if (dict_ptr) {
-                    auto dict_remote = Remote<PyObject *>{dict_ptr};
-                    if (auto d = cast(types->pyDict_Type, dict_remote); d) {
-                        os << " ";
-                        dump(os, d);
-                    }
+                    os << " {<no cached keys>}";
                 }
             }
-        } catch (...) {
-            // If we can't get the dict, just continue
-        }
+        } else {
+            // Managed dict without inline values
+            auto dict_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(instance_addr + MANAGED_DICT_OFFSET)});
 
-        os << ">";
+            if (dict_ptr) {
+                auto dict_remote = Remote<PyObject *>{dict_ptr};
+                if (auto d = cast(types->pyDict_Type, dict_remote); d) {
+                    os << " ";
+                    dump(os, d);
+                }
+            }
+        }
+    } else  if (dictoffset >= 0) {
+        uintptr_t instance_addr = reinterpret_cast<uintptr_t>(remote.remote);
+        auto dict_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(instance_addr + dictoffset)});
+
+        if (dict_ptr) {
+            auto dict_remote = Remote<PyObject *>{dict_ptr};
+            if (auto d = cast(types->pyDict_Type, dict_remote); d) {
+                os << " ";
+                dump(os, d);
+            }
+        }
     }
-    catch (...) {
-        os << "(unknown)>";
-    }
+    os << ">";
 }
 
 void
@@ -562,26 +616,24 @@ Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
         os << "(null)";
         return;
     }
-    // os << typeName(pyType(remote)) << "@" << reinterpret_cast<void *>(remote.remote) << "=";
-    if (auto str = cast(types->pyUnicode_Type, remote); str)
-        dump(os, str);
-    else if (auto l = cast(types->pyLong_Type, remote); l)
-        dump(os, l);
-    else if (auto t = cast(types->pyTuple_Type, remote); t)
-        dump(os, t);
-    else if (auto l = cast(types->pyList_Type, remote); l)
-        dump(os, l);
-    else if (auto l = cast(types->pyBool_Type, remote); l)
-        dump(os, l);
-    else if (auto l = cast(types->pyBytes_Type, remote); l)
-        dump(os, l);
-    else if (auto d = cast(types->pyDict_Type, remote); d)
-        dump(os, d);
-    else if (auto l = cast(types->pyNone_Type, remote); l)
+    if (auto v = cast(types->pyUnicode_Type, remote); v)
+        dump(os, v);
+    else if (auto v = cast(types->pyLong_Type, remote); v)
+        dump(os, v);
+    else if (auto v = cast(types->pyTuple_Type, remote); v)
+        dump(os, v);
+    else if (auto v = cast(types->pyList_Type, remote); v)
+        dump(os, v);
+    else if (auto v = cast(types->pyBool_Type, remote); v)
+        dump(os, v);
+    else if (auto v = cast(types->pyBytes_Type, remote); v)
+        dump(os, v);
+    else if (auto v = cast(types->pyDict_Type, remote); v)
+        dump(os, v);
+    else if (auto v = cast(types->pyNone_Type, remote); v)
         os << "None";
-    else {
+    else
         dumpUserDefined(os, remote);
-    }
 }
 
 void
