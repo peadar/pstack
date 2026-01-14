@@ -437,6 +437,32 @@ Target::scanDictEntries(std::ostream &os, const PyDictKeysObject &keys,
     }
 }
 
+// Helper to dump dict contents given keys and values
+// Handles calculation of entry addresses and dispatching to the right entry type
+void
+Target::dumpDictFromKeys(std::ostream &os, const PyDictKeysObject &keys,
+                         Remote<PyDictKeysObject *> keys_remote,
+                         Remote<PyObject **> values_array) const {
+    // Calculate where entries are in the keys object
+    size_t dict_size = size_t(1) << keys.dk_log2_size;
+    size_t index_size =
+        dict_size <= 0xff ? 1 :
+        dict_size <= 0xffff ? 2 :
+        dict_size <= 0xffffffff ? 4 : 8;
+
+    uintptr_t keys_addr = reinterpret_cast<uintptr_t>(keys_remote.remote);
+    uintptr_t entries_addr = keys_addr + sizeof(PyDictKeysObject) + dict_size * index_size;
+
+    // Dispatch based on key kind
+    if (keys.dk_kind == DICT_KEYS_UNICODE || keys.dk_kind == DICT_KEYS_SPLIT) {
+        auto entries_ptr = Remote<PyDictUnicodeEntry *>{reinterpret_cast<PyDictUnicodeEntry *>(entries_addr)};
+        scanDictEntries(os, keys, entries_ptr, values_array);
+    } else {
+        auto entries_ptr = Remote<PyDictKeyEntry *>{reinterpret_cast<PyDictKeyEntry *>(entries_addr)};
+        scanDictEntries(os, keys, entries_ptr, values_array);
+    }
+}
+
 void
 Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
 
@@ -457,19 +483,6 @@ Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
         return;
     }
 
-    size_t dict_size = size_t(1) << keys.dk_log2_size;
-
-    // Size of indices array depends on dict_size
-    size_t index_size =
-        dict_size <= 0xff ? 1 :
-        dict_size <= 0xffff ? 2 :
-        dict_size <= 0xffffffff ? 4 :
-        8;
-
-    // dk_entries starts after dk_indices
-    uintptr_t keys_addr = reinterpret_cast<uintptr_t>(ma_keys.remote);
-    uintptr_t entries_addr = keys_addr + sizeof(PyDictKeysObject) + dict_size * index_size;
-
     os << "{ ";
 
     // In Python 3.11+, ma_values is a PyDictValues*, so we need to skip past the metadata
@@ -479,13 +492,7 @@ Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
             reinterpret_cast<uintptr_t>(ma_values.remote) + offsetof(PyDictValues, values))};
     }
 
-    if (keys.dk_kind == DICT_KEYS_UNICODE) {
-        auto entries_ptr = Remote<PyDictUnicodeEntry *>{reinterpret_cast<PyDictUnicodeEntry *>(entries_addr)};
-        scanDictEntries(os, keys, entries_ptr, values_array);
-    } else {
-        auto entries_ptr = Remote<PyDictKeyEntry *>{reinterpret_cast<PyDictKeyEntry *>(entries_addr)};
-        scanDictEntries(os, keys, entries_ptr, values_array);
-    }
+    dumpDictFromKeys(os, keys, ma_keys, values_array);
 
     os << " }";
 }
@@ -546,28 +553,11 @@ Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) cons
                     // Now read the inline values array
                     uintptr_t inline_values_addr = instance_addr + tp_basicsize;
 
-                    // Calculate where entries are in the keys object
-                    size_t dict_size = size_t(1) << keys.dk_log2_size;
-                    size_t index_size =
-                        dict_size <= 0xff ? 1 :
-                        dict_size <= 0xffff ? 2 :
-                        dict_size <= 0xffffffff ? 4 : 8;
-
-                    uintptr_t keys_addr = reinterpret_cast<uintptr_t>(cached_keys_remote.remote);
-                    uintptr_t entries_addr = keys_addr + sizeof(PyDictKeysObject) + dict_size * index_size;
-
                     os << " { ";
 
                     // Dump key-value pairs using shared scanDictEntries function
                     auto inline_values = Remote<PyObject **>{reinterpret_cast<PyObject **>(inline_values_addr + offsetof(PyDictValues, values))};
-
-                    if (keys.dk_kind == DICT_KEYS_UNICODE || keys.dk_kind == DICT_KEYS_SPLIT) {
-                        auto entries_ptr = Remote<PyDictUnicodeEntry *>{reinterpret_cast<PyDictUnicodeEntry *>(entries_addr)};
-                        scanDictEntries(os, keys, entries_ptr, inline_values);
-                    } else {
-                        auto entries_ptr = Remote<PyDictKeyEntry *>{reinterpret_cast<PyDictKeyEntry *>(entries_addr)};
-                        scanDictEntries(os, keys, entries_ptr, inline_values);
-                    }
+                    dumpDictFromKeys(os, keys, cached_keys_remote, inline_values);
 
                     os << " }";
                 } else {

@@ -153,6 +153,11 @@ public:
                         const Remote<EntryType *> &entries,
                         Remote<PyObject **> values_array) const;
 
+    // Helper to dump dict contents given keys and values
+    void dumpDictFromKeys(std::ostream &os, const PyDictKeysObject &keys,
+                         Remote<PyDictKeysObject *> keys_remote,
+                         Remote<PyObject **> values_array) const;
+
     void dump(std::ostream &os, const Remote<PyObject *> &remote) const;
     void dump(std::ostream &os, const Remote<PyBytesObject *> &remote) const;
     void dump(std::ostream &os, const Remote<PyListObject *> &remote) const;
