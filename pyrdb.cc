@@ -204,10 +204,13 @@ struct PyListObjectOffsets : OffsetContainer {
     OFF(PyObject **, ob_item);
 };
 
+// Forward declaration
+struct PyDictValues;
+
 struct PyDictObjectOffsets : OffsetContainer {
     template <typename Field> using Off = Offset<PyDictObject, Field>;
     OFF(PyDictKeysObject *, ma_keys);
-    OFF(PyObject **, ma_values);
+    OFF(PyDictValues *, ma_values);  // Changed to PyDictValues* in Python 3.11+
 };
 
 // We parse this out of the JSON file representing the _PyDebugOffsets type.
@@ -404,6 +407,36 @@ struct PyHeapTypeFields {
     PyDictKeysObject *ht_cached_keys;
 };
 
+// Template function to scan and dump dict entries
+// Works with both PyDictUnicodeEntry and PyDictKeyEntry
+// values_array is used for split dicts (ma_values) and inline values
+template<typename EntryType>
+void
+Target::scanDictEntries(std::ostream &os, const PyDictKeysObject &keys,
+                        const Remote<EntryType *> &entries,
+                        Remote<PyObject **> values_array) const {
+    const char *sep = "";
+    for (ssize_t i = 0; i < keys.dk_nentries; ++i) {
+        auto entry = fetch(Remote{ entries.remote + i });
+        intptr_t entryInt = reinterpret_cast<intptr_t>(entry.me_key);
+        // Skip DKIX_{EMPTY,DUMMY,ERROR,KEY_CHANGED,....}
+        if (entryInt < 0 && entryInt > -16)
+            continue;
+        os << sep;
+        dump(os, Remote{entry.me_key});
+        os << ": ";
+        if (values_array) {
+            // Split dict or inline values: values are in separate array
+            auto value = fetch(Remote<PyObject **>{values_array.remote + i});
+            dump(os, Remote<PyObject *>{value});
+        } else {
+            // Combined dict: value is in the entry
+            dump(os, Remote<PyObject *>{entry.me_value});
+        }
+        sep = ", ";
+    }
+}
+
 void
 Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
 
@@ -437,39 +470,21 @@ Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
     uintptr_t keys_addr = reinterpret_cast<uintptr_t>(ma_keys.remote);
     uintptr_t entries_addr = keys_addr + sizeof(PyDictKeysObject) + dict_size * index_size;
 
-    const char *sep = "";
+    os << "{ ";
 
-    // Use for "entries" as PyDictUnicodeEntry or PyDictKeyEntry.
-    auto scan = [&] ( const auto &entries ) { 
-        for (ssize_t i = 0; i < keys.dk_nentries; ++i) {
-            auto entry = fetch(Remote{ entries.remote + i } );
-            intptr_t entryInt = reinterpret_cast<intptr_t>(entry.me_key);
-            // Skip DKIX_{EMPTY,DUMMY,ERROR,KEY_CHANGED,....}
-            if (entryInt < 0 && entryInt > -16)
-                continue;
-            os << sep << str(Remote{entry.me_key}) << ": ";
-            if (ma_values) {
-                // Split dict: values are in ma_values array
-                auto value = proc.io->readObj<PyObject *>(reinterpret_cast<uintptr_t>(ma_values.remote) + i * sizeof(PyObject *));
-                os << str(Remote<PyObject *>{value});
-            } else {
-                // Combined dict: value is in the entry
-                os << str(Remote<PyObject *>{entry.me_value});
-            }
-            sep = ", ";
-        }
-    };
+    // In Python 3.11+, ma_values is a PyDictValues*, so we need to skip past the metadata
+    Remote<PyObject **> values_array{};
+    if (ma_values) {
+        values_array = Remote<PyObject **>{reinterpret_cast<PyObject **>(
+            reinterpret_cast<uintptr_t>(ma_values.remote) + offsetof(PyDictValues, values))};
+    }
 
     if (keys.dk_kind == DICT_KEYS_UNICODE) {
-        auto entries_ptr { Remote { reinterpret_cast<PyDictUnicodeEntry *>(entries_addr) } };
-        os << "(unicode)";
-        os << "{ ";
-        scan(entries_ptr);
+        auto entries_ptr = Remote<PyDictUnicodeEntry *>{reinterpret_cast<PyDictUnicodeEntry *>(entries_addr)};
+        scanDictEntries(os, keys, entries_ptr, values_array);
     } else {
-        auto entries_ptr { Remote{ reinterpret_cast<PyDictKeyEntry *>(entries_addr)  } };
-        os << "(general)";
-        os << "{ ";
-        scan(entries_ptr);
+        auto entries_ptr = Remote<PyDictKeyEntry *>{reinterpret_cast<PyDictKeyEntry *>(entries_addr)};
+        scanDictEntries(os, keys, entries_ptr, values_array);
     }
 
     os << " }";
@@ -543,39 +558,15 @@ Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) cons
 
                     os << " { ";
 
-                    // Iterate through entries and print key-value pairs
-                    const char *sep = "";
+                    // Dump key-value pairs using shared scanDictEntries function
+                    auto inline_values = Remote<PyObject **>{reinterpret_cast<PyObject **>(inline_values_addr + offsetof(PyDictValues, values))};
+
                     if (keys.dk_kind == DICT_KEYS_UNICODE || keys.dk_kind == DICT_KEYS_SPLIT) {
-                        // Unicode or split keys use PyDictUnicodeEntry
-                        for (ssize_t i = 0; i < keys.dk_nentries; ++i) {
-                            auto entry = fetch(Remote<PyDictUnicodeEntry *>{reinterpret_cast<PyDictUnicodeEntry *>(entries_addr + i * sizeof(PyDictUnicodeEntry))});
-
-                            // Get the value from inline values array
-                            auto value_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(inline_values_addr + offsetof(PyDictValues, values) + i * sizeof(PyObject *))});
-
-                            if (entry.me_key && value_ptr) {
-                                os << sep;
-                                dump(os, Remote<PyObject *>{entry.me_key});
-                                os << ": ";
-                                dump(os, Remote<PyObject *>{value_ptr});
-                                sep = ", ";
-                            }
-                        }
+                        auto entries_ptr = Remote<PyDictUnicodeEntry *>{reinterpret_cast<PyDictUnicodeEntry *>(entries_addr)};
+                        scanDictEntries(os, keys, entries_ptr, inline_values);
                     } else {
-                        // General keys use PyDictKeyEntry
-                        for (ssize_t i = 0; i < keys.dk_nentries; ++i) {
-                            auto entry = fetch(Remote<PyDictKeyEntry *>{reinterpret_cast<PyDictKeyEntry *>(entries_addr + i * sizeof(PyDictKeyEntry))});
-
-                            auto value_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(inline_values_addr + offsetof(PyDictValues, values) + i * sizeof(PyObject *))});
-
-                            if (entry.me_key && value_ptr) {
-                                os << sep;
-                                dump(os, Remote<PyObject *>{entry.me_key});
-                                os << ": ";
-                                dump(os, Remote<PyObject *>{value_ptr});
-                                sep = ", ";
-                            }
-                        }
+                        auto entries_ptr = Remote<PyDictKeyEntry *>{reinterpret_cast<PyDictKeyEntry *>(entries_addr)};
+                        scanDictEntries(os, keys, entries_ptr, inline_values);
                     }
 
                     os << " }";
