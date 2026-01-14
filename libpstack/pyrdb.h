@@ -148,15 +148,8 @@ public:
     Target(Procman::Process & proc_);
     std::vector<Remote<PyInterpreterState *>> interpreters() const;
     std::vector<Remote<PyThreadState *>> threads(Remote<PyInterpreterState *>) const;
-    // Template helper to scan dict entries - used by both dicts and inline values
-    template<typename EntryType>
-    void scanDictEntries(std::ostream &os,
-                        const PyDictKeysObject &keys,
-                        const Remote<EntryType *> &entries,
-                        const Remote<PyDictValues *> &values) const;
-
     // Helper to dump dict contents given keys and values
-    void dumpDictFromKeys(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const;
+    void dumpKeyValues(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const;
 
 
     void dump(std::ostream &os, const Remote<PyObject *> &remote) const;

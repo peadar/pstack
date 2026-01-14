@@ -404,59 +404,51 @@ struct PyHeapTypeFields {
     PyDictKeysObject *ht_cached_keys;
 };
 
-template<typename EntryType> void
-Target::scanDictEntries(std::ostream &os,
-                        const PyDictKeysObject &keys,
-                        const Remote<EntryType *> &entries,
-                        const Remote<PyDictValues *> &values) const {
-    const char *sep = "";
-    for (ssize_t i = 0; i < keys.dk_nentries; ++i) {
-        auto entry = fetch(Remote{ entries.remote + i });
-        intptr_t entryInt = reinterpret_cast<intptr_t>(entry.me_key);
-        // Skip DKIX_{EMPTY,DUMMY,ERROR,KEY_CHANGED,....}
-        if (entryInt < 0 && entryInt > -16)
-            continue;
-        os << sep;
-        dump(os, Remote{entry.me_key});
-        os << ": ";
-        if (values) {
-            // Split dict or inline values: values are in separate array
-            Remote<PyObject **> values_array = Remote<PyObject **>{reinterpret_cast<PyObject **>(
-            reinterpret_cast<uintptr_t>(values.remote) + offsetof(PyDictValues, values))};
-            auto value = fetch(Remote<PyObject **>{values_array.remote + i});
-            dump(os, Remote<PyObject *>{value});
-        } else {
-            // Combined dict: value is in the entry
-            dump(os, Remote<PyObject *>{entry.me_value});
-        }
-        sep = ", ";
-    }
-}
-
 void
-Target::dumpDictFromKeys(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const {
+Target::dumpKeyValues(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const {
     uintptr_t keys_addr = reinterpret_cast<uintptr_t>(keys_remote.remote);
     auto keys = fetch(keys_remote);
     size_t dict_size = size_t(1) << keys.dk_log2_size;
-    size_t index_size =
-        dict_size <= 0xff ? 1 :
-        dict_size <= 0xffff ? 2 :
-        dict_size <= 0xffffffff ? 4 : 8;
-    uintptr_t entries_addr = keys_addr + sizeof(PyDictKeysObject) + dict_size * index_size;
+    size_t index_size = dict_size <= 0xff ? 1 : dict_size <= 0xffff ? 2 : dict_size <= 0xffffffff ? 4 : 8;
 
+    auto scanDictEntries = [&]( auto &entries ) {
+        const char *sep = "";
+        for (ssize_t i = 0; i < keys.dk_nentries; ++i) {
+            auto entry = fetch(Remote{ entries.remote + i });
+            intptr_t entryInt = reinterpret_cast<intptr_t>(entry.me_key);
+            // Skip DKIX_{EMPTY,DUMMY,ERROR,KEY_CHANGED,....}
+            if (entryInt < 0 && entryInt > -16)
+                continue;
+            os << sep;
+            dump(os, Remote{entry.me_key});
+            os << ": ";
+            if (values) {
+                // Split dict or inline values: values are in separate array
+                Remote<PyObject **> values_array = Remote<PyObject **>{reinterpret_cast<PyObject **>(
+                reinterpret_cast<uintptr_t>(values.remote) + offsetof(PyDictValues, values))};
+                auto value = fetch(Remote<PyObject **>{values_array.remote + i});
+                dump(os, Remote<PyObject *>{value});
+            } else {
+                // Combined dict: value is in the entry
+                dump(os, Remote<PyObject *>{entry.me_value});
+            }
+            sep = ", ";
+        }
+    };
     // Dispatch based on key kind
+    uintptr_t entries_addr = keys_addr + sizeof(PyDictKeysObject) + dict_size * index_size;
     if (keys.dk_kind == DICT_KEYS_UNICODE || keys.dk_kind == DICT_KEYS_SPLIT) {
         auto entries = Remote<PyDictUnicodeEntry *>{reinterpret_cast<PyDictUnicodeEntry *>(entries_addr)};
-        scanDictEntries(os, keys, entries, values);
+        scanDictEntries(entries);
     } else {
         auto entries = Remote<PyDictKeyEntry *>{reinterpret_cast<PyDictKeyEntry *>(entries_addr)};
-        scanDictEntries(os, keys, entries, values);
+        scanDictEntries(entries);
     }
 }
 
 void
 Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
-    dumpDictFromKeys(os,
+    dumpKeyValues(os,
                      fetch(offsets->dict_object.ma_keys(dictobj)),
                      fetch(offsets->dict_object.ma_values(dictobj))
                      );
@@ -505,9 +497,8 @@ Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) cons
                 uintptr_t type_addr = reinterpret_cast<uintptr_t>(type.remote);
                 auto cached_keys = fetch(Remote<PyDictKeysObject **>{reinterpret_cast<PyDictKeysObject **>(type_addr + ht_cached_keys_offset)});
                 if (cached_keys) {
-                    dumpDictFromKeys(os,
-                                     cached_keys,
-                                     Remote<PyDictValues *>{reinterpret_cast<PyDictValues *>(instance_addr + tp_basicsize)});
+                    auto values = Remote<PyDictValues *>{reinterpret_cast<PyDictValues *>(instance_addr + tp_basicsize)};
+                    dumpKeyValues(os, cached_keys, values);
                 } else {
                     os << " {<no cached keys>}";
                 }
@@ -523,7 +514,7 @@ Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) cons
                 }
             }
         }
-    } else  if (dictoffset >= 0) {
+    } else if (dictoffset >= 0) {
         uintptr_t instance_addr = reinterpret_cast<uintptr_t>(remote.remote);
         auto dict_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(instance_addr + dictoffset)});
         if (dict_ptr) {
