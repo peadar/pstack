@@ -7,6 +7,13 @@ class User:
         self.field = 42
         self.anotherField = "hello world"
 
+class SlottedUser:
+    __slots__ = [ 'a', 'b', 'c' ]
+    def __init__(self):
+        self.a = 1
+        self.b = 2
+        self.c = 3
+
 def frame(n):
     adict = { 'twice' : n * 2 }
     anonUnicodeDict = { 2 : 'twice' }
@@ -23,6 +30,7 @@ def frame(n):
     abigint = 1 << 60
     auserWithARealizedDict = User()
     auserWithARealizedDict.__dict__
+    aslottedUser = SlottedUser()
     if n < 2:
         os.system(f"./pstack -p {os.getpid()}")
         print(f"pid {os.getpid()}")
@@ -38,4 +46,4 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--pause", "-p", action="store_true")
 parser.add_argument("--gdb", "-g", action="store_true")
 args = parser.parse_args()
-frame(1)
+frame(2)

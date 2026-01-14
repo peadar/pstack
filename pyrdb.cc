@@ -124,8 +124,10 @@ struct PyTypeObjectOffsets : OffsetContainer {
     OFF(char *, tp_name);
     OFF(void *, tp_repr);
     OFF(unsigned long, tp_flags);
-    // tp_dictoffset not in debug offsets, hardcode for Python 3.14 64-bit (0x120)
+    // These are not in debug offsets - hardcoded for Python 3.14 64-bit
     OFF_DEFAULT(ssize_t, tp_dictoffset, 288);
+    OFF_DEFAULT(PyObject *, tp_dict, 264);
+    OFF_DEFAULT(ssize_t, tp_basicsize, 32);
 };
 
 struct ThreadStateOffsets : OffsetContainer {
@@ -404,6 +406,27 @@ struct PyHeapTypeFields {
     PyDictKeysObject *ht_cached_keys;
 };
 
+// Member descriptor structures (for __slots__)
+struct PyMemberDef {
+    const char *name;
+    int type;
+    ssize_t offset;
+    int flags;
+    const char *doc;
+};
+
+struct PyDescrObject {
+    PyObject ob_base;
+    PyTypeObject *d_type;
+    PyObject *d_name;
+    PyObject *d_qualname;
+};
+
+struct PyMemberDescrObject {
+    PyDescrObject d_common;
+    PyMemberDef *d_member;
+};
+
 void
 Target::dumpKeyValues(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const {
     uintptr_t keys_addr = reinterpret_cast<uintptr_t>(keys_remote.remote);
@@ -452,6 +475,107 @@ Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
                      fetch(offsets->dict_object.ma_keys(dictobj)),
                      fetch(offsets->dict_object.ma_values(dictobj))
                      );
+}
+
+void
+Target::dumpSlots(std::ostream &os, Remote<PyTypeObject *> type, const Remote<PyObject *> &obj) const {
+    // For slotted classes, get ht_slots from PyHeapTypeObject
+    size_t ht_slots_offset = offsets->type_object.size + offsetof(PyHeapTypeFields, ht_slots);
+    uintptr_t type_addr = reinterpret_cast<uintptr_t>(type.remote);
+    auto ht_slots_obj = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(type_addr + ht_slots_offset)});
+
+    if (!ht_slots_obj)
+        return;
+
+    // ht_slots is a tuple of slot names
+    auto slots_tuple = cast(types->pyTuple_Type, Remote<PyObject *>{ht_slots_obj});
+    if (!slots_tuple)
+        return;
+
+    auto ob_size = fetch(offsets->tuple_object.ob_size(slots_tuple));
+    if (ob_size == 0)
+        return;
+
+    // Get tp_dict to look up the member descriptors
+    auto tp_dict_obj = fetch(offsets->type_object.tp_dict(type));
+    if (!tp_dict_obj.remote)
+        return;
+
+    auto dict = cast(types->pyDict_Type, Remote<PyObject *>{tp_dict_obj.remote});
+    if (!dict)
+        return;
+
+    auto slot_names = fetchArray(offsets->tuple_object.ob_item(slots_tuple), ob_size);
+
+    const char *sep = "";
+    os << " ";
+
+    for (ssize_t i = 0; i < ob_size; ++i) {
+        auto slot_name_remote = slot_names[i];
+        if (!slot_name_remote.remote)
+            continue;
+
+        auto slot_name = cast(types->pyUnicode_Type, slot_name_remote);
+        if (!slot_name)
+            continue;
+
+        // Look up this slot name in tp_dict to get the member descriptor
+        auto ma_keys = fetch(offsets->dict_object.ma_keys(dict));
+        if (!ma_keys.remote)
+            continue;
+
+        auto keys = fetch(ma_keys);
+        auto ma_values = fetch(offsets->dict_object.ma_values(dict));
+
+        uintptr_t keys_addr = reinterpret_cast<uintptr_t>(ma_keys.remote);
+        size_t dict_size = size_t(1) << keys.dk_log2_size;
+        size_t index_size = dict_size <= 0xff ? 1 : dict_size <= 0xffff ? 2 : dict_size <= 0xffffffff ? 4 : 8;
+
+        uintptr_t entries_offset = sizeof(PyDictKeysObject) + dict_size * index_size;
+
+        // Find the member descriptor for this slot name
+        PyMemberDef *member_def_ptr = nullptr;
+        if (keys.dk_kind == DICT_KEYS_UNICODE || keys.dk_kind == DICT_KEYS_SPLIT) {
+            Remote<PyDictUnicodeEntry *> entries{reinterpret_cast<PyDictUnicodeEntry *>(keys_addr + entries_offset)};
+            for (ssize_t j = 0; j < keys.dk_nentries; ++j) {
+                auto entry = fetch(Remote{entries.remote + j});
+                if (entry.me_key == slot_name_remote.remote) {
+                    // Found the slot name in the dict
+                    PyObject *value_obj;
+                    if (ma_values.remote) {
+                        value_obj = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(reinterpret_cast<uintptr_t>(ma_values.remote) + offsetof(PyDictValues, values)) + j}).remote;
+                    } else {
+                        value_obj = entry.me_value;
+                    }
+
+                    if (value_obj) {
+                        auto member_descr = fetch(Remote<PyMemberDescrObject *>{reinterpret_cast<PyMemberDescrObject *>(value_obj)});
+                        member_def_ptr = member_descr.d_member;
+                    }
+                    break;
+                }
+            }
+        }
+
+        if (!member_def_ptr)
+            continue;
+
+        auto member_def = fetch(Remote<PyMemberDef *>{member_def_ptr});
+
+        // Read the value at the offset in the object
+        uintptr_t obj_addr = reinterpret_cast<uintptr_t>(obj.remote);
+        auto slot_value_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(obj_addr + member_def.offset)});
+
+        os << sep;
+        dump(os, slot_name);
+        os << ": ";
+        if (slot_value_ptr) {
+            dump(os, Remote<PyObject *>{slot_value_ptr});
+        } else {
+            os << "(unset)";
+        }
+        sep = ", ";
+    }
 }
 
 void
@@ -514,7 +638,7 @@ Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) cons
                 }
             }
         }
-    } else if (dictoffset >= 0) {
+    } else if (dictoffset > 0) {
         uintptr_t instance_addr = reinterpret_cast<uintptr_t>(remote.remote);
         auto dict_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(instance_addr + dictoffset)});
         if (dict_ptr) {
@@ -524,6 +648,9 @@ Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) cons
                 dump(os, d);
             }
         }
+    } else {
+        // No managed dict or regular dict - try slots
+        dumpSlots(os, type, remote);
     }
 }
 

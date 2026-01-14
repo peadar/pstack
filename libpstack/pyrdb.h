@@ -150,6 +150,8 @@ public:
     std::vector<Remote<PyThreadState *>> threads(Remote<PyInterpreterState *>) const;
     // Helper to dump dict contents given keys and values
     void dumpKeyValues(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const;
+    // Helper to dump slots from a type's tp_dict
+    void dumpSlots(std::ostream &os, Remote<PyTypeObject *> type, const Remote<PyObject *> &obj) const;
 
 
     void dump(std::ostream &os, const Remote<PyObject *> &remote) const;
