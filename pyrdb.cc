@@ -335,6 +335,9 @@ enum DictKeysKind {
     DICT_KEYS_SPLIT = 2
 };
 
+// Local structure definitions to calculate offsets with offsetof()
+// These mirror the real Python structures but only include fields we need
+
 struct PyDictValues {
     uint8_t capacity;
     uint8_t size;
@@ -343,61 +346,58 @@ struct PyDictValues {
     PyObject *values[1];
 };
 
-// Local structure definitions to calculate offsets with offsetof()
-// These mirror the real Python structures but only include fields we need
-
-struct LocalPyObject {
+struct PyObject {
     ssize_t ob_refcnt;
     PyTypeObject *ob_type;
 };
 
-struct LocalPyVarObject {
-    LocalPyObject ob_base;
+struct PyVarObject {
+    PyObject ob_base;
     ssize_t ob_size;
 };
 
 // PyTypeObject - only fields up to tp_basicsize which we need
-struct LocalPyTypeObject {
-    LocalPyVarObject ob_base;
+struct PyTypeObject {
+    PyVarObject ob_base;
     const char *tp_name;
     ssize_t tp_basicsize;
     // ... rest not needed for offset calculation
 };
 
 // Slot structures - we just need their sizes for offset calculation
-struct LocalPyAsyncMethods {
+struct PyAsyncMethods {
     void *am_await;
     void *am_aiter;
     void *am_anext;
     void *am_send;
 };
 
-struct LocalPyNumberMethods {
+struct PyNumberMethods {
     void *slots[36];  // 36 function pointers in Python 3.14
 };
 
-struct LocalPyMappingMethods {
+struct PyMappingMethods {
     void *mp_length;
     void *mp_subscript;
     void *mp_ass_subscript;
 };
 
-struct LocalPySequenceMethods {
+struct PySequenceMethods {
     void *slots[10];  // 10 function pointers
 };
 
-struct LocalPyBufferProcs {
+struct PyBufferProcs {
     void *bf_getbuffer;
     void *bf_releasebuffer;
 };
 
 // Fields that come after PyTypeObject in PyHeapTypeObject
 struct PyHeapTypeFields {
-    LocalPyAsyncMethods as_async;
-    LocalPyNumberMethods as_number;
-    LocalPyMappingMethods as_mapping;
-    LocalPySequenceMethods as_sequence;
-    LocalPyBufferProcs as_buffer;
+    PyAsyncMethods as_async;
+    PyNumberMethods as_number;
+    PyMappingMethods as_mapping;
+    PySequenceMethods as_sequence;
+    PyBufferProcs as_buffer;
     PyObject *ht_name;
     PyObject *ht_slots;
     PyObject *ht_qualname;
@@ -492,7 +492,7 @@ Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) cons
                 }
             } else {
                 size_t ht_cached_keys_offset = offsets->type_object.size + offsetof(PyHeapTypeFields, ht_cached_keys);
-                auto local_type = Remote<LocalPyTypeObject *>{reinterpret_cast<LocalPyTypeObject *>(type.remote)};
+                auto local_type = Remote<PyTypeObject *>{reinterpret_cast<PyTypeObject *>(type.remote)};
                 auto tp_basicsize = fetch(local_type).tp_basicsize;
                 uintptr_t type_addr = reinterpret_cast<uintptr_t>(type.remote);
                 auto cached_keys = fetch(Remote<PyDictKeysObject **>{reinterpret_cast<PyDictKeysObject **>(type_addr + ht_cached_keys_offset)});

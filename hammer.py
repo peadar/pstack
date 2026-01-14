@@ -1,7 +1,6 @@
 import os
 import sys
 import signal
-print(os.getpid())
 
 class User:
     def __init__(self):
@@ -22,7 +21,6 @@ def frame(n):
     aShort32BitInt = 1 << 29
     a32BitInt = 1 << 31
     abigint = 1 << 60
-    print(abigint)
     if n < 2:
         os.system(f"./pstack -p {os.getpid()}")
         print(f"pid {os.getpid()}")
