@@ -301,6 +301,35 @@ Target::dump(std::ostream &os, const Remote<PyListObject *> &listobj) const {
     os << " ]";
 }
 
+// these are correct for python 3.14
+struct PyDictKeysObject {
+    ssize_t dk_refcnt;
+    uint8_t dk_log2_size;
+    uint8_t dk_log2_index_bytes;
+    uint8_t dk_kind;
+    uint32_t dk_version;
+    ssize_t dk_usable;
+    ssize_t dk_nentries;
+    char dk_indices[0];
+};
+
+struct PyDictKeyEntry {
+    long me_hash;
+    PyObject *me_key;
+    PyObject *me_value;
+};
+
+struct PyDictUnicodeEntry {
+    PyObject *me_key;
+    PyObject *me_value;
+};
+
+enum DictKeysKind {
+    DICT_KEYS_GENERAL = 0,
+    DICT_KEYS_UNICODE = 1,
+    DICT_KEYS_SPLIT = 2
+};
+
 void
 Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
 
@@ -312,79 +341,61 @@ Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
         return;
     }
 
-    // Validate the pointer looks reasonable (basic sanity check)
-    uintptr_t keys_addr = reinterpret_cast<uintptr_t>(ma_keys.remote);
-    if (keys_addr < 0x1000 || keys_addr == 0x7FF7F7F7F7F7F7F7ULL) {
-        os << "{<invalid dict, ma_keys=" << std::hex << keys_addr << std::dec << ">}";
-        return;
-    }
-
-    // Hardcoded structure of PyDictKeysObject for Python 3.14
-    // struct layout: dk_refcnt(8), dk_log2_size(1), dk_kind(1), [2 bytes padding], dk_usable(4), dk_nentries(8)
-    // Total header: 24 bytes before dk_indices
-
-    uint8_t dk_log2_size;
-    ssize_t dk_nentries;
-
-    try {
-        // Read dk_log2_size (offset 8) and dk_nentries (offset 16 with proper alignment)
-        dk_log2_size = proc.io->readObj<uint8_t>(keys_addr + 8);
-        dk_nentries = proc.io->readObj<ssize_t>(keys_addr + 16);
-    } catch (...) {
-        os << "{<failed to read dict keys structure>}";
-        return;
-    }
+    auto keys = fetch(ma_keys);
 
     // Sanity check values
-    if (dk_log2_size > 30 || dk_nentries < 0 || dk_nentries > 1000000) {
-        os << "{<invalid dict structure: log2_size=" << int(dk_log2_size)
-           << ", nentries=" << dk_nentries << ">}";
+    if (keys.dk_log2_size > 30 || keys.dk_nentries < 0 || keys.dk_nentries > 8000000) {
+        os << "{<invalid dict structure: log2_size=" << int(keys.dk_log2_size)
+           << ", nentries=" << keys.dk_nentries << ">}";
         return;
     }
 
-    // Calculate size of the dict
-    size_t dict_size = size_t(1) << dk_log2_size;
+    size_t dict_size = size_t(1) << keys.dk_log2_size;
 
-    // dk_indices starts at offset 24 (after the fixed header)
     // Size of indices array depends on dict_size
-    size_t indices_size;
-    if (dict_size <= 0xff) {
-        indices_size = dict_size * sizeof(int8_t);
-    } else if (dict_size <= 0xffff) {
-        indices_size = dict_size * sizeof(int16_t);
-    } else if (dict_size <= 0xffffffff) {
-        indices_size = dict_size * sizeof(int32_t);
-    } else {
-        indices_size = dict_size * sizeof(int64_t);
-    }
+    size_t index_size =
+        dict_size <= 0xff ? 1 :
+        dict_size <= 0xffff ? 2 :
+        dict_size <= 0xffffffff ? 4 :
+        8;
 
     // dk_entries starts after dk_indices
-    uintptr_t entries_addr = keys_addr + 24 + indices_size;
+    uintptr_t keys_addr = reinterpret_cast<uintptr_t>(ma_keys.remote);
+    uintptr_t entries_addr = keys_addr + sizeof(PyDictKeysObject) + dict_size * index_size;
 
-    os << "{ ";
     const char *sep = "";
 
-    // Iterate directly through the entries (they're stored in insertion order)
-    // dk_nentries tells us how many valid entries there are
-    for (ssize_t i = 0; i < dk_nentries; ++i) {
-        // Each entry: me_hash(8), me_key(8), me_value(8)
-        uintptr_t entry_addr = entries_addr + i * 24;
-
-        auto key = proc.io->readObj<PyObject *>(entry_addr + 8);
-
-        os << sep << str(Remote<PyObject *>{key}) << ": ";
-
-        if (ma_values) {
-            // Split dict: values are in ma_values array
-            auto value = proc.io->readObj<PyObject *>(reinterpret_cast<uintptr_t>(ma_values.remote) + i * sizeof(PyObject *));
-            os << str(Remote<PyObject *>{value});
-        } else {
-            // Combined dict: value is in the entry
-            auto value = proc.io->readObj<PyObject *>(entry_addr + 16);
-            os << str(Remote<PyObject *>{value});
+    // Use for "entries" as PyDictUnicodeEntry or PyDictKeyEntry.
+    auto scan = [&] ( const auto &entries ) { 
+        for (ssize_t i = 0; i < keys.dk_nentries; ++i) {
+            auto entry = fetch(Remote{ entries.remote + i } );
+            intptr_t entryInt = reinterpret_cast<intptr_t>(entry.me_key);
+            // Skip DKIX_{EMPTY,DUMMY,ERROR,KEY_CHANGED,....}
+            if (entryInt < 0 && entryInt > -16)
+                continue;
+            os << sep << str(Remote{entry.me_key}) << ": ";
+            if (ma_values) {
+                // Split dict: values are in ma_values array
+                auto value = proc.io->readObj<PyObject *>(reinterpret_cast<uintptr_t>(ma_values.remote) + i * sizeof(PyObject *));
+                os << str(Remote<PyObject *>{value});
+            } else {
+                // Combined dict: value is in the entry
+                os << str(Remote<PyObject *>{entry.me_value});
+            }
+            sep = ", ";
         }
+    };
 
-        sep = ", ";
+    if (keys.dk_kind == DICT_KEYS_UNICODE) {
+        auto entries_ptr { Remote { reinterpret_cast<PyDictUnicodeEntry *>(entries_addr) } };
+        os << "(unicode)";
+        os << "{ ";
+        scan(entries_ptr);
+    } else {
+        auto entries_ptr { Remote{ reinterpret_cast<PyDictKeyEntry *>(entries_addr)  } };
+        os << "(general)";
+        os << "{ ";
+        scan(entries_ptr);
     }
 
     os << " }";
@@ -396,7 +407,7 @@ Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
         os << "(null)";
         return;
     }
-    os << typeName(pyType(remote)) << "@" << reinterpret_cast<void *>(remote.remote) << "=";
+    // os << typeName(pyType(remote)) << "@" << reinterpret_cast<void *>(remote.remote) << "=";
     if (auto str = cast(types->pyUnicode_Type, remote); str)
         dump(os, str);
     else if (auto l = cast(types->pyLong_Type, remote); l)

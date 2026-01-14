@@ -9,6 +9,7 @@ class User:
 
 def frame(n):
     adict = { 'twice' : n * 2 }
+    anonUnicodeDict = { 2 : 'twice' }
     astr = "hello world"
     aNonAsciiStr = "hello 😎"
     abytes = b"\x01\x02\x41\xff"
