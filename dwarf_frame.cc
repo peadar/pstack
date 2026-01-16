@@ -141,9 +141,9 @@ CFI::CFI(const Info *info, FIType type_)
     , type(type_)
 {
     auto &elf = info->elf;
-    const Elf::Section &ehFrameSec = elf->getDebugSection(".eh_frame", SHT_PROGBITS);
-    const Elf::Section &ehFrameHdrSec = elf->getDebugSection(".eh_frame_hdr", SHT_PROGBITS);
-    const Elf::Section &debugFrameSec = elf->getSection(".debug_frame", SHT_PROGBITS);
+    const Elf::Section &ehFrameSec = elf->getDebugSection(".eh_frame", SHT_NULL);
+    const Elf::Section &ehFrameHdrSec = elf->getDebugSection(".eh_frame_hdr", SHT_NULL);
+    const Elf::Section &debugFrameSec = elf->getSection(".debug_frame", SHT_NULL);
 
     if (info->elf->context.verbose > 2)
        *info->elf->context.debug << "construct CFI for " << *info->elf->io << "\n";
