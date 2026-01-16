@@ -52,6 +52,9 @@ template <typename T> struct Remote {
     using PointedTo = FromRemote<std::remove_pointer_t<T>>;
     auto operator <=> (const Remote<T> &rhs) const = default;
     operator bool() const { return bool(remote); }
+
+    template <typename To>
+    Remote<To> reinterpretCast() const { return { reinterpret_cast<To>(remote) }; }
 };
 
 template <typename To>

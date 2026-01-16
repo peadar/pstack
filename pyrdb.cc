@@ -6,6 +6,126 @@
 
 namespace pstack::Py {
 
+// these are correct for python 3.14
+struct PyDictKeysObject {
+    ssize_t dk_refcnt;
+    uint8_t dk_log2_size;
+    uint8_t dk_log2_index_bytes;
+    uint8_t dk_kind;
+    uint32_t dk_version;
+    ssize_t dk_usable;
+    ssize_t dk_nentries;
+    char dk_indices[0];
+};
+
+struct PyDictKeyEntry {
+    long me_hash;
+    PyObject *me_key;
+    PyObject *me_value;
+};
+
+struct PyDictUnicodeEntry {
+    PyObject *me_key;
+    PyObject *me_value;
+};
+
+enum DictKeysKind {
+    DICT_KEYS_GENERAL = 0,
+    DICT_KEYS_UNICODE = 1,
+    DICT_KEYS_SPLIT = 2
+};
+
+// Local structure definitions to calculate offsets with offsetof()
+// These mirror the real Python structures but only include fields we need
+
+struct PyDictValues {
+    uint8_t capacity;
+    uint8_t size;
+    uint8_t embedded;
+    uint8_t valid;
+    PyObject *values[1];
+};
+
+struct PyObject {
+    ssize_t ob_refcnt;
+    PyTypeObject *ob_type;
+};
+
+struct PyVarObject {
+    PyObject ob_base;
+    ssize_t ob_size;
+};
+
+// PyTypeObject - only fields up to tp_basicsize which we need
+struct PyTypeObject {
+    PyVarObject ob_base;
+    const char *tp_name;
+    ssize_t tp_basicsize;
+    // ... rest not needed for offset calculation
+};
+
+// Slot structures - we just need their sizes for offset calculation
+struct PyAsyncMethods {
+    void *am_await;
+    void *am_aiter;
+    void *am_anext;
+    void *am_send;
+};
+
+struct PyNumberMethods {
+    void *slots[36];  // 36 function pointers in Python 3.14
+};
+
+struct PyMappingMethods {
+    void *mp_length;
+    void *mp_subscript;
+    void *mp_ass_subscript;
+};
+
+struct PySequenceMethods {
+    void *slots[10];  // 10 function pointers
+};
+
+struct PyBufferProcs {
+    void *bf_getbuffer;
+    void *bf_releasebuffer;
+};
+
+// Fields that come after PyTypeObject in PyHeapTypeObject
+struct PyHeapTypeFields {
+    PyAsyncMethods as_async;
+    PyNumberMethods as_number;
+    PyMappingMethods as_mapping;
+    PySequenceMethods as_sequence;
+    PyBufferProcs as_buffer;
+    PyObject *ht_name;
+    PyObject *ht_slots;
+    PyObject *ht_qualname;
+    PyDictKeysObject *ht_cached_keys;
+};
+
+// Member descriptor structures (for __slots__)
+struct PyMemberDef {
+    const char *name;
+    int type;
+    ssize_t offset;
+    int flags;
+    const char *doc;
+};
+
+struct PyDescrObject {
+    PyObject ob_base;
+    PyTypeObject *d_type;
+    PyObject *d_name;
+    PyObject *d_qualname;
+};
+
+struct PyMemberDescrObject {
+    PyDescrObject d_common;
+    PyMemberDef *d_member;
+};
+
+
 // Minimal header from _PyRuntime to find the version, and verify the magic cookie.
 struct Header {
     std::array<char, 8> cookie;
@@ -308,126 +428,10 @@ Target::dump(std::ostream &os, const Remote<PyListObject *> &listobj) const {
     os << " ]";
 }
 
-// these are correct for python 3.14
-struct PyDictKeysObject {
-    ssize_t dk_refcnt;
-    uint8_t dk_log2_size;
-    uint8_t dk_log2_index_bytes;
-    uint8_t dk_kind;
-    uint32_t dk_version;
-    ssize_t dk_usable;
-    ssize_t dk_nentries;
-    char dk_indices[0];
-};
-
-struct PyDictKeyEntry {
-    long me_hash;
-    PyObject *me_key;
-    PyObject *me_value;
-};
-
-struct PyDictUnicodeEntry {
-    PyObject *me_key;
-    PyObject *me_value;
-};
-
-enum DictKeysKind {
-    DICT_KEYS_GENERAL = 0,
-    DICT_KEYS_UNICODE = 1,
-    DICT_KEYS_SPLIT = 2
-};
-
-// Local structure definitions to calculate offsets with offsetof()
-// These mirror the real Python structures but only include fields we need
-
-struct PyDictValues {
-    uint8_t capacity;
-    uint8_t size;
-    uint8_t embedded;
-    uint8_t valid;
-    PyObject *values[1];
-};
-
-struct PyObject {
-    ssize_t ob_refcnt;
-    PyTypeObject *ob_type;
-};
-
-struct PyVarObject {
-    PyObject ob_base;
-    ssize_t ob_size;
-};
-
-// PyTypeObject - only fields up to tp_basicsize which we need
-struct PyTypeObject {
-    PyVarObject ob_base;
-    const char *tp_name;
-    ssize_t tp_basicsize;
-    // ... rest not needed for offset calculation
-};
-
-// Slot structures - we just need their sizes for offset calculation
-struct PyAsyncMethods {
-    void *am_await;
-    void *am_aiter;
-    void *am_anext;
-    void *am_send;
-};
-
-struct PyNumberMethods {
-    void *slots[36];  // 36 function pointers in Python 3.14
-};
-
-struct PyMappingMethods {
-    void *mp_length;
-    void *mp_subscript;
-    void *mp_ass_subscript;
-};
-
-struct PySequenceMethods {
-    void *slots[10];  // 10 function pointers
-};
-
-struct PyBufferProcs {
-    void *bf_getbuffer;
-    void *bf_releasebuffer;
-};
-
-// Fields that come after PyTypeObject in PyHeapTypeObject
-struct PyHeapTypeFields {
-    PyAsyncMethods as_async;
-    PyNumberMethods as_number;
-    PyMappingMethods as_mapping;
-    PySequenceMethods as_sequence;
-    PyBufferProcs as_buffer;
-    PyObject *ht_name;
-    PyObject *ht_slots;
-    PyObject *ht_qualname;
-    PyDictKeysObject *ht_cached_keys;
-};
-
-// Member descriptor structures (for __slots__)
-struct PyMemberDef {
-    const char *name;
-    int type;
-    ssize_t offset;
-    int flags;
-    const char *doc;
-};
-
-struct PyDescrObject {
-    PyObject ob_base;
-    PyTypeObject *d_type;
-    PyObject *d_name;
-    PyObject *d_qualname;
-};
-
-struct PyMemberDescrObject {
-    PyDescrObject d_common;
-    PyMemberDef *d_member;
-};
-
-// Walk dict entries and call visitor for each key/value pair
+// Walk dict entries and call visitor for each key/value pair.
+// Handles both combined dicts (keys/values in same entry) and split dicts
+// (values in separate PyDictValues array). Also handles unicode-keyed dicts
+// vs general dicts with different entry layouts.
 template<typename Visitor>
 void
 Target::walkDictEntries(Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values, Visitor visitor) const {
@@ -447,18 +451,18 @@ Target::walkDictEntries(Remote<PyDictKeysObject *> keys_remote, Remote<PyDictVal
             PyObject *value_ptr;
             if (values) {
                 // Split dict or inline values: values are in separate array
-                Remote<PyObject **> values_array = Remote<PyObject **>{reinterpret_cast<PyObject **>(
-                reinterpret_cast<uintptr_t>(values.remote) + offsetof(PyDictValues, values))};
+                uintptr_t values_array_addr = reinterpret_cast<uintptr_t>(values.remote) + offsetof(PyDictValues, values);
+                auto values_array = Remote<PyObject **>{reinterpret_cast<PyObject **>(values_array_addr)};
                 value_ptr = fetch(Remote<PyObject **>{values_array.remote + i}).remote;
             } else {
                 // Combined dict: value is in the entry
                 value_ptr = entry.me_value;
             }
 
-            visitor(entry.me_key, value_ptr);
+            visitor(Remote<PyObject *>{entry.me_key}, Remote<PyObject *>{value_ptr});
         }
     };
-    // Dispatch based on key kind
+    // Dispatch based on key kind (unicode vs general)
     uintptr_t entries_addr = keys_addr + sizeof(PyDictKeysObject) + dict_size * index_size;
     if (keys.dk_kind == DICT_KEYS_UNICODE || keys.dk_kind == DICT_KEYS_SPLIT) {
         auto entries = Remote<PyDictUnicodeEntry *>{reinterpret_cast<PyDictUnicodeEntry *>(entries_addr)};
@@ -472,11 +476,8 @@ Target::walkDictEntries(Remote<PyDictKeysObject *> keys_remote, Remote<PyDictVal
 void
 Target::dumpKeyValues(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const {
     const char *sep = "";
-    walkDictEntries(keys_remote, values, [&](PyObject *key, PyObject *value) {
-        os << sep;
-        dump(os, Remote<PyObject *>{key});
-        os << ": ";
-        dump(os, Remote<PyObject *>{value});
+    walkDictEntries(keys_remote, values, [&](Remote<PyObject *>key, Remote<PyObject *>value) {
+        os << sep << str(key) << ": " << str(value);
         sep = ", ";
     });
 }
@@ -489,12 +490,22 @@ Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
                      );
 }
 
+// Helper: Get offset of a field within PyHeapTypeObject (after PyTypeObject)
+template<typename T>
+static size_t heapTypeFieldOffset(const RootOffsets &offsets, size_t field_offset) {
+    return offsets.type_object.size + field_offset;
+}
+
+// Dump __slots__ attributes for a Python object with slotted attributes.
+// Reads ht_slots tuple from PyHeapTypeObject, looks up member descriptors in tp_dict,
+// and prints each slot name with its value from the object.
 void
 Target::dumpSlots(std::ostream &os, Remote<PyTypeObject *> type, const Remote<PyObject *> &obj) const {
     // For slotted classes, get ht_slots from PyHeapTypeObject
-    size_t ht_slots_offset = offsets->type_object.size + offsetof(PyHeapTypeFields, ht_slots);
+    size_t ht_slots_offset = heapTypeFieldOffset<PyHeapTypeFields>(*offsets, offsetof(PyHeapTypeFields, ht_slots));
     uintptr_t type_addr = reinterpret_cast<uintptr_t>(type.remote);
-    auto ht_slots_obj = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(type_addr + ht_slots_offset)});
+    auto ht_slots_ptr = Remote<PyObject **>{reinterpret_cast<PyObject **>(type_addr + ht_slots_offset)};
+    auto ht_slots_obj = fetch(ht_slots_ptr);
 
     if (!ht_slots_obj)
         return;
@@ -524,20 +535,16 @@ Target::dumpSlots(std::ostream &os, Remote<PyTypeObject *> type, const Remote<Py
     const char *sep = "";
     os << " ";
 
-    for (ssize_t i = 0; i < ob_size; ++i) {
-        auto slot_name_remote = slot_names[i];
-        if (!slot_name_remote.remote)
-            continue;
-
-        auto slot_name = cast(types->pyUnicode_Type, slot_name_remote);
+    for (auto &slot_name : slot_names) {
         if (!slot_name)
             continue;
 
         // Look up this slot name in tp_dict to get the member descriptor
         PyMemberDef *member_def_ptr = nullptr;
-        walkDictEntries(ma_keys, ma_values, [&](PyObject *key, PyObject *value_obj) {
-            if (key == slot_name_remote.remote && value_obj) {
-                auto member_descr = fetch(Remote<PyMemberDescrObject *>{reinterpret_cast<PyMemberDescrObject *>(value_obj)});
+        walkDictEntries(ma_keys, ma_values, [&](Remote<PyObject *>key, Remote<PyObject *>value) {
+            if (key == slot_name && value) {
+                auto memberValue = value.reinterpretCast<PyMemberDescrObject*>();
+                auto member_descr = fetch(memberValue);
                 member_def_ptr = member_descr.d_member;
             }
         });
@@ -549,7 +556,8 @@ Target::dumpSlots(std::ostream &os, Remote<PyTypeObject *> type, const Remote<Py
 
         // Read the value at the offset in the object
         uintptr_t obj_addr = reinterpret_cast<uintptr_t>(obj.remote);
-        auto slot_value_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(obj_addr + member_def.offset)});
+        auto slot_value_addr = Remote<PyObject **>{reinterpret_cast<PyObject **>(obj_addr + member_def.offset)};
+        auto slot_value_ptr = fetch(slot_value_addr);
 
         os << sep;
         dump(os, slot_name);
@@ -563,6 +571,9 @@ Target::dumpSlots(std::ostream &os, Remote<PyTypeObject *> type, const Remote<Py
     }
 }
 
+// Dump a user-defined Python object.
+// Handles managed dicts (Python 3.11+), inline values (Python 3.13+),
+// regular dicts, and __slots__-based objects.
 void
 Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) const {
     // User-defined type or other type
@@ -587,24 +598,21 @@ Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) cons
 
     if (tp_flags & Py_TPFLAGS_MANAGED_DICT) {
         uintptr_t instance_addr = reinterpret_cast<uintptr_t>(remote.remote);
-
         // Check if we have inline values (Python 3.13+)
         if (tp_flags & Py_TPFLAGS_INLINE_VALUES) {
             // Inline values: try materialized dict first
-            auto dict_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(instance_addr + MANAGED_DICT_OFFSET)});
-
+            auto dict_addr = Remote<PyObject **>{reinterpret_cast<PyObject **>(instance_addr + MANAGED_DICT_OFFSET)};
+            auto dict_ptr = fetch(dict_addr);
             if (dict_ptr) {
-                auto dict_remote = Remote<PyObject *>{dict_ptr};
-                if (auto d = cast(types->pyDict_Type, dict_remote); d) {
-                    os << " ";
-                    dump(os, d);
-                }
+                dump(os, dict_ptr);
             } else {
-                size_t ht_cached_keys_offset = offsets->type_object.size + offsetof(PyHeapTypeFields, ht_cached_keys);
+                // No materialized dict - use cached_keys with inline values
+                size_t ht_cached_keys_offset = heapTypeFieldOffset<PyHeapTypeFields>(*offsets, offsetof(PyHeapTypeFields, ht_cached_keys));
                 auto local_type = Remote<PyTypeObject *>{reinterpret_cast<PyTypeObject *>(type.remote)};
                 auto tp_basicsize = fetch(local_type).tp_basicsize;
                 uintptr_t type_addr = reinterpret_cast<uintptr_t>(type.remote);
-                auto cached_keys = fetch(Remote<PyDictKeysObject **>{reinterpret_cast<PyDictKeysObject **>(type_addr + ht_cached_keys_offset)});
+                auto cached_keys_addr = Remote<PyDictKeysObject **>{reinterpret_cast<PyDictKeysObject **>(type_addr + ht_cached_keys_offset)};
+                auto cached_keys = fetch(cached_keys_addr);
                 if (cached_keys) {
                     auto values = Remote<PyDictValues *>{reinterpret_cast<PyDictValues *>(instance_addr + tp_basicsize)};
                     dumpKeyValues(os, cached_keys, values);
@@ -614,27 +622,17 @@ Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) cons
             }
         } else {
             // Managed dict without inline values
-            auto dict_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(instance_addr + MANAGED_DICT_OFFSET)});
-            if (dict_ptr) {
-                auto dict_remote = Remote<PyObject *>{dict_ptr};
-                if (auto d = cast(types->pyDict_Type, dict_remote); d) {
-                    os << " ";
-                    dump(os, d);
-                }
-            }
+            auto dict_addr = Remote<PyObject **>{reinterpret_cast<PyObject **>(instance_addr + MANAGED_DICT_OFFSET)};
+            auto dict_ptr = fetch(dict_addr);
+            os << " ";
+            dump(os, dict_ptr);
         }
     } else if (dictoffset > 0) {
         uintptr_t instance_addr = reinterpret_cast<uintptr_t>(remote.remote);
-        auto dict_ptr = fetch(Remote<PyObject **>{reinterpret_cast<PyObject **>(instance_addr + dictoffset)});
-        if (dict_ptr) {
-            auto dict_remote = Remote<PyObject *>{dict_ptr};
-            if (auto d = cast(types->pyDict_Type, dict_remote); d) {
-                os << " ";
-                dump(os, d);
-            }
-        }
+        auto dict_addr = Remote<PyObject **>{reinterpret_cast<PyObject **>(instance_addr + dictoffset)};
+        auto dict_ptr = fetch(dict_addr);
+        dump(os, dict_ptr);
     } else {
-        // No managed dict or regular dict - try slots
         dumpSlots(os, type, remote);
     }
 }
@@ -704,7 +702,6 @@ Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
     if (state.compact) {
         // Compaact form. Data follows the object.
         dataAddr = objoff + (state.ascii ? unicode.asciiobject_size.off : unicode.size - sizeof (uintptr_t));
-
     } else {
         // non-compact form - data is pointed to by the pointer at the end of the PyUnicodeObject.
         Remote<uintptr_t *> dataAddrPtr;
