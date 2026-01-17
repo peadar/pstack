@@ -197,7 +197,7 @@ public:
     Shdr shdr;
     const Elf::Object *elf;
     std::string name;
-    explicit operator bool() const { return shdr.sh_type != SHT_NULL; }
+    explicit operator bool() const { return shdr.sh_type != SHT_NULL && shdr.sh_type != SHT_NOBITS; }
     Section(const Object *, Off off);
     Section() : shdr{}, elf{}, name("null") { }
     Section(const Section &) = delete;

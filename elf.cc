@@ -401,7 +401,7 @@ Object::getInterpreter() const
 Elf::Object::sptr Object::debugData() const {
     if (debugData_ == nullptr) {
 #ifdef WITH_LZMA
-        auto &gnu_debugdata = getSection(".gnu_debugdata", SHT_PROGBITS );
+        auto &gnu_debugdata = getSection(".gnu_debugdata", SHT_NULL );
         if (gnu_debugdata) {
            auto reader = make_shared<const LzmaReader>(gnu_debugdata.io());
            debugData_ = make_shared<Object>(context, reader, true);
@@ -493,7 +493,7 @@ const Section &
 Object::getDebugSection(const string &name, Word type) const
 {
     const auto &local = getSection(name, type);
-    if (local && local.shdr.sh_type != SHT_NOBITS)
+    if (local)
         return local;
     const Object *debug = getDebug();
     if (debug != nullptr)
@@ -610,7 +610,7 @@ Object::getDebug() const
     // If that doesn't work, maybe the gnu_debuglink is valid?
     if (!debugObject) {
         // if we have a debug link, use that to attempt to find the debug file.
-        const auto &hdr = getSection(".gnu_debuglink", SHT_PROGBITS);
+        const auto &hdr = getSection(".gnu_debuglink", SHT_NULL);
         if (hdr) {
             auto link = hdr.io()->readString(0);
             auto dir = std::filesystem::path(stringify(*io)).parent_path();
