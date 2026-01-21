@@ -358,6 +358,9 @@ RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t o
     auto [ end, ec ] = std::to_chars(chars.begin(), chars.end(), versionExpected, 16);
     std::string name = std::string(chars.begin(), end) + ".json";
     std::ifstream in(name);
+    if (!in.good())
+       throw (Exception() << "failed to open " << name );;
+
     parseObject(in, [&](std::istream &is, std::string_view field) {
         if (field == "free_threaded") {
             auto offset = parseInt<uint64_t>(is);
@@ -913,7 +916,7 @@ void Target::dumpBacktrace(std::ostream &os) const {
                         os << "\n";
                     }
                 } else {
-                    os << "(unknown frame type " << typeName(pyType(executable)) << ")";
+                    os << "(non code frame " << typeName(pyType(executable)) << ")";
                 }
                 os << "\n";
                 frame = fetch(frameOffs.previous(frame));
