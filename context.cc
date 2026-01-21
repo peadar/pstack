@@ -97,7 +97,10 @@ Context::Context()
 std::shared_ptr<Dwarf::Info>
 Context::findDwarf(const std::filesystem::path &filename)
 {
-    return findDwarf(findImage(filename));
+   Elf::Object::sptr image = findImage(filename);
+   if (!image)
+      return nullptr;
+   return findDwarf(image);
 }
 
 debuginfod_client *
@@ -127,7 +130,10 @@ Context::getDebuginfodClient()
 std::shared_ptr<Dwarf::Info>
 Context::findDwarf(const Elf::BuildID &bid)
 {
-    return findDwarf(findImage(bid));
+   Elf::Object::sptr obj = findImage(bid);
+   if (!obj)
+      return nullptr;
+   return findDwarf(obj);
 }
 
 Dwarf::Info::sptr
