@@ -447,7 +447,14 @@ operator << (std::ostream &os, const JSON<Dwarf::DIE::Attribute> &o)
                     writer.field("value", attr.value().addr);
                     break;
                 }
-                case DW_FORM_exprloc:
+                case DW_FORM_exprloc: {
+                   const auto &block = Dwarf::Block(attr);
+                   auto io = attr.die.getUnit()->dwarf->debugInfo.io()->view("exprloc", block.offset, block.length);
+                   std::vector<char> buf(block.length);
+                   io->read(buf.data(), buf.size());
+                   write.field("value", std::string_view(io.data(), io.size()));
+                   break;
+                }
                 case DW_FORM_block1:
                 case DW_FORM_block2:
                 case DW_FORM_block4:

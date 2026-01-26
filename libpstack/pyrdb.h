@@ -5,7 +5,7 @@ namespace pstack::Py {
 
 // Forward declarations.
 struct OffsetContainer;
-struct RootOffsets;
+struct Offsets;
 struct PyTypes;
 class Target;
 
@@ -18,22 +18,23 @@ struct _gil_runtime_state;
 struct PyBytesObject;
 struct PyCodeObject;
 struct _PyDebugOffsets;
+struct PyDictKeysObject;
+struct PyDictObject;
+struct PyDictValues;
+struct PyHeapTypeObject;
 struct _PyInterpreterFrame;
 struct PyInterpreterState;
-struct PyObject;
-struct _PyRuntimeState;
-struct _PyStackChunk;
-using _PyStackRef = uintptr_t;
-struct PyThreadState;
-struct PyTypeObject;
-struct PyUnicodeObject;
-struct PyTupleObject;
 struct PyListObject;
 struct PyLongObject;
 struct PyNoneType;
-struct PyDictObject;
-struct PyDictKeysObject;
-struct PyDictValues;
+struct PyObject;
+struct _PyRuntimeState;
+struct _PyStackChunk;
+struct PyThreadState;
+struct PyTupleObject;
+struct PyTypeObject;
+struct PyUnicodeObject;
+using _PyStackRef = uintptr_t;
 
 union _Py_CODEUNIT;
 
@@ -112,7 +113,7 @@ public:
     Procman::Process &proc;
 private:
     Remote<_PyRuntimeState *> pyRuntime;
-    std::unique_ptr<RootOffsets> offsets;
+    std::unique_ptr<Offsets> offsets;
     std::unique_ptr<PyTypes> types;
     void dumpBacktrace(std::ostream &os) const;
     Remote<PyTypeObject *> pyType(Remote<PyObject *>) const;
@@ -154,9 +155,7 @@ public:
     // Helper to walk dict entries and call visitor for each key/value pair
     template<typename Visitor>
     void walkDictEntries(Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values, Visitor visitor) const;
-    // Helper to dump dict contents given keys and values
     void dumpKeyValues(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const;
-    // Helper to dump slots from a type's tp_dict
     void dumpSlots(std::ostream &os, Remote<PyTypeObject *> type, const Remote<PyObject *> &obj) const;
 
 
