@@ -336,10 +336,10 @@ mainExcept(int argc, char *argv[])
 
     for (auto &loaded : process->objects) {
         size_t count = 0;
-        auto findSymbols = [&]( auto table ) {
-           for (const auto &sym : *table) {
+        auto findSymbols = [&]( auto &table ) {
+           for (const auto &sym : table) {
                for (auto &pattern : patterns) {
-                   auto name = table->name(sym);
+                   auto name = table.name(sym);
                    if (globmatch(pattern, name)) {
                        store.add(ListedSymbol(sym, loaded.first, name, loaded.second.name()));
                        if (context.verbose > 1 || showsyms)

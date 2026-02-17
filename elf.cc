@@ -196,21 +196,21 @@ GnuHash::findSymbol(const char *name) const {
     }
 }
 
-SymbolSection *Object::debugSymbols() const {
+SymbolSection &Object::debugSymbols() const {
     return getSymtab(debugSymbols_, ".symtab", SHT_SYMTAB);
 }
 
-SymbolSection *Object::dynamicSymbols() const {
+SymbolSection &Object::dynamicSymbols() const {
     return getSymtab(dynamicSymbols_, ".dynsym", SHT_DYNSYM);
 }
 
-SymbolSection *
+SymbolSection &
 Object::getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type) const {
     if (table == nullptr) {
         const Section &sec {getDebugSection( name, type )};
         table = std::make_unique<SymbolSection>(sec.io(), getLinkedSection(sec).io());
     }
-    return table.get();
+    return *table;
 }
 
 Object::Object(Context &context_, Reader::csptr io_, bool isDebug)
@@ -250,7 +250,7 @@ const Object::SectionHeaders & Object::sectionHeaders() const {
        }
        sectionHeaders_->reserve(headerCount);
        for (Elf::Off off = elfHeader.e_shoff, i = 0; i < headerCount; i++) {
-           sectionHeaders_->push_back(std::make_unique<Section>(this, off));
+           sectionHeaders_->push_back(std::make_unique<Section>(this, off, i));
            if (i == 0 && elfHeader.e_shnum == 0) {
                headerCount = (*sectionHeaders_)[0]->shdr.sh_size;
                sectionHeaders_->reserve(headerCount);
@@ -450,9 +450,9 @@ Object::findSym(auto &table, Addr addr, int type) {
 std::optional<std::pair<Sym, string>>
 Object::findSymbolByAddress(Addr addr, int type)
 {
-    if (auto res = findSym(*debugSymbols(), addr, type); res)
+    if (auto res = findSym(debugSymbols(), addr, type); res)
         return res;
-    if (auto res = findSym(*dynamicSymbols(), addr, type); res)
+    if (auto res = findSym(dynamicSymbols(), addr, type); res)
         return res;
     if (auto dd = debugData(); dd) {
         auto debugSym = dd->findSymbolByAddress(addr, type);
@@ -547,7 +547,7 @@ Object::findDebugSymbol(const string &name)
 {
     // Cache all debug symbols the first time we scan them.
     //
-    auto &syms = *debugSymbols();
+    auto &syms = debugSymbols();
     if (!cachedSymbols) {
        cachedSymbols = std::make_unique<std::map<std::string, size_t>>();
        size_t idx = 0;
@@ -681,7 +681,7 @@ SymHash::findSymbol(const string &name)
     return std::make_pair(0, undef());
 }
 
-Section::Section(const Object *elf, Off off) : shdr{}, elf(elf) {
+Section::Section(const Object *elf, Off off, size_t idx) : shdr{}, index{idx}, elf(elf) {
     elf->io->readObj(off, &shdr);
 }
 

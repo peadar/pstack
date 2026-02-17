@@ -6,14 +6,14 @@
 void
 processImage( pstack::Elf::Object::sptr &obj, pstack::Dwarf::Info::sptr &dwarf, const std::set<std::string_view> &funcs)
 {
-   auto *syms = obj->debugSymbols();
-   for (const auto &sym : *syms) {
+   auto &syms = obj->debugSymbols();
+   for (const auto &sym : syms) {
       if (sym.st_size == 0)
          continue;
       const pstack::Elf::Phdr * seg = obj->getSegmentForAddress( sym.st_value );
       if ((seg->p_flags & pstack::Elf::Word(PF_X)) == 0)
          continue;
-      auto name = syms->name(sym);
+      auto name = syms.name(sym);
       if (!funcs.empty() && funcs.count(name) == 0)
          continue;
       pstack::Procman::CodeLocation loc(dwarf, seg, sym.st_value);
@@ -42,7 +42,7 @@ processImage( pstack::Elf::Object::sptr &obj, pstack::Dwarf::Info::sptr &dwarf, 
       // offset of the last Call Frame Instruction, and from the symbol (they
       // should generally match)
       std::cout << maxoff << "\t" << end - sym.st_value + 1 << "\t"
-         << sym.st_size << "\t" << syms->name( sym ) << "\n";
+         << sym.st_size << "\t" << syms.name( sym ) << "\n";
    }
 }
 

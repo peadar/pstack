@@ -195,10 +195,11 @@ class Section {
     mutable Reader::csptr io_;
 public:
     Shdr shdr;
+    size_t index;
     const Elf::Object *elf;
     std::string name;
     explicit operator bool() const { return shdr.sh_type != SHT_NULL && shdr.sh_type != SHT_NOBITS; }
-    Section(const Object *, Off off);
+    Section(const Object *, Off off, size_t idx);
     Section() : shdr{}, elf{}, name("null") { }
     Section(const Section &) = delete;
     Section(Section &&) = delete;
@@ -242,6 +243,7 @@ class SymbolSection {
     Reader::csptr strings;
     ReaderArray<Sym> array;
 public:
+    operator bool() const { return symbols && symbols->size(); }
     using iterator = ReaderArray<Sym>::iterator;
     iterator begin() { return array.begin(); }
     auto end() { return array.end(); }
@@ -325,8 +327,8 @@ public:
     // text description of a symbol's version
     std::optional<std::string> symbolVersion(VersionIdx) const;
 
-    SymbolSection *debugSymbols() const;
-    SymbolSection *dynamicSymbols() const;
+    SymbolSection &debugSymbols() const;
+    SymbolSection &dynamicSymbols() const;
     const SymbolVersioning &symbolVersions() const;
 
     BuildID getBuildID() const;
@@ -360,7 +362,7 @@ private:
     std::unique_ptr<std::map<std::string, size_t>> cachedSymbols;
 
     ProgramHeadersByType programHeaders_;
-    SymbolSection *getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type) const;
+    SymbolSection &getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type) const;
     Dynamic &dynamic() const;
 
     const SectionHeaders &sectionHeaders() const;
