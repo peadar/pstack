@@ -5,8 +5,8 @@
 namespace pstack {
 
 InflateReader::InflateReader(size_t inflatedSize, const Reader &upstream)
-    : MemReader(std::string("inflated content from ") + stringify(upstream),
-          inflatedSize, new char[inflatedSize])
+    : AbstractMemReader(std::string("inflated content from ") + stringify(upstream))
+    , data_(inflatedSize)
 {
     char xferbuf[32768];
 
@@ -18,7 +18,7 @@ InflateReader::InflateReader(size_t inflatedSize, const Reader &upstream)
 
     stream.avail_out = inflatedSize;
     using bytep = Bytef *;
-    stream.next_out = bytep(data);
+    stream.next_out = bytep(data());
     bool eof = false;
     size_t inputOffset = 0;
     for (bool done = false; !done; ) {
@@ -43,8 +43,4 @@ InflateReader::InflateReader(size_t inflatedSize, const Reader &upstream)
     inflateEnd(&stream);
 }
 
-InflateReader::~InflateReader()
-{
-   delete[] data;
-}
 }

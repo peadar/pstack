@@ -37,12 +37,18 @@ FileReader::~FileReader()
     ::close(file);
 }
 
-MemReader::MemReader(const string &descr, size_t len_, const char *data_)
+AbstractMemReader::AbstractMemReader(const string &descr)
     : descr(descr)
-    , len(len_)
-    , data(data_)
 {
 }
+
+MemReader::MemReader(const string &descr, size_t len, const char *data)
+    : AbstractMemReader(descr)
+    , size_(len)
+    , data_(data)
+{
+}
+
 
 namespace {
 
@@ -59,24 +65,24 @@ const char *ptroff(const void *base, uintptr_t off) {
 
 
 size_t
-MemReader::read(Off off, size_t count, char *ptr) const
+AbstractMemReader::read(Off off, size_t count, char *ptr) const
 {
-    if (off > Off(len))
+    if (off > Off(size()))
         throw (Exception() << "read past end of memory");
-    size_t rc = std::min(count, len - size_t(off));
-    memcpy(ptr, ptroff(data, off), rc);
+    size_t rc = std::min(count, size() - size_t(off));
+    memcpy(ptr, ptroff(data(), off), rc);
     return rc;
 }
 
 void
-MemReader::describe(std::ostream &os) const
+AbstractMemReader::describe(std::ostream &os) const
 {
     os << descr;
 }
 
 string
-MemReader::readString(Off offset) const {
-   return string(ptroff(data, offset));
+AbstractMemReader::readString(Off offset) const {
+   return string(ptroff(data(), offset));
 }
 
 string
@@ -202,7 +208,7 @@ CacheReader::readString(Off off) const
 }
 
 MmapReader::MmapReader(Context &c, const string &name_, int fd)
-   : MemReader(name_, 0, nullptr)
+   : AbstractMemReader(name_)
 {
    if (fd == -1) {
       fd = c.openfile( name_ );
@@ -210,31 +216,30 @@ MmapReader::MmapReader(Context &c, const string &name_, int fd)
 
    struct stat s{};
    fstat(fd, &s);
-   len = s.st_size;
-   void *p = mmap(nullptr, len, PROT_READ, MAP_PRIVATE, fd, 0);
+   size_ = s.st_size;
+   data_ = static_cast<char *>(mmap(nullptr, size_, PROT_READ, MAP_PRIVATE, fd, 0));
    close(fd);
-   if (p == MAP_FAILED)
+   if (data_ == MAP_FAILED)
       throw (Exception() << "mmap failed: " << strerror(errno));
-   data = static_cast<char *>(p);
 }
 
 MmapReader::~MmapReader() {
-   munmap((void *)data, len);
+   munmap((void *)data_, size_);
 }
 
 class MemOffsetReader final : public MemReader {
    Reader::csptr upstream;
 public:
-   MemOffsetReader(const std::string &name, const MemReader *upstream_, Off offset, Off size)
-      : MemReader(name, size, ptroff(upstream_->data, offset))
+   MemOffsetReader(const std::string &name, const AbstractMemReader *upstream_, Off offset, Off size)
+      : MemReader(name, size, ptroff(upstream_->data(), offset))
       , upstream(upstream_->shared_from_this())
    {
    }
    std::string filename() const override { return upstream->filename(); }
 };
 
-MemReader::csptr
-MemReader::view(const std::string &name, Off offset, Off size) const {
+AbstractMemReader::csptr
+AbstractMemReader::view(const std::string &name, Off offset, Off size) const {
    return std::make_shared<MemOffsetReader>(name, this, offset, size);
 }
 
@@ -278,17 +283,16 @@ Reader::readSLEB128(Off off) const
     return readleb128<intmax_t>(ar.begin());
 }
 
-
 std::pair<uintmax_t, size_t>
-MemReader::readULEB128(Off off) const
+AbstractMemReader::readULEB128(Off off) const
 {
-    return readleb128<uintmax_t>(ptroff(data, off));
+    return readleb128<uintmax_t>(ptroff(data(), off));
 }
 
 std::pair<intmax_t, size_t>
-MemReader::readSLEB128(Off off) const
+AbstractMemReader::readSLEB128(Off off) const
 {
-    return readleb128<intmax_t>(ptroff(data, off));
+    return readleb128<intmax_t>(ptroff(data(), off));
 }
 
 }
