@@ -18,3 +18,4 @@ build
 py311
 compile_commands.json
 arm
+.claude
