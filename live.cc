@@ -260,17 +260,21 @@ static uintmax_t hex2int(std::string_view strv) {
 
 std::vector<AddressRange>
 Process::procAddressSpace(const std::string &fn) {
-    std::vector<AddressRange> rv;
-    // there can be many mappings, and we don't call this very often, so
-    // pre-allocate the space we need.
-    rv.reserve(10240);
-
-    std::string buf;
-    buf.reserve( 1024 );
     std::ifstream input{fn};
     if ( !input.is_open() || !input.good()){
          throw ( Exception() << "unable to open smaps file: " << strerror(errno) );
     }
+    return procAddressSpace(input);
+}
+
+std::vector<AddressRange>
+Process::procAddressSpace(std::istream &input) {
+    // there can be many mappings, and we don't call this very often, so
+    // pre-allocate the space we need.
+    std::vector<AddressRange> rv;
+    rv.reserve(10240);
+    std::string buf;
+    buf.reserve( 1024 );
     while (input && input.peek() != EOF) {
        // We could just use operator>> to stream each field of the line to the
        // relevant fields, but it is ridiculously slow, I Think mostly because
