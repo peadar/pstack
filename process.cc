@@ -109,7 +109,6 @@ namespace Procman {
 /*
  * convert a gregset_t to an Elf::CoreRegs
  */
-#ifndef __aarch64__
 void
 gregset2user(user_regs_struct &core, const gregset_t greg) {
 #if defined(__i386__)
@@ -140,14 +139,16 @@ gregset2user(user_regs_struct &core, const gregset_t greg) {
     core.rcx = greg[REG_RCX];
     core.rsp = greg[REG_RSP];
     core.rip = greg[REG_RIP];
-#elif defined(__arm__)
-    // ARM has unfied types for NT_PRSTATUS and ucontext, and the offsets are
-    // actually the DWARF register numbers, too.
-    for (int i = 0; i < ELF_NGREG)
+#elif defined(__aarch64__)
+    // For ARM64, copy the general purpose registers
+    for (int i = 0; i < 31; i++)
         core.regs[i] = greg[i];
+    core.sp = greg[31];
+    core.pc = greg[32];
+#else
+    #error "Unsupported architecture for register conversion"
 #endif
 }
-#endif
 
 
 Process::Process(pstack::Context &context_, Elf::Object::sptr exec, Reader::sptr memory)
