@@ -350,10 +350,12 @@ mainExcept(int argc, char *argv[])
            }
         };
         auto obj = loaded.second.object(process->context);
-        findSymbols( obj->dynamicSymbols() );
-        findSymbols( obj->debugSymbols() );
-        if (context.verbose)
-            *context.debug << "found " << count << " symbols in " << *obj->io << endl;
+        if (obj) {
+            findSymbols( obj->dynamicSymbols() );
+            findSymbols( obj->debugSymbols() );
+            if (context.verbose)
+                *context.debug << "found " << count << " symbols in " << *obj->io << endl;
+        }
     }
     if (showsyms)
        exit(0);
