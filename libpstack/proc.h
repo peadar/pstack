@@ -254,6 +254,7 @@ class Process : public ps_prochandle {
 protected:
     td_thragent_t *agent;
     static AddressSpace procAddressSpace(const std::string &fn); //  utility to parse contents of /proc/pid/maps
+    static AddressSpace procAddressSpace(std::istream &); // as above, but from an alrady open stream.
     virtual bool loadSharedObjectsFromFileNote() = 0;
     [[nodiscard]] virtual std::optional<std::string> getTaskName( lwpid_t ) const;
 
