@@ -5,12 +5,14 @@
 namespace pstack {
 // A Reader that zlib inflates the underlying downstream reader.
 // Currently requires knowing the resulting output size.
-class InflateReader : public MemReader {
+class InflateReader : public AbstractMemReader {
+    std::vector<char> data_;
     InflateReader(const InflateReader &) = delete;
     InflateReader() = delete;
 public:
+    Off size() const override { return data_.size(); }
+    const char *data() const override { return data_.data(); }
     InflateReader(size_t inflatedSize, const Reader &upstream);
-    ~InflateReader();
 };
 }
 

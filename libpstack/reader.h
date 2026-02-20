@@ -142,25 +142,38 @@ public:
     std::string filename() const override { return upstream->filename(); }
 };
 
-class MemReader : public Reader {
+class AbstractMemReader : public Reader {
 protected:
     std::string descr;
 public:
-    size_t len;
-    const char *data;
     size_t read(Off off, size_t count, char *ptr) const override;
-    MemReader(const std::string &, size_t, const char *);
     void describe(std::ostream &os) const override;
-    Off size() const override { return len; }
     std::string filename() const override { return "in-memory"; }
     std::string readString(Off offset) const override;
     csptr view(const std::string &name, Off start, Off length=std::numeric_limits<Off>::max()) const override;
     std::pair<uintmax_t, size_t> readULEB128(Off off) const override;
     std::pair<intmax_t, size_t> readSLEB128(Off off) const override;
+    AbstractMemReader(const std::string &name);
+    virtual const char *data() const = 0;
 };
 
-class MmapReader final : public MemReader {
+class MemReader : public AbstractMemReader {
+    size_t size_;
+    const char *data_;
 public:
+    MemReader(const std::string &name, size_t, const char *);
+    Off size() const override { return size_; }
+    const char *data() const override { return data_; }
+};
+
+
+class MmapReader final : public AbstractMemReader {
+    char *data_;
+    size_t size_;
+public:
+    const char *data() const override { return data_; }
+    Off size() const override { return size_; }
+
     MmapReader(Context &, const std::string &name_, int fd = - 1);
     ~MmapReader() override;
     MmapReader(const MmapReader &) = delete;
