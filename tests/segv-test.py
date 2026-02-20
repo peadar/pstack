@@ -4,7 +4,7 @@ import subprocess
 import coremonitor
 import pstack
 
-for cmd in [ "tests/segv", 'tests/segvrt' ]:
+for cmd in [ "./segv", './segvrt' ]:
    pstack_result, _ = pstack.JSON([cmd])
    frames = pstack_result[0]["ti_stack"]
 

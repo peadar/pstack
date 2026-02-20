@@ -12,7 +12,7 @@ PSTACK_BIN = os.environ.get("PSTACK_BIN", "pstack")
 CORE_STRATEGY = os.environ.get("PSTACK_CORE_STRATEGY", "child")
 
 def _run(cmd, mode, strategy ):
-    pstackArgs = ["./%s" % PSTACK_BIN, mode ]
+    pstackArgs = ["../%s" % PSTACK_BIN, mode ]
     if strategy == "core":
         with coremonitor.CoreMonitor(cmd) as cm:
             pstackArgs.append(cm.core())
@@ -44,6 +44,6 @@ def JSON(cmd, strategy=CORE_STRATEGY):
     return json.loads(pstack), target
 
 def dumpJSON(image):
-    args = ["./%s" % PSTACK_BIN, "-D", image ]
+    args = ["../%s" % PSTACK_BIN, "-D", image ]
     pstackOutput = subprocess.check_output(args, universal_newlines=True)
     return json.loads(pstackOutput)

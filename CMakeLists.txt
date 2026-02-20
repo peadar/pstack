@@ -166,27 +166,6 @@ if (NOT ret EQUAL \"0\")
 endif()
 ")
 
-add_test(NAME args COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/args-test.py)
-add_test(NAME badfp COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/badfp-test.py)
-add_test(NAME basic COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_SOURCE_DIR}/tests/basic-test.py)
-add_test(NAME cpp COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp-test.py)
-add_test(NAME noreturn COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/noreturn-test.py)
-add_test(NAME segv COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_SOURCE_DIR}/tests/segv-test.py)
-add_test(NAME thread COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/thread-test.py)
-add_test(NAME jsondump COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/dump-test.py)
-add_test(NAME procself COMMAND tests/procself)
-
-# need to remove this test for environments with more restrictive ptrace
-if (PTRACE_TESTS)
-add_test(NAME suspend COMMAND tests/suspend)
-endif()
-if (Python3_Development_FOUND OR Python2_Development_FOUND)
-   add_test(NAME python_path_test COMMAND tests/python_path_test)
-endif()
-if (PYTHON3 AND Python3_Development_FOUND)
-   add_test(NAME pydict COMMAND env PSTACK_BIN=${PSTACK_BIN}${CMAKE_CURRENT_SOURCE_DIR}/tests/pydict_test.py)
-endif()
-
 add_subdirectory(tests)
 
 # for automake and rpmbuild

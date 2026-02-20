@@ -40,4 +40,4 @@ class CoreMonitor( object ):
       return None
 
 if __name__ == "__main__":
-   cm = CoreMonitor([ "tests/segv", "hello" ] )
+   cm = CoreMonitor([ "./segv", "hello" ] )
