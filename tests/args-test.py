@@ -3,6 +3,10 @@
 
 import pstack
 import re
+import os
 
-text, _ = pstack.TEXT(["tests/args"])
-assert re.search('aFunctionWithArgs.*msg=0x[0-9a-f]+ "tweet", value=42', text)
+print("test dir: %s" % os.getcwd())
+
+text, stderr = pstack.TEXT(["./args"])
+assert re.search('aFunctionWithArgs.*msg=0x[0-9a-f]+ "tweet", value=42', text), \
+      f"expected to see frame for 'aFunctionWithArgs' in {text}, error {stderr}"

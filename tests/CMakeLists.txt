@@ -54,3 +54,29 @@ add_custom_target(basic-no-unwind ALL DEPENDS basic basic-no-unwind-gen)
 
 target_link_options(basic-zlib PUBLIC -Wl,--compress-debug-sections=zlib)
 target_link_options(basic-zlib-gnu PUBLIC -Wl,--compress-debug-sections=zlib-gnu)
+
+enable_testing()
+
+add_test(NAME args COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/args-test.py)
+add_test(NAME badfp COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/badfp-test.py)
+add_test(NAME basic COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/basic-test.py)
+add_test(NAME cpp COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/cpp-test.py)
+add_test(NAME noreturn COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/noreturn-test.py)
+add_test(NAME segv COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/segv-test.py)
+add_test(NAME thread COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/thread-test.py)
+add_test(NAME jsondump COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/dump-test.py)
+add_test(NAME procself COMMAND procself)
+
+# Need to remove this test for environments with more restrictive ptrace
+if (PTRACE_TESTS)
+    add_test(NAME suspend COMMAND suspend)
+endif()
+
+if (Python3_Development_FOUND OR Python2_Development_FOUND)
+    add_test(NAME python_path_test COMMAND python_path_test)
+endif()
+
+if (PYTHON3 AND Python3_Development_FOUND)
+    add_test(NAME pydict COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/pydict_test.py)
+endif()
+

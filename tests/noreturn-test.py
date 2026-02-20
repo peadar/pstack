@@ -3,7 +3,7 @@
 
 import pstack
 
-process, _ = pstack.JSON(["tests/noreturn"])
+process, _ = pstack.JSON(["./noreturn"])
 stack = process[0]["ti_stack"]
 frames = [ frame for frame in stack if "die" in frame and frame["die"] == "thisFunctionWontReturn" ]
 assert len(frames) == 1, "we should see our function on the stack"

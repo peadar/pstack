@@ -9,7 +9,7 @@ if platform.machine() != "aarch64":
 
 for ex in basicBinaries:
     print("running for '%s'" % ex)
-    threads, _ = pstack.JSON(["tests/%s" % ex ])
+    threads, _ = pstack.JSON(["./%s" % ex ])
     assert len(threads) == 1
     thread = threads[0]
     stack = thread["ti_stack"]
