@@ -27,7 +27,12 @@ LiveProcess::executableImage() {
 }
 
 LiveProcess::LiveProcess(Context &context, Elf::Object::sptr &ex, pid_t pid_, bool alreadyStopped)
-    : Process( context, ex, std::make_shared<CacheReader>(std::make_shared<LiveReader>(context, pid_, "mem")))
+    : LiveProcess(context, ex, std::make_shared<CacheReader>(std::make_shared<LiveReader>(context, pid_, "mem")))
+{
+}
+
+LiveProcess::LiveProcess(Context &context, Elf::Object::sptr &ex, pid_t pid_, Reader::csptr memory, bool alreadyStopped)
+    : Process( context, ex, reader )
     , pid(pid_)
 {
     if (alreadyStopped)
