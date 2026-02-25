@@ -346,7 +346,7 @@ public:
 };
 
 struct LiveThreadList;
-class LiveProcess final : public Process {
+class LiveProcess : public Process {
     pid_t pid;
 
     struct Lwp {
@@ -358,6 +358,7 @@ class LiveProcess final : public Process {
 public:
     // attach to existing process.
     LiveProcess(Context &, Elf::Object::sptr &, pid_t, bool alreadyStopped=false);
+    LiveProcess(Context &, Elf::Object::sptr &, pid_t, Reader::sptr memory, bool alreadyStopped=false);
     LiveProcess(const LiveProcess &) = delete;
     LiveProcess(LiveProcess &&) = delete;
     LiveProcess &operator = (const LiveProcess &) = delete;
@@ -414,7 +415,7 @@ public:
     std::string filename() const override { return "process memory"; }
 };
 
-class CoreProcess final : public Process {
+class CoreProcess : public Process {
     std::vector<Elf::NoteDesc> notes;
     std::map<lwpid_t, size_t> lwpToPrStatusIdx;
     prpsinfo_t prpsinfo;

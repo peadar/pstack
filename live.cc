@@ -27,12 +27,18 @@ LiveProcess::executableImage() {
 }
 
 LiveProcess::LiveProcess(Context &context, Elf::Object::sptr &ex, pid_t pid_, bool alreadyStopped)
-    : Process( context, ex, std::make_shared<CacheReader>(std::make_shared<LiveReader>(context, pid_, "mem")))
+    : LiveProcess(context, ex, pid_, std::make_shared<CacheReader>(std::make_shared<LiveReader>(context, pid_, "mem")), alreadyStopped)
+{
+}
+
+LiveProcess::LiveProcess(Context &context, Elf::Object::sptr &ex, pid_t pid_, Reader::sptr memory, bool alreadyStopped)
+    : Process( context, ex, memory )
     , pid(pid_)
 {
     if (alreadyStopped)
        stoppedLWPs[pid].stopCount = 1;
 }
+
 
 Reader::csptr LiveProcess::getAUXV() const {
     return std::make_shared<LiveReader>(context, pid, "auxv");
