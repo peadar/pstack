@@ -8,7 +8,7 @@
 #include <iostream>
 #include <limits>
 #include <set>
-#include <sys/ucontext.h>
+#include <ucontext.h>
 #include <sys/wait.h>
 #include <csignal>
 #include <sys/signal.h>

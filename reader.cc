@@ -69,7 +69,7 @@ AbstractMemReader::read(Off off, size_t count, char *ptr) const
 {
     if (off > Off(size()))
         throw (Exception() << "read past end of memory");
-    size_t rc = std::min(count, size() - size_t(off));
+    size_t rc = std::min(count, size_t(size()) - size_t(off));
     memcpy(ptr, ptroff(data(), off), rc);
     return rc;
 }

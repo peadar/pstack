@@ -120,9 +120,7 @@ using DwarfNames = std::vector<std::pair<int, std::string_view>>;
 // "general" registers.
 using ArchRegs = std::unordered_map<std::string_view, DwarfNames>;
 
-#ifndef __aarch64__
 void gregset2user(user_regs_struct &core, const gregset_t greg);
-#endif
 
 struct Get {
    template <typename T> using Val  = T;
