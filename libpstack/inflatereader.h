@@ -3,6 +3,9 @@
 #include "libpstack/reader.h"
 
 namespace pstack {
+
+bool zlibAvailable();
+
 // A Reader that zlib inflates the underlying downstream reader.
 // Currently requires knowing the resulting output size.
 class InflateReader : public AbstractMemReader {

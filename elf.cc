@@ -1,12 +1,8 @@
 #include "libpstack/elf.h"
 #include "libpstack/stringify.h"
 #include "libpstack/ioflag.h"
-#ifdef WITH_ZLIB
 #include "libpstack/inflatereader.h"
-#endif
-#ifdef WITH_LZMA
 #include "libpstack/lzmareader.h"
-#endif
 
 #include <algorithm>
 #include <filesystem>
@@ -400,20 +396,20 @@ Object::getInterpreter() const
 
 Elf::Object::sptr Object::debugData() const {
     if (debugData_ == nullptr) {
-#ifdef WITH_LZMA
-        auto &gnu_debugdata = getSection(".gnu_debugdata", SHT_NULL );
-        if (gnu_debugdata) {
-           auto reader = make_shared<const LzmaReader>(gnu_debugdata.io());
-           debugData_ = make_shared<Object>(context, reader, true);
+        if (lzmaAvailable()) {
+            auto &gnu_debugdata = getSection(".gnu_debugdata", SHT_NULL );
+            if (gnu_debugdata) {
+               auto reader = make_shared<const LzmaReader>(gnu_debugdata.io());
+               debugData_ = make_shared<Object>(context, reader, true);
+            }
+        } else {
+            static bool warned = false;
+            if (!warned && context.debug != nullptr) {
+                *context.debug << "warning: lzma not available at runtime - "
+                    "can't decode debug data in " << *io << "\n";
+                warned = true;
+            }
         }
-#else
-        static bool warned = false;
-        if (!warned && context.debug != nullptr) {
-            *context.debug << "warning: no compiled support for LZMA - "
-                "can't decode debug data in " << *io << "\n";
-            warned = true;
-        }
-#endif
     }
     return debugData_;
 }
@@ -696,50 +692,46 @@ Reader::csptr Section::io() const {
 
     // deal with two possible zlib-compressed sections. The sane,
     // "SHF_COMPRESSED" version, and the hacky ".zdebug_" versions.
-#ifndef WITH_ZLIB
     bool wantedZlib = false;
-#endif
 
     auto rawIo = elf->io->view(name, shdr.sh_offset, shdr.sh_size);
     if ((shdr.sh_flags & SHF_COMPRESSED) != 0) {
-#ifdef WITH_ZLIB
-        auto chdr = rawIo->readObj<Chdr>(0);
-        io_ = make_shared<InflateReader>(
-              chdr.ch_size,
-              *rawIo->view("ZLIB compressed content after chdr", sizeof chdr, shdr.sh_size - sizeof chdr));
-#else
-        wantedZlib = true;
-#endif
+        if (zlibAvailable()) {
+            auto chdr = rawIo->readObj<Chdr>(0);
+            io_ = make_shared<InflateReader>(
+                  chdr.ch_size,
+                  *rawIo->view("ZLIB compressed content after chdr", sizeof chdr, shdr.sh_size - sizeof chdr));
+        } else {
+            wantedZlib = true;
+        }
     } else if (name.rfind(".zdebug_", 0) == 0) {
         unsigned char sig[12];
         rawIo->readObj(0, sig, sizeof sig);
         if (std::memcmp((const char *)sig, "ZLIB", 4) == 0) {
-#ifdef WITH_ZLIB
-            uint64_t sz = 0;
-            for (size_t i = 4; i < 12; ++i) {
-                sz <<= 8;
-                sz |= sig[i];
+            if (zlibAvailable()) {
+                uint64_t sz = 0;
+                for (size_t i = 4; i < 12; ++i) {
+                    sz <<= 8;
+                    sz |= sig[i];
+                }
+                io_ = make_shared<InflateReader>(
+                      sz,
+                      *rawIo->view("ZLIB compressed content after magic signature", sizeof sig, sz));
+            } else {
+                wantedZlib = true;
             }
-            io_ = make_shared<InflateReader>(
-                  sz,
-                  *rawIo->view("ZLIB compressed content after magic signature", sizeof sig, sz));
-#else
-            wantedZlib = true;
-#endif
         }
     } else {
         io_ = rawIo;
     }
-#ifndef WITH_ZLIB
     if (wantedZlib) {
         static bool warned = false;
         if (!warned && elf->context.debug) {
             warned = true;
-            *(elf->context.debug) <<"warning: no support configured for compressed debug info in section "
+            *(elf->context.debug) << "warning: zlib not available at runtime, cannot decompress section "
                 << name << " of " << *elf->io << std::endl;
         }
     }
-#endif
     if (io_ == nullptr)
         io_ = make_shared<NullReader>();
     return io_;

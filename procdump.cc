@@ -1,6 +1,4 @@
-extern "C" {
-#include <thread_db.h>
-}
+#include "libpstack/threaddb.h"
 #include <iostream>
 
 #define T(a, b) case a: return os << #a " (" b ")";

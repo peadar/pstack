@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 set(PSTACK_SOVERSION 2.17)
-set(PSTACK_VERSION 2.17.3)
+set(PSTACK_VERSION 2.17.4)
 project(pstack LANGUAGES C CXX VERSION "${PSTACK_VERSION}" )
 
 include (GNUInstallDirs)
@@ -18,12 +18,10 @@ set(PSTACK_BIN "pstack" CACHE STRING "Name of the 'pstack' binary")
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/" CACHE STRING "Rpath to install for binaries or the empty string")
-set(LIBTYPE "SHARED" CACHE STRING "Build libraries as STATIC or SHARED")
 option(TIDY "Run clang-tidy on the source" False)
 
-find_library(LTHREADDB NAMES thread_db PATHS (/usr/lib /usr/local/lib))
-find_package(LibLZMA)
-find_package(ZLIB)
+find_package(LibLZMA REQUIRED)
+find_package(ZLIB REQUIRED)
 
 if (PYTHON2)
    find_package(Python2 COMPONENTS Development)
@@ -60,18 +58,10 @@ add_definitions("-fno-omit-frame-pointer")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Make sure to use the local libpstack headers rather than what's installed.
 include_directories(${CMAKE_SOURCE_DIR})
+include_directories(${ZLIB_INCLUDE_DIRS})
 
-if (LIBLZMA_FOUND)
-   set(lzmasrc lzma.cc)
-   add_definitions("-DWITH_LZMA")
-   include_directories(${LIBLZMA_INCLUDES})
-endif()
+include_directories(${LIBLZMA_INCLUDE_DIRS})
 
-if (ZLIB_FOUND)
-   set(inflatesrc inflate.cc)
-   add_definitions("-DWITH_ZLIB")
-   include_directories(${ZLIB_INCLUDES})
-endif()
 
 if (Python3_Development_FOUND OR Python2_Development_FOUND)
    set(pysrc python.cc)
@@ -95,7 +85,7 @@ endif()
 
 add_definitions("-g3")
 
-add_library(dwelf ${LIBTYPE}
+add_library(dwelf_objects OBJECT
          dwarf_die.cc
          dwarf_frame.cc
          dwarf_info.cc
@@ -109,35 +99,43 @@ add_library(dwelf ${LIBTYPE}
          elf.cc
          flags.cc
          reader.cc
-         ${inflatesrc}
-         ${lzmasrc}
+         inflate.cc
+         lzma.cc
          )
 
-add_library(procman ${LIBTYPE} dead.cc self.cc live.cc process.cc proc_service.cc
-    dwarfproc.cc procdump.cc ${stubsrc} ${pysrc})
+add_library(procman_objects OBJECT dead.cc self.cc live.cc process.cc proc_service.cc
+    dwarfproc.cc procdump.cc threaddb.cc ${pysrc})
+
+add_library(dwelf SHARED $<TARGET_OBJECTS:dwelf_objects>)
+add_library(dwelf_static STATIC $<TARGET_OBJECTS:dwelf_objects>)
+set_target_properties(dwelf_static PROPERTIES OUTPUT_NAME dwelf_s)
+
+add_library(procman SHARED $<TARGET_OBJECTS:procman_objects>)
+add_library(procman_static STATIC $<TARGET_OBJECTS:procman_objects>)
+set_target_properties(procman_static PROPERTIES OUTPUT_NAME procman_s)
+
+option(LINK_STATIC "Link binaries against static libraries" OFF)
+if (LINK_STATIC)
+   set(PSTACK_LINK_LIBS procman_static dwelf_static)
+else()
+   set(PSTACK_LINK_LIBS dwelf procman)
+endif()
 
 add_executable(canal canal.cc)
 
 add_executable(${PSTACK_BIN} pstack.cc)
 
-target_link_libraries(procman ${LTHREADDB} dwelf dl)
-target_link_libraries(${PSTACK_BIN} dwelf procman)
-target_link_libraries(canal dwelf procman)
+target_link_libraries(procman dwelf dl)
+target_link_libraries(procman_static dwelf_static dl)
+target_link_libraries(${PSTACK_BIN} ${PSTACK_LINK_LIBS})
+target_link_libraries(canal ${PSTACK_LINK_LIBS})
+target_link_options(${PSTACK_BIN} PRIVATE -Wl,--export-dynamic)
+target_link_options(canal PRIVATE -Wl,--export-dynamic)
 
-set_target_properties(dwelf PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "${PSTACK_SOVERSION}" )
-set_target_properties(procman PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "${PSTACK_SOVERSION}" )
+set_target_properties(dwelf PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "${PSTACK_SOVERSION}")
+set_target_properties(procman PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "${PSTACK_SOVERSION}")
 
-if (ZLIB_FOUND)
-   target_link_libraries(dwelf ${ZLIB_LIBRARIES})
-else()
-   message(WARNING "no ZLIB support found")
-endif()
 
-if (LIBLZMA_FOUND)
-   target_link_libraries(dwelf ${LIBLZMA_LIBRARIES})
-else()
-   message(WARNING "no LZMA support found")
-endif()
 
 if ((NOT (Python3_Development_FOUND)) AND PYTHON3)
    message(WARNING "no python3 support found")
@@ -151,13 +149,13 @@ endif()
 add_library(hdbg SHARED heap.c)
 add_executable(hdmp hdmp.cc)
 add_executable(stackusers stackusers.cc)
-target_link_libraries(hdmp dwelf procman)
+target_link_libraries(hdmp ${PSTACK_LINK_LIBS})
 target_link_libraries(hdbg dl)
-target_link_libraries(stackusers dwelf procman)
+target_link_libraries(stackusers ${PSTACK_LINK_LIBS})
 
 install(TARGETS ${PSTACK_BIN} canal)
 install(TARGETS hdmp)
-install(TARGETS dwelf procman hdbg)
+install(TARGETS dwelf procman dwelf_static procman_static hdbg)
 install(FILES ${CMAKE_SOURCE_DIR}/pstack.1 DESTINATION share/man/man1 RENAME ${PSTACK_BIN}.1 )
 install(DIRECTORY libpstack DESTINATION include)
 install(CODE "execute_process (COMMAND setcap cap_sys_ptrace+ep ${DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/${PSTACK_BIN} RESULT_VARIABLE ret)

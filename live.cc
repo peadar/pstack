@@ -6,6 +6,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include <proc_service.h>
 #include <dirent.h>
 #include <err.h>
 #include <fcntl.h>
@@ -14,6 +15,9 @@
 #include <iostream>
 #include <utility>
 #include <fstream>
+
+// Reference ps_getpid to ensure proc_service.o is pulled in from the static library.
+[[maybe_unused]] static void *volatile ps_getpid_ref = reinterpret_cast<void *>( ps_getpid );
 
 namespace pstack::Procman {
 

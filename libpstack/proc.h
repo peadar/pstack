@@ -12,9 +12,7 @@
 #include <string_view>
 #include <sys/stat.h> // for ino_t
 #include <ucontext.h> // for gregset_t
-extern "C" { // sigh.
-#include <thread_db.h>
-}
+#include "libpstack/threaddb.h"
 
 #include "libpstack/dwarf.h"
 #include "libpstack/arch.h"
@@ -334,7 +332,7 @@ threadListCb(const td_thrhandle_t *thr, void *v)
 template <typename T> void
 Process::listThreads(const T &callback)
 {
-    td_ta_thr_iter(agent,
+    loadThreadDb()->ta_thr_iter(agent,
             threadListCb<T>,
             (void *)&callback, TD_THR_ANY_STATE, TD_THR_LOWEST_PRIORITY, TD_SIGNO_MASK, TD_THR_ANY_USER_FLAGS);
 }

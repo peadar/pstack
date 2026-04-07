@@ -7,6 +7,9 @@
 #include "libpstack/reader.h"
 
 namespace pstack {
+
+bool lzmaAvailable();
+
 /*
  * Provides an LZMA-decoded view of downstream. LZMA API allows random-access
  * to the data, and we cache each decompressed block as we decode it.

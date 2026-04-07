@@ -198,12 +198,14 @@ Process::load()
     }
 
     if (!context.options.nothreaddb) {
-        td_err_e the;
-        the = td_ta_new(this, &agent);
-        if (the != TD_OK) {
-            agent = nullptr;
-            if (context.verbose > 0 && the != TD_NOLIBTHREAD)
-                *context.debug << "failed to load thread agent: " << the << std::endl;
+        auto *tdb = loadThreadDb();
+        if (tdb) {
+            td_err_e the = tdb->ta_new(this, &agent);
+            if (the != TD_OK) {
+                agent = nullptr;
+                if (context.verbose > 0 && the != TD_NOLIBTHREAD)
+                    *context.debug << "failed to load thread agent: " << the << std::endl;
+            }
         }
     }
 
@@ -971,7 +973,8 @@ Process::~Process()
     // don't leave the VDSO in the cache - a new copy will be entered for a new
     // process.
     context.flush(vdsoImage);
-    td_ta_delete(agent);
+    if (auto *tdb = loadThreadDb())
+        tdb->ta_delete(agent);
 }
 
 void
@@ -1250,7 +1253,7 @@ Process::getStacks() {
     if (agent) {
        listThreads([this, &stacks] ( const td_thrhandle_t *thr) {
           td_thrinfo_t info;
-          if (td_thr_get_info(thr, &info) == TD_OK) {
+          if (loadThreadDb()->thr_get_info(thr, &info) == TD_OK) {
              auto stack = stacks.find(info.ti_lid);
              if (stack != stacks.end()) {
                 stack->second.threadInfo = info;
