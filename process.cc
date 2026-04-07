@@ -78,7 +78,7 @@ operator << (std::ostream &os, const JSON<Procman::Lwp, Procman::Process *> &ts)
    }
    return jo
       .field("ti_lid", lwp.id)
-      .field("name", *lwp.name)
+      .field("name", lwp.name)
       .field("ti_stack", lwp.stack, ts.context);
 }
 
