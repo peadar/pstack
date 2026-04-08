@@ -99,7 +99,10 @@ Context::Context()
 std::shared_ptr<Dwarf::Info>
 Context::findDwarf(const std::filesystem::path &filename)
 {
-    return findDwarf(findImage(filename));
+    auto image = findImage(filename);
+    if (image == nullptr)
+        return nullptr;
+    return findDwarf(std::move(image));
 }
 
 debuginfod_client *
@@ -319,7 +322,7 @@ std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, boo
             std::cerr << "\n";
         }
         if (fd >= 0) {
-            res = openImage( path, fd, true );
+            res = openImage( path, fd, isDebug );
             free(path);
             if (verbose)
                 *debug << "fetched " << *res->io << " for " << bid << " with debuginfod\n";

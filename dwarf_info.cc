@@ -269,8 +269,6 @@ Info::getAltDwarf() const
         altDwarf = elf->context.findDwarf(getAltImageName());
         altImageLoaded = true;
     }
-    if (altDwarf == nullptr)
-        throw (Exception() << "no alt-dwarf found");
     return altDwarf;
 }
 
