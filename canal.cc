@@ -299,6 +299,7 @@ mainExcept(int argc, char *argv[])
           "change previous 'f' option to include all addresses in range ['f' addr, 'e' addr)",
           [&](const char *p) { searchaddrs.back().second = strtoul(p, 0, 0); })
     .add("wordsize", 'w', "wordsize(16 or 32)", "consider address ranges as wordsize-bit values", Flags::set( wordsize ) )
+    .add("debuginfod", 'D', "use debuginfod to find ELF images", Flags::setf( context.options.withDebuginfod ) )
     .add("string", 'S', "text", "search the core for the text string <text>, and print it's address", Flags::set(findstr))
     .parse(argc, argv);
 
