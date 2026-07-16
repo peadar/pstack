@@ -44,26 +44,24 @@ using gpreg = unsigned long long;
 // ARM fpsimd ones. Also, note that i386 has access to these, but not the
 // 128-bit fields
 
-union i387Float {
+struct i387Float {
    unsigned int i[4];
-   long double ld;
+   long double ld() const {
+       long double ld;
+       memcpy(&ld, &i, sizeof ld);
+       return ld;
+   }
 };
 
 union Simd128 {
-   float f32[4];
-   double f64[2];
-   int8_t i8[16];
-   uint8_t u8[16];
-   int16_t i16[8];
-   uint16_t u16[8];
    int32_t i32[4];
    uint32_t u32[4];
-   int64_t i64[2];
-   uint64_t u64[2];
-#ifndef __i386__ // doesn't have 128-bit registers / doesn't support 128-bit ints.
-   __int128_t i128;
-   __uint128_t u128;
-#endif
+
+   double f64(size_t idx) const {
+       double f64;
+       memcpy(&f64, &i32[idx * 2], sizeof f64);
+       return f64;
+   }
 };
 
 // This is for MMX.
