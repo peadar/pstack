@@ -8,6 +8,9 @@
 #include <limits>
 #include <list>
 #include <array>
+
+#include <sys/mman.h>
+
 #include "libpstack/exception.h"
 #include "libpstack/context.h"
 
@@ -172,9 +175,11 @@ class MmapReader final : public AbstractMemReader {
     size_t size_;
 public:
     const char *data() const override { return data_; }
+    char *mut_data() const { return data_; }
     Off size() const override { return size_; }
 
-    MmapReader(Context &, const std::string &name_, int fd = - 1);
+    MmapReader(Context &, const std::string &name_, int fd = -1,
+            int prot = PROT_READ, int flags = MAP_PRIVATE, Off offset = 0);
     ~MmapReader() override;
     MmapReader(const MmapReader &) = delete;
     MmapReader(MmapReader &&) = delete;

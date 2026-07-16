@@ -207,7 +207,7 @@ CacheReader::readString(Off off) const
     return it->second;
 }
 
-MmapReader::MmapReader(Context &c, const string &name_, int fd)
+MmapReader::MmapReader(Context &c, const string &name_, int fd, int prot, int flags, Off offset)
    : AbstractMemReader(name_)
 {
    if (fd == -1) {
@@ -217,7 +217,7 @@ MmapReader::MmapReader(Context &c, const string &name_, int fd)
    struct stat s{};
    fstat(fd, &s);
    size_ = s.st_size;
-   data_ = static_cast<char *>(mmap(nullptr, size_, PROT_READ, MAP_PRIVATE, fd, 0));
+   data_ = static_cast<char *>(mmap(nullptr, size_, prot, flags, fd, offset));
    close(fd);
    if (data_ == MAP_FAILED)
       throw (Exception() << "mmap failed: " << strerror(errno));
