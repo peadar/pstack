@@ -110,6 +110,9 @@ Type(Verdaux);
 Type(Verneed);
 Type(Vernaux);
 Type(Sxword);
+#undef Type
+#undef Type2
+#undef TypeForBits
 
 #if ELF_BITS==64
 #define ELF_ST_TYPE ELF64_ST_TYPE
