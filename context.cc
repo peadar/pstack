@@ -248,10 +248,31 @@ Context::getImageInPath(const std::vector<std::filesystem::path> &paths, NameMap
             }
         }
         try {
-            res = openImage( path, -1, isDebug );
+            auto reader = std::make_shared<MmapReader>(*this, path, -1);
+            std::array<char, 64> prologue;
+            size_t prologueSize = reader->read(0, prologue.size(), prologue.data());
+            if (!isDebug && prologueSize > 3 && prologue[0] == '#' && prologue[1] == '!') {
+                auto prologueEnd = prologue.begin() + prologueSize;
+                auto prologueBegin = prologue.begin() + 2;
+                while (prologueBegin != prologueEnd && isspace(*prologueBegin)) {
+                    ++prologueBegin;
+                }
+                auto cur = prologueBegin;
+                while (cur != prologueEnd && !isspace(*cur))
+                    ++cur;
+                std::filesystem::path interpreter { prologueBegin, cur };
+                if (verbose > 0)
+                    *debug << name << " has an interpreter: " << interpreter << " - opening that instead\n";
+                res = openImage( interpreter, -1, false );
+            } else {
+                return std::make_shared<Elf::Object>(*this, reader , isDebug);
+                res = openImage( path, -1, isDebug );
+            }
             break;
         }
         catch (const std::exception &ex) {
+            if (verbose > 1)
+                *debug << "failed to load " << path << " for " << name << ": " << ex.what() << "\n";
             continue;
         }
     }
