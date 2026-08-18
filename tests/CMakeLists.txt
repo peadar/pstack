@@ -44,7 +44,7 @@ endif()
 
 add_custom_command(
    OUTPUT basic-no-unwind-gen
-   COMMAND ${CMAKE_OBJCOPY} --strip-debug --remove-section .eh_frame basic basic-no-unwind
+   COMMAND ${CMAKE_OBJCOPY} --strip-debug --remove-section .eh_frame basic basic-no-unwind || true
    VERBATIM )
 
 add_custom_target(basic-no-unwind ALL DEPENDS basic basic-no-unwind-gen)
@@ -57,15 +57,18 @@ target_link_options(basic-zlib-gnu PUBLIC -Wl,--compress-debug-sections=zlib-gnu
 
 enable_testing()
 
-add_test(NAME args COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/args-test.py)
-add_test(NAME badfp COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/badfp-test.py)
-add_test(NAME basic COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/basic-test.py)
-add_test(NAME cpp COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/cpp-test.py)
-add_test(NAME noreturn COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/noreturn-test.py)
-add_test(NAME segv COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/segv-test.py)
-add_test(NAME thread COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/thread-test.py)
-add_test(NAME jsondump COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/dump-test.py)
-add_test(NAME procself COMMAND procself)
+set ( PSTACK_PATH $<TARGET_FILE:${PSTACK_BIN}>) # {CMAKE_BINARY_DIR}/${PSTACK_BIN})
+
+add_test(NAME args COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/args-test.py)
+add_test(NAME badfp COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/badfp-test.py)
+add_test(NAME basic COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/basic-test.py)
+add_test(NAME cpp COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/cpp-test.py)
+add_test(NAME noreturn COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/noreturn-test.py)
+add_test(NAME segv COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/segv-test.py)
+add_test(NAME thread COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/thread-test.py)
+add_test(NAME jsondump COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/dump-test.py)
+add_test(NAME python-sanity COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} "${CMAKE_CURRENT_SOURCE_DIR}/python-sanity.py")
+add_test(NAME procself COMMAND $<TARGET_FILE:procself>)
 
 # Need to remove this test for environments with more restrictive ptrace
 if (PTRACE_TESTS)
@@ -77,6 +80,5 @@ if (Python3_Development_FOUND OR Python2_Development_FOUND)
 endif()
 
 if (PYTHON3 AND Python3_Development_FOUND)
-    add_test(NAME pydict COMMAND env PSTACK_BIN=${PSTACK_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/pydict_test.py)
+    add_test(NAME pydict COMMAND env PSTACK_PATH=${PSTACK_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/pydict_test.py)
 endif()
-

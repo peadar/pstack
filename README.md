@@ -1,174 +1,147 @@
 # pstack
 
-**A from-scratch implementation of pstack using DWARF debugging and unwind
-information.  Works for C/C++, Go, Rust, and Python**
+`pstack` is a Linux stack-tracing tool for live processes and core files. It reads ELF, DWARF, and call-frame information itself, so it can unwind code compiled without frame pointers and does not depend on GDB. It prints a trace for every thread and can enrich it with symbols, source locations, and—when the target has suitable DWARF—function arguments.
 
-A traditional pstack command can generally print a backtrace of each thread
-in a running program, and sometimes from a core file.
+The project also provides a small ELF/DWARF library (`libdwelf`), a process inspection library (`libprocman`), and focused diagnostic tools built on them.
 
-This version of pstack uses its own self contained ELF and DWARF parsing
-library, `libdwelf` to parse the DWARF debug and unwind information,
-to get a stack trace. The functionality is well tested for C++, and is
-minimally tested for Go and Rust binaries.  It also supports getting
-python language backtraces for cpython.
+## What it can inspect
 
-## Disclaimer
-This works for my purposes, and the DWARF parsing library is at least
-somewhat useful outside the pstack implementation, but the documentation
-is weak. [ctypegen](https://github.com/aristanetworks/ctypegen) is a
-good example of a "third party" package that uses libdwelf from here.
+- Running Linux processes, by PID
+- ELF core files
+- Native C and C++ programs, plus other native code with usable DWARF unwind data (such as Go or Rust programs)
+- Separate debug files located through `.gnu_debuglink` or GNU build IDs
+- Compressed debug sections (zlib and xz)
+- Modern CPython processes, including interpreter frames and, with `-l`, local variables
 
-## Manpage
+## Quick start
 
-There's a manual page, and you can see a text rendering of it
-[here](./pstack.1.txt)
+Build and run against a process you are allowed to trace:
 
-## Cheatsheet and Features
-
-### Basic usage
-You can generate a stack trace from a running program by using
-
-`pstack <pid>`
-
-For example, you can see what your shell is doing like this
-```
-bash-5.1$ pstack $$
-attaching to live process
-process: /proc/532040/mem
-thread: 0, lwp: 532040, type: 0
-#0  0x00007fde87791aca in __wait4()+26 in /lib64/libc.so.6 at wait4.c:30
-#1  0x000055fe8fd610bd in waitchld.constprop.0!()+188 in /usr/bin/bash
-#2  0x000055fe8fcc58ea in wait_for!()+1241 in /usr/bin/bash
-#3  0x000055fe8fcadd1e in execute_command_internal!()+10029 in /usr/bin/bash
-#4  0x000055fe8fcae578 in execute_command!()+199 in /usr/bin/bash
-#5  0x000055fe8fc9ff49 in reader_loop!()+648 in /usr/bin/bash
-#6  0x000055fe8fc9191e in main!()+5565 in /usr/bin/bash
-#7  0x00007fde876ecb75 in __libc_start_main()+212 in /lib64/libc.so.6 at libc-start.c:332
-#8  0x000055fe8fc91d1e in _start!()+45 in /usr/bin/bash
-
-bash-5.1$
-```
-Also, pstack can get traces from core files as easily as it can from
-running programs - you can see examples later.
-
-
-### Argument printing
-In the above examples it's obvious that there is debug information
-available, as we can see source and line number information. We can also
-try and see the values of arguments passed to functions using "-a". This
-*requires* debugging information:
-```
-$ cat t.c
-#include <assert.h>
-int f(int id, const char*msg) {
-   assert(id == 0);
-}
-int main() {
-   f(42, "hello world");
-}
-$ cc -g -o t t.c
-$ ./t
-t: t.c:3: f: Assertion `id == 0' failed.
-zsh: IOT instruction (core dumped)  ./t
-$ ls /var/core
-core.t.533472
-$ pstack -a /var/core/core.t.533472
-process: /var/core/core.t.533472
-thread: 0, lwp: 533472, type: 0
-#0  0x00007fc0e94482a2 in raise(sig=0x2{r5})+322 in /lib64/libc.so.6 at raise.c:50
-#1  0x00007fc0e94318a4 in abort()+277 in /lib64/libc.so.6 at abort.c:79
-#2  0x00007fc0e9431789 in __assert_fail_base(fmt=(null), assertion=(null), file=(null), line=(null), function=(null))+14 in /lib64/libc.so.6 at assert.c:92
-#3  0x00007fc0e9440a16 in __assert_fail(assertion="id == 0"{r6}, file="t.c"{r12}, line=0x3{r13}, function="f"{r3})+69 in /lib64/libc.so.6 at assert.c:101
-#4  0x0000000000401154 in f(id=42, msg="hello world")+45 in ./t at t.c:3
-#5  0x000000000040116a in main()+18 in ./t at t.c:6
-#6  0x00007fc0e9432b75 in __libc_start_main(main=0x401157, argc=1, argv=0x7ffde5430e38, init=0x7fc0e94482a2{r2}, fini=0{r8}, rtld_fini=0x7ffde5430a40{r9}, stack_end=0x7ffde5430e28)+212 in /lib64/libc.so.6 at libc-start.c:332
-#7  0x000000000040106e in _start!()+45 in ./t
-
-$
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build -j
+./build/pstack <pid>
 ```
 
-You can see the string and integer arguments on frame 4 and 5 quite
-easily, and the format strings from the assertion failure above.
+For a core file, use its path instead:
 
-
-### Other useful arguments
-
-You can pass multiple PIDs and corefiles to pstack, and it will dump
-each process in turn. If multiple processes share libraries or images,
-then the parsing overhead for DWARF and ELF data only happens once.
-
-You can use `-b` to cause pstack to repeat the trace of a single process
-repeatedly with a specified time delay between samples.
-
-pstack will do its best to work out the executable to go with a core file,
-but sometimes it can't. For example, if the executable was invoked with
-a relative path, that may be all pstack has available to go on. You can
-precede the process id/core name with the name of an executable. That
-will then be used in preference to anything automatically discovered
-until overridden again with a new executable.
-
-
-### Python
-
-There's also support for getting python backtraces, for both python2
-and python3 interpreters. You use '-p' to indicate you are interested
-in python backtraces. For example:
-
-```
-bash-5.1$ cat test.py
-def testme(pid, text, details):
-    print("%s: backtrace of %d folows" % (text, pid) )
-    os.system("pstack -pa %d" % pid)
-
-import os
-testme(os.getpid(), "check", details={'hello': 'there'})
-bash-5.1$ python test.py
-check: backtrace of 537528 folows
-attaching to live process
----- interpreter @55ba07d8a910 -----
-pthread: 0x7fc3234c1740, lwp 537528
-    testme(537528, "check", {
-            "hello" : "there"
-        }) in /home/peadar/scm/pstack/test.py:3
-    <module>() in /home/peadar/scm/pstack/test.py:6
-
+```sh
+./build/pstack /path/to/core
 ```
 
-For python, you can even get a full dump of the local frame information
-by passing the "-l" option. The output will be very verbose.
+`pstack` normally discovers the executable for a live process or core. If it cannot—for example, because a core records only a relative executable path—supply one explicitly:
+
+```sh
+./build/pstack -e /path/to/program /path/to/core
+# equivalent positional form; this executable applies to later targets
+./build/pstack /path/to/program /path/to/core
+```
+
+Tracing a live process requires ptrace permission. On many distributions a process may trace its children but not arbitrary same-user processes; container security settings and Yama's `ptrace_scope` can be more restrictive. Run with the appropriate privilege/capability or arrange for the target to be a child of `pstack`.
+
+## Common commands
+
+```sh
+# Include function arguments when DWARF describes them
+pstack -a <pid-or-core>
+
+# Produce machine-readable output
+pstack -j <pid-or-core>
+
+# Trace both the CPython and native stacks
+pstack -A <python-pid>
+
+# Print only CPython frames; -l adds Python local variables
+pstack -pl <python-pid>
+
+# Trace a command when it stops because of a signal
+pstack -x './program --with arguments'
+
+# Sample a process repeatedly, once every 0.5 seconds
+pstack -b 0.5 <pid>
+
+# Limit a noisy trace and write it to a file
+pstack -M 50 -o trace.txt <pid-or-core>
+```
+
+Use `pstack --help` for the complete, authoritative option list. Particularly useful controls include:
+
+| Option | Purpose |
+| --- | --- |
+| `-s` | Omit source file and line lookup. |
+| `-n` | Do not load external debug information. |
+| `-g DIR` | Add a directory to the debug-file search path. |
+| `--exe-dir DIR` | Add a directory in which to find executables/shared libraries. |
+| `--build-id-exepath DIR` / `--build-id-debugpath DIR` | Add build-ID search roots. |
+| `--no-buildid` | Disable build-ID lookup. |
+| `--clear-search-paths` | Remove the built-in executable and debug search paths. |
+| `-R` | Fetch missing build-ID-matched files through `debuginfod`, if `libdebuginfod.so.1` is available at run time. |
+| `-d FILE` / `-D FILE` | Emit ELF or DWARF information as JSON and exit. |
+
+You may provide more than one PID or core file in one invocation. Parsing of shared ELF and DWARF data is cached across those targets.
+
+## Debug symbols and output
+
+Unwinding usually needs `.eh_frame`/`.debug_frame` data. Function names, source locations, and argument values improve substantially when matching debug packages are installed. By default, `pstack` searches standard debug locations, follows debug links, and uses build IDs. For binaries copied from another host, provide matching images/debug files with the search-path options above, or use `-R` with a configured debuginfod service.
+
+`-j` produces JSON suitable for scripts. The exact schema is intentionally derived from the current binary; pin the `pstack` version when consuming it in automation. `-a` is best-effort: optimized code, unavailable debug data, and unreadable target memory can prevent an argument from being rendered.
 
 ## Building
 
-   * To compile, you need CMake, and a compiler that's at least C++20 capable.
+### Requirements
 
-   * Various ELF compression mechanisms mean that you should have the
-     development package for zlib and xz compression libraries installed. Those
-     are known as `liblzma-dev` and `zlib1g-dev` if you are on a
-     Debian/Ubuntu-like system, or `xz-devel` and `zlib-devel` on redhat/fedora
-     systems
+- CMake 3.10 or newer
+- A C++20-capable compiler and standard Linux development tools
+- Development packages for zlib and liblzma (for example, `zlib1g-dev` and `liblzma-dev` on Debian/Ubuntu, or `zlib-devel` and `xz-devel` on Fedora/RHEL)
 
-   * If you want python2 support, you need the python2 development headers installed.
+Configure, build, test, and install with CMake:
 
-   * If you want python3 support, you need the python3 source installed to
-     match the distribution of your binary. Currently, things only work with
-     python3.9
-
-   * If you want debuginfod support, you need the
-     elfutils-debuginfod-client-debuginfo package or equivalent
-
-To build:
-```
-git clone github.com:peadar/pstack
-cd pstack
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
-make -j4
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+sudo cmake --install build
 ```
 
-Python 3 support is disabled by default - in theory, the debug source for your
-distro should include the correct source, but at times it may be askew. To
-enable, add `-DPYTHON3=ON -DPYTHON3_SOURCE=<path-to-python3>` to the cmake
-commandline.  Pay attention to the output of cmake to ensure all the features
-you want are enabled.
+The install step installs `pstack`, its man page, libraries and headers, the Python offset data, and selected companion tools. It also makes a best-effort attempt to grant the installed `pstack` `cap_sys_ptrace`; this may fail without the privileges or filesystem support required by `setcap` and is not a build failure.
 
+Useful CMake cache options:
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `-DPYRDB=ON` | ON | Build modern CPython remote-debugging support when Python 3 development files are found. |
+| `-DLINK_STATIC=ON` | OFF | Link command-line tools to the project's static libraries. |
+| `-DPTRACE_TESTS=ON` | OFF | Enable tests that need unrestricted ptrace access. |
+| `-DPSTACK_BIN=name` | `pstack` | Choose the installed tracer executable name. |
+
+## CPython support
+
+When built with `PYRDB` support, `pstack -p` finds a compatible CPython interpreter in the target, reads its interpreter and thread frames, and prints Python backtraces. `-A` adds the native DWARF trace; `-l` asks for Python local values, and `-r DEPTH` bounds the nesting depth used while rendering them.
+
+The remote inspector needs an offset-data file matching both the target CPython version and architecture. The repository ships data for supported builds under `pyoff-data/`; installation places it under the platform data directory. For a compatible but unlisted interpreter, generate data from its library and make the resulting `pyoff-*.json` discoverable via the XDG data search path:
+
+```sh
+./build/pstack-mkpyoff /path/to/libpython3.so > pyoff-<version>-<arch>.json
+```
+
+Run with `-v` to see which offset-data file was selected. CPython internals change frequently, so support is necessarily version-sensitive.
+
+## Other installed tools
+
+- `canal` searches a process or core for references to selected symbols. Its default vtable pattern can help estimate live polymorphic C++ objects.
+- `hdmp`, used with the supplied `hdbg` allocator library, reports heap debugger allocation information and the corresponding stacks.
+- `pstack-mkpyoff` generates CPython remote-inspection offset data.
+
+`stackusers` is also built for inspecting stack-frame use in ELF images; it is primarily a developer utility and is not installed by the default CMake rules.
+
+## Development
+
+The CTest suite exercises native unwinding, JSON output, compressed debug sections, threading, and Python inspection where the configured environment supports it:
+
+```sh
+ctest --test-dir build --output-on-failure
+```
+
+Some tests create or trace child processes; enable `PTRACE_TESTS` only in an environment that permits it. The project is BSD-licensed; see [LICENSE](LICENSE).
+
+For the command-line reference installed with the program, see [`pstack.1`](pstack.1). The README describes the current build and operational model; `pstack --help` remains the best source for every option in the binary you have built.

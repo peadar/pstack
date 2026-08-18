@@ -12,6 +12,8 @@ struct debuginfod_client;
 
 namespace pstack {
 
+std::vector<std::filesystem::path> findDataDirs();
+
 struct Options {
     bool nosrc = false; // don't display source code (makes things faster)
     bool doargs = false; // show arguments to functions
@@ -24,6 +26,7 @@ struct Options {
     bool noLocalFiles = false;
     int maxdepth = std::numeric_limits<int>::max();
     int maxframes = 30;
+    int maxthreads = 1024;
 };
 
 class Reader;
@@ -101,4 +104,5 @@ public:
    ~Context() noexcept;
 };
 
+std::vector<std::filesystem::path> findXdgDataDirs();
 }

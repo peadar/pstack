@@ -1,28 +1,18 @@
 #include "libpstack/context.h"
-#include "libpstack/elf.h"
 #include "libpstack/dwarf.h"
 #include <cassert>
 #include <iostream>
 #include <utility>
+#include <fstream>
+#include <span>
+#include <unordered_set>
+#include "libpstack/pyrdb.h"
 
 namespace pstack { namespace {
 
 [[noreturn]] void usage() {
     std::cerr << "usage: mkpyoff <lib>\n";
     exit(1);
-}
-
-struct Pad {
-    size_t cnt;
-    static std::array<char, 4096> spaces;
-};
-std::array<char, 4096> Pad::spaces = []() {
-        std::array<char, 4096 > spaces_;
-        spaces_.fill(' ');
-        return spaces_;
-}();
-[[maybe_unused]] std::ostream & operator << (std::ostream &os, const Pad &pad) {
-    return os << std::string_view{ Pad::spaces.end() - std::min(pad.cnt * 4, Pad::spaces.size()), Pad::spaces.end() };
 }
 
 Dwarf::DIE realtype(Dwarf::DIE die) {
@@ -46,67 +36,29 @@ struct TypeDump {
                             const Dwarf::DIE &eltType, std::span<size_t> moreDimensions) const;
 };
 
-Dwarf::DIE findDIE(pstack::Dwarf::DIE die, std::string_view name) {
-    if (die.name() == name) {
-       die = realtype(std::move(die));
-       if (!bool(die.attribute(Dwarf::DW_AT_declaration)))
-        return die;
-    }
-    for (auto child : die.children()) {
-        auto found = findDIE(std::move(child), name);
-        if (found)
-            return found;
+using Types = std::unordered_set<std::string_view>;
+
+Dwarf::DIE findTypes(const pstack::Dwarf::Unit::sptr &unit, Types &types, JObject &jo) {
+    for ( const auto &root = unit->root(); auto child : root.children()) {
+        if (auto it = types.find(child.name()); it != types.end()) {
+            child = realtype(std::move(child));
+            if (!bool(child.attribute(Dwarf::DW_AT_declaration))) {
+                jo.field(*it, TypeDump(0, child, 0));
+                types.erase(it);
+            }
+        }
     }
     return {};
 }
 
-Dwarf::DIE findDIE(const pstack::Dwarf::Unit::sptr &unit, std::string_view name) {
-    return findDIE(unit->root(), name);
-}
-
-Dwarf::DIE findDIE(const pstack::Dwarf::Info::sptr &info, std::string_view name) {
-    for (auto unit : info->getUnits()) {
-        Dwarf::DIE rv = findDIE(unit, name);
+Dwarf::DIE findTypes(const pstack::Dwarf::Info::sptr &info, Types &types, JObject &jo) {
+    for (auto units = info->getUnits(); auto unit : units) {
+        Dwarf::DIE rv = findTypes(unit, types, jo);
         if (rv)
             return rv;
     }
     return Dwarf::DIE();
 }
-
-
-std::ostream &operator << (std::ostream &os, const JSON<TypeDump> &bd) {
-    bd.object.dump(os);
-    return os;
-}
-
-#if 0
-void
-TypeDump::dumpDimension(std::ostream &os, size_t offset, size_t elements,
-                            const Dwarf::DIE &eltType, std::span<size_t> moreDimensions) const
-{
-    JArray ar(os);
-    if (moreDimensions.empty()) {
-        for (size_t i = 0; i < elements; ++i) {
-            ar.element(TypeDump(offset + i * uintptr_t(eltType.attribute(Dwarf::DW_AT_byte_size)), eltType, depth + 1));
-        }
-    }
-}
-
-void TypeDump::dumpArray(std::ostream &os) const {
-    std::vector<size_t> dims;
-    for (auto &subrange : type.children()) {
-        if (subrange.tag() != Dwarf::DW_TAG_subrange_type)
-            continue;
-        Dwarf::DIE::Attribute upperBound = subrange.attribute(Dwarf::DW_AT_upper_bound);
-        if (upperBound.valid()) {
-            dims.push_back(uintptr_t(upperBound) + 1);
-        } else {
-            abort();
-        }
-    }
-    dumpDimension(os, offset, dims[0], Dwarf::DIE(type.attribute(Dwarf::DW_AT_type)), { dims.begin() + 1, dims.end() });
-}
-#endif
 
 void
 TypeDump::dump(std::ostream &os) const {
@@ -138,35 +90,32 @@ TypeDump::dump(std::ostream &os) const {
          break;
       }
       default:
-         std::cerr << "ignore child " << type.tag() << ", name " << type.name() << " in field list" << "\n";
          os << json(JsonNull{});
          break;
    }
 }
 
-int main(int argc, char *argv[]) {
-    if (argc < 2) {
-      usage();
-    }
-    pstack::Context ctx;
-    ctx.options.withDebuginfod = true;
-    auto elf = ctx.findImage(argv[1]);
+// clang can't see this being used.
+[[maybe_unused]] std::ostream &operator << (std::ostream &os, const JSON<TypeDump> &bd) {
+    bd.object.dump(os);
+    return os;
+}
+
+void generateOne(Context &ctx, std::filesystem::path path) {
+    auto elf = ctx.findImage(path);
     if (!elf) {
-        std::cerr << "does not look like an ELF image\n";
-        usage();
+        std::cerr << path << " is not an ELF image: " << strerror(errno) << "\n";
+        return;
     }
 
     auto &pyRuntimeSec = elf->getSection(".PyRuntime", SHT_PROGBITS);
 
     if (!pyRuntimeSec) {
-        std::cerr << "does not look like a python interpreter\n";
-        usage();
+        std::cerr << path << " does not look like a Py_DebugOffsets-enabled python interpreter\n";
+        return;
     }
 
-    JObject jo(std::cout);
-
-    static constexpr std::string_view types[] {
-
+    Types types {
        "PyAsyncMethods",
        "_PyRuntimeState",
        "PyBufferProcs",
@@ -197,22 +146,57 @@ int main(int argc, char *argv[]) {
        "PyBytesObject",
        "PyDictObject",
     };
-
-    auto dwarf = ctx.findDwarf(elf);
-    auto altDwarf = dwarf->getAltDwarf();
-
-    for (auto type : types) {
-       auto runtimeType = findDIE(dwarf, type);
-       if (!runtimeType && altDwarf)
-          runtimeType = findDIE(altDwarf, type);
-       if (!runtimeType) {
-          std::cerr << "no type found for " << type << "\n";
-          continue;
-       }
-
-       jo.field(type, TypeDump(0, runtimeType, 0));
+    auto [sym, idx] = elf->findDynamicSymbol("Py_Version");
+    if (sym.st_shndx == SHN_UNDEF) {
+        std::cerr << "no Py_Version in " << path << "\n";
+        return;
     }
 
+    unsigned long pyv;
+    auto phdr = elf->getSegmentForAddress(sym.st_value);
+    if (phdr == nullptr) {
+        std::cerr << "no segment for Py_Version in " << path << "\n";
+        return;
+    }
+    auto fileOff = sym.st_value - phdr->p_vaddr + phdr->p_offset;
+    elf->io->readObj(fileOff, &pyv);
+
+    Py::Version version(pyv, elf->getHeader().e_machine);
+
+    std::filesystem::path outfileName { version.offsetFileName() };
+    std::ofstream out(outfileName);
+    if (!out.good()) {
+        std::cerr << "failed to open " << outfileName << ": " << strerror(errno) << "\n";
+        return;
+    }
+
+    JObject jo(out);
+    auto dwarf = ctx.findDwarf(elf);
+    findTypes(dwarf, types, jo);
+    if (!types.empty()) {
+        auto altDwarf = dwarf->getAltDwarf();
+        if (altDwarf)
+            findTypes(altDwarf, types, jo);
+    }
+    if (!types.empty()) {
+        std::clog << outfileName << ": missing types (not necessarily fatal):\n";
+        for (auto &t : types) {
+            std::clog << "\t" << t << "\n";
+        }
+    }
+}
+
+
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+      usage();
+    }
+    pstack::Context ctx;
+    ctx.options.withDebuginfod = true;
+
+    for (auto i : std::span<char *>(argv + 1, argv + argc)) {
+        generateOne(ctx, i);
+    }
     return 0;
 }
 

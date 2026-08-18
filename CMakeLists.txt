@@ -130,21 +130,19 @@ else()
 endif()
 
 add_executable(canal canal.cc)
-add_executable(mkpyoff mkpyoff.cc)
+add_executable(pstack-mkpyoff mkpyoff.cc)
 add_executable(${PSTACK_BIN} pstack.cc)
 
 target_link_libraries(procman dwelf dl)
 target_link_libraries(procman_static dwelf_static dl)
 target_link_libraries(${PSTACK_BIN} ${PSTACK_LINK_LIBS})
 target_link_libraries(canal ${PSTACK_LINK_LIBS})
-target_link_libraries(mkpyoff dwelf)
+target_link_libraries(pstack-mkpyoff dwelf)
 target_link_options(${PSTACK_BIN} PRIVATE -Wl,--export-dynamic)
 target_link_options(canal PRIVATE -Wl,--export-dynamic)
 
 set_target_properties(dwelf PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "${PSTACK_SOVERSION}")
 set_target_properties(procman PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "${PSTACK_SOVERSION}")
-
-
 
 if ((NOT (Python3_Development_FOUND)) AND (PYTHON3 OR PYRDB))
    message(WARNING "no python3 support found")
@@ -164,8 +162,10 @@ target_link_libraries(stackusers ${PSTACK_LINK_LIBS})
 
 install(TARGETS ${PSTACK_BIN} canal)
 install(TARGETS hdmp)
+install(TARGETS pstack-mkpyoff)
 install(TARGETS dwelf procman dwelf_static procman_static hdbg)
 install(FILES ${CMAKE_SOURCE_DIR}/pstack.1 DESTINATION share/man/man1 RENAME ${PSTACK_BIN}.1 )
+install(DIRECTORY pyoff-data/ DESTINATION share/pstack)
 install(DIRECTORY libpstack DESTINATION include)
 install(CODE "execute_process (COMMAND setcap cap_sys_ptrace+ep ${DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/${PSTACK_BIN} RESULT_VARIABLE ret)
 if (NOT ret EQUAL \"0\")
