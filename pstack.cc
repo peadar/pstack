@@ -175,9 +175,6 @@ doPy(Procman::Process &proc, bool showModules, const PyInterpInfo &info) {
  * @return              boolean of whether the process was a Python process or not
  */
 bool pystack(Procman::Process &proc, [[maybe_unused]] bool showModules) {
-#ifdef WITH_PYRDB
-        pstack::Py::Target remote(proc);
-#endif
 #ifdef WITH_PYTHON
     PyInterpInfo info = getPyInterpInfo(proc);
 
@@ -375,6 +372,8 @@ emain(int argc, char **argv, Context &context)
           Flags::setf(context.options.nodienames))
     .add("freeres", Flags::LONGONLY, "free all memory at exit (useful for valgrind/heapcheck)",
           Flags::setf(freeres))
+    .add("maxthreads", Flags::LONGONLY, "max-threads", "maximum threads to display",
+          Flags::set(context.options.maxthreads))
     .add("clear-search-paths",
           Flags::LONGONLY,
           "remove all default search paths for shared libraries and debug info",
@@ -417,14 +416,31 @@ emain(int argc, char **argv, Context &context)
     if (optind == argc)
         return usage(std::cerr, argv[0], flags);
 
-    auto doStack = [=] (Procman::Process &proc) {
+    auto doStack = [=, &context] (Procman::Process &proc) {
         while (!interrupted) {
+
+            std::string pyFailReason = "no interpreter found";
 #if defined(WITH_PYTHON) || defined (WITH_PYRDB)
             if (doPython || printAllStacks) {
-                bool isPythonProcess = pystack(proc, pythonModules);
+                bool isPythonProcess = false;
+
+#if defined(WITH_PYRDB)
+                pstack::Py::Target remote(proc);
+                if (remote) {
+                    isPythonProcess = true;
+                    remote.dumpAllInterpreters( std::cout );
+                }
+#endif
+
+#if defined(WITH_PYTHON)
+                if (!isPythonProcess) {
+                    isPythonProcess = pystack(proc, pythonModules);
+                }
+#endif
                 // error if -p but not python process
-                if (doPython && !isPythonProcess)
-                    throw Exception() << "Couldn't find a Python interpreter";
+                if (doPython && !isPythonProcess) {
+                    throw Exception() << "Couldn't find a usable Python interpreter: " << pyFailReason;
+                }
             }
             if (!doPython)
 #endif

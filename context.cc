@@ -4,8 +4,12 @@
 
 #include <string.h>
 #include <unistd.h>
+#include <array>
+#include <cstdlib>
 #include <filesystem>
 #include <ranges>
+#include <string>
+#include <string_view>
 
 #include <dlfcn.h>
 #include <stdexcept>
@@ -424,6 +428,62 @@ Context::openfile(const std::filesystem::path &name, int mode, int mask)
     if (fd != -1)
        return fd;
     throw (Exception() << "cannot open file '" << name << "': " << strerror(errno));
+}
+
+std::filesystem::path
+findUserXdgDataDir() {
+    const char *path = getenv("XDG_DATA_HOME");
+    if (path && *path) {
+        return std::filesystem::path(path) / "pstack";
+    }
+    path = getenv("HOME");
+    if (path && *path) {
+        return std::filesystem::path(path) / ".local" / "share" / "pstack";
+    }
+    return "/var/tmp";
+}
+
+std::filesystem::path
+findSysXdgDataDir() {
+    const char *dataDirs = getenv("XDG_DATA_DIRS");
+    if (dataDirs) {
+        std::string dds = dataDirs;
+        auto separator = dds.find(':');
+        auto dir = dds.substr(0, separator);
+        return std::filesystem::path(dir) / "pstack";
+    }
+    std::array<char, PATH_MAX> executable;
+    auto size = readlink("/proc/self/exe", executable.data(), executable.size());
+    if (size > 0 && size < static_cast<ssize_t>(executable.size())) {
+        std::filesystem::path path{std::string_view{executable.data(), size_t(size)}};
+        return path.parent_path().parent_path() / "share" / "pstack";
+    }
+    return "/usr/share/pstack";
+}
+
+std::vector<std::filesystem::path>
+findXdgDataDirs() {
+    std::vector<std::filesystem::path> paths;
+
+    paths.emplace_back(".");
+    paths.emplace_back(findUserXdgDataDir());
+
+    const char *dataDirs = getenv("XDG_DATA_DIRS");
+    if (dataDirs && *dataDirs) {
+        std::string_view dirs(dataDirs);
+        while (!dirs.empty()) {
+            auto separator = dirs.find(':');
+            auto dir = dirs.substr(0, separator);
+            if (!dir.empty())
+                paths.emplace_back(std::filesystem::path(dir) / "pstack");
+            if (separator == std::string_view::npos)
+                break;
+            dirs.remove_prefix(separator + 1);
+        }
+    } else {
+        paths.push_back( findSysXdgDataDir() );
+    }
+    return paths;
 }
 
 }

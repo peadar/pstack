@@ -1,15 +1,104 @@
 #include "libpstack/proc.h"
 #include <limits>
+#include <set>
+#include <sstream>
+#include <string>
 #include <vector>
 #include <variant>
 
 namespace pstack::Py {
+
+class Version {
+public:
+    inline std::string offsetFileName();
+    Version(unsigned long data, Elf::Half machine) : data(data), machine(machine) {}
+    Version() = delete;
+    operator bool() const { return data != 0; }
+    auto operator <=> (const Version &rhs) const  { return data <=> rhs.data; }
+private:
+    unsigned long data;
+    Elf::Half machine;
+    friend std::string to_string(Version pv);
+};
+
+inline std::string to_string(Version pv) {
+    char phase = ((pv.data & 0xf0) >> 4) + 'a' - 0xa;
+    return
+        std::to_string((pv.data >> 24) & 0xff ) + "." +
+        std::to_string((pv.data >> 16) & 0xff ) + "." +
+        std::to_string((pv.data >> 8) & 0xff ) + phase +
+        "-" + 
+        (pv.machine == EM_386 ? "i386" : pv.machine == EM_X86_64 ? "x86_64" : pv.machine == EM_AARCH64 ? "aarch64" : "unknown");
+}
+
+std::string Version::offsetFileName()
+{
+    return "pyoff-" + to_string(*this) + ".json";
+}
+
 
 // Forward declarations.
 struct OffsetContainer;
 struct RootOffsets;
 struct PyTypes;
 class Target;
+template <typename T> struct Remote;
+
+class ReprStreamBuf : public std::streambuf {
+    std::streambuf *destination;
+    size_t *current_{};
+    size_t *limit_{};
+    std::set<uintptr_t> rendering_;
+protected:
+    std::streamsize xsputn(const char *s, std::streamsize n) override {
+        auto count = std::min<size_t>(*limit_ - *current_, n);
+        auto written = destination->sputn(s, count);
+        *current_ += written;
+        return written;
+    }
+    int overflow(int c) override {
+        if (!current_ || *current_ == *limit_ || c == EOF)
+            return EOF;
+        if (destination->sputc(c) == EOF)
+            return EOF;
+        ++*current_;
+        return c;
+    }
+public:
+    ReprStreamBuf(std::streambuf *destination) : destination(destination) {}
+    size_t *current() const { return current_; }
+    size_t *limit() const { return limit_; }
+    void setBudget(size_t *current, size_t *limit) { current_ = current; limit_ = limit; }
+    bool begin(uintptr_t object) { return rendering_.insert(object).second; }
+    void end(uintptr_t object) { rendering_.erase(object); }
+};
+
+class ReprStream : public std::ostream {
+    ReprStreamBuf &buffer_;
+    size_t current_{};
+    size_t limit_;
+    ReprStream *parent_;
+    ReprStream(ReprStream &parent, size_t reserve)
+        : std::ostream(&parent.buffer_)
+        , buffer_(parent.buffer_)
+        , limit_(parent.remaining() > reserve ? parent.remaining() - reserve : 0)
+        , parent_(&parent) { buffer_.setBudget(&current_, &limit_); }
+public:
+    ReprStream(ReprStreamBuf &buffer, size_t limit) : std::ostream(&buffer), buffer_(buffer), limit_(limit), parent_(nullptr) { buffer_.setBudget(&current_, &limit_); }
+    ReprStream(const ReprStream &) = delete;
+    ~ReprStream() {
+        if (parent_) {
+            buffer_.setBudget(&parent_->current_, &parent_->limit_);
+            parent_->current_ += current_;
+        } else {
+            buffer_.setBudget(nullptr, nullptr);
+        }
+    }
+    size_t remaining() const { return limit_ - current_; }
+    ReprStreamBuf &buffer() const { return buffer_; }
+    ReprStream sub(size_t reserve) { return ReprStream(*this, reserve); }
+};
+
 
 // Declared structures named as the hidden internal python types. We don't read
 // these directly, but we have offsets in them from the _PyRuntime debug offsets
@@ -145,13 +234,22 @@ struct OffsetContainer {
 class Target {
 public:
     Procman::Process &proc;
+    void dumpAllInterpreters(std::ostream &os, size_t indent = 0) const;
+    operator bool() const { return bool( version ); }
+    Elf::Object::sptr pyObj;
+    Elf::Addr pyAddr;
 private:
+    std::ifstream findOffsetsFile(Version) const;
+    Version version{0, 0};
+    void dumpInterpreter(std::ostream &os, Remote<PyInterpreterState *> interp, size_t indent = 0) const;
+    void dumpThread(std::ostream &os, Remote<PyThreadState *> thread, size_t indent = 0) const;
+    void dumpFrame(std::ostream &os, Remote<_PyInterpreterFrame *> frame, size_t indent = 0) const;
     Remote<_PyRuntimeState *> pyRuntime;
     std::unique_ptr<RootOffsets> offsets;
     std::unique_ptr<PyTypes> types;
-    void dumpBacktrace(std::ostream &os) const;
     Remote<PyTypeObject *> pyType(Remote<PyObject *>) const;
     std::string typeName(Remote<PyTypeObject *>) const;
+    std::pair<std::string, bool> readUnicodeText(Remote<PyUnicodeObject *>, size_t maxbytes) const;
     template<typename To> Remote<To *> cast(const PyType<To> &to, Remote<PyObject *> from) const;
 
     template <typename T> Remote<T *>::PointedTo fetch(Remote<T *> remote) const {
@@ -177,10 +275,11 @@ private:
 
 public:
 
-    template <typename T> struct DumpStream {
+    template <typename T> struct ReprValueStream {
         const Target &target;
         const T &object;
-        DumpStream(const Target &target, const T &object) : target(target), object(object) {}
+        size_t maxsize;
+        ReprValueStream(const Target &target, const T &object, size_t maxsize) : target(target), object(object), maxsize(maxsize) {}
     };
 
     Target(Procman::Process & proc_);
@@ -190,25 +289,32 @@ public:
     template<typename Visitor>
     void walkDictEntries(Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values, Visitor visitor) const;
     // Helper to dump dict contents given keys and values
-    void dumpKeyValues(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const;
+    void dumpKeyValues(ReprStream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const;
     // Helper to dump slots from a type's tp_dict
-    void dumpSlots(std::ostream &os, Remote<PyTypeObject *> type, const Remote<PyObject *> &obj) const;
+    void dumpSlots(ReprStream &os, Remote<PyTypeObject *> type, const Remote<PyObject *> &obj) const;
 
+    void repr(ReprStream &os, const Remote<PyObject *> &remote) const;
+    void repr(ReprStream &os, const Remote<PyBytesObject *> &remote) const;
+    void repr(ReprStream &os, const Remote<PyListObject *> &remote) const;
+    void repr(ReprStream &os, const Remote<PyTupleObject *> &remote) const;
+    void repr(ReprStream &os, const Remote<char *> &remote) const;
+    void repr(ReprStream &os, const Remote<PyUnicodeObject *> &remote) const;
+    void repr(ReprStream &os, const Remote<PyLongObject *> &remote) const;
+    void repr(ReprStream &os, const Remote<PyDictObject *> &remote) const;
+    void reprUserDefined(ReprStream &os, const Remote<PyObject *> &remote) const;
 
-    void dump(std::ostream &os, const Remote<PyObject *> &remote) const;
-    void dump(std::ostream &os, const Remote<PyBytesObject *> &remote) const;
-    void dump(std::ostream &os, const Remote<PyListObject *> &remote) const;
-    void dump(std::ostream &os, const Remote<PyTupleObject *> &remote) const;
-    void dump(std::ostream &os, const Remote<char *> &remote) const;
-    void dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const;
-    void dump(std::ostream &os, const Remote<PyLongObject *> &remote) const;
-    void dump(std::ostream &os, const Remote<PyDictObject *> &remote) const;
-    void dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) const;
-    template <typename T> DumpStream<T> str(const T &t) const { return DumpStream (*this, t); }
+    // Render a Python value in a repr-like form.  maxsize includes the
+    // trailing ellipsis when truncation is necessary.
+    template <typename T> void repr(std::ostream &os, const T &t, size_t maxsize = 80) const {
+        ReprStreamBuf buffer(os.rdbuf());
+        ReprStream limited(buffer, maxsize);
+        repr(limited, t);
+    }
+    template <typename T> ReprValueStream<T> repr(const T &t, size_t maxsize = 80) const { return ReprValueStream (*this, t, maxsize); }
     ~Target();
 };
 
-template <typename T> std::ostream & operator << (std::ostream &os, const Target::DumpStream<T> &t) { t.target.dump(os, t.object); return os; }
+template <typename T> std::ostream & operator << (std::ostream &os, const Target::ReprValueStream<T> &t) { t.target.repr(os, t.object, t.maxsize); return os; }
 
 template<typename To> Remote<To *> Target::cast(const PyType<To> &to, Remote<PyObject *> from) const {
     if (pyType(from) == to.typeObject)

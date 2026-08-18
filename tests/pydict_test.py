@@ -35,10 +35,8 @@ def main():
             # the output is kept raw (in bytes), because some of the literals
             # in python code can be interpreted as UTF-8, which breaks the
             # decoder.
-            output = subprocess.check_output(
-                ["./" + pstack.PSTACK_BIN, "-pl", str(pid)]
-            )
-            assert b'"ahoy" : "sailor"' in output
+            output = subprocess.check_output( [ pstack.PSTACK_PATH, "-pl", str(pid)])
+            assert b'"ahoy" : "sailor"' in output, f"Didn't say hello to the seaman: {output}"
         finally:
             os.kill(pid, signal.SIGKILL)
             os.waitpid(pid, 0)

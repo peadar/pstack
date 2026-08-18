@@ -2,7 +2,7 @@
 
 import pstack
 
-data = pstack.dumpJSON(f"../{pstack.PSTACK_BIN}")
+data = pstack.dumpJSON(f"{pstack.PSTACK_PATH}")
 assert len(data) != 0
 print( f"pstack binary debug information length is {len(data)}" )
 print( f"pstack binary debug information is {data}" )

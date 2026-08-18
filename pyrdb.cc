@@ -1,6 +1,6 @@
 #include "libpstack/pyrdb.h"
-#include <charconv>
 #include <fstream>
+#include <string>
 #include <array>
 #include <string_view>
 
@@ -78,11 +78,11 @@ struct PyTypes {
 
 Remote<PyTypeObject *>
 PyTypes::lookupTypeSymbol(const char *name) {
-    auto value = reinterpret_cast<PyTypeObject *>(target.proc.resolveSymbol(name, false));
-    if (value == nullptr) {
+    auto [sym, idx] = target.pyObj->findDynamicSymbol(name);
+    if (idx == 0) {
         std::cerr << "no type for " << name << "\n";
     }
-    return {value};
+    return { (PyTypeObject *)(target.pyAddr + sym.st_value) };
 }
 
 RawOffset::RawOffset(OffsetContainer *container_, std::string_view name_, std::initializer_list<std::string_view> debugPath_, uint64_t default_off) : off(default_off) {
@@ -131,9 +131,6 @@ OffsetContainer::populate(const Structure *top, const Structure *topDebugOffsets
                     done = true;
                 }
             }
-        }
-        if (!done) {
-            std::cerr << "no field " << fieldName << " found in " << typeName << " - defaulted to " << fieldOffset->off << "\n";
         }
     }
 }
@@ -270,6 +267,7 @@ struct CodeObjectOffsets : OffsetContainer {
     OFF(PyBytesObject *, linetable, "co_linetable");
     OFF(int, firstlineno, "co_firstlineno");
     OFF(int, argcount, "co_argcount");
+    OFF(int, kwonlyargcount, "co_kwonlyargcount");
     OFF(PyTupleObject *, localsplusnames, "co_localsplusnames");
     OFF(PyObject *, localspluskinds, "co_localspluskinds");
     OFF(char, co_code_adaptive, "co_code_adaptive");
@@ -333,9 +331,10 @@ struct PyMemberDescrObjectOffsets : OffsetContainer {
     OFF(PyMemberDef *, d_member );
 };
 
+
 struct RootOffsets {
     std::unique_ptr<Structure> topLevel;
-    uint64_t free_threaded;
+    uint64_t free_threaded{false};
     RuntimeStateOffsets runtime_state;
     InterpreterStateOffsets interpreter_state;
     ThreadStateOffsets thread_state;
@@ -354,11 +353,11 @@ struct RootOffsets {
     PyDictValuesOffsets dict_values;
     PyHeapTypeObjectOffsets heap_type_object;
     PyMemberDescrObjectOffsets member_descr;
-    RootOffsets(uint64_t version, Reader::csptr io, uintptr_t object);
+    RootOffsets(std::istream &offsetFile, Reader::csptr io, uintptr_t object);
     ~RootOffsets();
 };
 
-RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t object)
+RootOffsets::RootOffsets(std::istream &in, Reader::csptr io, uintptr_t object)
     : runtime_state( "_PyRuntimeState", "runtime_state" )
       , interpreter_state( "PyInterpreterState", "interpreter_state" )
       , thread_state( "PyThreadState", "thread_state" )
@@ -377,15 +376,7 @@ RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t o
       , dict_values( "PyDictValues", nullptr )
       , heap_type_object( "PyHeapTypeObject", nullptr )
       , member_descr( "PyMemberDescrObject", nullptr )
-
 {
-    std::array<char, 16> chars;
-    auto [ end, ec ] = std::to_chars(chars.begin(), chars.end(), versionExpected, 16);
-    std::string name = std::string(chars.begin(), end) + ".json";
-    std::ifstream in(name);
-    if (!in.good()) {
-        throw (Exception() << "cannot open '" << name << "'");
-    }
 
     topLevel = parseContainer( in );
     Structure *pyDebugOffsets;
@@ -393,6 +384,11 @@ RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t o
         pyDebugOffsets = std::get<std::unique_ptr<Structure>>( debugOffsetsI->second ).get();
     } else {
         pyDebugOffsets = nullptr;
+    }
+
+    if (pyDebugOffsets) {
+        if (auto freeThreadedOffset = pyDebugOffsets->fieldOffset("free_threaded"))
+            free_threaded = io->readObj<uint64_t>(object + *freeThreadedOffset);
     }
 
     runtime_state.populate( topLevel.get(), pyDebugOffsets, io, object);
@@ -419,35 +415,54 @@ RootOffsets::RootOffsets(uint64_t versionExpected, Reader::csptr io, uintptr_t o
 RootOffsets::~RootOffsets() = default;
 
 void
-Target::dump(std::ostream &os, const Remote<char *> &charptr) const {
-    os << '"' << proc.io->readString(reinterpret_cast<Elf::Addr>(charptr.remote)) << '"';
+Target::repr(ReprStream &os, const Remote<char *> &charptr) const {
+    os << proc.io->readString(reinterpret_cast<Elf::Addr>(charptr.remote));
 }
 
 void
-Target::dump(std::ostream &os, const Remote<PyTupleObject *> &charptr) const {
+Target::repr(ReprStream &os, const Remote<PyTupleObject *> &charptr) const {
     auto count = fetch(offsets->tuple_object.ob_size(charptr));
-    auto items = fetchArray(offsets->tuple_object.ob_item(charptr), count);
-    os << "( ";
-    const char *sep = "";
-    for (auto &item : items) {
-        os << sep << str(item);
-        sep = ", ";
+    os << "(";
+    size_t shown = 0;
+    auto items = offsets->tuple_object.ob_item(charptr);
+    for (; shown < size_t(count); ++shown) {
+        size_t separator = shown ? 2 : 0;
+        // Leave room for the closing delimiter, and for an ellipsis when
+        // there are still items after this one.
+        size_t reserve = shown + 1 < size_t(count) ? 4 : count == 1 ? 2 : 1;
+        if (os.remaining() <= separator + reserve)
+            break;
+        if (shown)
+            os << ", ";
+        auto item = os.sub(reserve);
+        repr(item, fetch(Remote<PyObject **>{items.remote + shown}));
     }
-    os << " )";
+    if (shown != size_t(count))
+        os << (shown ? ", " : "") << "...";
+    if (count == 1)
+        os << ",";
+    os << ")";
 }
 
 void
-Target::dump(std::ostream &os, const Remote<PyListObject *> &listobj) const {
+Target::repr(ReprStream &os, const Remote<PyListObject *> &listobj) const {
     auto count = fetch(offsets->list_object.ob_size(listobj));
     auto items = fetch(offsets->list_object.ob_item(listobj));
-    auto itemsVec = fetchArray(items, count);
-    os << "[ ";
-    const char *sep = "";
-    for (auto &item : itemsVec) {
-        os << sep << str(item);
-        sep = ", ";
+    os << "[";
+    size_t shown = 0;
+    for (; shown < size_t(count); ++shown) {
+        size_t separator = shown ? 2 : 0;
+        size_t reserve = shown + 1 < size_t(count) ? 4 : 1;
+        if (os.remaining() <= separator + reserve)
+            break;
+        if (shown)
+            os << ", ";
+        auto item = os.sub(reserve);
+        repr(item, fetch(Remote<PyObject **>{items.remote + shown}));
     }
-    os << " ]";
+    if (shown != size_t(count))
+        os << (shown ? ", " : "") << "...";
+    os << "]";
 }
 
 // Walk dict entries and call visitor for each key/value pair.
@@ -501,31 +516,38 @@ Target::walkDictEntries(Remote<PyDictKeysObject *> keys_remote, Remote<PyDictVal
 }
 
 void
-Target::dumpKeyValues(std::ostream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const {
+Target::dumpKeyValues(ReprStream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const {
     const char *sep = "";
     walkDictEntries(keys_remote, values, [&](Remote<PyObject *>key, Remote<PyObject *>value) {
-        os << sep << str(key) << ": " << str(value);
+        os << sep;
+        repr(os, key);
+        os << ": ";
+        repr(os, value);
         sep = ", ";
     });
 }
 
 void
-Target::dump(std::ostream &os, const Remote<PyDictObject *> &dictobj) const {
+Target::repr(ReprStream &os, const Remote<PyDictObject *> &dictobj) const {
+    os << "{";
     dumpKeyValues(os,
                      fetch(offsets->dict_object.ma_keys(dictobj)),
                      fetch(offsets->dict_object.ma_values(dictobj))
                      );
+    os << "}";
 }
 
 // Dump __slots__ attributes for a Python object with slotted attributes.
 // Reads ht_slots tuple from PyHeapTypeObject, looks up member descriptors in tp_dict,
 // and prints each slot name with its value from the object.
 void
-Target::dumpSlots(std::ostream &os, Remote<PyTypeObject *> type, const Remote<PyObject *> &obj) const {
+Target::dumpSlots(ReprStream &os, Remote<PyTypeObject *> type, const Remote<PyObject *> &obj) const {
     // For slotted classes, get ht_slots from PyHeapTypeObject
     auto heaptype = type.reinterpretCast<PyHeapTypeObject *>();
 
     auto ht_slots = fetch( offsets->heap_type_object.ht_slots( heaptype ) );
+    if (!ht_slots)
+        return;
 
     // ht_slots is a tuple of slot names
     auto slots_tuple = cast(types->pyTuple_Type, ht_slots );
@@ -546,7 +568,7 @@ Target::dumpSlots(std::ostream &os, Remote<PyTypeObject *> type, const Remote<Py
     auto ma_values = fetch(offsets->dict_object.ma_values(dict));
 
     const char *sep = "";
-    os << " ";
+    os << " {";
 
     for (auto &slot_name : slot_names) {
         if (!slot_name)
@@ -572,32 +594,40 @@ Target::dumpSlots(std::ostream &os, Remote<PyTypeObject *> type, const Remote<Py
         auto slot_value_ptr = fetch(slot_value_addr);
 
         os << sep;
-        dump(os, slot_name);
+        repr(os, slot_name);
         os << ": ";
         if (slot_value_ptr) {
-            dump(os, slot_value_ptr);
+            repr(os, slot_value_ptr);
         } else {
             os << "(unset)";
         }
         sep = ", ";
     }
+    os << "}";
 }
 
 // Dump a user-defined Python object.
 // Handles managed dicts (Python 3.11+), inline values (Python 3.13+),
 // regular dicts, and __slots__-based objects.
 void
-Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) const {
-    // User-defined type or other type
+Target::reprUserDefined(ReprStream &os, const Remote<PyObject *> &remote) const {
     auto type = pyType(remote);
+    auto tp_flags = fetch(offsets->type_object.tp_flags(type));
+    constexpr uintptr_t Py_TPFLAGS_HEAPTYPE = 1UL << 9;
+    if (!(tp_flags & Py_TPFLAGS_HEAPTYPE)) {
+        os << "unhandled type <";
+        repr(os, fetch(offsets->type_object.tp_name(type)));
+        os << ">";
+        return;
+    }
+
     auto heapType = type.reinterpretCast<PyHeapTypeObject *>();
 
     os << "<";
-    dump(os, fetch(offsets->type_object.tp_name(type)));
+    repr(os, fetch(offsets->type_object.tp_name(type)));
     os << " object> ";
 
     // For user-defined types, try to get the instance dictionary
-    auto tp_flags = fetch(offsets->type_object.tp_flags(type));
     auto dictoffset = fetch(offsets->type_object.tp_dictoffset(type));
 
     constexpr uintptr_t Py_TPFLAGS_MANAGED_DICT = 0x10;  // 1 << 4
@@ -618,14 +648,16 @@ Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) cons
             auto dict_addr = Remote{reinterpret_cast<PyObject **>(instance_addr + MANAGED_DICT_OFFSET)};
             auto dict_ptr = fetch(dict_addr);
             if (dict_ptr) {
-                dump(os, dict_ptr);
+                repr(os, dict_ptr);
             } else {
                 auto cached_keys = fetch( offsets->heap_type_object.ht_cached_keys( heapType ) );
 
                 if (cached_keys) {
                     auto tp_basic_size = fetch(offsets->type_object.tp_basicsize(type));
                     auto values = Remote<PyDictValues *>{reinterpret_cast<PyDictValues *>(instance_addr + tp_basic_size)};
+                    os << " {";
                     dumpKeyValues(os, cached_keys, values);
+                    os << "}";
                 } else {
                     os << " {<no cached keys>}";
                 }
@@ -643,52 +675,64 @@ Target::dumpUserDefined(std::ostream &os, const Remote<PyObject *> &remote) cons
                 if (cached_keys) {
                     auto values = Remote<PyDictValues *>{reinterpret_cast<PyDictValues *>(
                         reinterpret_cast<uintptr_t>(dict_or_values.remote) + 1)};
+                    os << "{";
                     dumpKeyValues(os, cached_keys, values);
+                    os << "}";
                 } else {
                     os << "{<no cached keys>}";
                 }
             } else {
-                dump(os, dict_or_values);
+                repr(os, dict_or_values);
             }
         }
     } else if (dictoffset > 0) {
         uintptr_t instance_addr = reinterpret_cast<uintptr_t>(remote.remote);
         auto dict_addr = Remote<PyObject **>{reinterpret_cast<PyObject **>(instance_addr + dictoffset)};
         auto dict_ptr = fetch(dict_addr);
-        dump(os, dict_ptr);
+        repr(os, dict_ptr);
     } else {
         dumpSlots(os, type, remote);
     }
 }
 
 void
-Target::dump(std::ostream &os, const Remote<PyObject *> &remote) const {
+Target::repr(ReprStream &os, const Remote<PyObject *> &remote) const {
     if (!remote) {
         os << "(null)";
         return;
     }
+    auto address = reinterpret_cast<uintptr_t>(remote.remote);
+    if (!os.buffer().begin(address)) {
+        os << "<...>";
+        return;
+    }
+    struct RenderingGuard {
+        ReprStreamBuf &buffer;
+        uintptr_t address;
+        ~RenderingGuard() { buffer.end(address); }
+    } guard{os.buffer(), address};
     if (auto v = cast(types->pyUnicode_Type, remote); v)
-        dump(os, v);
+        repr(os, v);
     else if (auto v = cast(types->pyLong_Type, remote); v)
-        dump(os, v);
+        repr(os, v);
     else if (auto v = cast(types->pyTuple_Type, remote); v)
-        dump(os, v);
+        repr(os, v);
     else if (auto v = cast(types->pyList_Type, remote); v)
-        dump(os, v);
+        repr(os, v);
     else if (auto v = cast(types->pyBool_Type, remote); v)
-        dump(os, v);
+        repr(os, v);
     else if (auto v = cast(types->pyBytes_Type, remote); v)
-        dump(os, v);
+        repr(os, v);
     else if (auto v = cast(types->pyDict_Type, remote); v)
-        dump(os, v);
+        repr(os, v);
     else if (auto v = cast(types->pyNone_Type, remote); v)
         os << "None";
     else
-        dumpUserDefined(os, remote);
+        reprUserDefined(os, remote);
 }
 
 void
-Target::dump(std::ostream &os, const Remote<PyLongObject *> &remote) const {
+Target::repr(ReprStream &os, const Remote<PyLongObject *> &remote) const {
     auto type = pyType(Remote<PyObject *>(reinterpret_cast<PyObject *>(remote.remote)));
     if (type == types->pyBool_Type.typeObject) {
         os << (fetch(offsets->long_object.ob_digit(remote)) ? "True" : "False");
@@ -697,30 +741,107 @@ Target::dump(std::ostream &os, const Remote<PyLongObject *> &remote) const {
     }
 }
 
-struct Escape { unsigned char c; };
+struct ReprChar { uint32_t c; char quote; };
 std::ostream &
-operator << (std::ostream &os, const Escape &e) {
-    if (e.c < 128 && e.c >= 32) {
+operator << (std::ostream &os, const ReprChar &e) {
+    switch (e.c) {
+    case '\\': return os << "\\\\";
+    case '\n': return os << "\\n";
+    case '\r': return os << "\\r";
+    case '\t': return os << "\\t";
+    case '\b': return os << "\\b";
+    case '\f': return os << "\\f";
+    }
+    if (e.c == uint32_t(static_cast<unsigned char>(e.quote)))
+        return os << '\\' << e.quote;
+    if (e.c >= 32 && e.c < 127)
         return os << char(e.c);
-    }
-    return os << "\\x" << std::setw(2) << std::setfill('0') << std::hex << int(e.c) << std::dec;
+    if (e.c <= 0xff)
+        return os << "\\x" << std::setw(2) << std::setfill('0') << std::hex << e.c << std::dec;
+    return os << UTF8(e.c);
 }
 
 void
-Target::dump(std::ostream &os, const Remote<PyBytesObject *> &remote) const {
+Target::repr(ReprStream &os, const Remote<PyBytesObject *> &remote) const {
     auto sz = fetch(offsets->bytes_object.ob_size(remote));
-    auto vec = fetchArray(offsets->bytes_object.ob_sval(remote), sz);
+    // Fetch only a bounded prefix.  Escaping can expand a byte, so account
+    // for it while rendering rather than reserving a fixed character count.
+    auto fetched = std::min<size_t>(sz, os.remaining());
+    auto vec = fetchArray(offsets->bytes_object.ob_sval(remote), fetched);
+    auto contentLimit = os.remaining() > 5 ? os.remaining() - 5 : 0; // b'', and "..."
+    std::string content;
+    size_t rendered = 0;
     for (auto c : vec) {
-        os << Escape{c};
+        std::ostringstream escaped;
+        escaped << ReprChar{static_cast<unsigned char>(c), '\''};
+        if (content.size() + escaped.str().size() > contentLimit)
+            break;
+        content += escaped.str();
+        ++rendered;
     }
+    os << "b'";
+    os << content;
+    if (rendered != size_t(sz))
+        os << "...";
+    os << "'";
+}
+
+std::pair<std::string, bool>
+Target::readUnicodeText(Remote<PyUnicodeObject *> remote, size_t maxbytes) const {
+    const auto &unicode = offsets->unicode_object;
+    auto state = fetch(unicode.state(remote));
+    auto length = fetch(unicode.length(remote));
+    auto objoff = uintptr_t(remote.remote);
+    uintptr_t dataAddr;
+    if (state.compact) {
+        dataAddr = objoff + (state.ascii ? unicode.asciiobject_size.off : unicode.size - sizeof(uintptr_t));
+    } else {
+        auto dataAddrPtr = Remote<uintptr_t *>{reinterpret_cast<uintptr_t *>(objoff + unicode.size - sizeof(uintptr_t))};
+        dataAddr = fetch(dataAddrPtr);
+    }
+
+    std::ostringstream text;
+    size_t shown = 0;
+    if (state.kind == 1) {
+        shown = std::min<size_t>(length, maxbytes);
+        auto data = fetchArray(Remote<char *>{reinterpret_cast<char *>(dataAddr)}, shown);
+        text.write(data.data(), data.size());
+    } else if (state.kind == 2) {
+        shown = std::min<size_t>(length, maxbytes / sizeof(uint16_t));
+        auto data = fetchArray(Remote<uint16_t *>{reinterpret_cast<uint16_t *>(dataAddr)}, shown);
+        for (auto c : data)
+            text << UTF8(c);
+    } else if (state.kind == 4) {
+        shown = std::min<size_t>(length, maxbytes / sizeof(uint32_t));
+        auto data = fetchArray(Remote<uint32_t *>{reinterpret_cast<uint32_t *>(dataAddr)}, shown);
+        for (auto c : data)
+            text << UTF8(c);
+    }
+    return {text.str(), shown != size_t(length)};
 }
 
 void
-Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
+Target::repr(ReprStream &os, const Remote<PyUnicodeObject *> &remote) const {
     const auto &unicode = offsets->unicode_object;
     auto state = fetch(unicode.state(remote));
     auto objoff = uintptr_t(remote.remote);
     auto length = fetch(unicode.length(remote));
+    // This limits the remote read, rather than just the final ostream output.
+    // A code point can expand when escaped or encoded as UTF-8, so the final
+    // output may still be shortened by repr(), but the target read is bounded.
+    auto fetched = std::min<size_t>(length, os.remaining());
+    auto contentLimit = os.remaining() > 5 ? os.remaining() - 5 : 0; // '', and "..."
+    std::string content;
+    size_t rendered = 0;
+    auto append = [&](uint32_t c) {
+        std::ostringstream escaped;
+        escaped << ReprChar{c, '\''};
+        if (content.size() + escaped.str().size() > contentLimit)
+            return false;
+        content += escaped.str();
+        ++rendered;
+        return true;
+    };
 
     uintptr_t dataAddr;
     if (state.compact) {
@@ -732,28 +853,37 @@ Target::dump(std::ostream &os, const Remote<PyUnicodeObject *> &remote) const {
         dataAddrPtr.remote = reinterpret_cast<uintptr_t *>(objoff + unicode.size - sizeof(uintptr_t));
         dataAddr = fetch(dataAddrPtr);
     }
+    os << "'";
     if (state.kind == 1) {
         Remote<char *> dataptr { reinterpret_cast<char *>(dataAddr) };
         std::vector<char> data;
-        data = fetchArray(dataptr, length);
-        os << std::string_view{data.data(), data.size()};
+        data = fetchArray(dataptr, fetched);
+        for (auto c : data)
+            if (!append(static_cast<unsigned char>(c)))
+                break;
     } else if (state.kind == 2) {
         // data is 2-byte unicode. Convert to UTF-8
         Remote<uint16_t *> dataptr { reinterpret_cast<uint16_t *>(dataAddr) };
         std::vector<uint16_t> data;
-        data = fetchArray(dataptr, length);
+        data = fetchArray(dataptr, fetched);
         for (auto c : data)
-            os << UTF8(c);
+            if (!append(c))
+                break;
     } else if (state.kind == 4) {
         // data is 4-byte unicode. Convert to UTF-8
         Remote<uint32_t *> dataptr { reinterpret_cast<uint32_t *>(dataAddr) };
         std::vector<uint32_t> data;
-        data = fetchArray(dataptr, length);
+        data = fetchArray(dataptr, fetched);
         for (auto c : data)
-            os << UTF8(c);
+            if (!append(c))
+                break;
     } else {
         os << "<string of unsupported kind " << state.kind << ">";
     }
+    os << content;
+    if (rendered != size_t(length))
+        os << "...";
+    os << "'";
 }
 
 std::string
@@ -768,23 +898,30 @@ Target::pyType(Remote<PyObject *> remote) const {
     return fetch(offsets->pyobject.ob_type(remote));
 }
 
+std::ifstream
+Target::findOffsetsFile(Version v) const {
+   auto fn = v.offsetFileName();
+   std::ifstream in;
+   for (auto p : findXdgDataDirs()) {
+      auto path = p/fn;
+      in.open(path);
+      if (in.good()) {
+         if (proc.context.verbose) {
+            *proc.context.debug << "found python offsets data in " << path << "\n";
+         }
+         return in;
+      }
+   }
+   throw Exception() << "cannot find '" << fn << "' - try using pstack-mkpyoff?";
+}
+
 Target::Target(Procman::Process &proc_)
     : proc{proc_}
-    , types{std::make_unique<PyTypes>(*this)}
 {
-
-    unsigned long symVersion;
-    try {
-        auto versionAddr = proc_.resolveSymbol("Py_Version", false);
-        symVersion = proc_.io->readObj<unsigned long>(versionAddr);
-    }
-    catch (const Exception &) {
-        symVersion = 0x030c00f0;
-    }
-
     // find a python interpreter. The first thing with the right section with the right contents will do.
     for (auto &[addr, mapped] : proc.objects) {
-        auto &sec = mapped.object(proc.context)->getSection(".PyRuntime", SHT_PROGBITS);
+        auto obj = mapped.object(proc.context);
+        auto &sec = obj->getSection(".PyRuntime", SHT_PROGBITS);
         if (!sec)
             continue;
 
@@ -803,20 +940,23 @@ Target::Target(Procman::Process &proc_)
         auto secaddr = addr + sec.shdr.sh_addr;
         auto headerInProc = fetch(Remote<Header *>{reinterpret_cast<Header *>(secaddr)});
         auto cookieInProc = std::string_view(headerInProc.cookie.begin(), headerInProc.cookie.end());
+        pyObj = obj;
+        pyAddr = addr;
+        types = std::make_unique<PyTypes>(*this);
 
-        unsigned long version;
         if (cookieInProc == Header::expectedCookie) {
-            version = headerInProc.version;
+            version = { headerInProc.version,  obj->getHeader().e_machine };
         } else {
-            *proc.context.debug << "bad cookie in " << sec.io()->filename() << ", no usable debugger protocol.\n";
-            version = symVersion;
+            // See if we can find the Py_Version symbol as a fallback, for python
+            // versions before the introduction of the remote debugger protocol
+            auto [obj, loadaddr, sym] = proc_.resolveSymbolDetail("Py_Version", false);
+            version = { proc_.io->readObj<unsigned long>(loadaddr + sym.st_value), obj->getHeader().e_machine };
         }
         pyRuntime.remote = reinterpret_cast<_PyRuntimeState *>(secaddr);
-        offsets = make_unique<RootOffsets>(version, proc.io, secaddr);
-        dumpBacktrace(std::cout);
-        return;
+        auto offsetData = findOffsetsFile(version);
+        offsets = make_unique<RootOffsets>( offsetData, proc.io, secaddr);
+        break;
     }
-    throw (Exception() << "no python interpreter found");
 }
 
 struct LineDelta {
@@ -887,84 +1027,143 @@ LineDelta read_deltas(auto &cur, auto end) {
     }
 }
 
-void Target::dumpBacktrace(std::ostream &os) const {
+const std::string_view pad(size_t sz) {
+    sz *= 3;
+    static const std::string spaces( 1024, ' ');
+    return std::string_view( spaces.begin(), spaces.begin() + std::min(size_t(1024u), sz));
+}
+
+void Target::dumpAllInterpreters(std::ostream &os, size_t indent) const {
     Procman::StopProcess here(&proc);
-    auto &threadOffs = offsets->thread_state;
-    auto &frameOffs = offsets->interpreter_frame;
-    for (auto i : interpreters()) {
-        os << "interpreter " << i << "\n";
-        for (auto t : threads(i)) {
-            auto id = fetch(threadOffs.thread_id(t));
-            auto native_id = fetch(threadOffs.native_thread_id(t));
-            os << "thread id: " << id << ", native id: " << native_id << "\n";
-            Remote<_PyInterpreterFrame *> frame;
-            if (threadOffs.current_frame.found()) {
-                frame = fetch(threadOffs.current_frame(t));
-            } else {
-                auto cframe = fetch(threadOffs.cframe(t));
-                if (cframe)
-                    frame = fetch(offsets->cframe.current_frame(cframe));
-            }
-            while (frame) {
-                Remote<PyObject *> executable;
-                if (frameOffs.executable.found()) {
-                    executable = fetch(frameOffs.executable(frame));
-                    auto clear = (uintptr_t)executable.remote;
-                    clear &= -8LL;
-                    executable = { reinterpret_cast<PyObject *>(clear) };
-                } else {
-                    executable = fetch(frameOffs.f_code(frame));
-                }
-                auto code = cast(types->pyCode_Type, executable);
-                if (code) {
-                    auto name = fetch(offsets->code_object.name(code));
-                    auto file = fetch(offsets->code_object.filename(code));
-                    auto instr_ptr = frameOffs.instr_ptr.found()
-                        ? fetch(frameOffs.instr_ptr(frame))
-                        : fetch(frameOffs.prev_instr(frame));
-                    auto instr_off = instr_ptr.remote - offsets->code_object.co_code_adaptive(code).remote;
-                    auto firstline = fetch(offsets->code_object.firstlineno(code));
-                    auto linetable = fetch(offsets->code_object.linetable(code));
-                    // Read the entire line table into memory.
-                    auto linetable_size = fetch(offsets->bytes_object.ob_size(linetable));
-                    auto linetable_data = fetchArray(offsets->bytes_object.ob_sval(linetable), linetable_size);
-                    int line = firstline;
-                    auto i = linetable_data.begin();
-                    auto e = linetable_data.end();
-                    for (unsigned codeloc = 0; i != e; ) {
-                        auto deltas = read_deltas(i, e);
-                        line += deltas.line;
-                        codeloc += deltas.code;
-                        if (codeloc >= instr_off)
-                            break;
-                    }
-                    os << str(name) << " in " << str(file) << ":" << line;
-                    auto lnames = fetch(offsets->code_object.localsplusnames(code));
-                    auto localCount = fetch(offsets->tuple_object.ob_size(lnames));
-                    auto nameVec = fetchArray(offsets->tuple_object.ob_item(lnames), localCount);
-                    auto valueVec = fetchArray(offsets->interpreter_frame.localsplus(frame), localCount);
-                    os << "\n";
-                    for (ssize_t i = 0; i < localCount; ++i) {
-                        auto name = nameVec[i];
-                        auto value = valueVec[i];
-                        os << "\t\t" << str(name) << ": ";
-                        if ((value & 3) == 3) {
-                            os << (value >> 2);
-                        } else {
-                            auto tval = Remote{reinterpret_cast<PyObject *>(value & ~3)};
-                            os << str(tval);
-                        }
-                        os << "\n";
-                    }
-                } else {
-                    os << "(non code frame " << typeName(pyType(executable)) << ")";
-                }
-                os << "\n";
-                frame = fetch(frameOffs.previous(frame));
-            }
-        }
-        os << "\n";
+    for (Remote<PyInterpreterState *> interp : interpreters()) {
+        os << pad(indent) << "---- interpreter @" << interp << "----\n";
+        dumpInterpreter(os, interp, indent + 1);
+
     }
+}
+
+void Target::dumpInterpreter( std::ostream &os, Remote<PyInterpreterState *> interp, size_t indent) const {
+        for (Remote<PyThreadState *> t : threads(interp)) {
+            dumpThread( os, t, indent + 1 );
+            os << "\n";
+        }
+}
+
+void Target::dumpThread(std::ostream &os, Remote<PyThreadState *> t, size_t indent) const {
+    auto &threadOffs = offsets->thread_state;
+    auto id = fetch(threadOffs.thread_id(t));
+    auto native_id = fetch(threadOffs.native_thread_id(t));
+    os << pad(indent) << "thread id: " << id << ", lwp: " << native_id << "\n";
+    Remote<_PyInterpreterFrame *> frame;
+    if (threadOffs.current_frame.found()) {
+        frame = fetch(threadOffs.current_frame(t));
+    } else {
+        Remote<_PyCFrame *> cframe = fetch(threadOffs.cframe(t));
+        if (cframe)
+            frame = fetch(offsets->cframe.current_frame(cframe));
+    }
+    while (frame) {
+        dumpFrame( os, frame, indent + 1);
+        frame = fetch(offsets->interpreter_frame.previous(frame));
+    }
+}
+
+void Target::dumpFrame(std::ostream &os, Remote<_PyInterpreterFrame *> frame, size_t indent) const {
+    Remote<PyObject *> executable;
+    auto &frameOffs = offsets->interpreter_frame;
+    if (frameOffs.executable.found()) {
+        executable = fetch(frameOffs.executable(frame));
+        auto clear = (uintptr_t)executable.remote;
+        clear &= -8LL;
+        executable = { reinterpret_cast<PyObject *>(clear) };
+    } else {
+        executable = fetch(frameOffs.f_code(frame));
+    }
+    auto code = cast(types->pyCode_Type, executable);
+    if (code) {
+        auto name = fetch(offsets->code_object.name(code));
+        auto file = fetch(offsets->code_object.filename(code));
+        auto instr_ptr = frameOffs.instr_ptr.found()
+            ? fetch(frameOffs.instr_ptr(frame))
+            : fetch(frameOffs.prev_instr(frame));
+        auto instr_off = instr_ptr.remote - offsets->code_object.co_code_adaptive(code).remote;
+        auto firstline = fetch(offsets->code_object.firstlineno(code));
+        auto linetable = fetch(offsets->code_object.linetable(code));
+        // Read the entire line table into memory.
+        auto linetable_size = fetch(offsets->bytes_object.ob_size(linetable));
+        auto linetable_data = fetchArray(offsets->bytes_object.ob_sval(linetable), linetable_size);
+        int line = firstline;
+        auto i = linetable_data.begin();
+        auto e = linetable_data.end();
+        for (unsigned codeloc = 0; i != e; ) {
+            auto deltas = read_deltas(i, e);
+            line += deltas.line;
+            codeloc += deltas.code;
+            if (codeloc >= instr_off)
+                break;
+        }
+        auto [functionName, nameTruncated] = readUnicodeText(name, 1024);
+        if (nameTruncated)
+            functionName += "...";
+        os << pad(indent) << functionName;
+        if (proc.context.options.doargs || proc.context.options.dolocals) {
+            auto lnames = fetch(offsets->code_object.localsplusnames(code));
+            auto localCount = fetch(offsets->tuple_object.ob_size(lnames));
+            auto nameVec = fetchArray(offsets->tuple_object.ob_item(lnames), localCount);
+            auto valueVec = fetchArray(offsets->interpreter_frame.localsplus(frame), localCount);
+            auto argCount = fetch(offsets->code_object.argcount(code));
+            auto kwonlyArgCount = fetch(offsets->code_object.kwonlyargcount(code));
+
+            auto printValue = [&](auto value) {
+                if ((value & 3) == 3) {
+                    os << (value >> 2);
+                } else {
+                    auto tval = Remote{reinterpret_cast<PyObject *>(value & ~3)};
+                    os << repr(tval);
+                }
+            };
+
+            if (proc.context.options.doargs) {
+                os << "(";
+                for (int i = 0; i < argCount; ++i) {
+                    if (i)
+                        os << ", ";
+                    printValue(valueVec[i]);
+                }
+                for (int i = 0; i < kwonlyArgCount; ++i) {
+                    if (argCount || i)
+                        os << ", ";
+                    auto argIndex = argCount + i;
+                    os << repr(nameVec[argIndex]) << "=";
+                    printValue(valueVec[argIndex]);
+                }
+                os << ")";
+            }
+
+            auto [filename, fileTruncated] = readUnicodeText(cast(types->pyUnicode_Type, file), 4096);
+            if (fileTruncated)
+                filename += "...";
+            os << " in " << filename << ":" << line;
+            if (proc.context.options.dolocals) {
+                os << "\n";
+                for (ssize_t i = argCount + kwonlyArgCount; i < localCount; ++i) {
+                    auto name = nameVec[i];
+                    auto value = valueVec[i];
+                    os << pad(indent+1) << repr(name) << ": ";
+                    printValue(value);
+                    os << "\n";
+                }
+            }
+        } else {
+            auto [filename, fileTruncated] = readUnicodeText(cast(types->pyUnicode_Type, file), 4096);
+            if (fileTruncated)
+                filename += "...";
+            os << " in " << filename << ":" << line;
+        }
+    } else {
+        os << "(non code frame " << typeName(pyType(executable)) << ")";
+    }
+    os << "\n";
 }
 
 std::vector<Remote<PyInterpreterState *>>

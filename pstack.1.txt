@@ -1,96 +1,184 @@
-PSTACK(1)		  BSD General Commands Manual		     PSTACK(1)
+PSTACK(1)                 BSD General Commands Manual                PSTACK(1)
 
-NAME
-     pstack — print stack traces of threads in a running process or a core
-     file
+[1mNAME[0m
+     [1mpstack [22m— print stack traces from Linux processes and core files
 
-SYNOPSIS
-     pstack [-a] [-j] [-n] [-p] [-s] [-t] [-v] [-b seconds] [-g directory]
-	    ⟨executable | pid | core⟩ *
-     pstack -d elf-file
-     pstack -D elf-file
-     pstack -V
-     pstack -h
+[1mSYNOPSIS[0m
+     [1mpstack [22m[[1m-Aa[22m] [[1m-b [4m[22mdelay[24m] [[1m-e [4m[22mexecutable[24m] [[1m-g [4m[22mdirectory[24m] [[1m-jlnstuvY[22m]
+            [[1m-M [4m[22mframes[24m] [[1m-o [4m[22mfile[24m] [[1m-r [4m[22mdepth[24m] [[1m-x [4m[22mcommand[24m] [[1m-R[22m] [[1m-p[22m]
+            [[4mexecutable[24m | [4mpid[24m | [4mcore[24m] [4m...[0m
+     [1mpstack [22m[[1m-p[22m] [[1m-l[22m] [[1m-m[22m] [[1m-A[22m] [4mpid[24m | [4mcore[0m
 
-DESCRIPTION
-     Displays the stack traces of each thread in the running process with
-     process id pid or from the core file core
+[1mDESCRIPTION[0m
+     [1mpstack [22mprints a stack trace for every thread in a running Linux process
+     or an ELF core file.  It reads ELF, DWARF, and call-frame information di‐
+     rectly, and can therefore unwind code compiled with
+     [1m-fno-omit-frame-pointer [22mas well as code that omits frame pointers when
+     suitable unwind data is present.
 
-     Normal invocation prints the stack trace from a core file or running
-     process. This implementation understands the stack unwinding data in
-     eh_frame sections, and properly unwinds through stack frames of code com‐
-     piled with -fomit-frame-pointer and on x86_64
+     The target operands may be PIDs or core files.  Normally, [1mpstack [22minfers
+     the executable from the target.  An ELF file given as an operand that is
+     not a core becomes the executable to use for the following targets, until
+     another executable is given.  The [1m-e [22moption sets that executable explic‐
+     itly.
 
-     Arguments are as follows.
+     More than one target may be supplied.  ELF and DWARF data shared by tar‐
+     gets are cached for the duration of the invocation.
 
-     -a		 Show values of arguments passed to functions if possible (re‐
-		 quires DWARF debug data for function's code). This also works
-		 in python mode.
+     Tracing a live process requires permission to use ptrace(2).  Distribu‐
+     tion ptrace policies, containers, and the target's security settings may
+     prevent tracing even when the tracer and target have the same UID.
 
-     -j		 Use JSON format for the stack output
+     The options are as follows:
 
-     -n		 Do not attempt to find external debug information. DWARF de‐
-		 bug information and symbol tables may be contained in sepa‐
-		 rate ELF objects, as referenced by either the .gnu_debuglink
-		 or inferred by the GNU "build ID" ELF note.
+     [1m-a[22m, [1m--args                      [22mAttempt to show function argument values.
+                                     This is best-effort and requires usable
+                                     DWARF information and readable target
+                                     memory.
 
-     -p		 Attempt to print the stack trace from any discovered python
-		 interpreters and threads. This feature is experimental, and
-		 only works with Python 2.7.
+     [1m-A[22m, [1m--all                       [22mShow both CPython and native DWARF stack
+                                     traces.  Without this option, [1m-p [22mprints
+                                     only the Python trace.
 
-     -s		 Do not attempt to locate source code information (file and
-		 line number) for each frame. Finding the source locations may
-		 slow down stack tracing.
+     [1m-b [4m[22mdelay[24m, [1m--constant [4m[22mdelay[24m      Repeat the trace until interrupted, wait‐
+                                     ing [4mdelay[24m seconds between iterations.
+                                     [4mdelay[24m may be non-integral.
 
-     -t		 Do not use the thread_db library to associate userland thread
-		 data structures with kernel level LWPs. For modern linux sys‐
-		 tems, LWPs and user mode threads are effectively the same
-		 thing. At this point the only benefit of using this library
-		 is to associated pthread IDs with the LWPs.
+     [1m-D [4m[22melf-file[24m, [1m--dwarf-dump [4m[22melf-file[0m
+                                     Print DWARF information from [4melf-file[24m as
+                                     JSON and exit.
 
-     -v		 Produce more verbose diagnostics. Can be repeated to increase
-		 verbosity further.
+     [1m-d [4m[22melf-file[24m, [1m--elf-dump [4m[22melf-file[0m
+                                     Print ELF information from [4melf-file[24m as
+                                     JSON and exit.
 
-     -b N	 Poll-mode: repeatedly trace stacks every N seconds, until in‐
-		 terrupted.
+     [1m-e [4m[22mexecutable[24m, [1m--executable [4m[22mexecutable[0m
+                                     Use [4mexecutable[24m as the executable image
+                                     for subsequent PID or core operands.
 
-     -g directory
-		 Use directory as a potential location to find debug ELF im‐
-		 ages, as referred to by a build-id note or gnu_debuglink sec‐
-		 tion. The default directory is /usr/lib/debug
+     [1m-g [4m[22mdirectory[24m, [1m--debug-dir [4m[22mdirectory[0m
+                                     Add [4mdirectory[24m to the search path for de‐
+                                     bug files for executables and shared li‐
+                                     braries.
 
-     ⟨executable | core | pid⟩
-		 List of core files or PIDs to trace. An executable image
-		 specified on the command line will override the executable
-		 derived from the core or processes specified after it until a
-		 different executable image is provided
+     [1m-h[22m, [1m--help                      [22mPrint a usage summary and exit.
 
-     There are some options to aid debugging issues with ELF and DWARF bina‐
-     ries. Namely
+     [1m-j[22m, [1m--json                      [22mWrite stack traces as JSON rather than
+                                     text.  The JSON representation is in‐
+                                     tended for automation, but consumers
+                                     should pin the [1mpstack [22mversion because its
+                                     schema is not a separately versioned in‐
+                                     terface.
 
-     pstack -D ELF-image
-		 Format DWARF debugging information of the provided ELF-image
-		 in JSON
+     [1m-l[22m, [1m--locals                    [22mPrint local variables in Python stack
+                                     frames.  This option is meaningful with
+                                     [1m-p[22m.
 
-     pstack -d ELF-image
-		 Format ELF information of the provided ELF-image in JSON
+     [1m-M [4m[22mframes[24m, [1m--max-frames [4m[22mframes[24m  Print at most [4mframes[24m stack frames for
+                                     each thread.
 
-     pstack -V	 Print git commit-id used to build pstack
+     [1m-m[22m, [1m--python-modules            [22mRequest the contents of Python modules
+                                     while tracing.  This is retained for the
+                                     legacy Python inspector and is generally
+                                     not needed by the modern remote CPython
+                                     inspector.
 
-     pstack -h	 Print usage synopsis pstack
+     [1m-n[22m, [1m--no-ext-debug              [22mDo not load external debug information.
+                                     In particular, do not follow debug links
+                                     or look for separate debug images.
 
-SEE ALSO
-     procfs(5) ptrace(2)
+     [1m--no-buildid                    [22mDo not search for executable or debug
+                                     files by GNU build ID.
 
-TODO
-     •	 Support rela for object files
+     [1m--no-local-files                [22mDo not assume files visible to the tracer
+                                     match the target's view, and do not open
+                                     local files.
 
-     •	 This actually works on ARM (i.e., raspi), but needs debug_frame. Ap‐
-	 parently, ARM has its own magical sections for storing unwind infor‐
-	 mation that it might be worth implementing.
-     works on x86_64 and i686 only.
+     [1m-o [4m[22mfile[24m, [1m--output [4m[22mfile[24m          Write normal output to [4mfile[24m instead of
+                                     standard output.
 
-AUTHORS
-     Peter Edwards <peadar (at) isainmdom dot net>
+     [1m-p[22m, [1m--python                    [22mPrint stack traces from compatible
+                                     CPython interpreters found in the target.
+                                     When built with modern Python remote-de‐
+                                     bugging support, this reads interpreter
+                                     state from the target and uses version-
+                                     and architecture-matched offset data.
 
-BSD				 Mar 29, 2018				   BSD
+     [1m-r [4m[22mdepth[24m, [1m--depth [4m[22mdepth[24m         Set the maximum nesting depth when ren‐
+                                     dering Python values.
+
+     [1m-R[22m, [1m--debuginfod                [22mUse the debuginfod client to fetch miss‐
+                                     ing executable and debug files by build
+                                     ID.  This requires a usable
+                                     [4mlibdebuginfod.so.1[24m at run time and a con‐
+                                     figured debuginfod service.
+
+     [1m-s[22m, [1m--no-src                    [22mDo not include source file and line in‐
+                                     formation in stack frames.
+
+     [1m-t[22m, [1m--no-threaddb               [22mDo not use thread_db to enumerate
+                                     pthreads; enumerate kernel LWPs instead.
+
+     [1m-v[22m, [1m--verbose                   [22mProduce additional diagnostic output.
+                                     This option may be repeated.
+
+     [1m-V[22m, [1m--version                   [22mPrint the build version and exit.
+
+     [1m-x [4m[22mcommand[24m, [1m--command [4m[22mcommand[24m   Run [4mcommand[24m as a subprocess and trace it
+                                     when it receives a signal.  No target op‐
+                                     erand is required with this option.
+
+     [1m-Y[22m, [1m--no-die-names              [22mDo not use DWARF DIE names for functions.
+
+     [1m--build-id-debugpath [4m[22mdirectory[24m  Add [4mdirectory[24m to the build-ID search path
+                                     for debug files.
+
+     [1m--build-id-exepath [4m[22mdirectory[24m    Add [4mdirectory[24m to the build-ID search path
+                                     for executable files.
+
+     [1m--clear-search-paths            [22mRemove the built-in executable and debug-
+                                     file search paths.  Use this before sup‐
+                                     plying explicit search paths to inspect
+                                     files from another system.
+
+     [1m--exe-dir [4m[22mdirectory[24m             Add [4mdirectory[24m to the search path for exe‐
+                                     cutables and shared libraries.
+
+     [1m--freeres                       [22mFree all allocated memory before exit.
+                                     This is primarily useful when running
+                                     [1mpstack [22munder Valgrind or a heap checker.
+
+[1mCPYTHON OFFSET DATA[0m
+     The modern CPython inspector requires an offset-data file named
+     [4mpyoff-<version>-<architecture>.json[24m.  Installed data is searched through
+     the current directory and XDG data locations.  Use [1mpstack-mkpyoff [22mwith a
+     target [4mlibpython[24m to generate data for a compatible interpreter version
+     that is not already provided.  Use [1m-v [22mto report the selected file.
+
+[1mDEBUG INFORMATION[0m
+     Unwinding normally needs [4m.eh_frame[24m or [4m.debug_frame[24m.  Symbols, source lo‐
+     cations, and argument values improve when matching debug packages are
+     available.  By default, [1mpstack [22msearches standard debug locations, follows
+     [4m.gnu_debuglink[24m, and uses GNU build IDs.  The [1m-g[22m, [1m--exe-dir[22m, and build-ID-
+     path options add search locations; alternatively, [1m-R [22mcan obtain missing
+     data from debuginfod.
+
+[1mFILES[0m
+     /usr/lib/debug  A default root for separate debug files.
+
+     /usr/lib/debug/.build-id
+                     A default root for debug files located by build ID.
+
+     /usr/lib/.build-id
+                     A default root for executable files located by build ID.
+
+[1mEXIT STATUS[0m
+     The [1mpstack [22mutility exits 0 on success, and >0 if an error occurs.
+
+[1mSEE ALSO[0m
+     proc(5), ptrace(2)
+
+[1mAUTHORS[0m
+     Peter Edwards
+
+Linux                           August 25, 2026                          Linux
