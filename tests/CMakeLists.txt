@@ -67,7 +67,10 @@ add_test(NAME noreturn COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_
 add_test(NAME segv COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/segv-test.py)
 add_test(NAME thread COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/thread-test.py)
 add_test(NAME jsondump COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/dump-test.py)
-add_test(NAME python-sanity COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} "${CMAKE_CURRENT_SOURCE_DIR}/python-sanity.py")
+
+# this test does not work with yama.ptrace_scope != 0, so disable for now for github.
+# add_test(NAME python-sanity COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} "${CMAKE_CURRENT_SOURCE_DIR}/python-sanity.py")
+
 add_test(NAME procself COMMAND $<TARGET_FILE:procself>)
 
 # Need to remove this test for environments with more restrictive ptrace
