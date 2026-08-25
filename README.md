@@ -144,4 +144,4 @@ ctest --test-dir build --output-on-failure
 
 Some tests create or trace child processes; enable `PTRACE_TESTS` only in an environment that permits it. The project is BSD-licensed; see [LICENSE](LICENSE).
 
-For the command-line reference installed with the program, see [`pstack.1`](pstack.1). The README describes the current build and operational model; `pstack --help` remains the best source for every option in the binary you have built.
+`pstack` has a manpage - there is a text rendering of it [here](pstack.1.txt). The README describes the current build and operational model; `pstack --help` remains the best source for every option in the binary you have built.
