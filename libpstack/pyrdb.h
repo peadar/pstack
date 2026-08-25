@@ -305,12 +305,12 @@ public:
 
     // Render a Python value in a repr-like form.  maxsize includes the
     // trailing ellipsis when truncation is necessary.
-    template <typename T> void repr(std::ostream &os, const T &t, size_t maxsize = 80) const {
+    template <typename T> void repr(std::ostream &os, const T &t, size_t maxsize) const {
         ReprStreamBuf buffer(os.rdbuf());
         ReprStream limited(buffer, maxsize);
         repr(limited, t);
     }
-    template <typename T> ReprValueStream<T> repr(const T &t, size_t maxsize = 80) const { return ReprValueStream (*this, t, maxsize); }
+    template <typename T> ReprValueStream<T> repr(const T &t, size_t maxsize) const { return ReprValueStream (*this, t, maxsize); }
     ~Target();
 };
 

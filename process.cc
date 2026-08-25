@@ -997,7 +997,7 @@ Lwp::unwind(Process &p, const CoreRegisters &regs)
 
     stack.emplace_back(UnwindMechanism::MACHINEREGS, regs);
 
-    for (int frameCount = 0; frameCount < p.context.options.maxframes; frameCount++) {
+    for (size_t frameCount = 0; frameCount < p.context.options.maxframes; frameCount++) {
         auto &prev = stack.back();
 
         try {

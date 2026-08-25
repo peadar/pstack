@@ -24,9 +24,10 @@ struct Options {
     bool withDebuginfod = false; // use debuginfod client library.
     bool noBuildIds = false;
     bool noLocalFiles = false;
-    int maxdepth = std::numeric_limits<int>::max();
-    int maxframes = 30;
-    int maxthreads = 1024;
+    unsigned maxdepth = std::numeric_limits<int>::max();
+    unsigned maxframes = 30;
+    unsigned maxthreads = 1024;
+    unsigned maxstr = 64; // max length of strings when printing variables, etc.
 };
 
 class Reader;

@@ -1119,7 +1119,7 @@ void Target::dumpFrame(std::ostream &os, Remote<_PyInterpreterFrame *> frame, si
                     os << (value >> 2);
                 } else {
                     auto tval = Remote{reinterpret_cast<PyObject *>(value & ~3)};
-                    os << repr(tval);
+                    os << repr(tval, proc.context.options.maxstr);
                 }
             };
 
@@ -1134,7 +1134,7 @@ void Target::dumpFrame(std::ostream &os, Remote<_PyInterpreterFrame *> frame, si
                     if (argCount || i)
                         os << ", ";
                     auto argIndex = argCount + i;
-                    os << repr(nameVec[argIndex]) << "=";
+                    os << repr(nameVec[argIndex], proc.context.options.maxstr) << "=";
                     printValue(valueVec[argIndex]);
                 }
                 os << ")";
@@ -1149,7 +1149,7 @@ void Target::dumpFrame(std::ostream &os, Remote<_PyInterpreterFrame *> frame, si
                 for (ssize_t i = argCount + kwonlyArgCount; i < localCount; ++i) {
                     auto name = nameVec[i];
                     auto value = valueVec[i];
-                    os << pad(indent+1) << repr(name) << ": ";
+                    os << pad(indent+1) << repr(name, proc.context.options.maxstr) << ": ";
                     printValue(value);
                     os << "\n";
                 }

@@ -296,6 +296,13 @@ emain(int argc, char **argv, Context &context)
             "maximum number of stack frames to print for a thread",
             Flags::set(context.options.maxframes))
 
+    .add("max-string",
+            'M',
+            "max string length",
+            "maximum length of strings printed from remote",
+            Flags::set(context.options.maxstr))
+
+
     .add("help",
             'h',
             "generate this help message",

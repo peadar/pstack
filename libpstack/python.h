@@ -76,7 +76,7 @@ struct PythonPrinter {
     Procman::Process &proc;
     std::ostream &os;
     mutable std::set<Elf::Addr> visited;
-    mutable int depth;
+    mutable unsigned depth;
     Elf::Addr interp_head;
     Elf::Object::sptr libpython;
     Elf::Addr libpythonAddr;
