@@ -297,7 +297,7 @@ emain(int argc, char **argv, Context &context)
             Flags::set(context.options.maxframes))
 
     .add("max-string",
-            'M',
+            Flags::LONGONLY,
             "max string length",
             "maximum length of strings printed from remote",
             Flags::set(context.options.maxstr))
