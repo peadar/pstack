@@ -174,8 +174,8 @@ doPy(Procman::Process &proc, bool showModules, const PyInterpInfo &info) {
  * @param showModules   Whether to show modules
  * @return              boolean of whether the process was a Python process or not
  */
-bool pystack(Procman::Process &proc, [[maybe_unused]] bool showModules) {
 #ifdef WITH_PYTHON
+bool pystack(Procman::Process &proc, bool showModules) {
     PyInterpInfo info = getPyInterpInfo(proc);
 
     if (info.libpython == nullptr) // not a python process or python interpreter not found
@@ -195,9 +195,9 @@ bool pystack(Procman::Process &proc, [[maybe_unused]] bool showModules) {
         throw (Exception() << "no support for discovered python 3 interpreter");
 #endif
     }
-#endif
     return true;
 }
+#endif
 
 int
 usage(std::ostream &os, const char *name, const Flags &options)
