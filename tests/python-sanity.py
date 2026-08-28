@@ -72,7 +72,7 @@ def ensure_offsets(build_dir):
         print(f"generating offsets from {sys.executable}")
         subprocess.run([build_dir / "pstack-mkpyoff", sys.executable], check=True, stdout=output)
 
-def main():
+def main(args):
     build_dir = Path.cwd() / ".."
 
     ensure_offsets(build_dir)
@@ -86,11 +86,14 @@ def main():
             os._exit(0)
 
     os.close(write_fd)
+    print(f"will trace process {pid}")
     try:
         assert os.read(read_fd, 5) == b"ready"
         output = subprocess.check_output([pstack.PSTACK_PATH, "-pal", str(pid)], cwd=build_dir, text=True)
     finally:
         os.close(read_fd)
+        if args.pause:
+            sys.stdin.readline()
         os.kill(pid, signal.SIGKILL)
         os.waitpid(pid, 0)
 
@@ -118,4 +121,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pause", action="store_true")
+    args = parser.parse_args()
+    print(f"pause? {args.pause}")
+    main(args)
