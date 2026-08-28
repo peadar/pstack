@@ -495,7 +495,8 @@ Target::walkDictEntries(Remote<PyDictKeysObject *> keys_remote, Remote<PyDictVal
                 value_ptr = entry.me_value;
             }
 
-            visitor(Remote<PyObject *>{entry.me_key}, Remote<PyObject *>{value_ptr});
+            if (!visitor(Remote<PyObject *>{entry.me_key}, Remote<PyObject *>{value_ptr}))
+               break;
         }
     };
     // Dispatch based on key kind (unicode vs general)
@@ -524,6 +525,7 @@ Target::dumpKeyValues(ReprStream &os, Remote<PyDictKeysObject *> keys_remote, Re
         os << ": ";
         repr(os, value);
         sep = ", ";
+        return os.remaining() != 0;
     });
 }
 
@@ -581,6 +583,7 @@ Target::dumpSlots(ReprStream &os, Remote<PyTypeObject *> type, const Remote<PyOb
                 auto descr = value.reinterpretCast<PyMemberDescrObject*>();
                 member_def_ptr = fetch( offsets->member_descr.d_member( descr ) );
             }
+            return true;
         });
 
         if (!member_def_ptr)
