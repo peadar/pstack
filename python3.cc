@@ -1,6 +1,6 @@
 #include "libpstack/pylegacy.h"
 #include "libpstack/elf.h"
-#if HAVE_PYTHON39
+#ifdef HAVE_PYTHON39
 // Only attempt this legacy effort at python backtraces with 3.9
 
 #include <frameobject.h>

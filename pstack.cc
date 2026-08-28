@@ -157,7 +157,7 @@ bool pystack(Procman::Process &proc, bool showModules) {
    if (info.libpython == nullptr) // not a python process or python interpreter not found
       return false;
    Procman::StopProcess here(&proc);
-   PythonPrinter<V> printer(proc, *proc.context.output, info);
+   PythonPrinter<3> printer(proc, *proc.context.output, info);
    if (!printer.interpFound())
       throw Exception() << "no python interpreter found";
    printer.printInterpreters(showModules);
