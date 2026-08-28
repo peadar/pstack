@@ -1,10 +1,13 @@
-#include <Python.h>
+#include "libpstack/pylegacy.h"
+#include "libpstack/elf.h"
+#if HAVE_PYTHON39
+// Only attempt this legacy effort at python backtraces with 3.9
+
 #include <frameobject.h>
 #include <dictobject.h>
 #include <longintrepr.h>
 #include <unicodeobject.h>
 #include <methodobject.h>
-#include "libpstack/python.h"
 
 #define DK_SIZE(dk) ((dk)->dk_size)
 #define DK_IXSIZE(dk)                \
@@ -203,3 +206,12 @@ namespace pstack {
 template struct PythonPrinter<3>;
 
 }
+#else
+namespace pstack {
+template <>
+std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
+getInterpHead<3>(Procman::Process &) {
+   throw (Exception() << "unsupported python interpreter found at compile time");
+}
+}
+#endif

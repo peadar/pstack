@@ -7,9 +7,8 @@ set(Python3_DEBUG_OUTPUT ON)
 include (GNUInstallDirs)
 enable_testing()
 
-option(PYTHON3 "Compile with python 3 support" OFF)
-option(PYTHON2 "Compile with python 2 support" OFF)
-option(PYRDB "Compile with modern python 3 remote debugging" ON)
+option(PYTHON3 "Compile with (legacy) python3 support" OFF)
+option(PYRDB "Compile with modern python3 remote debugging" ON)
 option(PTRACE_TESTS "Run extra tests that require unrestricted access to ptrace" OFF)
 
 math(EXPR PLATFORM_BITS "${CMAKE_SIZEOF_VOID_P} * 8")
@@ -25,9 +24,6 @@ option(TIDY "Run clang-tidy on the source" False)
 find_package(LibLZMA REQUIRED)
 find_package(ZLIB REQUIRED)
 
-if (PYTHON2)
-   find_package(Python2 COMPONENTS Development)
-endif()
 if (PYTHON3 OR PYRDB)
    find_package(Python3 COMPONENTS Development)
 endif()
@@ -64,8 +60,7 @@ include_directories(${ZLIB_INCLUDE_DIRS})
 
 include_directories(${LIBLZMA_INCLUDE_DIRS})
 
-
-if (Python3_Development_FOUND OR Python2_Development_FOUND)
+if (Python3_Development_FOUND)
    set(pysrc python.cc)
 endif()
 
@@ -76,19 +71,14 @@ if (PYRDB)
 endif()
 
 if (PYTHON3 AND Python3_Development_FOUND)
-    message(STATUS  "Python3_INCLUDE_DIRS are ${pyinc}")
+    message(STATUS  "Python3_INCLUDE_DIRS are ${Python3_INCLUDE_DIRS}")
     add_definitions("-DWITH_PYTHON3")
     set(pyinc "-I${Python3_INCLUDE_DIRS}")
     set(pysrc ${pysrc} pythonc.c python3.cc)
     set_source_files_properties(python3.cc PROPERTIES COMPILE_FLAGS ${pyinc})
     set_source_files_properties(pythonc.c PROPERTIES COMPILE_FLAGS ${pyinc})
     set_source_files_properties(canal.cc PROPERTIES COMPILE_FLAGS ${pyinc})
-endif()
-
-if (PYTHON2 AND Python2_Development_FOUND)
-   set(pysrc ${pysrc} python2.cc)
-   add_definitions("-DWITH_PYTHON2")
-   set_source_files_properties(python2.cc PROPERTIES COMPILE_FLAGS -I${Python2_INCLUDE_DIRS})
+    set_source_files_properties(pstack.cc PROPERTIES COMPILE_FLAGS ${pyinc})
 endif()
 
 add_definitions("-g3")
@@ -146,10 +136,6 @@ set_target_properties(procman PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "$
 
 if ((NOT (Python3_Development_FOUND)) AND (PYTHON3 OR PYRDB))
    message(WARNING "no python3 support found")
-endif()
-
-if (NOT (Python2_Development_FOUND) AND PYTHON2)
-   message(WARNING "no python2 support found")
 endif()
 
 # bonus: heap debugger

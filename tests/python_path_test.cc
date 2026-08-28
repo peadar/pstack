@@ -31,7 +31,6 @@ int main() {
     // Standard cases
     test_py_version_from_filename("/usr/lib/libpython3.9.so", 3, 9, false);
     test_py_version_from_filename("/usr/lib/python3.9/config-3.9-x86_64-linux-gnu/libpython3.9.so", 3, 9, false);
-    test_py_version_from_filename("libpython2.7.so", 2, 7, false);
     // Complex paths (Bazel-like)
     test_py_version_from_filename("/execroot/_main/bazel-out/k8-opt/bin/Foo/Foo.runfiles/+_repo_rules+RPM/python39/_python3.9_dc/libpython3.9.so.1.0", 3, 9, false);
 

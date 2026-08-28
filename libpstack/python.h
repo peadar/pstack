@@ -9,6 +9,7 @@
 struct _object;
 struct _typeobject;
 
+
 namespace pstack {
 
 struct PyInterpInfo {
@@ -92,5 +93,4 @@ template <int V>
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
 getInterpHead(Procman::Process &);
 }
-
 #endif

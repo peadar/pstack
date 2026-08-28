@@ -19,12 +19,9 @@
 #include "libpstack/proc.h"
 #include "libpstack/elf.h"
 #include "libpstack/ioflag.h"
+#include "libpstack/pylegacy.h"
 #include "libpstack/flags.h"
-#if defined( WITH_PYTHON3 )
-#define WITH_PYTHON
-#endif
-#ifdef WITH_PYTHON
-#include "libpstack/python.h"
+#if defined( HAVE_PYTHON39 )
 #include <Python.h>
 #endif
 
@@ -32,7 +29,7 @@ using namespace std;
 using namespace pstack;
 
 using AddressRanges = std::vector<std::pair<Elf::Off, Elf::Off>>;
-#ifdef WITH_PYTHON
+#ifdef HAVE_PYTHON39
 std::unique_ptr<PythonPrinter<3>> py = nullptr;
 #endif
 
@@ -220,7 +217,7 @@ template <typename Matcher, typename Word> inline void search(
                             << sym->name << " 0x" << std::hex << loc + (cur - start) * sizeof(Word)
                             << std::dec <<  " ... size=" << sym->sym.st_size
                             << ", diff=" << p - sym->memaddr() << endl;
-#ifdef WITH_PYTHON
+#ifdef HAVE_PYTHON39
                     if (py) {
                         std::cout << "pyo " << Elf::Addr(loc) << " ";
                         py->print(Elf::Addr(loc) - sizeof (PyObject) +
@@ -265,14 +262,14 @@ mainExcept(int argc, char *argv[])
     AddressRanges searchaddrs;
     std::string findstr;
     int symOffset = -1;
-#ifdef WITH_PYTHON
+#ifdef HAVE_PYTHON39
     bool doPython = false;
 #endif
 
     Flags flags;
 
     flags
-#ifdef WITH_PYTHON
+#ifdef HAVE_PYTHON39
     .add("python", 'P', "try to find python objects", Flags::setf(doPython))
 #endif
     .add("show-syms", 'V', "show symbols matching search pattern", Flags::setf(showsyms))
@@ -314,7 +311,7 @@ mainExcept(int argc, char *argv[])
 
     auto process = Procman::Process::load(context, exec, argv[optind]);
 
-#ifdef WITH_PYTHON
+#ifdef HAVE_PYTHON39
     PyInterpInfo info;
     if (doPython) {
        info = getPyInterpInfo(*process);

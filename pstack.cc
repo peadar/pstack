@@ -1,10 +1,7 @@
 #include "libpstack/dwarf.h"
 #include "libpstack/flags.h"
 #include "libpstack/proc.h"
-#if defined(WITH_PYTHON2) || defined(WITH_PYTHON3)
-#define WITH_PYTHON
-#include "libpstack/python.h"
-#endif
+#include "libpstack/pylegacy.h" // this will define HAVE_PYTHON39 if we want legacy python support.
 #ifdef WITH_PYRDB
 #include "libpstack/pyrdb.h"
 #endif
@@ -151,51 +148,20 @@ startChild(Context &context, Elf::Object::sptr exe, const std::string &cmd) {
    return 0;
 }
 
-
-#ifdef WITH_PYTHON
-template<int V> void
-doPy(Procman::Process &proc, bool showModules, const PyInterpInfo &info) {
-    Procman::StopProcess here(&proc);
-    PythonPrinter<V> printer(proc, *proc.context.output, info);
-    if (!printer.interpFound())
-        throw Exception() << "no python interpreter found";
-    printer.printInterpreters(showModules);
-}
-#endif
-
-/**
- * @brief Given a process, tries to print the Python strack trace of it.
- * If the process wasn't a Python process, returns false.
- * True on successful printing of Python stack trace
- *
- * @param proc          The process
- * @param o             The stream to which to print the otutput
- * @param options       Options
- * @param showModules   Whether to show modules
- * @return              boolean of whether the process was a Python process or not
+#ifdef HAVE_PYTHON39
+/*
+ * "Legacy" python support. Only works for python 3.9
  */
-#ifdef WITH_PYTHON
 bool pystack(Procman::Process &proc, bool showModules) {
-    PyInterpInfo info = getPyInterpInfo(proc);
-
-    if (info.libpython == nullptr) // not a python process or python interpreter not found
-        return false;
-
-    if (info.versionHex < V2HEX(3, 0)) { // Python 2.x
-
-#ifdef WITH_PYTHON2
-        doPy<2>(proc, showModules, info);
-#else
-        throw (Exception() << "no support for discovered python 2 interpreter");
-#endif
-    } else { // Python 3.x
-#ifdef WITH_PYTHON3
-        doPy<3>(proc, showModules, info);
-#else
-        throw (Exception() << "no support for discovered python 3 interpreter");
-#endif
-    }
-    return true;
+   PyInterpInfo info = getPyInterpInfo(proc);
+   if (info.libpython == nullptr) // not a python process or python interpreter not found
+      return false;
+   Procman::StopProcess here(&proc);
+   PythonPrinter<V> printer(proc, *proc.context.output, info);
+   if (!printer.interpFound())
+      throw Exception() << "no python interpreter found";
+   printer.printInterpreters(showModules);
+   return true;
 }
 #endif
 
@@ -219,7 +185,7 @@ emain(int argc, char **argv, Context &context)
     std::ofstream out;
     bool failures = false;
 
-#if defined(WITH_PYTHON) || defined(WITH_PYRDB)
+#if defined(HAVE_PYTHON39) || defined(WITH_PYRDB)
     bool doPython = false;
     bool pythonModules = false;
 #endif
@@ -350,7 +316,7 @@ emain(int argc, char **argv, Context &context)
                std::clog << STR(VERSION) << "\n";
                exitCode = 0; })
 
-#if defined(WITH_PYTHON) ||defined(WITH_PYRDB)
+#if defined(HAVE_PYTHON39) ||defined(WITH_PYRDB)
     .add("python-modules",
             'm',
             "print contents of all python modules when tracing",
@@ -427,7 +393,7 @@ emain(int argc, char **argv, Context &context)
         while (!interrupted) {
 
             std::string pyFailReason = "no interpreter found";
-#if defined(WITH_PYTHON) || defined (WITH_PYRDB)
+#if defined(HAVE_PYTHON39) || defined (WITH_PYRDB)
             if (doPython || printAllStacks) {
                 bool isPythonProcess = false;
 
@@ -439,7 +405,7 @@ emain(int argc, char **argv, Context &context)
                 }
 #endif
 
-#if defined(WITH_PYTHON)
+#if defined(HAVE_PYTHON39)
                 if (!isPythonProcess) {
                     isPythonProcess = pystack(proc, pythonModules);
                 }

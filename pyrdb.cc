@@ -1039,7 +1039,7 @@ const std::string_view pad(size_t sz) {
 void Target::dumpAllInterpreters(std::ostream &os, size_t indent) const {
     Procman::StopProcess here(&proc);
     for (Remote<PyInterpreterState *> interp : interpreters()) {
-        os << pad(indent) << "---- interpreter @" << interp << "----\n";
+        os << pad(indent) << "python interpreter @" << interp << "\n";
         dumpInterpreter(os, interp, indent + 1);
 
     }

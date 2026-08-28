@@ -1,16 +1,13 @@
 #include <stddef.h>
 #define Py_BUILD_CORE
 #include <Python.h>
-#if PY_VERSION_HEX >= 0x030a0000
-#error "legacy python support does not work with this interpreter version"
-#elif PY_VERSION_HEX >= 0x03080000
+#if PY_VERSION_HEX >= 0x309000 && PY_VERSION_HEX < 0x30a000
 #include <internal/pycore_pystate.h>
-#elif PY_VERSION_HEX >= 0x3070000
-#include <internal/pystate.h>
-#else
-#error "no support for this version of python"
-#endif
-
 size_t pyInterpOffset() {
    return offsetof(_PyRuntimeState, interpreters) + offsetof(struct pyinterpreters, head);
 }
+#else
+size_t pyInterpOffset() {
+   return (size_t)-1;
+}
+#endif
