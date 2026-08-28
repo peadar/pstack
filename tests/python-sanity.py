@@ -75,7 +75,8 @@ def ensure_offsets(build_dir):
 def main(args):
     build_dir = Path.cwd() / ".."
 
-    ensure_offsets(build_dir)
+    if not args.pause:
+        ensure_offsets(build_dir)
     read_fd, write_fd = os.pipe()
     pid = os.fork()
     if pid == 0:

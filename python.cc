@@ -1,9 +1,9 @@
-#include "libpstack/python.h"
 #include <dlfcn.h>
 #include <string.h>
 #include <string>
 #include <regex.h>
 #include "libpstack/proc.h"
+#include "libpstack/python.h"
 
 namespace pstack {
 static std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr> getInterpHead(Procman::Process &);
@@ -78,14 +78,12 @@ getInterpHead(Procman::Process &proc) {
             *proc.context.debug << "Py_interp_headp symbol not found. Trying fallback" << std::endl;
     }
 
-#ifdef HAVE_PYTHON39
     try {
         return getInterpHead<3>(proc);
     } catch (...) {
         if (proc.context.verbose)
             *proc.context.debug << "Python 3 interpreter not found" << std::endl;
     }
-#endif
 
     if (proc.context.verbose)
         *proc.context.debug << "Couldn't find a python interpreter" << std::endl;
