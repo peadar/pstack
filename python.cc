@@ -57,37 +57,12 @@ getPythonVersionFromFilename(const std::string &filename) {
 
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Addr>
 getInterpHead(Procman::Process &proc) {
-    // As a local python2 hack, we have a global variable pointing at interp_head
-    // We can use that to avoid needing any debug info for the interpreter.
-    // (Python3 does not require this hack, because _PyRuntime is exported
-    // in the dynamic symbols.)
-    try {
-        auto [ libpython,  libpythonAddr, interpreterHead ] =
-           proc.resolveSymbolDetail("Py_interp_headp", false,
-                [&](std::string_view name) {
-                    return name.find("python") != std::string::npos;
-                });
-        if (proc.context.verbose)
-            *proc.context.debug << "found interp_headp in ELF syms" << std::endl;
-        Elf::Addr interpHead;
-        proc.io->readObj(libpythonAddr + interpreterHead.st_value, &interpHead);
-        return std::make_tuple(libpython, libpythonAddr, interpHead);
-    }
-    catch (...) {
-        if (proc.context.verbose)
-            *proc.context.debug << "Py_interp_headp symbol not found. Trying fallback" << std::endl;
-    }
-
     try {
         return getInterpHead<3>(proc);
     } catch (...) {
         if (proc.context.verbose)
             *proc.context.debug << "Python 3 interpreter not found" << std::endl;
     }
-
-    if (proc.context.verbose)
-        *proc.context.debug << "Couldn't find a python interpreter" << std::endl;
-
     return std::make_tuple(nullptr, 0, 0);
 }
 

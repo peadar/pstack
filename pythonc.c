@@ -1,3 +1,4 @@
+#ifdef WITH_PYTHON3
 #include <stddef.h>
 #define Py_BUILD_CORE
 #include <Python.h>
@@ -10,4 +11,5 @@ size_t pyInterpOffset() {
 size_t pyInterpOffset() {
    return (size_t)-1;
 }
+#endif
 #endif

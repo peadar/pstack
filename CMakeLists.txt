@@ -60,21 +60,16 @@ include_directories(${ZLIB_INCLUDE_DIRS})
 
 include_directories(${LIBLZMA_INCLUDE_DIRS})
 
-if (Python3_Development_FOUND)
-   set(pysrc python.cc)
-endif()
 
 if (PYRDB)
    message(STATUS  "will compile python remote debugging support")
    add_definitions("-DWITH_PYRDB")
-   set(pysrc ${pysrc} pyrdb.cc)
 endif()
 
 if (PYTHON3 AND Python3_Development_FOUND)
     message(STATUS  "Python3_INCLUDE_DIRS are ${Python3_INCLUDE_DIRS}")
     add_definitions("-DWITH_PYTHON3")
     set(pyinc "-I${Python3_INCLUDE_DIRS}")
-    set(pysrc ${pysrc} pythonc.c python3.cc)
     set_source_files_properties(python3.cc PROPERTIES COMPILE_FLAGS ${pyinc})
     set_source_files_properties(pythonc.c PROPERTIES COMPILE_FLAGS ${pyinc})
     set_source_files_properties(canal.cc PROPERTIES COMPILE_FLAGS ${pyinc})
@@ -102,7 +97,7 @@ add_library(dwelf_objects OBJECT
          )
 
 add_library(procman_objects OBJECT dead.cc self.cc live.cc process.cc proc_service.cc
-    dwarfproc.cc procdump.cc threaddb.cc ${pysrc})
+    dwarfproc.cc procdump.cc threaddb.cc python.cc pythonc.c python3.cc pyrdb.cc)
 
 add_library(dwelf SHARED $<TARGET_OBJECTS:dwelf_objects>)
 add_library(dwelf_static STATIC $<TARGET_OBJECTS:dwelf_objects>)

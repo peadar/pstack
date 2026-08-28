@@ -1,3 +1,4 @@
+#ifdef WITH_PYRDB
 #include "libpstack/pyrdb.h"
 #include <fstream>
 #include <string>
@@ -1182,3 +1183,4 @@ Target::threads(Remote<PyInterpreterState *> interp) const {
 Target::~Target() = default;
 
 }
+#endif
