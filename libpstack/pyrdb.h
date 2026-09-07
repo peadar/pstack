@@ -205,7 +205,7 @@ struct RawOffset {
     // names for equivalent fields, so callers must not use a default offset
     // as though it described the target's layout.
     bool found() const { return off != notFound; }
-    RawOffset(OffsetContainer *container, std::string_view name_, std::initializer_list<std::string_view> debugPath, uint64_t default_off = notFound);
+    RawOffset(OffsetContainer *container, std::string_view name_, std::initializer_list<std::string_view> debugPath);
 };
 
 // A concrete offset of a field of Container of type Field. "value()"
@@ -225,11 +225,10 @@ struct OffsetContainer {
     const char *typeName{};
     const char *debugOffsetsField{};
     std::map<std::string_view, RawOffset *> fields;
-    void populate(const Structure *type, const Structure *debugOffsets, const Reader::csptr &, uintptr_t object);
-    OffsetContainer(const char *typeName, const char *debugOffsetsField) : typeName(typeName), debugOffsetsField(debugOffsetsField){}
+    void populate(Target &);
+    OffsetContainer(const char *typeName, const char *debugOffsetsField);
     OffsetContainer() = delete;
 };
-
 
 class Target {
 public:
@@ -238,15 +237,24 @@ public:
     operator bool() const { return bool( version ); }
     Elf::Object::sptr pyObj;
     Elf::Addr pyAddr;
+    friend struct RootOffsets;
 private:
     std::ifstream findOffsetsFile(Version) const;
     Version version{0, 0};
     void dumpInterpreter(std::ostream &os, Remote<PyInterpreterState *> interp, size_t indent = 0) const;
     void dumpThread(std::ostream &os, Remote<PyThreadState *> thread, size_t indent = 0) const;
     void dumpFrame(std::ostream &os, Remote<_PyInterpreterFrame *> frame, size_t indent = 0) const;
+public:
     Remote<_PyRuntimeState *> pyRuntime;
+    std::unique_ptr<Structure> offsetData;
+    Structure *debugOffsets{}; // this is the debug offsets field from
+                               // "offsetsData", stored here to avoid looking it
+                               // up by string constantly.
+    Reader::csptr pyRuntimeReader;
+private:
     std::unique_ptr<RootOffsets> offsets;
     std::unique_ptr<PyTypes> types;
+
     Remote<PyTypeObject *> pyType(Remote<PyObject *>) const;
     std::string typeName(Remote<PyTypeObject *>) const;
     std::pair<std::string, bool> readUnicodeText(Remote<PyUnicodeObject *>, size_t maxbytes) const;

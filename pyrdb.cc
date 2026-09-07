@@ -54,12 +54,19 @@ struct PyMemberDef {
     const char *doc;
 };
 
-
 // Minimal header from _PyRuntime to find the version, and verify the magic cookie.
 struct Header {
     std::array<char, 8> cookie;
     static constexpr std::string_view expectedCookie { "xdebugpy" };
     uint64_t version;
+};
+
+struct PyASCIIState {
+    unsigned int interned : 2;
+    unsigned int kind : 3;
+    unsigned int compact : 1;
+    unsigned int ascii : 1;
+    unsigned int statically_allocated : 1;
 };
 
 struct PyTypes {
@@ -86,7 +93,8 @@ PyTypes::lookupTypeSymbol(const char *name) {
     return { (PyTypeObject *)(target.pyAddr + sym.st_value) };
 }
 
-RawOffset::RawOffset(OffsetContainer *container_, std::string_view name_, std::initializer_list<std::string_view> debugPath_, uint64_t default_off) : off(default_off) {
+RawOffset::RawOffset(OffsetContainer *container_, std::string_view name_,
+        std::initializer_list<std::string_view> debugPath_) : off(-1) {
     container_->fields[name_] = this;
     debugPath = debugPath_;
     if (debugPath.empty()) {
@@ -95,89 +103,93 @@ RawOffset::RawOffset(OffsetContainer *container_, std::string_view name_, std::i
 }
 
 void
-OffsetContainer::populate(const Structure *top, const Structure *topDebugOffsets, const Reader::csptr &reader, uintptr_t object) {
+OffsetContainer::populate(Target &t) {
+    auto top = t.offsetData.get();
+    auto topDebugOffsets = t.debugOffsets;
+    auto &reader = t.pyRuntimeReader;
 
     const Structure *typeObject = top->substructure(typeName);
     auto debugOffsets = topDebugOffsets && debugOffsetsField ? topDebugOffsets->substructure( debugOffsetsField ) : nullptr;
 
+    bool haveSize = false;
     if (debugOffsets) {
-        if ( auto sizei = debugOffsets->fields.find("size"); sizei != debugOffsets->fields.end())
-            size = reader->readObj<size_t>(object + std::get<int>(sizei->second) );
+        if ( auto sizei = debugOffsets->fields.find("size"); sizei != debugOffsets->fields.end()) {
+            size = reader->readObj<size_t>(std::get<int>(sizei->second) );
+            haveSize = true;
+        }
     } else if (typeObject) {
-        if ( auto sizei = typeObject->fields.find("<size>"); sizei != typeObject->fields.end())
+        if ( auto sizei = typeObject->fields.find("<size>"); sizei != typeObject->fields.end()) {
             size = std::get<int>(sizei->second);
+            haveSize = true;
+        }
     }
 
+    if (!haveSize) {
+        std::cerr << "no size for " << typeName << "\n";
+        return;
+    }
 
     for (auto &[fieldName, fieldOffset] : fields) {
-        bool done = false;
         if (debugOffsets) {
             auto offsetoffset = debugOffsets->fieldOffset(fieldName);
             if (offsetoffset) {
-                fieldOffset->off = reader->readObj<size_t>(object + *offsetoffset);
-                done = true;
+                fieldOffset->off = reader->readObj<size_t>(*offsetoffset);
+                continue;
             }
         }
+        // Fall back to DWARF data.
         const Structure *obj = typeObject;
-        if (!done && typeObject) {
-            for (auto &ctr : fieldOffset->debugPath |
-                    std::views::take(fieldOffset->debugPath.size() - 1)) {
-                obj = obj->substructure(ctr);
-                if (!obj)
-                    break;
-            }
-            if (obj) {
-                if ( auto off = obj->fieldOffset(*fieldOffset->debugPath.rbegin()); off) {
-                    fieldOffset->off = *off;
-                    done = true;
-                }
-            }
+        for (auto &ctr : fieldOffset->debugPath | std::views::take(fieldOffset->debugPath.size() - 1)) {
+            if (!obj)
+                break;
+            obj = obj->substructure(ctr);
+        }
+        if (obj) {
+            if ( auto off = obj->fieldOffset(*fieldOffset->debugPath.rbegin()); off)
+                fieldOffset->off = *off;
         }
     }
 }
 
 // Containers for offsets, as found in substructures of RootOffsets
 // For each, we create an Offset object with appropriate container and field
-// types for each offset. As we parse the JSON, we will populate the offsets as
-// we find them in the process.
-#define OFF(type, k, ...) Off<type> k{this, #k, {__VA_ARGS__}}
-#define OFF_DEFAULT(type, k, dflt, ...) Off<type> k{this, #k, {__VA_ARGS__}, dflt}
+// types for each offset. We populate the offsets from the JSON data, either
+// directly from the per-type recorded DWARF info, or indirectly from the
+// debug_offsets field in the _PyRuntime debug offsets header.
 
-struct RuntimeStateOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template<typename Field> using Off = Offset<_PyRuntimeState, Field>;
+#define SPLICE(a, b) a##b
+#define TYPE(type, fieldName) struct SPLICE(type, __offsets) : OffsetContainer { \
+    template<typename Field> using Off = Offset<type, Field>; \
+    SPLICE(type, __offsets)(Target &t) : OffsetContainer(#type, fieldName) { \
+        populate(t); \
+    }
+
+#define ENDTYPE() };
+#define OFF(type, k, ...) Off<type> k{this, #k, {__VA_ARGS__}}
+
+TYPE( _PyRuntimeState, "runtime_state" )
     OFF(PyThreadState *, finalizing, "_finalizing");
     OFF(PyInterpreterState *, interpreters_head, "interpreters", "head");
-};
+ENDTYPE()
 
-
-// Fields that come after PyTypeObject in PyHeapTypeObject
-struct PyHeapTypeObjectOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template<typename Field> using Off = Offset<PyHeapTypeObject, Field>;
+TYPE( PyHeapTypeObject, nullptr )
     OFF(PyObject *, ht_slots);
     OFF(PyDictKeysObject *, ht_cached_keys);
-};
+ENDTYPE()
 
-struct PyObjectOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<PyObject, Field>;
+TYPE(PyObject, "pyobject")
     OFF(PyTypeObject *, ob_type);
-};
+ENDTYPE()
 
-struct PyDictValuesOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<PyDictValues, Field>;
+TYPE( PyDictValues, nullptr )
     OFF(uint8_t, capacity);
     OFF(uint8_t, size);
     OFF(uint8_t, embedded);
     OFF(uint8_t, valid);
     OFF(PyObject *, values);
-};
+ENDTYPE()
 
-struct PyDictKeysOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<PyDictKeysObject, Field>;
+TYPE( PyDictKeysObject, nullptr )
     OFF(ssize_t, dk_refcnt);
     OFF(uint8_t, dk_log2_size);
     OFF(uint8_t, dk_log2_index_bytes);
@@ -186,11 +198,9 @@ struct PyDictKeysOffsets : OffsetContainer {
     OFF(ssize_t, dk_usable);
     OFF(ssize_t, dk_nentries);
     OFF(char, dk_indices);
-};
+ENDTYPE()
 
-struct InterpreterStateOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<PyInterpreterState, Field>;
+TYPE(PyInterpreterState, "interpreter_state")
     OFF(int64_t, id);
     OFF(PyInterpreterState*, next);
     OFF(PyThreadState*, threads_head, "threads", "head");
@@ -206,22 +216,18 @@ struct InterpreterStateOffsets : OffsetContainer {
     OFF(PyThreadState *, gil_runtime_state_holder, "_gil", "last_holder");
     OFF(uint64_t, code_object_generation);
     OFF(uint64_t, tlbc_generation); // XXX: not an offset.
-};
+ENDTYPE()
 
-struct PyTypeObjectOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<PyTypeObject, Field>;
+TYPE(PyTypeObject, "type_object" )
     OFF(char *, tp_name);
     OFF(void *, tp_repr);
     OFF(unsigned long, tp_flags);
     OFF(ssize_t, tp_dictoffset);
     OFF(PyObject *, tp_dict);
     OFF(ssize_t, tp_basicsize);
-};
+ENDTYPE()
 
-struct ThreadStateOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<PyThreadState, Field>;
+TYPE(PyThreadState, "thread_state")
     OFF(PyThreadState *, prev);
     OFF(PyThreadState *, next);
     OFF(PyInterpreterState *, interp);
@@ -233,20 +239,16 @@ struct ThreadStateOffsets : OffsetContainer {
     OFF(unsigned long, native_thread_id);
     OFF(_PyStackChunk *, datastack_chunk);
     OFF(unsigned int, status, "_status");
-};
+ENDTYPE()
 
-struct CFrameOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<_PyCFrame, Field>;
+TYPE(_PyCFrame, nullptr )
     // _PyCFrame is deliberately very small and its first field has remained
     // current_frame.  The default supports JSON files produced before
     // mkpyoff started emitting this otherwise private type.
-    OFF_DEFAULT(_PyInterpreterFrame *, current_frame, 0);
-};
+    OFF(_PyInterpreterFrame *, current_frame);
+ENDTYPE()
 
-struct InterpreterFrameOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<_PyInterpreterFrame, Field>;
+TYPE(_PyInterpreterFrame, "interpreter_frame" )
     OFF(_PyInterpreterFrame *, previous);
     OFF(PyObject *, executable, "f_executable", "bits");
     OFF(PyObject *, f_code);
@@ -257,11 +259,9 @@ struct InterpreterFrameOffsets : OffsetContainer {
     OFF(_PyStackRef *, stackpointer);
     OFF(int, stacktop);
     OFF(void *, tlbc_index); // XXX?
-};
+ENDTYPE()
 
-struct CodeObjectOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<PyCodeObject, Field>;
+TYPE(PyCodeObject, "code_object" )
     OFF(PyObject *, filename, "co_filename");
     OFF(PyUnicodeObject *, name, "co_name");
     OFF(PyObject *, qualname, "co_qualname");
@@ -273,151 +273,81 @@ struct CodeObjectOffsets : OffsetContainer {
     OFF(PyObject *, localspluskinds, "co_localspluskinds");
     OFF(char, co_code_adaptive, "co_code_adaptive");
     OFF(void, co_tlbc); // XXX?
-};
+ENDTYPE()
 
-struct PyBytesObjectOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<PyBytesObject, Field>;
+TYPE(PyBytesObject, "bytes_object" )
     OFF(ssize_t, ob_size, "ob_base", "ob_size");
     OFF(unsigned char, ob_sval);
-};
+ENDTYPE()
 
-struct PyASCIIState {
-    unsigned int interned : 2;
-    unsigned int kind : 3;
-    unsigned int compact : 1;
-    unsigned int ascii : 1;
-    unsigned int statically_allocated : 1;
-};
-
-struct UnicodeObjectOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<PyUnicodeObject, Field>;
+TYPE( PyUnicodeObject, "unicode_object" )
     OFF(ssize_t, asciiobject_size, "_base", "utf8_length");
     OFF(PyASCIIState, state, "_base", "_base", "state");
     OFF(ssize_t, length, "_base", "_base", "length");
-};
+ENDTYPE()
 
-struct PyTupleObjectOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<PyTupleObject, Field>;
+TYPE( PyTupleObject, "tuple_object" )
     OFF(PyObject *, ob_item);
     OFF(ssize_t, ob_size, "ob_base", "ob_size");
-};
+ENDTYPE()
 
-struct PyLongObjectOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<PyLongObject, Field>;
+TYPE( PyLongObject, "long_object" )
     OFF(uintptr_t, lv_tag, "long_value", "lv_tag");
     OFF(unsigned int, ob_digit, "long_value", "ob_digit");
-};
+ENDTYPE()
 
-struct PyListObjectOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<PyListObject, Field>;
+TYPE( PyListObject, "list_object" )
     OFF(ssize_t, ob_size, "ob_base", "ob_size");
     OFF(PyObject **, ob_item);
-};
+ENDTYPE()
 
-struct PyDictObjectOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template <typename Field> using Off = Offset<PyDictObject, Field>;
+TYPE( PyDictObject, "dict_object" )
     OFF(PyDictKeysObject *, ma_keys);
     OFF(PyDictValues *, ma_values);  // Changed to PyDictValues* in Python 3.11+
-};
+ENDTYPE()
 
-struct PyMemberDescrObjectOffsets : OffsetContainer {
-    using OffsetContainer::OffsetContainer;
-    template<typename Field> using Off = Offset<PyMemberDescrObject, Field>;
+TYPE( PyMemberDescrObject, nullptr)
     OFF(PyMemberDef *, d_member );
-};
-
+ENDTYPE()
 
 struct RootOffsets {
-    std::unique_ptr<Structure> topLevel;
+    Target &target;
     uint64_t free_threaded{false};
-    RuntimeStateOffsets runtime_state;
-    InterpreterStateOffsets interpreter_state;
-    ThreadStateOffsets thread_state;
-    CFrameOffsets cframe;
-    InterpreterFrameOffsets interpreter_frame;
-    CodeObjectOffsets code_object;
-    UnicodeObjectOffsets unicode_object;
-    PyObjectOffsets pyobject;
-    PyTupleObjectOffsets tuple_object;
-    PyTypeObjectOffsets type_object;
-    PyLongObjectOffsets long_object;
-    PyListObjectOffsets list_object;
-    PyBytesObjectOffsets bytes_object;
-    PyDictObjectOffsets dict_object;
-    PyDictKeysOffsets dict_keys;
-    PyDictValuesOffsets dict_values;
-    PyHeapTypeObjectOffsets heap_type_object;
-    PyMemberDescrObjectOffsets member_descr;
-    RootOffsets(std::istream &offsetFile, Reader::csptr io, uintptr_t object);
-    ~RootOffsets();
+    _PyRuntimeState__offsets runtime_state{target};
+    PyInterpreterState__offsets interpreter_state {target};
+    PyThreadState__offsets thread_state{target};
+    _PyCFrame__offsets cframe{target};
+    _PyInterpreterFrame__offsets interpreter_frame{target};
+    PyCodeObject__offsets code_object{target};
+    PyUnicodeObject__offsets unicode_object{target};
+    PyObject__offsets pyobject {target};
+    PyTupleObject__offsets tuple_object{target};
+    PyLongObject__offsets long_object{target};
+    PyListObject__offsets  list_object{target};
+    PyBytesObject__offsets bytes_object{target};
+    PyDictObject__offsets dict_object{target};
+    PyDictKeysObject__offsets dict_keys{target};
+    PyDictValues__offsets dict_values{target};
+    PyTypeObject__offsets type_object{target};
+    PyHeapTypeObject__offsets heap_type_object{target};
+    PyMemberDescrObject__offsets member_descr{target };
+    RootOffsets(Target &target_) : target(target_) {
+        if (target.debugOffsets) {
+            if (auto freeThreadedOffset = target.debugOffsets->fieldOffset("free_threaded"))
+                free_threaded = target.pyRuntimeReader->readObj<uint64_t>(*freeThreadedOffset);
+        }
+    }
+    ~RootOffsets() = default;
 };
 
-RootOffsets::RootOffsets(std::istream &in, Reader::csptr io, uintptr_t object)
-    : runtime_state( "_PyRuntimeState", "runtime_state" )
-      , interpreter_state( "PyInterpreterState", "interpreter_state" )
-      , thread_state( "PyThreadState", "thread_state" )
-      , cframe( "_PyCFrame", nullptr )
-      , interpreter_frame( "_PyInterpreterFrame", "interpreter_frame" )
-      , code_object( "PyCodeObject", "code_object" )
-      , unicode_object( "PyUnicodeObject", "unicode_object" )
-      , pyobject( "PyObject", "pyobject" )
-      , tuple_object( "PyTupleObject", "tuple_object" )
-      , type_object( "PyTypeObject", "type_object" )
-      , long_object( "PyLongObject", "long_object" )
-      , list_object( "PyListObject", "list_object" )
-      , bytes_object( "PyBytesObject", "bytes_object" )
-      , dict_object( "PyDictObject", "dict_object" )
-      , dict_keys( "PyDictKeysObject", nullptr )
-      , dict_values( "PyDictValues", nullptr )
-      , heap_type_object( "PyHeapTypeObject", nullptr )
-      , member_descr( "PyMemberDescrObject", nullptr )
+OffsetContainer::OffsetContainer(const char *typeName, const char *debugOffsetsField)
+    : typeName(typeName), debugOffsetsField(debugOffsetsField)
 {
-
-    topLevel = parseContainer( in );
-    Structure *pyDebugOffsets;
-    if (auto debugOffsetsI = topLevel->fields.find("_Py_DebugOffsets"); debugOffsetsI != topLevel->fields.end()) {
-        pyDebugOffsets = std::get<std::unique_ptr<Structure>>( debugOffsetsI->second ).get();
-    } else {
-        pyDebugOffsets = nullptr;
-    }
-
-    if (pyDebugOffsets) {
-        if (auto freeThreadedOffset = pyDebugOffsets->fieldOffset("free_threaded"))
-            free_threaded = io->readObj<uint64_t>(object + *freeThreadedOffset);
-    }
-
-    runtime_state.populate( topLevel.get(), pyDebugOffsets, io, object);
-    interpreter_state.populate( topLevel.get(), pyDebugOffsets, io, object);
-    thread_state.populate( topLevel.get(), pyDebugOffsets, io, object);
-    cframe.populate( topLevel.get(), pyDebugOffsets, io, object);
-    interpreter_frame.populate( topLevel.get(), pyDebugOffsets, io, object);
-    code_object.populate( topLevel.get(), pyDebugOffsets, io, object);
-    unicode_object.populate( topLevel.get(), pyDebugOffsets, io, object);
-    pyobject.populate( topLevel.get(), pyDebugOffsets, io, object);
-    tuple_object.populate( topLevel.get(), pyDebugOffsets, io, object);
-    type_object.populate( topLevel.get(), pyDebugOffsets, io, object);
-    long_object.populate( topLevel.get(), pyDebugOffsets, io, object);
-    list_object.populate( topLevel.get(), pyDebugOffsets, io, object);
-    bytes_object.populate( topLevel.get(), pyDebugOffsets, io, object);
-    dict_object.populate( topLevel.get(), pyDebugOffsets, io, object);
-    dict_keys.populate( topLevel.get(), pyDebugOffsets, io, object);
-    dict_values.populate( topLevel.get(), pyDebugOffsets, io, object);
-    heap_type_object.populate( topLevel.get(), pyDebugOffsets, io, object);
-    member_descr.populate( topLevel.get(), pyDebugOffsets, io, object);
-
 }
-
-RootOffsets::~RootOffsets() = default;
 
 void
 Target::repr(ReprStream &os, const Remote<char *> &charptr) const {
-    os << proc.io->readString(reinterpret_cast<Elf::Addr>(charptr.remote));
+    os << proc.io->readString(reinterpret_cast<Elf::Addr>(charptr.remote), os.remaining());
 }
 
 void
@@ -472,10 +402,9 @@ Target::repr(ReprStream &os, const Remote<PyListObject *> &listobj) const {
 // vs general dicts with different entry layouts.
 template<typename Visitor>
 void
-Target::walkDictEntries(Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values, Visitor visitor) const {
-
+Target::walkDictEntries(Remote<PyDictKeysObject *> keys, Remote<PyDictValues *> values, Visitor visitor) const {
     auto scanDictEntries = [&]( auto &entries ) {
-        auto nentries = fetch(offsets->dict_keys.dk_nentries(keys_remote));
+        auto nentries = fetch(offsets->dict_keys.dk_nentries(keys));
         auto localEntries = fetchArray( entries, nentries );
         unsigned i = -1;
         for (auto entry : localEntries ) {
@@ -501,13 +430,13 @@ Target::walkDictEntries(Remote<PyDictKeysObject *> keys_remote, Remote<PyDictVal
         }
     };
     // Dispatch based on key kind (unicode vs general)
-    uintptr_t keys_addr = reinterpret_cast<uintptr_t>(keys_remote.remote);
+    uintptr_t keys_addr = reinterpret_cast<uintptr_t>(keys.remote);
     // dk_log2_index_bytes describes the full compact-index table, not the
     // size of one index.  In particular, the small shared-key tables used by
     // 3.12 instances reserve eight bytes even when dk_log2_size is zero.
     uintptr_t entries_addr = keys_addr + offsets->dict_keys.size
-        + (size_t(1) << fetch(offsets->dict_keys.dk_log2_index_bytes(keys_remote)));
-    auto kind = fetch(offsets->dict_keys.dk_kind(keys_remote));
+        + (size_t(1) << fetch(offsets->dict_keys.dk_log2_index_bytes(keys)));
+    auto kind = fetch(offsets->dict_keys.dk_kind(keys));
     if (kind == DICT_KEYS_UNICODE || kind == DICT_KEYS_SPLIT) {
         auto entries = Remote<PyDictUnicodeEntry *>{reinterpret_cast<PyDictUnicodeEntry *>(entries_addr)};
         scanDictEntries(entries);
@@ -518,9 +447,9 @@ Target::walkDictEntries(Remote<PyDictKeysObject *> keys_remote, Remote<PyDictVal
 }
 
 void
-Target::dumpKeyValues(ReprStream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const {
+Target::dumpKeyValues(ReprStream &os, Remote<PyDictKeysObject *> keys, Remote<PyDictValues *> values) const {
     const char *sep = "";
-    walkDictEntries(keys_remote, values, [&](Remote<PyObject *>key, Remote<PyObject *>value) {
+    walkDictEntries(keys, values, [&](Remote<PyObject *>key, Remote<PyObject *>value) {
         os << sep;
         repr(os, key);
         os << ": ";
@@ -563,7 +492,7 @@ Target::dumpSlots(ReprStream &os, Remote<PyTypeObject *> type, const Remote<PyOb
 
     // Get tp_dict to look up the member descriptors
     auto tp_dict_obj = fetch(offsets->type_object.tp_dict(type));
-    if (!tp_dict_obj.remote)
+    if (!tp_dict_obj)
         return;
     auto dict = tp_dict_obj.reinterpretCast<PyDictObject *>();
     auto slot_names = fetchArray(offsets->tuple_object.ob_item(slots_tuple), ob_size);
@@ -675,10 +604,10 @@ Target::reprUserDefined(ReprStream &os, const Remote<PyObject *> &remote) const 
             auto dict_or_values = fetch(dict_addr);
             os << " ";
             if (reinterpret_cast<uintptr_t>(dict_or_values.remote) & 1) {
-                    auto cached_keys = fetch(offsets->heap_type_object.ht_cached_keys(heapType));
+                auto cached_keys = fetch(offsets->heap_type_object.ht_cached_keys(heapType));
                 if (cached_keys) {
                     auto values = Remote<PyDictValues *>{reinterpret_cast<PyDictValues *>(
-                        reinterpret_cast<uintptr_t>(dict_or_values.remote) + 1)};
+                            reinterpret_cast<uintptr_t>(dict_or_values.remote) + 1)};
                     os << "{";
                     dumpKeyValues(os, cached_keys, values);
                     os << "}";
@@ -957,8 +886,13 @@ Target::Target(Procman::Process &proc_)
             version = { proc_.io->readObj<unsigned long>(loadaddr + sym.st_value), obj->getHeader().e_machine };
         }
         pyRuntime.remote = reinterpret_cast<_PyRuntimeState *>(secaddr);
-        auto offsetData = findOffsetsFile(version);
-        offsets = make_unique<RootOffsets>( offsetData, proc.io, secaddr);
+        pyRuntimeReader = proc.io->view("_PyRuntime", secaddr);
+        auto offsetFile = findOffsetsFile(version);
+        offsetData = parseContainer(offsetFile);
+        if (auto debugOffsetsI = offsetData->fields.find("_Py_DebugOffsets"); debugOffsetsI != offsetData->fields.end()) {
+            debugOffsets = std::get<std::unique_ptr<Structure>>( debugOffsetsI->second ).get();
+        }
+        offsets = std::make_unique<RootOffsets>( *this );
         break;
     }
 }
