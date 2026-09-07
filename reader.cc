@@ -82,17 +82,19 @@ AbstractMemReader::describe(std::ostream &os) const
 }
 
 string
-AbstractMemReader::readString(Off offset) const {
-   return string(ptroff(data(), offset));
+AbstractMemReader::readString(Off offset, size_t maxlen) const {
+   const char *p = ptroff( data(), offset );
+   size_t actual_len = strnlen(p, maxlen);
+   return string(p, actual_len);
 }
 
 string
-Reader::readString(Off offset) const
+Reader::readString(Off offset, size_t maxlen) const
 {
     if (offset == 0)
         return "(null)";
     string res;
-    for (Off s = size(); offset < s; ++offset) {
+    for (size_t remainder = std::min(size() - offset, maxlen); remainder; ++offset, --remainder) {
         char c;
         if (read(offset, 1, &c) != 1)
             break;
@@ -137,6 +139,7 @@ CacheReader::CacheReader(Reader::csptr upstream_)
 void
 CacheReader::flush() {
     pages.clear();
+    stringCache.clear();
 }
 
 CacheReader::Page &
@@ -200,11 +203,11 @@ CacheReader::read(Off off, size_t count, char *ptr) const
 }
 
 string
-CacheReader::readString(Off off) const
+CacheReader::readString(Off off, size_t maxlen) const
 {
     auto [it, neu] = stringCache.insert(std::make_pair(off, std::string{}));
     if (neu)
-        it->second = Reader::readString(off);
+        it->second = Reader::readString(off, maxlen);
     return it->second;
 }
 

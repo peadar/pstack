@@ -965,7 +965,7 @@ public:
     intmax_t readFormSigned(Form f);
 
     std::string getstring() {
-        std::string s = io->readString(off);
+        std::string s = io->readString(off, std::numeric_limits<size_t>::max());
         off += s.size() + 1;
         return s;
     }

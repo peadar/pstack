@@ -257,7 +257,7 @@ public:
     SymbolSection(Reader::csptr symbols_, Reader::csptr strings_)
        : symbols(symbols_), strings(strings_), array(*symbols)
     {}
-    std::string name(const Sym &sym) const { return strings->readString(sym.st_name); }
+    std::string name(const Sym &sym) const { return strings->readString(sym.st_name, std::numeric_limits<size_t>::max()); }
 };
 
 struct SymbolVersioning {

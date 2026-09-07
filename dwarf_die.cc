@@ -561,7 +561,7 @@ DIE::Attribute::operator std::string() const
             const auto &strs = alt->debugStrings;
             if (!strs)
                 return "(alt string table unavailable)";
-            return strs.io()->readString(value().addr);
+            return strs.io()->readString(value().addr, std::numeric_limits<size_t>::max());
         }
         case DW_FORM_strp:
             return dwarf->debugStrings.io()->readString(value().addr);

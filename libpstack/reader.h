@@ -65,7 +65,7 @@ public:
     virtual std::string filename() const = 0;
 
     // read a text string at an offset
-    virtual std::string readString(Off offset) const;
+    virtual std::string readString(Off offset, size_t maxlen = std::numeric_limits<size_t>::max()) const;
 
     virtual Off size() const = 0;
     typedef std::shared_ptr<Reader> sptr;
@@ -140,7 +140,7 @@ public:
         os << *upstream;
     }
     explicit CacheReader(Reader::csptr upstream_);
-    std::string readString(Off off) const override;
+    std::string readString(Off off, size_t maxlen) const override;
     Off size() const override { return upstream->size(); }
     std::string filename() const override { return upstream->filename(); }
 };
@@ -152,7 +152,7 @@ public:
     size_t read(Off off, size_t count, char *ptr) const override;
     void describe(std::ostream &os) const override;
     std::string filename() const override { return "in-memory"; }
-    std::string readString(Off offset) const override;
+    std::string readString(Off offset, size_t maxlen) const override;
     csptr view(const std::string &name, Off start, Off length=std::numeric_limits<Off>::max()) const override;
     std::pair<uintmax_t, size_t> readULEB128(Off off) const override;
     std::pair<intmax_t, size_t> readSLEB128(Off off) const override;
@@ -206,8 +206,8 @@ class OffsetReader final : public Reader {
     Off length;
     std::string name;
 public:
-    std::string readString(Off absoff) const override {
-        return upstream->readString(absoff + offset);
+    std::string readString(Off absoff, size_t maxlen) const override {
+        return upstream->readString(absoff + offset, maxlen);
     }
     size_t read(Off off, size_t count, char *ptr) const override;
     OffsetReader(std::string, Reader::csptr upstream_, Off offset_, Off length_ = std::numeric_limits<Off>::max());
