@@ -71,7 +71,7 @@ TypeDump::dump(std::ostream &os) const {
       }
       case Dwarf::DW_TAG_union_type: case Dwarf::DW_TAG_structure_type: {
          JObject jo(os);
-         jo.field("<size>", uintptr_t(type.attribute(Dwarf::DW_AT_byte_size)));
+         jo.field("<size>", uintmax_t(type.attribute(Dwarf::DW_AT_byte_size)));
          if (offset != 0)
             jo.field("<offset>", offset);
          for (auto &member : type.children()) {
@@ -79,7 +79,7 @@ TypeDump::dump(std::ostream &os) const {
                case Dwarf::DW_TAG_member: {
                   auto chtype = realtype(Dwarf::DIE(member.attribute(Dwarf::DW_AT_type)));
                   auto fieldOff = member.attribute(Dwarf::DW_AT_data_member_location);
-                  auto fieldOffset = fieldOff.valid() ? uintptr_t(fieldOff) : 0;
+                  auto fieldOffset = fieldOff.valid() ? uintmax_t(fieldOff) : 0;
                   jo.field(member.name(), TypeDump(offset + fieldOffset, chtype));
                   break;
                }

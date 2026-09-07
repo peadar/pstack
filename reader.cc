@@ -94,7 +94,7 @@ Reader::readString(Off offset, size_t maxlen) const
     if (offset == 0)
         return "(null)";
     string res;
-    for (size_t remainder = std::min(size() - offset, maxlen); remainder; ++offset, --remainder) {
+    for (size_t remainder = std::min(size_t(size() - offset), maxlen); remainder; ++offset, --remainder) {
         char c;
         if (read(offset, 1, &c) != 1)
             break;
