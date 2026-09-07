@@ -82,6 +82,7 @@ def main(args):
     if pid == 0:
         os.close(read_fd)
         try:
+            longString = "abc" * 1000
             intermediate_function(2, write_fd)
         finally:
             os._exit(0)

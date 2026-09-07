@@ -356,22 +356,11 @@ Target::repr(ReprStream &os, const Remote<PyTupleObject *> &charptr) const {
     os << "(";
     size_t shown = 0;
     auto items = offsets->tuple_object.ob_item(charptr);
-    for (; shown < size_t(count); ++shown) {
-        size_t separator = shown ? 2 : 0;
-        // Leave room for the closing delimiter, and for an ellipsis when
-        // there are still items after this one.
-        size_t reserve = shown + 1 < size_t(count) ? 4 : count == 1 ? 2 : 1;
-        if (os.remaining() <= separator + reserve)
-            break;
+    for (; os.remaining() && shown < size_t(count); ++shown) {
         if (shown)
             os << ", ";
-        auto item = os.sub(reserve);
-        repr(item, fetch(Remote<PyObject **>{items.remote + shown}));
+        repr(os, fetch(Remote<PyObject **>{items.remote + shown}));
     }
-    if (shown != size_t(count))
-        os << (shown ? ", " : "") << "...";
-    if (count == 1)
-        os << ",";
     os << ")";
 }
 
@@ -381,18 +370,11 @@ Target::repr(ReprStream &os, const Remote<PyListObject *> &listobj) const {
     auto items = fetch(offsets->list_object.ob_item(listobj));
     os << "[";
     size_t shown = 0;
-    for (; shown < size_t(count); ++shown) {
-        size_t separator = shown ? 2 : 0;
-        size_t reserve = shown + 1 < size_t(count) ? 4 : 1;
-        if (os.remaining() <= separator + reserve)
-            break;
+    for (; os.remaining() && shown < size_t(count); ++shown) {
         if (shown)
             os << ", ";
-        auto item = os.sub(reserve);
-        repr(item, fetch(Remote<PyObject **>{items.remote + shown}));
+        repr(os, fetch(Remote<PyObject **>{items.remote + shown}));
     }
-    if (shown != size_t(count))
-        os << (shown ? ", " : "") << "...";
     os << "]";
 }
 
@@ -701,21 +683,12 @@ Target::repr(ReprStream &os, const Remote<PyBytesObject *> &remote) const {
     // for it while rendering rather than reserving a fixed character count.
     auto fetched = std::min<size_t>(sz, os.remaining());
     auto vec = fetchArray(offsets->bytes_object.ob_sval(remote), fetched);
-    auto contentLimit = os.remaining() > 5 ? os.remaining() - 5 : 0; // b'', and "..."
-    std::string content;
-    size_t rendered = 0;
-    for (auto c : vec) {
-        std::ostringstream escaped;
-        escaped << ReprChar{static_cast<unsigned char>(c), '\''};
-        if (content.size() + escaped.str().size() > contentLimit)
-            break;
-        content += escaped.str();
-        ++rendered;
-    }
     os << "b'";
-    os << content;
-    if (rendered != size_t(sz))
-        os << "...";
+    for (auto c : vec) {
+        os << ReprChar{static_cast<unsigned char>(c), '\''};
+        if (!os.remaining())
+            break;
+    }
     os << "'";
 }
 
@@ -759,26 +732,16 @@ Target::repr(ReprStream &os, const Remote<PyUnicodeObject *> &remote) const {
     auto state = fetch(unicode.state(remote));
     auto objoff = uintptr_t(remote.remote);
     auto length = fetch(unicode.length(remote));
-    // This limits the remote read, rather than just the final ostream output.
-    // A code point can expand when escaped or encoded as UTF-8, so the final
-    // output may still be shortened by repr(), but the target read is bounded.
+
     auto fetched = std::min<size_t>(length, os.remaining());
-    auto contentLimit = os.remaining() > 5 ? os.remaining() - 5 : 0; // '', and "..."
-    std::string content;
-    size_t rendered = 0;
     auto append = [&](uint32_t c) {
-        std::ostringstream escaped;
-        escaped << ReprChar{c, '\''};
-        if (content.size() + escaped.str().size() > contentLimit)
-            return false;
-        content += escaped.str();
-        ++rendered;
-        return true;
+        os << ReprChar{c, '\''};
+        return os.remaining() != 0;
     };
 
     uintptr_t dataAddr;
     if (state.compact) {
-        // Compaact form. Data follows the object.
+        // Compact form. Data follows the object.
         dataAddr = objoff + (state.ascii ? unicode.asciiobject_size.off : unicode.size - sizeof (uintptr_t));
     } else {
         // non-compact form - data is pointed to by the pointer at the end of the PyUnicodeObject.
@@ -787,35 +750,40 @@ Target::repr(ReprStream &os, const Remote<PyUnicodeObject *> &remote) const {
         dataAddr = fetch(dataAddrPtr);
     }
     os << "'";
-    if (state.kind == 1) {
-        Remote<char *> dataptr { reinterpret_cast<char *>(dataAddr) };
-        std::vector<char> data;
-        data = fetchArray(dataptr, fetched);
-        for (auto c : data)
-            if (!append(static_cast<unsigned char>(c)))
-                break;
-    } else if (state.kind == 2) {
-        // data is 2-byte unicode. Convert to UTF-8
-        Remote<uint16_t *> dataptr { reinterpret_cast<uint16_t *>(dataAddr) };
-        std::vector<uint16_t> data;
-        data = fetchArray(dataptr, fetched);
-        for (auto c : data)
-            if (!append(c))
-                break;
-    } else if (state.kind == 4) {
-        // data is 4-byte unicode. Convert to UTF-8
-        Remote<uint32_t *> dataptr { reinterpret_cast<uint32_t *>(dataAddr) };
-        std::vector<uint32_t> data;
-        data = fetchArray(dataptr, fetched);
-        for (auto c : data)
-            if (!append(c))
-                break;
-    } else {
-        os << "<string of unsupported kind " << state.kind << ">";
+    switch (state.kind) {
+        case 1: {
+            Remote<char *> dataptr { reinterpret_cast<char *>(dataAddr) };
+            std::vector<char> data;
+            data = fetchArray(dataptr, fetched);
+            for (auto c : data)
+                if (!append(static_cast<unsigned char>(c)))
+                    break;
+            break;
+        }
+        case 2: {
+            // data is 2-byte unicode. Convert to UTF-8
+            Remote<uint16_t *> dataptr { reinterpret_cast<uint16_t *>(dataAddr) };
+            std::vector<uint16_t> data;
+            data = fetchArray(dataptr, fetched);
+            for (auto c : data)
+                if (!append(c))
+                    break;
+            break;
+        }
+        case 4: {
+            // data is 4-byte unicode. Convert to UTF-8
+            Remote<uint32_t *> dataptr { reinterpret_cast<uint32_t *>(dataAddr) };
+            std::vector<uint32_t> data;
+            data = fetchArray(dataptr, fetched);
+            for (auto c : data)
+                if (!append(c))
+                    break;
+            break;
+        }
+        default:
+            os << "<string of unsupported kind " << state.kind << ">";
+            break;
     }
-    os << content;
-    if (rendered != size_t(length))
-        os << "...";
     os << "'";
 }
 
