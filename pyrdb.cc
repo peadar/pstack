@@ -400,14 +400,14 @@ Target::walkDictEntries(Remote<PyDictKeysObject *> keys, Remote<PyDictValues *> 
             if (values) {
                 // Split dict or inline values: values are in separate array
                 uintptr_t values_array_addr = reinterpret_cast<uintptr_t>(values.remote) + offsets->dict_values.values.off;
-                auto values_array = Remote<PyObject **>{reinterpret_cast<PyObject **>(values_array_addr)};
-                value_ptr = fetch(Remote<PyObject **>{values_array.remote + i}).remote;
+                auto values_array = Remote{reinterpret_cast<PyObject **>(values_array_addr)};
+                value_ptr = fetch(Remote{values_array.remote + i}).remote;
             } else {
                 // Combined dict: value is in the entry
                 value_ptr = entry.me_value;
             }
 
-            if (!visitor(Remote<PyObject *>{entry.me_key}, Remote<PyObject *>{value_ptr}))
+            if (!visitor(Remote{entry.me_key}, Remote{value_ptr}))
                break;
         }
     };
@@ -420,10 +420,10 @@ Target::walkDictEntries(Remote<PyDictKeysObject *> keys, Remote<PyDictValues *> 
         + (size_t(1) << fetch(offsets->dict_keys.dk_log2_index_bytes(keys)));
     auto kind = fetch(offsets->dict_keys.dk_kind(keys));
     if (kind == DICT_KEYS_UNICODE || kind == DICT_KEYS_SPLIT) {
-        auto entries = Remote<PyDictUnicodeEntry *>{reinterpret_cast<PyDictUnicodeEntry *>(entries_addr)};
+        auto entries = Remote{reinterpret_cast<PyDictUnicodeEntry *>(entries_addr)};
         scanDictEntries(entries);
     } else {
-        auto entries = Remote<PyDictKeyEntry *>{reinterpret_cast<PyDictKeyEntry *>(entries_addr)};
+        auto entries = Remote{reinterpret_cast<PyDictKeyEntry *>(entries_addr)};
         scanDictEntries(entries);
     }
 }
@@ -485,6 +485,8 @@ Target::dumpSlots(ReprStream &os, Remote<PyTypeObject *> type, const Remote<PyOb
     os << " {";
 
     for (auto &slot_name : slot_names) {
+        if (os.remaining() == 0)
+            return;
         if (!slot_name)
             continue;
 
@@ -789,9 +791,7 @@ Target::repr(ReprStream &os, const Remote<PyUnicodeObject *> &remote) const {
 
 std::string
 Target::typeName(Remote<PyTypeObject *> remote) const {
-    std::ostringstream os;
-    os << proc.io->readString((uintptr_t)fetch(offsets->type_object.tp_name(remote)).remote);
-    return os.str();
+    return proc.io->readString((uintptr_t)fetch(offsets->type_object.tp_name(remote)).remote);
 }
 
 Remote<PyTypeObject *>
@@ -950,7 +950,7 @@ void Target::dumpAllInterpreters(std::ostream &os, size_t indent) const {
 
 void Target::dumpInterpreter( std::ostream &os, Remote<PyInterpreterState *> interp, size_t indent) const {
         for (Remote<PyThreadState *> t : threads(interp)) {
-            dumpThread( os, t, indent + 1 );
+            dumpThread( os, t, indent);
             os << "\n";
         }
 }
@@ -959,7 +959,7 @@ void Target::dumpThread(std::ostream &os, Remote<PyThreadState *> t, size_t inde
     auto &threadOffs = offsets->thread_state;
     auto id = fetch(threadOffs.thread_id(t));
     auto native_id = fetch(threadOffs.native_thread_id(t));
-    os << pad(indent) << "thread id: " << id << ", lwp: " << native_id << "\n";
+    os << pad(indent) << "thread: " << (void *)id << ", lwp: " << native_id << "\n";
     Remote<_PyInterpreterFrame *> frame;
     if (threadOffs.current_frame.found()) {
         frame = fetch(threadOffs.current_frame(t));
@@ -1020,12 +1020,19 @@ void Target::dumpFrame(std::ostream &os, Remote<_PyInterpreterFrame *> frame, si
             auto argCount = fetch(offsets->code_object.argcount(code));
             auto kwonlyArgCount = fetch(offsets->code_object.kwonlyargcount(code));
 
-            auto printValue = [&](auto value) {
-                if ((value & 3) == 3) {
-                    os << (value >> 2);
+            auto printValue = [&](Remote<PyObject *> value) {
+                auto intv = intptr_t( value.remote );
+                if ((intv & 3) == 3) {
+                    os << (intv >> 2);
                 } else {
-                    auto tval = Remote{reinterpret_cast<PyObject *>(value & ~3)};
-                    os << repr(tval, proc.context.options.maxstr);
+                    ReprStreamBuf buffer(os.rdbuf());
+                    ReprStream limited(buffer, proc.context.options.maxstr);
+                    value.remote = reinterpret_cast<PyObject *>(intv & ~3 );
+                    if (proc.context.verbose > 1)
+                       os << value << ":";
+                    repr(limited, value);
+                    if (limited.remaining() == 0)
+                        os << "...";
                 }
             };
 
@@ -1034,13 +1041,18 @@ void Target::dumpFrame(std::ostream &os, Remote<_PyInterpreterFrame *> frame, si
                 for (int i = 0; i < argCount; ++i) {
                     if (i)
                         os << ", ";
+                    if (proc.context.verbose) {
+                       auto [varName, nameTruncated] = readUnicodeText(cast(types->pyUnicode_Type, nameVec[i]), 1024);
+                       os << varName << "=";
+                    }
                     printValue(valueVec[i]);
                 }
                 for (int i = 0; i < kwonlyArgCount; ++i) {
                     if (argCount || i)
                         os << ", ";
                     auto argIndex = argCount + i;
-                    os << repr(nameVec[argIndex], proc.context.options.maxstr) << "=";
+                    auto [varName, nameTruncated] = readUnicodeText(cast(types->pyUnicode_Type, nameVec[argIndex]), 1024);
+                    os << varName << "=";
                     printValue(valueVec[argIndex]);
                 }
                 os << ")";
@@ -1055,7 +1067,9 @@ void Target::dumpFrame(std::ostream &os, Remote<_PyInterpreterFrame *> frame, si
                 for (ssize_t i = argCount + kwonlyArgCount; i < localCount; ++i) {
                     auto name = nameVec[i];
                     auto value = valueVec[i];
-                    os << pad(indent+1) << repr(name, proc.context.options.maxstr) << ": ";
+                    os << pad(indent+1);
+                    printValue(name);
+                    os << ": ";
                     printValue(value);
                     os << "\n";
                 }

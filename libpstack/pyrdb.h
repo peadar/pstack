@@ -112,7 +112,7 @@ struct _PyInterpreterFrame;
 struct PyInterpreterState;
 struct PyObject;
 struct _PyRuntimeState;
-using _PyStackRef = uintptr_t;
+using _PyStackRef = PyObject *;
 struct _PyStackChunk;
 struct PyThreadState;
 struct PyTypeObject;
@@ -300,7 +300,6 @@ public:
     void dumpKeyValues(ReprStream &os, Remote<PyDictKeysObject *> keys_remote, Remote<PyDictValues *> values) const;
     // Helper to dump slots from a type's tp_dict
     void dumpSlots(ReprStream &os, Remote<PyTypeObject *> type, const Remote<PyObject *> &obj) const;
-
     void repr(ReprStream &os, const Remote<PyObject *> &remote) const;
     void repr(ReprStream &os, const Remote<PyBytesObject *> &remote) const;
     void repr(ReprStream &os, const Remote<PyListObject *> &remote) const;
@@ -310,19 +309,9 @@ public:
     void repr(ReprStream &os, const Remote<PyLongObject *> &remote) const;
     void repr(ReprStream &os, const Remote<PyDictObject *> &remote) const;
     void reprUserDefined(ReprStream &os, const Remote<PyObject *> &remote) const;
-
-    // Render a Python value in a repr-like form.  maxsize includes the
-    // trailing ellipsis when truncation is necessary.
-    template <typename T> void repr(std::ostream &os, const T &t, size_t maxsize) const {
-        ReprStreamBuf buffer(os.rdbuf());
-        ReprStream limited(buffer, maxsize);
-        repr(limited, t);
-    }
-    template <typename T> ReprValueStream<T> repr(const T &t, size_t maxsize) const { return ReprValueStream (*this, t, maxsize); }
     ~Target();
 };
 
-template <typename T> std::ostream & operator << (std::ostream &os, const Target::ReprValueStream<T> &t) { t.target.repr(os, t.object, t.maxsize); return os; }
 
 template<typename To> Remote<To *> Target::cast(const PyType<To> &to, Remote<PyObject *> from) const {
     if (pyType(from) == to.typeObject)

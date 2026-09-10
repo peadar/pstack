@@ -389,7 +389,7 @@ emain(int argc, char **argv, Context &context)
     if (optind == argc)
         return usage(std::cerr, argv[0], flags);
 
-    auto doStack = [=, &context] (Procman::Process &proc) {
+    auto doStack = [=] (Procman::Process &proc) {
         while (!interrupted) {
 
             std::string pyFailReason = "no interpreter found";
@@ -406,20 +406,15 @@ emain(int argc, char **argv, Context &context)
 #endif
 
 #if defined(HAVE_PYTHON39)
-                if (!isPythonProcess) {
+                if (!isPythonProcess)
                     isPythonProcess = pystack(proc, pythonModules);
-                }
 #endif
-                // error if -p but not python process
-                if (doPython && !isPythonProcess) {
+                if (doPython && !isPythonProcess) // error if -p but not python process
                     throw Exception() << "Couldn't find a usable Python interpreter: " << pyFailReason;
-                }
             }
             if (!doPython)
 #endif
-            {
                 pstack(proc);
-            }
             if (sleepTime != 0.0)
                 usleep(sleepTime * 1000000);
             else

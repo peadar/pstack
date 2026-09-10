@@ -71,7 +71,7 @@ LiveProcess::resume(lwpid_t lwpid) {
    if (ptrace(PT_DETACH, lwpid, caddr_t(1), 0) != 0 && context.debug != nullptr)
       *context.debug << "failed to detach from process " << lwpid << ": " << strerror(errno) << "\n";
    dynamic_cast<CacheReader&>(*io).flush();
-   if (context.verbose >= 1) {
+   if (context.verbose > 1) {
       timeval tv;
       gettimeofday(&tv, nullptr);
       intmax_t usecs = (tv.tv_sec - tcb.stoppedAt.tv_sec) * 1000000;
@@ -219,7 +219,7 @@ LiveProcess::stop(lwpid_t tid) {
             *context.debug << "...failed " << errno << "\n";
          }
       } else {
-         if (context.verbose >= 1)
+         if (context.verbose > 1)
             *context.debug << "suspended LWP " << tid << " (attempt " << count+1 << ")" << std::endl;
          return;
       }

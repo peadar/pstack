@@ -29,10 +29,10 @@ class SlottedUser:
 
 
 def intermediate_function(n, ready_fd):
-    return frame(n, ready_fd)
+    return frame(n, ready_fd, kwarg="keyword value")
 
 
-def frame(n, ready_fd):
+def frame(n, ready_fd, *, kwarg=None):
     adict = {"twice": n * 2}
     anon_unicode_dict = {2: "twice"}
     astr = "hello world"

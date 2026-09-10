@@ -236,7 +236,7 @@ Process::extractDtDebugFromDynamicSegment(const Elf::Phdr &phdr, Elf::Addr loadA
     ReaderArray<Elf::Dyn> dynamic(*dynReader);
     for (auto &dyn : dynamic) {
         if (dyn.d_tag == DT_DEBUG && dyn.d_un.d_ptr != 0) {
-            if (context.verbose)
+            if (context.verbose > 1)
                 *context.debug << "found rdebugaddr via DT_DEBUG at "
                    << std::hex << dyn.d_un.d_ptr << std::dec << " in " << loc << "\n";
             return dyn.d_un.d_ptr;
@@ -361,7 +361,7 @@ Process::processAUXV(const Reader &auxio)
                 std::vector<uint8_t> data;
                 data.resize(n.n_descsz);
                 io->read(noteVa + sizeof n + 4, n.n_descsz, (char *)data.data());
-                if (context.verbose)
+                if (context.verbose > 1)
                     *context.debug << "build ID From AT_PHDR: " << Elf::BuildID(data) << "\n";
                 execImage = context.findImage(Elf::BuildID{data});
                 break;

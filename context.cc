@@ -214,11 +214,11 @@ Context::getImageIfLoaded(const Container &ctr, const typename Container::key_ty
     auto it = ctr.find(key);
     if (it != ctr.end()) {
         counters.elfHits++;
-        if (verbose > 0)
+        if (verbose > 1)
             *debug << "cache hit for " << (isDebug?"debug ":"") << "ELF image with " << ContainerKeyDescr<typename Container::key_type>{} << " " << key << "\n";
         return it->second;
     }
-    if (verbose > 0)
+    if (verbose > 1)
         *debug << "cache miss for " << (isDebug?"debug ":"") << "ELF image with " << ContainerKeyDescr<typename Container::key_type>{} << " " << key << "\n";
     return {};
 }
@@ -266,7 +266,7 @@ Context::getImageInPath(const std::vector<std::filesystem::path> &paths, NameMap
                 while (cur != prologueEnd && !isspace(*cur))
                     ++cur;
                 std::filesystem::path interpreter { prologueBegin, cur };
-                if (verbose > 0)
+                if (verbose > 1)
                     *debug << name << " has an interpreter: " << interpreter << " - opening that instead\n";
                 res = openImage( interpreter, -1, false );
             } else {
@@ -281,7 +281,7 @@ Context::getImageInPath(const std::vector<std::filesystem::path> &paths, NameMap
             continue;
         }
     }
-    if (verbose > 0) {
+    if (verbose > 1) {
         if (res)
             *debug << "found " << *res->io << " for " << name << " in one of " << json(paths) << "\n";
         else
@@ -350,9 +350,9 @@ std::shared_ptr<Elf::Object> Context::getImageImpl( const Elf::BuildID &bid, boo
         if (fd >= 0) {
             res = openImage( path, fd, isDebug );
             free(path);
-            if (verbose)
+            if (verbose > 1)
                 *debug << "fetched " << *res->io << " for " << bid << " with debuginfod\n";
-        } else if (verbose) {
+        } else if (verbose > 1) {
             *debug << "failed to fetch image for " << bid << " with debuginfod: " << strerror(-fd) << "\n";
         }
     }
