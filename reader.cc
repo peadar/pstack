@@ -205,7 +205,7 @@ CacheReader::read(Off off, size_t count, char *ptr) const
 string
 CacheReader::readString(Off off, size_t maxlen) const
 {
-    auto [it, neu] = stringCache.insert(std::make_pair(off, std::string{}));
+    auto [it, neu] = stringCache.insert({{off, maxlen}, std::string{}});
     if (neu)
         it->second = Reader::readString(off, maxlen);
     return it->second;

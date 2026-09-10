@@ -119,7 +119,12 @@ public:
 
 class CacheReader final : public Reader {
     Reader::csptr upstream;
-    mutable std::unordered_map<Off, std::string> stringCache;
+    // Inner pair is offset, maxlen
+    using StringCacheKey = std::pair<Off, size_t>;
+    struct StringCacheKeyHash {
+       std::size_t operator() (const StringCacheKey &key) const { return key.first ^ (key.second << 8); }
+    };
+    mutable std::unordered_map<StringCacheKey, std::string, StringCacheKeyHash> stringCache;
     static const size_t PAGESIZE = 256;
     static const size_t MAXPAGES = 16;
     class Page {
