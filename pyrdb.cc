@@ -822,6 +822,8 @@ Target::Target(Procman::Process &proc_)
     // find a python interpreter. The first thing with the right section with the right contents will do.
     for (auto &[addr, mapped] : proc.objects) {
         auto obj = mapped.object(proc.context);
+        if (!obj)
+            continue;
         auto &sec = obj->getSection(".PyRuntime", SHT_PROGBITS);
         if (!sec)
             continue;
