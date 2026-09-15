@@ -205,16 +205,27 @@ LiveProcess::stop(lwpid_t tid) {
       } else if (!WIFSTOPPED(status)) {
          tcb.ptraceErr = EINVAL;
          *context.debug << "wait doesn't report LWP stopped? " << status << "\n";
-      } else if (WSTOPSIG(status) != SIGSTOP) {
-         *context.debug << "got signal " << WSTOPSIG(status)
-            << " while waiting for " << tid << " to stop - deliver and retry.";
+      } else if (int stopsig = WSTOPSIG(status); stopsig != SIGSTOP) {
+         int deliversig;
+         if (stopsig == SIGTRAP) {
+             // We can get SIGTRAP if we attached just at an execve() - just
+             // ignore it. A process *might* miss a self-raised SIGTRAP here,
+             // but that's highly unlikely
+             deliversig = 0;
+         } else {
+             deliversig = stopsig;
+         }
+         if (context.verbose)
+             *context.debug << "got signal " << stopsig << " while waiting for " << tid << " to stop - "
+                 << (stopsig ? "deliver" : "ignore") << " and retry, ";
          siginfo_t si;
          if (ptrace(PTRACE_GETSIGINFO, tid, nullptr, &si) != -1) {
-            *context.debug << " new siginfo: " << SigInfo{si};
+             if (context.verbose)
+                *context.debug << "new siginfo: " << SigInfo{si};
          }
          *context.debug << "\n";
 
-         if (ptrace(PTRACE_CONT, tid, nullptr, WSTOPSIG(status)) == -1) {
+         if (ptrace(PTRACE_CONT, tid, nullptr, deliversig) == -1) {
             tcb.ptraceErr = errno;
             *context.debug << "...failed " << errno << "\n";
          }
