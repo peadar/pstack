@@ -120,7 +120,7 @@ def main(args):
     print(f"will trace process {pid}")
     try:
         assert os.read(read_fd, 5) == b"ready"
-        output = subprocess.check_output([pstack.PSTACK_PATH, "-pal", str(pid)], cwd=build_dir, text=True)
+        output = subprocess.check_output([pstack.PSTACK_PATH, "--max-string=1024", "-pal", str(pid)], cwd=build_dir, text=True)
     finally:
         os.close(read_fd)
         if args.pause:
