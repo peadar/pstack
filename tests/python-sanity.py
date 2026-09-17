@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import pstack
+import math
 
 class User:
     def __init__(self):
@@ -49,6 +50,7 @@ def frame(n, ready_fd, *, kwarg=None):
     a_non_ascii_str = "hello 😎"
     abytes = b"\x01\x02\x41\xff"
     anone = None
+    an_iterator = iter(())
     auser = User()
     atuple = (1, 2, 3)
     alist = ["a", "b", "c"]
@@ -65,6 +67,11 @@ def frame(n, ready_fd, *, kwarg=None):
     not_implemented = NotImplemented
     a_set = {42}
     a_frozenset = frozenset({"frozen"})
+    a_module = math
+    a_function = intermediate_function
+    a_class = User
+    an_exception = ValueError("bad value")
+    a_generator = (item for item in ())
     a_really_big_int = (1 << 64) - 1
     an_overflowing_int = a_really_big_int + 1
     a_negative_int = -42
@@ -147,6 +154,12 @@ def main(args):
         "'not_implemented': NotImplemented",
         "'a_set': {42}",
         "'a_frozenset': frozenset({'frozen'})",
+        "'a_module': <module object>",
+        "'a_function': <function object>",
+        "'a_class': <type object>",
+        "'an_exception': <ValueError object>",
+        "'a_generator': <generator object>",
+        "'an_iterator': <tuple_iterator object>",
         f"'a_negative_int': -42",
         f"'a_really_big_int': {(1<<64)-1}",
         "'an_overflowing_int': <practical infinity>", # we can't deal with values over 2^64-1

@@ -584,9 +584,9 @@ Target::reprUserDefined(ReprStream &os, const Remote<PyObject *> &remote) const 
     auto tp_flags = fetch(offsets->type_object.tp_flags(type));
     constexpr uintptr_t Py_TPFLAGS_HEAPTYPE = 1UL << 9;
     if (!(tp_flags & Py_TPFLAGS_HEAPTYPE)) {
-        os << "unhandled type <";
+        os << "<";
         repr(os, fetch(offsets->type_object.tp_name(type)));
-        os << ">";
+        os << " object>";
         return;
     }
 
