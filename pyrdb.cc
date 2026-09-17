@@ -78,6 +78,7 @@ struct PyTypes {
     PyType<PyComplexObject> pyComplex_Type {lookupTypeSymbol("PyComplex_Type")};
     PyType<PyByteArrayObject> pyByteArray_Type {lookupTypeSymbol("PyByteArray_Type")};
     PyType<PySliceObject> pySlice_Type {lookupTypeSymbol("PySlice_Type")};
+    PyType<rangeobject> pyRange_Type {lookupTypeSymbol("PyRange_Type")};
     PyType<PyLongObject> pyBool_Type {lookupTypeSymbol("PyBool_Type")};
     PyType<PyUnicodeObject> pyUnicode_Type {lookupTypeSymbol("PyUnicode_Type")};
     PyType<PyCodeObject> pyCode_Type {lookupTypeSymbol("PyCode_Type")};
@@ -321,6 +322,12 @@ TYPE( PySliceObject, "slice_object" )
     OFF(PyObject *, step);
 ENDTYPE()
 
+TYPE( rangeobject, "range_object" )
+    OFF(PyObject *, start);
+    OFF(PyObject *, stop);
+    OFF(PyObject *, step);
+ENDTYPE()
+
 TYPE( PyListObject, "list_object" )
     OFF(ssize_t, ob_size, "ob_base", "ob_size");
     OFF(PyObject **, ob_item);
@@ -352,6 +359,7 @@ struct RootOffsets {
     PyComplexObject__offsets complex_object{target};
     PyByteArrayObject__offsets bytearray_object{target};
     PySliceObject__offsets slice_object{target};
+    rangeobject__offsets range_object{target};
     PyListObject__offsets  list_object{target};
     PyBytesObject__offsets bytes_object{target};
     PyDictObject__offsets dict_object{target};
@@ -668,6 +676,8 @@ Target::repr(ReprStream &os, const Remote<PyObject *> &remote) const {
         repr(os, v);
     else if (auto v = cast(types->pySlice_Type, remote); v)
         repr(os, v);
+    else if (auto v = cast(types->pyRange_Type, remote); v)
+        repr(os, v);
     else if (auto v = cast(types->pyTuple_Type, remote); v)
         repr(os, v);
     else if (auto v = cast(types->pyList_Type, remote); v)
@@ -785,6 +795,17 @@ Target::repr(ReprStream &os, const Remote<PySliceObject *> &remote) const {
     repr(os, fetch(offsets->slice_object.stop(remote)));
     os << ", ";
     repr(os, fetch(offsets->slice_object.step(remote)));
+    os << ")";
+}
+
+void
+Target::repr(ReprStream &os, const Remote<rangeobject *> &remote) const {
+    os << "range(";
+    repr(os, fetch(offsets->range_object.start(remote)));
+    os << ", ";
+    repr(os, fetch(offsets->range_object.stop(remote)));
+    os << ", ";
+    repr(os, fetch(offsets->range_object.step(remote)));
     os << ")";
 }
 

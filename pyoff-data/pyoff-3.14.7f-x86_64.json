@@ -1,4 +1,10 @@
 {
+  "rangeobject": {
+    "<size>": 48,
+    "start": 16,
+    "stop": 24,
+    "step": 32
+  },
   "PySliceObject": {
     "<size>": 40,
     "start": 16,

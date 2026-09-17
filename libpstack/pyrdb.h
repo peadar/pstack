@@ -125,6 +125,7 @@ struct PyFloatObject;
 struct PyComplexObject;
 struct PyByteArrayObject;
 struct PySliceObject;
+struct rangeobject;
 struct PyNoneType;
 struct PyDictObject;
 struct PyDictKeysObject;
@@ -315,6 +316,7 @@ public:
     void repr(ReprStream &os, const Remote<PyComplexObject *> &remote) const;
     void repr(ReprStream &os, const Remote<PyByteArrayObject *> &remote) const;
     void repr(ReprStream &os, const Remote<PySliceObject *> &remote) const;
+    void repr(ReprStream &os, const Remote<rangeobject *> &remote) const;
     void repr(ReprStream &os, const Remote<PyDictObject *> &remote) const;
     void reprUserDefined(ReprStream &os, const Remote<PyObject *> &remote) const;
     ~Target();
