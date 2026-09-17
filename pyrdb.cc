@@ -79,6 +79,7 @@ struct PyTypes {
     PyType<PyByteArrayObject> pyByteArray_Type {lookupTypeSymbol("PyByteArray_Type")};
     PyType<PySliceObject> pySlice_Type {lookupTypeSymbol("PySlice_Type")};
     PyType<rangeobject> pyRange_Type {lookupTypeSymbol("PyRange_Type")};
+    PyType<PyEllipsisObject> pyEllipsis_Type {lookupTypeSymbol("PyEllipsis_Type")};
     PyType<PyLongObject> pyBool_Type {lookupTypeSymbol("PyBool_Type")};
     PyType<PyUnicodeObject> pyUnicode_Type {lookupTypeSymbol("PyUnicode_Type")};
     PyType<PyCodeObject> pyCode_Type {lookupTypeSymbol("PyCode_Type")};
@@ -678,6 +679,8 @@ Target::repr(ReprStream &os, const Remote<PyObject *> &remote) const {
         repr(os, v);
     else if (auto v = cast(types->pyRange_Type, remote); v)
         repr(os, v);
+    else if (auto v = cast(types->pyEllipsis_Type, remote); v)
+        repr(os, v);
     else if (auto v = cast(types->pyTuple_Type, remote); v)
         repr(os, v);
     else if (auto v = cast(types->pyList_Type, remote); v)
@@ -807,6 +810,11 @@ Target::repr(ReprStream &os, const Remote<rangeobject *> &remote) const {
     os << ", ";
     repr(os, fetch(offsets->range_object.step(remote)));
     os << ")";
+}
+
+void
+Target::repr(ReprStream &os, const Remote<PyEllipsisObject *> &) const {
+    os << "...";
 }
 
 void
