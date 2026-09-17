@@ -57,6 +57,7 @@ def frame(n, ready_fd, *, kwarg=None):
     a_32_bit_int = 1 << 31 # this overflows to 2 digits 
     a_big_int = 1 << 60
     a_float = 3.25
+    a_complex = 1.5 - 2.25j
     a_really_big_int = (1 << 64) - 1
     an_overflowing_int = a_really_big_int + 1
     a_negative_int = -42
@@ -131,6 +132,7 @@ def main(args):
         "'a_short_32_bit_int': 536870912",
         f"'a_big_int': {1<<60}",
         "'a_float': 3.25",
+        "'a_complex': (1.5-2.25j)",
         f"'a_negative_int': -42",
         f"'a_really_big_int': {(1<<64)-1}",
         "'an_overflowing_int': <practical infinity>", # we can't deal with values over 2^64-1

@@ -75,6 +75,7 @@ struct PyTypes {
     PyTypes(Target &target_) : target(target_) { }
     PyType<PyLongObject> pyLong_Type {lookupTypeSymbol("PyLong_Type")};
     PyType<PyFloatObject> pyFloat_Type {lookupTypeSymbol("PyFloat_Type")};
+    PyType<PyComplexObject> pyComplex_Type {lookupTypeSymbol("PyComplex_Type")};
     PyType<PyLongObject> pyBool_Type {lookupTypeSymbol("PyBool_Type")};
     PyType<PyUnicodeObject> pyUnicode_Type {lookupTypeSymbol("PyUnicode_Type")};
     PyType<PyCodeObject> pyCode_Type {lookupTypeSymbol("PyCode_Type")};
@@ -302,6 +303,11 @@ TYPE( PyFloatObject, "float_object" )
     OFF(double, ob_fval);
 ENDTYPE()
 
+TYPE( PyComplexObject, "complex_object" )
+    OFF(double, cval_real, "cval", "real");
+    OFF(double, cval_imag, "cval", "imag");
+ENDTYPE()
+
 TYPE( PyListObject, "list_object" )
     OFF(ssize_t, ob_size, "ob_base", "ob_size");
     OFF(PyObject **, ob_item);
@@ -330,6 +336,7 @@ struct RootOffsets {
     PyTupleObject__offsets tuple_object{target};
     PyLongObject__offsets long_object{target};
     PyFloatObject__offsets float_object{target};
+    PyComplexObject__offsets complex_object{target};
     PyListObject__offsets  list_object{target};
     PyBytesObject__offsets bytes_object{target};
     PyDictObject__offsets dict_object{target};
@@ -640,6 +647,8 @@ Target::repr(ReprStream &os, const Remote<PyObject *> &remote) const {
         repr(os, v);
     else if (auto v = cast(types->pyFloat_Type, remote); v)
         repr(os, v);
+    else if (auto v = cast(types->pyComplex_Type, remote); v)
+        repr(os, v);
     else if (auto v = cast(types->pyTuple_Type, remote); v)
         repr(os, v);
     else if (auto v = cast(types->pyList_Type, remote); v)
@@ -706,6 +715,13 @@ Target::repr(ReprStream &os, const Remote<PyLongObject *> &remote) const {
 void
 Target::repr(ReprStream &os, const Remote<PyFloatObject *> &remote) const {
     os << fetch(offsets->float_object.ob_fval(remote));
+}
+
+void
+Target::repr(ReprStream &os, const Remote<PyComplexObject *> &remote) const {
+    auto real = fetch(offsets->complex_object.cval_real(remote));
+    auto imag = fetch(offsets->complex_object.cval_imag(remote));
+    os << "(" << real << (imag < 0 ? "" : "+") << imag << "j)";
 }
 
 struct ReprChar { uint32_t c; char quote; };

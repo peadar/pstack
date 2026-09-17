@@ -1,4 +1,12 @@
 {
+  "PyComplexObject": {
+    "<size>": 32,
+    "cval": {
+      "<offset>": 16,
+      "real": 16,
+      "imag": 24
+    }
+  },
   "PyFloatObject": {
     "<size>": 24,
     "ob_fval": 16
