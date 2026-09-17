@@ -127,6 +127,7 @@ struct PyByteArrayObject;
 struct PySliceObject;
 struct rangeobject;
 struct PyEllipsisObject;
+struct PyNotImplementedObject;
 struct PyNoneType;
 struct PyDictObject;
 struct PyDictKeysObject;
@@ -319,6 +320,7 @@ public:
     void repr(ReprStream &os, const Remote<PySliceObject *> &remote) const;
     void repr(ReprStream &os, const Remote<rangeobject *> &remote) const;
     void repr(ReprStream &os, const Remote<PyEllipsisObject *> &remote) const;
+    void repr(ReprStream &os, const Remote<PyNotImplementedObject *> &remote) const;
     void repr(ReprStream &os, const Remote<PyDictObject *> &remote) const;
     void reprUserDefined(ReprStream &os, const Remote<PyObject *> &remote) const;
     ~Target();
