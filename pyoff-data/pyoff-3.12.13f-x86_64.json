@@ -1,4 +1,8 @@
 {
+  "PyFloatObject": {
+    "<size>": 24,
+    "ob_fval": 16
+  },
   "_PyRuntimeState": {
     "<size>": 459280,
     "_initialized": 0,

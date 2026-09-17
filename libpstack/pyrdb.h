@@ -121,6 +121,7 @@ struct PyUnicodeObject;
 struct PyTupleObject;
 struct PyListObject;
 struct PyLongObject;
+struct PyFloatObject;
 struct PyNoneType;
 struct PyDictObject;
 struct PyDictKeysObject;
@@ -307,6 +308,7 @@ public:
     void repr(ReprStream &os, const Remote<char *> &remote) const;
     void repr(ReprStream &os, const Remote<PyUnicodeObject *> &remote) const;
     void repr(ReprStream &os, const Remote<PyLongObject *> &remote) const;
+    void repr(ReprStream &os, const Remote<PyFloatObject *> &remote) const;
     void repr(ReprStream &os, const Remote<PyDictObject *> &remote) const;
     void reprUserDefined(ReprStream &os, const Remote<PyObject *> &remote) const;
     ~Target();

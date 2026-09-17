@@ -74,6 +74,7 @@ struct PyTypes {
     Target &target;
     PyTypes(Target &target_) : target(target_) { }
     PyType<PyLongObject> pyLong_Type {lookupTypeSymbol("PyLong_Type")};
+    PyType<PyFloatObject> pyFloat_Type {lookupTypeSymbol("PyFloat_Type")};
     PyType<PyLongObject> pyBool_Type {lookupTypeSymbol("PyBool_Type")};
     PyType<PyUnicodeObject> pyUnicode_Type {lookupTypeSymbol("PyUnicode_Type")};
     PyType<PyCodeObject> pyCode_Type {lookupTypeSymbol("PyCode_Type")};
@@ -297,6 +298,10 @@ TYPE( PyLongObject, "long_object" )
     OFF(unsigned int, ob_digit, "long_value", "ob_digit");
 ENDTYPE()
 
+TYPE( PyFloatObject, "float_object" )
+    OFF(double, ob_fval);
+ENDTYPE()
+
 TYPE( PyListObject, "list_object" )
     OFF(ssize_t, ob_size, "ob_base", "ob_size");
     OFF(PyObject **, ob_item);
@@ -324,6 +329,7 @@ struct RootOffsets {
     PyObject__offsets pyobject {target};
     PyTupleObject__offsets tuple_object{target};
     PyLongObject__offsets long_object{target};
+    PyFloatObject__offsets float_object{target};
     PyListObject__offsets  list_object{target};
     PyBytesObject__offsets bytes_object{target};
     PyDictObject__offsets dict_object{target};
@@ -632,6 +638,8 @@ Target::repr(ReprStream &os, const Remote<PyObject *> &remote) const {
         repr(os, v);
     else if (auto v = cast(types->pyLong_Type, remote); v)
         repr(os, v);
+    else if (auto v = cast(types->pyFloat_Type, remote); v)
+        repr(os, v);
     else if (auto v = cast(types->pyTuple_Type, remote); v)
         repr(os, v);
     else if (auto v = cast(types->pyList_Type, remote); v)
@@ -693,6 +701,11 @@ Target::repr(ReprStream &os, const Remote<PyLongObject *> &remote) const {
         else
             os << big;
     }
+}
+
+void
+Target::repr(ReprStream &os, const Remote<PyFloatObject *> &remote) const {
+    os << fetch(offsets->float_object.ob_fval(remote));
 }
 
 struct ReprChar { uint32_t c; char quote; };
