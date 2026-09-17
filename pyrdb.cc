@@ -76,6 +76,7 @@ struct PyTypes {
     PyType<PyLongObject> pyLong_Type {lookupTypeSymbol("PyLong_Type")};
     PyType<PyFloatObject> pyFloat_Type {lookupTypeSymbol("PyFloat_Type")};
     PyType<PyComplexObject> pyComplex_Type {lookupTypeSymbol("PyComplex_Type")};
+    PyType<PyByteArrayObject> pyByteArray_Type {lookupTypeSymbol("PyByteArray_Type")};
     PyType<PyLongObject> pyBool_Type {lookupTypeSymbol("PyBool_Type")};
     PyType<PyUnicodeObject> pyUnicode_Type {lookupTypeSymbol("PyUnicode_Type")};
     PyType<PyCodeObject> pyCode_Type {lookupTypeSymbol("PyCode_Type")};
@@ -308,6 +309,11 @@ TYPE( PyComplexObject, "complex_object" )
     OFF(double, cval_imag, "cval", "imag");
 ENDTYPE()
 
+TYPE( PyByteArrayObject, "bytearray_object" )
+    OFF(ssize_t, ob_size, "ob_base", "ob_size");
+    OFF(char *, ob_start);
+ENDTYPE()
+
 TYPE( PyListObject, "list_object" )
     OFF(ssize_t, ob_size, "ob_base", "ob_size");
     OFF(PyObject **, ob_item);
@@ -337,6 +343,7 @@ struct RootOffsets {
     PyLongObject__offsets long_object{target};
     PyFloatObject__offsets float_object{target};
     PyComplexObject__offsets complex_object{target};
+    PyByteArrayObject__offsets bytearray_object{target};
     PyListObject__offsets  list_object{target};
     PyBytesObject__offsets bytes_object{target};
     PyDictObject__offsets dict_object{target};
@@ -649,6 +656,8 @@ Target::repr(ReprStream &os, const Remote<PyObject *> &remote) const {
         repr(os, v);
     else if (auto v = cast(types->pyComplex_Type, remote); v)
         repr(os, v);
+    else if (auto v = cast(types->pyByteArray_Type, remote); v)
+        repr(os, v);
     else if (auto v = cast(types->pyTuple_Type, remote); v)
         repr(os, v);
     else if (auto v = cast(types->pyList_Type, remote); v)
@@ -742,6 +751,20 @@ operator << (std::ostream &os, const ReprChar &e) {
     if (e.c <= 0xff)
         return os << "\\x" << std::setw(2) << std::setfill('0') << std::hex << e.c << std::dec;
     return os << UTF8(e.c);
+}
+
+void
+Target::repr(ReprStream &os, const Remote<PyByteArrayObject *> &remote) const {
+    auto size = fetch(offsets->bytearray_object.ob_size(remote));
+    auto shown = std::min<size_t>(size, os.remaining());
+    auto chars = fetchArray(fetch(offsets->bytearray_object.ob_start(remote)), shown);
+    os << "bytearray(b'";
+    for (auto c : chars) {
+        os << ReprChar{static_cast<unsigned char>(c), '\''};
+        if (!os.remaining())
+            break;
+    }
+    os << "')";
 }
 
 void

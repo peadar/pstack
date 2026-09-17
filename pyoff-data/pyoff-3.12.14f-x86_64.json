@@ -1,4 +1,12 @@
 {
+  "PyByteArrayObject": {
+    "<size>": 56,
+    "ob_base": {
+      "<size>": 24,
+      "ob_size": 16
+    },
+    "ob_start": 40
+  },
   "PyComplexObject": {
     "<size>": 32,
     "cval": {
