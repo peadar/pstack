@@ -1,4 +1,10 @@
 {
+  "PySetObject": {
+    "<size>": 200,
+    "used": 24,
+    "mask": 32,
+    "table": 40
+  },
   "rangeobject": {
     "<size>": 48,
     "start": 16,

@@ -39,6 +39,11 @@ struct PyDictUnicodeEntry {
     PyObject *me_value;
 };
 
+struct setentry {
+    PyObject *key;
+    ssize_t hash;
+};
+
 enum DictKeysKind {
     DICT_KEYS_GENERAL = 0,
     DICT_KEYS_UNICODE = 1,
@@ -81,6 +86,8 @@ struct PyTypes {
     PyType<rangeobject> pyRange_Type {lookupTypeSymbol("PyRange_Type")};
     PyType<PyEllipsisObject> pyEllipsis_Type {lookupTypeSymbol("PyEllipsis_Type")};
     PyType<PyNotImplementedObject> pyNotImplemented_Type {lookupTypeSymbol("_PyNotImplemented_Type")};
+    PyType<PySetObject> pySet_Type {lookupTypeSymbol("PySet_Type")};
+    PyType<PySetObject> pyFrozenSet_Type {lookupTypeSymbol("PyFrozenSet_Type")};
     PyType<PyLongObject> pyBool_Type {lookupTypeSymbol("PyBool_Type")};
     PyType<PyUnicodeObject> pyUnicode_Type {lookupTypeSymbol("PyUnicode_Type")};
     PyType<PyCodeObject> pyCode_Type {lookupTypeSymbol("PyCode_Type")};
@@ -330,6 +337,12 @@ TYPE( rangeobject, "range_object" )
     OFF(PyObject *, step);
 ENDTYPE()
 
+TYPE( PySetObject, "set_object" )
+    OFF(ssize_t, used);
+    OFF(ssize_t, mask);
+    OFF(setentry *, table);
+ENDTYPE()
+
 TYPE( PyListObject, "list_object" )
     OFF(ssize_t, ob_size, "ob_base", "ob_size");
     OFF(PyObject **, ob_item);
@@ -362,6 +375,7 @@ struct RootOffsets {
     PyByteArrayObject__offsets bytearray_object{target};
     PySliceObject__offsets slice_object{target};
     rangeobject__offsets range_object{target};
+    PySetObject__offsets set_object{target};
     PyListObject__offsets  list_object{target};
     PyBytesObject__offsets bytes_object{target};
     PyDictObject__offsets dict_object{target};
@@ -684,6 +698,10 @@ Target::repr(ReprStream &os, const Remote<PyObject *> &remote) const {
         repr(os, v);
     else if (auto v = cast(types->pyNotImplemented_Type, remote); v)
         repr(os, v);
+    else if (auto v = cast(types->pySet_Type, remote); v)
+        repr(os, v);
+    else if (auto v = cast(types->pyFrozenSet_Type, remote); v)
+        repr(os, v);
     else if (auto v = cast(types->pyTuple_Type, remote); v)
         repr(os, v);
     else if (auto v = cast(types->pyList_Type, remote); v)
@@ -823,6 +841,35 @@ Target::repr(ReprStream &os, const Remote<PyEllipsisObject *> &) const {
 void
 Target::repr(ReprStream &os, const Remote<PyNotImplementedObject *> &) const {
     os << "NotImplemented";
+}
+
+void
+Target::repr(ReprStream &os, const Remote<PySetObject *> &remote) const {
+    const bool frozen = pyType(Remote<PyObject *>{reinterpret_cast<PyObject *>(remote.remote)})
+        == types->pyFrozenSet_Type.typeObject;
+    auto used = fetch(offsets->set_object.used(remote));
+    if (!used) {
+        os << (frozen ? "frozenset()" : "set()");
+        return;
+    }
+    if (frozen)
+        os << "frozenset(";
+    os << "{";
+    const char *sep = "";
+    auto entries = fetchArray(fetch(offsets->set_object.table(remote)),
+                              fetch(offsets->set_object.mask(remote)) + 1);
+    for (const auto &entry : entries) {
+        if (!entry.key || entry.hash == -1)
+            continue;
+        os << sep;
+        repr(os, Remote<PyObject *>{entry.key});
+        sep = ", ";
+        if (!os.remaining())
+            break;
+    }
+    os << "}";
+    if (frozen)
+        os << ")";
 }
 
 void

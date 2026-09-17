@@ -63,6 +63,8 @@ def frame(n, ready_fd, *, kwarg=None):
     a_range = range(1, 10, 2)
     an_ellipsis = ...
     not_implemented = NotImplemented
+    a_set = {42}
+    a_frozenset = frozenset({"frozen"})
     a_really_big_int = (1 << 64) - 1
     an_overflowing_int = a_really_big_int + 1
     a_negative_int = -42
@@ -143,6 +145,8 @@ def main(args):
         "'a_range': range(1, 10, 2)",
         "'an_ellipsis': ...",
         "'not_implemented': NotImplemented",
+        "'a_set': {42}",
+        "'a_frozenset': frozenset({'frozen'})",
         f"'a_negative_int': -42",
         f"'a_really_big_int': {(1<<64)-1}",
         "'an_overflowing_int': <practical infinity>", # we can't deal with values over 2^64-1
