@@ -648,13 +648,50 @@ Target::repr(ReprStream &os, const Remote<PyObject *> &remote) const {
         reprUserDefined(os, remote);
 }
 
+#if 1 || __i386__ // there's no overload for "operator<<" for __uint128_t
+using BIGINT = uint64_t;
+#else
+using BIGINT = __uint128_t;
+#endif
+constexpr size_t BIGINT_BITS = CHAR_BIT * sizeof (BIGINT);
+
 void
 Target::repr(ReprStream &os, const Remote<PyLongObject *> &remote) const {
     auto type = pyType(Remote<PyObject *>(reinterpret_cast<PyObject *>(remote.remote)));
     if (type == types->pyBool_Type.typeObject) {
         os << (fetch(offsets->long_object.ob_digit(remote)) ? "True" : "False");
     } else {
-        os << fetch(offsets->long_object.ob_digit(remote));
+        auto tag = fetch(offsets->long_object.lv_tag(remote));
+        // First 2 bits:
+        //      0, 0b00 -> zero
+        //      1, 0b01 -> positive
+        //      2, 0b10 -> negative
+        // Third bit indicates "compact" representation.
+        auto digitCount = tag >> 3;
+        auto digits = fetchArray(offsets->long_object.ob_digit(remote), digitCount);
+        BIGINT big = 0;
+        bool infinite = false;
+        for (size_t i = 0; !infinite && i < digitCount; ++i) {
+            // 30 bits per 32-bit "digit", to make arithmetic faster.
+            // If we are more than 2 32-bit digits in, then we can't fit the value
+            // in our 64-bit value.
+            auto remaining_bits = BIGINT_BITS - (30 * i);
+            if (remaining_bits < 30) {
+                uint32_t mask = ~0UL << remaining_bits;
+                if (digits[i] & mask) {
+                    infinite = true;
+                    break;
+                }
+            }
+            big |= BIGINT(digits[i]) << (30 * i);
+        }
+        if ((tag & 0x3) == 2) {
+            os << "-";
+        }
+        if (infinite)
+            os << "<practical infinity>";
+        else
+            os << big;
     }
 }
 

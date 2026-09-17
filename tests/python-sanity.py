@@ -13,7 +13,6 @@ import subprocess
 import sys
 import pstack
 
-
 class User:
     def __init__(self):
         self.field = 42
@@ -27,10 +26,8 @@ class SlottedUser:
         self.b = 2
         self.c = 3
 
-
 def intermediate_function(n, ready_fd):
     return frame(n, ready_fd, kwarg="keyword value")
-
 
 def frame(n, ready_fd, *, kwarg=None):
     adict = {"twice": n * 2}
@@ -44,8 +41,11 @@ def frame(n, ready_fd, *, kwarg=None):
     alist = ["a", "b", "c"]
     abool = True
     a_short_32_bit_int = 1 << 29
-    a_32_bit_int = 1 << 31
-    abigint = 1 << 60
+    a_32_bit_int = 1 << 31 # this overflows to 2 digits 
+    a_big_int = 1 << 60
+    a_really_big_int = (1 << 64) - 1
+    an_overflowing_int = a_really_big_int + 1
+    a_negative_int = -42
     auser_with_a_realized_dict = User()
     auser_with_a_realized_dict.__dict__
     aslotted_user = SlottedUser()
@@ -54,7 +54,6 @@ def frame(n, ready_fd, *, kwarg=None):
         os.write(ready_fd, b"ready")
         signal.pause()
     return intermediate_function(n - 1, ready_fd)
-
 
 def offset_file(build_dir):
     version = sys.version_info
@@ -100,11 +99,12 @@ def main(args):
         os.waitpid(pid, 0)
 
     expected = (
-        f"frame(1, {write_fd}) in ",
+        f"frame(1, {write_fd}, kwarg='keyword value') in ",
         f"intermediate_function(1, {write_fd}) in ",
         "'adict': {'twice': 2}",
         "'anon_unicode_dict': {2: 'twice'}",
         "'astr': 'hello world'",
+        "'anone': None",
         "'a_non_ascii_str': 'hello 😎'",
         "'abytes': b'\\x01\\x02A\\xff'",
         "'auser': <User object>",
@@ -114,6 +114,10 @@ def main(args):
         "'alist': ['a', 'b', 'c']",
         "'abool': True",
         "'a_short_32_bit_int': 536870912",
+        f"'a_big_int': {1<<60}",
+        f"'a_negative_int': -42",
+        f"'a_really_big_int': {(1<<64)-1}",
+        "'an_overflowing_int': <practical infinity>", # we can't deal with values over 2^64-1
         "'aslotted_user': <SlottedUser object>",
         "{'a': 1, 'b': 2, 'c': 3}",
     )
