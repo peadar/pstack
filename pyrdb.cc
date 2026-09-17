@@ -222,6 +222,7 @@ TYPE(PyTypeObject, "type_object" )
     OFF(char *, tp_name);
     OFF(void *, tp_repr);
     OFF(unsigned long, tp_flags);
+    OFF(PyTypeObject *, tp_base);
     OFF(ssize_t, tp_dictoffset);
     OFF(PyObject *, tp_dict);
     OFF(ssize_t, tp_basicsize);
@@ -452,73 +453,72 @@ Target::repr(ReprStream &os, const Remote<PyDictObject *> &dictobj) const {
 }
 
 // Dump __slots__ attributes for a Python object with slotted attributes.
-// Reads ht_slots tuple from PyHeapTypeObject, looks up member descriptors in tp_dict,
-// and prints each slot name with its value from the object.
+// Each heap type's ht_slots contains only the slots it adds, so walk tp_base
+// to include descriptors inherited from slotted base classes.
 void
 Target::dumpSlots(ReprStream &os, Remote<PyTypeObject *> type, const Remote<PyObject *> &obj) const {
-    // For slotted classes, get ht_slots from PyHeapTypeObject
-    auto heaptype = type.reinterpretCast<PyHeapTypeObject *>();
-
-    auto ht_slots = fetch( offsets->heap_type_object.ht_slots( heaptype ) );
-    if (!ht_slots)
-        return;
-
-    // ht_slots is a tuple of slot names
-    auto slots_tuple = cast(types->pyTuple_Type, ht_slots );
-    if (!slots_tuple)
-        return;
-
-    auto ob_size = fetch(offsets->tuple_object.ob_size(slots_tuple));
-    if (ob_size == 0)
-        return;
-
-    // Get tp_dict to look up the member descriptors
-    auto tp_dict_obj = fetch(offsets->type_object.tp_dict(type));
-    if (!tp_dict_obj)
-        return;
-    auto dict = tp_dict_obj.reinterpretCast<PyDictObject *>();
-    auto slot_names = fetchArray(offsets->tuple_object.ob_item(slots_tuple), ob_size);
-    auto ma_keys = fetch(offsets->dict_object.ma_keys(dict));
-    auto ma_values = fetch(offsets->dict_object.ma_values(dict));
-
+    constexpr uintptr_t Py_TPFLAGS_HEAPTYPE = 1UL << 9;
     const char *sep = "";
     os << " {";
 
-    for (auto &slot_name : slot_names) {
-        if (os.remaining() == 0)
-            return;
-        if (!slot_name)
+    for (; type; type = fetch(offsets->type_object.tp_base(type))) {
+        // tp_base eventually reaches static types such as object, which do
+        // not have a PyHeapTypeObject tail containing ht_slots.
+        if (!(fetch(offsets->type_object.tp_flags(type)) & Py_TPFLAGS_HEAPTYPE))
             continue;
 
-        // Look up this slot name in tp_dict to get the member descriptor
-        Remote<PyMemberDef *> member_def_ptr { nullptr };
-        walkDictEntries(ma_keys, ma_values, [&](Remote<PyObject *>key, Remote<PyObject *>value) {
-            if (key == slot_name && value) {
-                auto descr = value.reinterpretCast<PyMemberDescrObject*>();
-                member_def_ptr = fetch( offsets->member_descr.d_member( descr ) );
+        auto heaptype = type.reinterpretCast<PyHeapTypeObject *>();
+        auto ht_slots = fetch(offsets->heap_type_object.ht_slots(heaptype));
+        auto slots_tuple = cast(types->pyTuple_Type, ht_slots);
+        if (!slots_tuple)
+            continue;
+
+        auto ob_size = fetch(offsets->tuple_object.ob_size(slots_tuple));
+        if (ob_size == 0)
+            continue;
+
+        auto tp_dict_obj = fetch(offsets->type_object.tp_dict(type));
+        if (!tp_dict_obj)
+            continue;
+        auto dict = tp_dict_obj.reinterpretCast<PyDictObject *>();
+        auto slot_names = fetchArray(offsets->tuple_object.ob_item(slots_tuple), ob_size);
+        auto ma_keys = fetch(offsets->dict_object.ma_keys(dict));
+        auto ma_values = fetch(offsets->dict_object.ma_values(dict));
+
+        for (auto &slot_name : slot_names) {
+            if (os.remaining() == 0)
+                return;
+            if (!slot_name)
+                continue;
+
+            // Look up this slot name in the declaring type's dictionary.
+            Remote<PyMemberDef *> member_def_ptr { nullptr };
+            walkDictEntries(ma_keys, ma_values, [&](Remote<PyObject *>key, Remote<PyObject *>value) {
+                if (key == slot_name && value) {
+                    auto descr = value.reinterpretCast<PyMemberDescrObject*>();
+                    member_def_ptr = fetch(offsets->member_descr.d_member(descr));
+                }
+                return true;
+            });
+
+            if (!member_def_ptr)
+                continue;
+
+            PyMemberDef member_def = fetch(Remote<PyMemberDef *>{member_def_ptr});
+            uintptr_t obj_addr = reinterpret_cast<uintptr_t>(obj.remote);
+            auto slot_value_addr = Remote{reinterpret_cast<PyObject **>(obj_addr + member_def.offset)};
+            auto slot_value_ptr = fetch(slot_value_addr);
+
+            os << sep;
+            repr(os, slot_name);
+            os << ": ";
+            if (slot_value_ptr) {
+                repr(os, slot_value_ptr);
+            } else {
+                os << "(unset)";
             }
-            return true;
-        });
-
-        if (!member_def_ptr)
-            continue;
-
-        PyMemberDef member_def = fetch(Remote<PyMemberDef *>{member_def_ptr});
-
-        // Manually calculate pointer to member from the offset.
-        uintptr_t obj_addr = reinterpret_cast<uintptr_t>(obj.remote);
-        auto slot_value_addr = Remote{reinterpret_cast<PyObject **>(obj_addr + member_def.offset)};
-        auto slot_value_ptr = fetch(slot_value_addr);
-
-        os << sep;
-        repr(os, slot_name);
-        os << ": ";
-        if (slot_value_ptr) {
-            repr(os, slot_value_ptr);
-        } else {
-            os << "(unset)";
+            sep = ", ";
         }
-        sep = ", ";
     }
     os << "}";
 }

@@ -26,6 +26,19 @@ class SlottedUser:
         self.b = 2
         self.c = 3
 
+class SlottedBase:
+    __slots__ = ["base"]
+
+    def __init__(self):
+        self.base = "from base"
+
+class InheritedSlottedUser(SlottedBase):
+    __slots__ = ["derived"]
+
+    def __init__(self):
+        super().__init__()
+        self.derived = "from derived"
+
 def intermediate_function(n, ready_fd):
     return frame(n, ready_fd, kwarg="keyword value")
 
@@ -49,6 +62,7 @@ def frame(n, ready_fd, *, kwarg=None):
     auser_with_a_realized_dict = User()
     auser_with_a_realized_dict.__dict__
     aslotted_user = SlottedUser()
+    an_inherited_slotted_user = InheritedSlottedUser()
 
     if n == 1:
         os.write(ready_fd, b"ready")
@@ -120,6 +134,8 @@ def main(args):
         "'an_overflowing_int': <practical infinity>", # we can't deal with values over 2^64-1
         "'aslotted_user': <SlottedUser object>",
         "{'a': 1, 'b': 2, 'c': 3}",
+        "'an_inherited_slotted_user': <InheritedSlottedUser object>",
+        "{'derived': 'from derived', 'base': 'from base'}",
     )
     for value in expected:
         assert value in output, f"missing {value!r} in pstack output:\n{output}"
