@@ -145,6 +145,7 @@ void generateOne(Context &ctx, std::filesystem::path path) {
        "PyFloatObject",
        "PyComplexObject",
        "PyByteArrayObject",
+       "PySliceObject",
        "PyListObject",
        "PyBytesObject",
        "PyDictObject",

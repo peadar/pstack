@@ -1,4 +1,10 @@
 {
+  "PySliceObject": {
+    "<size>": 40,
+    "start": 16,
+    "stop": 24,
+    "step": 32
+  },
   "PyByteArrayObject": {
     "<size>": 56,
     "ob_base": {
