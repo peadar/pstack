@@ -37,7 +37,7 @@ target_link_libraries(procself dwelf procman)
 target_link_libraries(suspend dwelf procman)
 SET_TARGET_PROPERTIES(noreturn PROPERTIES COMPILE_FLAGS "-O2 -g")
 
-if (Python3_Development_FOUND OR Python2_Development_FOUND)
+if (Python3_Development_FOUND)
    add_executable(python_path_test python_path_test.cc)
    target_link_libraries(python_path_test procman dwelf)
 endif()
@@ -57,30 +57,47 @@ target_link_options(basic-zlib-gnu PUBLIC -Wl,--compress-debug-sections=zlib-gnu
 
 enable_testing()
 
-set ( PSTACK_PATH $<TARGET_FILE:${PSTACK_BIN}>) # {CMAKE_BINARY_DIR}/${PSTACK_BIN})
+set ( PSTACK_PATH $<TARGET_FILE:${PSTACK_BIN}>)
 
-add_test(NAME args COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/args-test.py)
-add_test(NAME badfp COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/badfp-test.py)
-add_test(NAME basic COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/basic-test.py)
-add_test(NAME cpp COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/cpp-test.py)
-add_test(NAME noreturn COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/noreturn-test.py)
-add_test(NAME segv COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/segv-test.py)
-add_test(NAME thread COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/thread-test.py)
-add_test(NAME jsondump COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/dump-test.py)
-
+add_test(NAME args COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/args-test.py)
+add_test(NAME badfp COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/badfp-test.py)
+add_test(NAME basic COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/basic-test.py)
+add_test(NAME cpp COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/cpp-test.py)
+add_test(NAME noreturn COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/noreturn-test.py)
+add_test(NAME segv COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/segv-test.py)
+add_test(NAME thread COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/thread-test.py)
+add_test(NAME jsondump COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/dump-test.py)
 
 add_test(NAME procself COMMAND $<TARGET_FILE:procself>)
 
-# Need to remove this test for environments with more restrictive ptrace
+set(ALL_TESTS args badfp basic cpp noreturn segv thread jsondump)
+
+# Need to remove these tests for environments with more restrictive ptrace
 if (PTRACE_TESTS)
     add_test(NAME suspend COMMAND suspend)
-    add_test(NAME python-sanity COMMAND env PSTACK_PATH=${PSTACK_PATH} ${PYTHON} "${CMAKE_CURRENT_SOURCE_DIR}/python-sanity.py")
+    list(APPEND ALL_TESTS suspend)
+if (Python3_Development_FOUND)
+    add_test(NAME python-sanity COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/python-sanity.py")
+    list(APPEND ALL_TESTS suspend)
+    list(APPEND ALL_TESTS python-sanity)
+endif()
 endif()
 
-if (Python3_Development_FOUND OR Python2_Development_FOUND)
+if (Python3_Development_FOUND)
     add_test(NAME python_path_test COMMAND python_path_test)
+    list(APPEND ALL_TESTS suspend python_path_test)
 endif()
 
-if (PYTHON3 AND Python3_Development_FOUND)
-    add_test(NAME pydict COMMAND env PSTACK_PATH=${PSTACK_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/pydict_test.py)
+if (Python3_Development_FOUND)
+    add_test(NAME pydict COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/pydict_test.py)
+    list(APPEND ALL_TESTS pydict)
 endif()
+
+
+message( STATUS "all tests: ${ALL_TESTS}")
+
+set(TEST_ENV
+    "CMAKE_BINARY_DIR=${CMAKE_BINARY_DIR}"
+    "PSTACK_PATH=${PSTACK_PATH}" )
+
+set_tests_properties(${ALL_TESTS} PROPERTIES ENVIRONMENT "${TEST_ENV}")

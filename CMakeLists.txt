@@ -25,7 +25,7 @@ find_package(LibLZMA REQUIRED)
 find_package(ZLIB REQUIRED)
 
 if (PYTHON3 OR PYRDB)
-   find_package(Python3 COMPONENTS Development)
+    find_package(Python3 COMPONENTS Interpreter Development)
 endif()
 
 find_package(Git)
@@ -132,6 +132,7 @@ set_target_properties(procman PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "$
 if ((NOT (Python3_Development_FOUND)) AND (PYTHON3 OR PYRDB))
    message(WARNING "no python3 support found")
 endif()
+message(INFO "python: ${PYTHON}, python executable: ${Python_EXECUTABLE}")
 
 # bonus: heap debugger
 add_library(hdbg SHARED heap.c)

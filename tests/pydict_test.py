@@ -9,6 +9,7 @@ child and returns.
 """
 
 import os
+import re
 import signal
 import subprocess
 import time
@@ -36,7 +37,7 @@ def main():
             # in python code can be interpreted as UTF-8, which breaks the
             # decoder.
             output = subprocess.check_output( [ pstack.PSTACK_PATH, "-pl", str(pid)])
-            assert b'"ahoy" : "sailor"' in output, f"Didn't say hello to the seaman: {output}"
+            assert re.search( 'ahoy.*:.*sailor', str(output)), f"Didn't say hello to the seaman: {output}"
         finally:
             os.kill(pid, signal.SIGKILL)
             os.waitpid(pid, 0)

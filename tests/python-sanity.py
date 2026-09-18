@@ -96,14 +96,13 @@ def ensure_offsets(build_dir):
         return
     with offsets.open("w") as output:
         print("python version:")
-        os.system("python --version")
-        os.system("ldd $(which python)")
+        os.system(f"{sys.executable} --version")
+        os.system(f"ldd {sys.executable}")
         print(f"generating offsets from {sys.executable}")
         subprocess.run([build_dir / "pstack-mkpyoff", sys.executable], check=True, stdout=output)
 
 def main(args):
-    build_dir = Path.cwd() / ".."
-
+    build_dir = Path( os.environ["CMAKE_BINARY_DIR"] )
     if not args.pause:
         ensure_offsets(build_dir)
     read_fd, write_fd = os.pipe()
