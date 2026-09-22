@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 set(PSTACK_SOVERSION 2.18)
-set(PSTACK_VERSION 2.18.5)
+set(PSTACK_VERSION 2.18.6)
 project(pstack LANGUAGES C CXX VERSION "${PSTACK_VERSION}" )
 set(Python3_DEBUG_OUTPUT ON)
 
@@ -132,7 +132,7 @@ set_target_properties(procman PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION "$
 if ((NOT (Python3_Development_FOUND)) AND (PYTHON3 OR PYRDB))
    message(WARNING "no python3 support found")
 endif()
-message(INFO "python: ${PYTHON}, python executable: ${Python_EXECUTABLE}")
+message(STATUS "python: python ${PYTHON}, executable is ${Python_EXECUTABLE}")
 
 # bonus: heap debugger
 add_library(hdbg SHARED heap.c)
