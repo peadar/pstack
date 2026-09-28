@@ -1,5 +1,5 @@
 FROM ubuntu:latest
-RUN env DEBIAN_FRONTEND=noninteractive apt-get update
+# RUN env DEBIAN_FRONTEND=noninteractive apt-get update
 RUN env DEBIAN_FRONTEND=noninteractive apt-get install -y cmake
 RUN env DEBIAN_FRONTEND=noninteractive apt-get install -y g++
 RUN env DEBIAN_FRONTEND=noninteractive apt-get install -y zlib1g-dev
