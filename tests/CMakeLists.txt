@@ -72,26 +72,21 @@ add_test(NAME procself COMMAND $<TARGET_FILE:procself>)
 
 set(ALL_TESTS args badfp basic cpp noreturn segv thread jsondump)
 
+if (Python3_Development_FOUND)
+    add_test(NAME python_path_test COMMAND python_path_test)
+    list(APPEND ALL_TESTS python_path_test)
+endif()
+
 # Need to remove these tests for environments with more restrictive ptrace
 if (PTRACE_TESTS)
     add_test(NAME suspend COMMAND suspend)
     list(APPEND ALL_TESTS suspend)
 if (Python3_Development_FOUND)
     add_test(NAME python-sanity COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/python-sanity.py")
-    list(APPEND ALL_TESTS python-sanity)
-endif()
-endif()
-
-if (Python3_Development_FOUND)
-    add_test(NAME python_path_test COMMAND python_path_test)
-    list(APPEND ALL_TESTS python_path_test)
-endif()
-
-if (Python3_Development_FOUND)
     add_test(NAME pydict COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/pydict_test.py)
-    list(APPEND ALL_TESTS pydict)
+    list(APPEND ALL_TESTS python-sanity pydict)
 endif()
-
+endif()
 
 message( STATUS "all tests: ${ALL_TESTS}")
 
