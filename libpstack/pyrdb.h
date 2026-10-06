@@ -330,8 +330,10 @@ public:
 
 
 template<typename To> Remote<To *> Target::cast(const PyType<To> &to, Remote<PyObject *> from) const {
-    if (pyType(from) == to.typeObject)
-        return { reinterpret_cast<To *>(from.remote) };
+    if (from) {
+        if (pyType(from) == to.typeObject)
+            return { reinterpret_cast<To *>(from.remote) };
+    }
     return {0};
 }
 
