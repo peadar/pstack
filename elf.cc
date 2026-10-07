@@ -394,6 +394,19 @@ Object::getInterpreter() const
     return "";
 }
 
+string
+Object::getMachineName() const
+{
+    switch (elfHeader.e_machine) {
+        case EM_386: return "i386";
+        case EM_X86_64: return "x86_64";
+        case EM_AARCH64: return "aarch64";
+        case EM_ARM: return "arm";
+        case EM_RISCV: return "riscv";
+        default: return "machine-" + std::to_string(elfHeader.e_machine);
+    }
+}
+
 Elf::Object::sptr Object::debugData() const {
     if (debugData_ == nullptr) {
         if (lzmaAvailable()) {

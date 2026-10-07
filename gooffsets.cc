@@ -1,8 +1,11 @@
 #include "libpstack/go.h"
+#include "libpstack/context.h"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <fstream>
+#include <functional>
 
 namespace pstack::Go {
 namespace {
@@ -128,20 +131,46 @@ readOldBuildInfoString(const Elf::Object &elf, uint64_t headerAddress, size_t po
     return value;
 }
 
-std::string
-machineName(Elf::Half machine)
-{
-    switch (machine) {
-        case EM_386: return "i386";
-        case EM_X86_64: return "x86_64";
-        case EM_AARCH64: return "aarch64";
-        case EM_ARM: return "arm";
-        case EM_RISCV: return "riscv";
-        default: return "machine-" + std::to_string(machine);
-    }
 }
 
-} // namespace
+void
+RuntimeOffsets::parse(std::istream &in) {
+    RuntimeOffsets offsets;
+
+    // map from key to function to set the content in offsets. The bool is
+    // whether this field is mandatory. We remove each field as we parse it, so
+    // if there are any mandatory ones left at the end, it's an error.
+    std::map<std::string_view, std::pair<bool, std::function<void()>>> m = {
+        { "version", {true, [&]() { version = parseString(in); } }},
+        { "machine", {true, [&]() { machine = parseString(in); } }},
+        { "pointer_size", {true, [&]() { pointerSize = parseInt<size_t>(in); } }},
+        { "allgs_data", {true, [&]() { allgsData = parseInt<uintmax_t>(in); } }},
+        { "allgs_length", {true, [&]() { allgsLength = parseInt<uintmax_t>(in); } }},
+        { "allgs_stride", {true, [&]() { allgsStride = parseInt<uintmax_t>(in); } }},
+        { "g_size", {true, [&]() { gSize = parseInt<uintmax_t>(in); } }},
+        { "g_sched", {true, [&]() { gSched = parseInt<uintmax_t>(in); } }},
+        { "g_goid", {true, [&]() { gGoid = parseInt<uintmax_t>(in); } }},
+        { "gobuf_sp", {true, [&]() { gobufSp = parseInt<uintmax_t>(in); } }},
+        { "gobuf_pc", {true, [&]() { gobufPc = parseInt<uintmax_t>(in); } }},
+        { "gobuf_bp", {false, [&]() { gobufBp = parseInt<uintmax_t>(in); } }},
+        { "gobuf_g", {false, [&]() { gobufG = parseInt<uintmax_t>(in); } }},
+        { "gobuf_ctxt", {false, [&]() { gobufCtxt = parseInt<uintmax_t>(in); } }},
+        { "gobuf_lr", {false, [&]() { gobufLr = parseInt<uintmax_t>(in); } }},
+    };
+
+    parseObject(in, [&](std::istream &is, std::string field) {
+            auto node = m.extract(field);
+            if (node) {
+                node.mapped().second();
+            } else {
+                parseValue(is);
+            }});
+
+    if (std::any_of(m.begin(), m.end(), [](const auto value) { return value.second.second; } ) ) {
+        throw Exception() << "missing go fields";
+    }
+}
+ // namespace
 
 std::string
 versionSeries(std::string_view goVersion)
@@ -165,9 +194,52 @@ versionSeries(std::string_view goVersion)
 }
 
 std::string
-offsetFileName(std::string_view goVersion, Elf::Half machine)
+offsetFileName(std::string_view goVersion, std::string_view machineName)
 {
-    return "gooff-" + versionSeries(goVersion) + "-" + machineName(machine) + ".json";
+    return "gooff-" + versionSeries(goVersion) + "-" + std::string(machineName) + ".json";
+}
+
+namespace {
+
+RuntimeOffsets
+loadOffsets(Context &context, const std::string &version, const std::string &machineName)
+{
+    const auto fileName = offsetFileName(version, machineName);
+    for (const auto &directory : findXdgDataDirs()) {
+        auto path = directory / fileName;
+        std::ifstream in(path);
+        if (!in)
+            continue;
+        RuntimeOffsets offsets;
+        offsets.parse(in);
+        if (versionSeries(offsets.version) != versionSeries(version) ||
+                offsets.machine != machineName)
+            throw Exception() << "Go offset data in " << path << " does not match its filename";
+        if (offsets.pointerSize != sizeof(Elf::Addr))
+            throw Exception() << "Go offset data in " << path << " has the wrong pointer size";
+        if (context.verbose)
+            *context.debug << "found Go offsets data in " << path << "\n";
+        return offsets;
+    }
+    throw Exception() << "cannot find '" << fileName << "' - run pstack-mkgooff on a Go executable built with this Go version";
+}
+
+}
+
+const RuntimeOffsets &
+getOffsets(Context &context, const Elf::Object &elf)
+{
+    static std::map<std::string, RuntimeOffsets> allOffsets;
+
+    const std::string goVersion = version(elf);
+    const std::string machineName = elf.getMachineName();
+    const std::string key = offsetFileName(goVersion, machineName);
+
+    auto iter = allOffsets.find(key);
+    if (iter != allOffsets.end())
+        return iter->second;
+    auto offsets = loadOffsets(context, goVersion, machineName);
+    return allOffsets.emplace(key, std::move(offsets)).first->second;
 }
 
 std::string
@@ -209,7 +281,7 @@ version(const Elf::Object &elf)
 
 RuntimeOffsets
 runtimeOffsets(const Dwarf::Info::sptr &dwarf, std::string goVersion,
-        Elf::Half machine, size_t pointerSize)
+        std::string machine, size_t pointerSize)
 {
     DIE g = findType(dwarf, "runtime.g");
     auto gSize = g ? uintmax_t(g.attribute(Dwarf::DW_AT_byte_size)) : 0;
@@ -237,7 +309,7 @@ runtimeOffsets(const Dwarf::Info::sptr &dwarf, std::string goVersion,
 
     RuntimeOffsets offsets {
         .version = std::move(goVersion),
-        .machine = machine,
+        .machine = std::move(machine),
         .pointerSize = pointerSize,
         .allgsData = 0,
         .allgsLength = pointerSize,

@@ -1,8 +1,8 @@
 #include "libpstack/proc.h"
 #include <limits>
 #include <set>
-#include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 #include <variant>
 
@@ -11,13 +11,13 @@ namespace pstack::Py {
 class Version {
 public:
     inline std::string offsetFileName();
-    Version(unsigned long data, Elf::Half machine) : data(data), machine(machine) {}
-    Version() = delete;
+    Version(unsigned long data, std::string machineName) : data(data), machineName(std::move(machineName)) {}
+    Version() : Version(0, "") {}
     operator bool() const { return data != 0; }
     auto operator <=> (const Version &rhs) const  { return data <=> rhs.data; }
 private:
-    unsigned long data;
-    Elf::Half machine;
+    unsigned long data{};
+    std::string machineName;
     friend std::string to_string(Version pv);
 };
 
@@ -28,7 +28,7 @@ inline std::string to_string(Version pv) {
         std::to_string((pv.data >> 16) & 0xff ) + "." +
         std::to_string((pv.data >> 8) & 0xff ) + phase +
         "-" + 
-        (pv.machine == EM_386 ? "i386" : pv.machine == EM_X86_64 ? "x86_64" : pv.machine == EM_AARCH64 ? "aarch64" : "unknown");
+        pv.machineName;
 }
 
 std::string Version::offsetFileName()
@@ -248,7 +248,7 @@ public:
     friend struct RootOffsets;
 private:
     std::ifstream findOffsetsFile(Version) const;
-    Version version{0, 0};
+    Version version;
     void dumpInterpreter(std::ostream &os, Remote<PyInterpreterState *> interp, size_t indent = 0) const;
     void dumpThread(std::ostream &os, Remote<PyThreadState *> thread, size_t indent = 0) const;
     void dumpFrame(std::ostream &os, Remote<_PyInterpreterFrame *> frame, size_t indent = 0) const;

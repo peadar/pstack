@@ -11,7 +11,7 @@ namespace pstack::Go {
 
 struct RuntimeOffsets {
     std::string version;
-    Elf::Half machine{};
+    std::string machine;
     size_t pointerSize{};
     uintmax_t allgsData{};
     uintmax_t allgsLength{};
@@ -28,11 +28,12 @@ struct RuntimeOffsets {
     void parse(std::istream &);
 };
 
-std::string offsetFileName(std::string_view version, Elf::Half machine);
+std::string offsetFileName(std::string_view version, std::string_view machineName);
 std::string versionSeries(std::string_view version);
 std::string version(const Elf::Object &);
+const RuntimeOffsets &getOffsets(Context &, const Elf::Object &);
 RuntimeOffsets runtimeOffsets(const Dwarf::Info::sptr &, std::string version,
-        Elf::Half machine, size_t pointerSize);
+        std::string machine, size_t pointerSize);
 
 } // namespace pstack::Go
 

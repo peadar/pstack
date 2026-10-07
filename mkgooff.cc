@@ -19,9 +19,9 @@ int main(int argc, char *argv[])
         auto goVersion = pstack::Go::version(*elf);
         auto dwarf = context.findDwarf(elf);
         auto offsets = pstack::Go::runtimeOffsets(
-                dwarf, goVersion, elf->getHeader().e_machine, sizeof(pstack::Elf::Addr));
+                dwarf, goVersion, elf->getMachineName(), sizeof(pstack::Elf::Addr));
 
-        const auto fileName = pstack::Go::offsetFileName(goVersion, elf->getHeader().e_machine);
+        const auto fileName = pstack::Go::offsetFileName(goVersion, elf->getMachineName());
         std::ofstream out(fileName);
         if (!out)
             throw pstack::Exception() << "cannot create " << fileName;

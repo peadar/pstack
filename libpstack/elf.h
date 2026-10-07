@@ -322,6 +322,7 @@ public:
 
     // Misc operations
     std::string getInterpreter() const;
+    std::string getMachineName() const;
     const Ehdr &getHeader() const { return elfHeader; }
     const Phdr *getSegmentForAddress(Off) const;
     Notes notes() const { return Notes(this); }

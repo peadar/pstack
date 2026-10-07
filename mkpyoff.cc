@@ -167,7 +167,7 @@ void generateOne(Context &ctx, std::filesystem::path path) {
     auto fileOff = sym.st_value - phdr->p_vaddr + phdr->p_offset;
     elf->io->readObj(fileOff, &pyv);
 
-    Py::Version version(pyv, elf->getHeader().e_machine);
+    Py::Version version(pyv, elf->getMachineName());
 
     std::filesystem::path outfileName { version.offsetFileName() };
     std::ofstream out(outfileName);
