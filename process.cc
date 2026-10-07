@@ -76,8 +76,11 @@ operator << (std::ostream &os, const JSON<Procman::Lwp, Procman::Process *> &ts)
          .field("ti_pri", ti.ti_pri)
          ;
    }
+   if (lwp.goroutineID)
+      jo.field("goroutine_id", *lwp.goroutineID);
+   else
+      jo.field("ti_lid", lwp.id);
    return jo
-      .field("ti_lid", lwp.id)
       .field("name", lwp.name)
       .field("ti_stack", lwp.stack, ts.context);
 }
@@ -702,7 +705,10 @@ Process::dumpStackText(std::ostream &os, const Lwp &lwp)
           << ", type: " << ti.ti_type
           << ", ";
     }
-    os << "lwp: " << lwp.id;
+    if (lwp.goroutineID)
+       os << "goroutine: " << *lwp.goroutineID;
+    else
+       os << "lwp: " << lwp.id;
     if (lwp.name.has_value())
        os << ", name: " << *lwp.name;
     os << "\n";
@@ -1244,6 +1250,8 @@ Process::getStacks() {
             *context.debug << "failed to unwind stack for  " << lwpid << ": " << ex.what() << "\n";
           }
        });
+
+    addGoRoutines(*this, stacks);
 
     /*
      * Use the thread db to find at least the thread ids for each lwp. We

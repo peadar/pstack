@@ -172,11 +172,15 @@ struct Lwp {
     lwpid_t id;
     std::optional<std::string> name;
     std::optional<td_thrinfo_t> threadInfo;
+    std::optional<uint64_t> goroutineID;
     std::vector<StackFrame> stack;
     void unwind(Process &, const CoreRegisters &regs);
 };
 
 using Stacks = std::map<lwpid_t, Lwp>;
+
+// Add saved Go goroutine stacks to the process stack collection.
+void addGoRoutines(Process &, Stacks &);
 
 struct DevNode {
     int major = -1;

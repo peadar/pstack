@@ -29,6 +29,7 @@ if (PYTHON3 OR PYRDB)
 endif()
 
 find_package(Git)
+find_program(GO_EXECUTABLE go)
 if (GIT_FOUND AND EXISTS ${CMAKE_SOURCE_DIR}/.git)
    execute_process(
       COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
@@ -87,6 +88,7 @@ add_library(dwelf_objects OBJECT
          dwarf_pubnames.cc
          dwarf_reader.cc
          dwarf_unit.cc
+         gooffsets.cc
          dump.cc
          context.cc
          elf.cc
@@ -97,7 +99,7 @@ add_library(dwelf_objects OBJECT
          )
 
 add_library(procman_objects OBJECT dead.cc self.cc live.cc process.cc proc_service.cc
-    dwarfproc.cc procdump.cc threaddb.cc python.cc pythonc.c python3.cc pyrdb.cc)
+    dwarfproc.cc procdump.cc threaddb.cc python.cc pythonc.c python3.cc pyrdb.cc golang.cc)
 
 add_library(dwelf SHARED $<TARGET_OBJECTS:dwelf_objects>)
 add_library(dwelf_static STATIC $<TARGET_OBJECTS:dwelf_objects>)
@@ -116,13 +118,24 @@ endif()
 
 add_executable(canal canal.cc)
 add_executable(pstack-mkpyoff mkpyoff.cc)
+add_executable(pstack-mkgooff mkgooff.cc)
 add_executable(${PSTACK_BIN} pstack.cc)
+
+if (GO_EXECUTABLE)
+   set(GO_OFFSET_PROBE ${CMAKE_CURRENT_BINARY_DIR}/go-offset-probe-bin)
+   add_custom_command(OUTPUT ${GO_OFFSET_PROBE}
+      COMMAND ${GO_EXECUTABLE} build -o ${GO_OFFSET_PROBE} ${CMAKE_SOURCE_DIR}/tools/go-offset-probe/main.go
+      DEPENDS ${CMAKE_SOURCE_DIR}/tools/go-offset-probe/main.go
+      VERBATIM)
+   add_custom_target(go-offset-probe DEPENDS ${GO_OFFSET_PROBE})
+endif()
 
 target_link_libraries(procman dwelf dl)
 target_link_libraries(procman_static dwelf_static dl)
 target_link_libraries(${PSTACK_BIN} ${PSTACK_LINK_LIBS})
 target_link_libraries(canal ${PSTACK_LINK_LIBS})
 target_link_libraries(pstack-mkpyoff dwelf)
+target_link_libraries(pstack-mkgooff dwelf)
 target_link_options(${PSTACK_BIN} PRIVATE -Wl,--export-dynamic)
 target_link_options(canal PRIVATE -Wl,--export-dynamic)
 
@@ -145,9 +158,11 @@ target_link_libraries(stackusers ${PSTACK_LINK_LIBS})
 install(TARGETS ${PSTACK_BIN} canal)
 install(TARGETS hdmp)
 install(TARGETS pstack-mkpyoff)
+install(TARGETS pstack-mkgooff)
 install(TARGETS dwelf procman dwelf_static procman_static hdbg)
 install(FILES ${CMAKE_SOURCE_DIR}/pstack.1 DESTINATION share/man/man1 RENAME ${PSTACK_BIN}.1 )
 install(DIRECTORY pyoff-data/ DESTINATION share/pstack)
+install(DIRECTORY gooff-data/ DESTINATION share/pstack)
 install(DIRECTORY libpstack DESTINATION include)
 install(CODE "execute_process (COMMAND setcap cap_sys_ptrace+ep ${DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/${PSTACK_BIN} RESULT_VARIABLE ret)
 if (NOT ret EQUAL \"0\")
