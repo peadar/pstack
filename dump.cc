@@ -903,12 +903,10 @@ operator<< (std::ostream &os, const JSON<Elf::Dyn, std::pair<const Elf::Object *
     o.field("tag", DynTag(d.object.d_tag))
      .field("word", d.object.d_un.d_val);
 
-   auto stringSeg = d.context.first->getSegmentForAddress(d.context.second);
-   Elf::Off strings = stringSeg->p_offset;
-   strings += d.context.second - stringSeg->p_vaddr;
+   auto strings = d.context.first->virtualView();
 
    auto printString = [&](const char *text) {
-         o.field(text, d.context.first->io->readString(strings + d.object.d_un.d_val));
+         o.field(text, strings->readString(d.context.second + d.object.d_un.d_val));
    };
 
    switch (d.object.d_tag) {

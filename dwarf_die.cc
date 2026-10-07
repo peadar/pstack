@@ -734,4 +734,23 @@ const std::unique_ptr<Ranges> &DIE::getRanges() const {
 
 const DIE DIE::null {};
 
+DIE
+removeTypeQualifiers(DIE type)
+{
+    for (int depth = 0; bool(type) && depth <= 16; ++depth) {
+        switch (type.tag()) {
+            case Dwarf::DW_TAG_typedef:
+            case Dwarf::DW_TAG_const_type:
+            case Dwarf::DW_TAG_volatile_type:
+            case Dwarf::DW_TAG_restrict_type:
+            case Dwarf::DW_TAG_atomic_type:
+                type = DIE(type.attribute(Dwarf::DW_AT_type));
+                break;
+            default:
+                return type;
+        }
+    }
+    return {};
+}
+
 }

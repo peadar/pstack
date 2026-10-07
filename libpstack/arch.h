@@ -16,12 +16,17 @@ namespace pstack::Procman {
 
 #if defined( __i386__ )
 #define IPREG 8
+#define SPREG 4
+#define BPREG 5
+#define LRREG 14
 #define CFA_RESTORE_REGNO 4
 using gpreg = long;
 
 #elif defined( __x86_64__ )
 #define CFA_RESTORE_REGNO 7
 #define IPREG 16
+#define SPREG 7
+#define BPREG 6
 
 using gpreg = unsigned long long;
 
@@ -29,10 +34,16 @@ using gpreg = unsigned long long;
 #ifdef __aarch64__
 using gpreg = unsigned long long;
 #define IPREG 32
+#define SPREG 31
+#define BPREG 29
+#define LRREG 30
 #define CFA_RESTORE_REGNO 31
 #else
 // 32 bit ARM is not yet supported
 #define IPREG 15
+#define SPREG 13
+#define BPREG 11
+#define LRREG 14
 #define CFA_RESTORE_REGNO 13
 #endif
 

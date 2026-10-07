@@ -583,18 +583,14 @@ Target::reprUserDefined(ReprStream &os, const Remote<PyObject *> &remote) const 
     auto type = pyType(remote);
     auto tp_flags = fetch(offsets->type_object.tp_flags(type));
     constexpr uintptr_t Py_TPFLAGS_HEAPTYPE = 1UL << 9;
+    os << "<";
+    repr(os, fetch(offsets->type_object.tp_name(type)));
+    os << ">";
     if (!(tp_flags & Py_TPFLAGS_HEAPTYPE)) {
-        os << "<";
-        repr(os, fetch(offsets->type_object.tp_name(type)));
-        os << " object>";
         return;
     }
 
     auto heapType = type.reinterpretCast<PyHeapTypeObject *>();
-
-    os << "<";
-    repr(os, fetch(offsets->type_object.tp_name(type)));
-    os << " object> ";
 
     // For user-defined types, try to get the instance dictionary
     auto dictoffset = fetch(offsets->type_object.tp_dictoffset(type));
@@ -1042,12 +1038,12 @@ Target::Target(Procman::Process &proc_)
         types = std::make_unique<PyTypes>(*this);
 
         if (cookieInProc == Header::expectedCookie) {
-            version = { headerInProc.version,  obj->getHeader().e_machine };
+            version = { headerInProc.version, obj->getMachineName() };
         } else {
             // See if we can find the Py_Version symbol as a fallback, for python
             // versions before the introduction of the remote debugger protocol
             auto [obj, loadaddr, sym] = proc_.resolveSymbolDetail("Py_Version", false);
-            version = { proc_.io->readObj<unsigned long>(loadaddr + sym.st_value), obj->getHeader().e_machine };
+            version = { proc_.io->readObj<unsigned long>(loadaddr + sym.st_value), obj->getMachineName() };
         }
         pyRuntime.remote = reinterpret_cast<_PyRuntimeState *>(secaddr);
         pyRuntimeReader = proc.io->view("_PyRuntime", secaddr);

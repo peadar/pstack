@@ -113,6 +113,13 @@ CPYTHON OFFSET DATA
      libpython to generate data for a compatible interpreter version that is not already provided.  Use -v to report
      the selected file.
 
+GO GOROUTINE OFFSET DATA
+     Parked Go goroutine traces require an offset-data file named gooff-<major>.<minor>-<architecture>.json.  A file
+     generated with one patch release is used for its Go minor series.  Installed data is searched through the current
+     directory and XDG data locations.  Use pstack-mkgooff with a Go executable containing DWARF to generate data for
+     its Go runtime.  When Go is available at build time, the go-offset-probe build target creates a suitable local
+     executable.
+
 DEBUG INFORMATION
      Unwinding normally needs .eh_frame or .debug_frame.  Symbols, source locations, and argument values improve when
      matching debug packages are available.  By default, pstack searches standard debug locations, follows

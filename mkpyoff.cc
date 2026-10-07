@@ -15,19 +15,12 @@ namespace pstack { namespace {
     exit(1);
 }
 
-Dwarf::DIE realtype(Dwarf::DIE die) {
-   if (die.tag() == Dwarf::DW_TAG_typedef) {
-      return realtype(Dwarf::DIE(die.attribute(Dwarf::DW_AT_type)));
-   }
-   return die;
-}
-
 struct TypeDump {
     size_t offset;
     const Dwarf::DIE type;
     size_t depth{};
     TypeDump(size_t offset_, const Dwarf::DIE &type_, size_t depth_ = 0 )
-        : offset{offset_} , type{realtype(type_)}, depth{depth_} { }
+        : offset{offset_} , type{type_}, depth{depth_} { }
     void dump(std::ostream &os) const;
     void dumpBase(std::ostream &os) const;
     void dumpArray(std::ostream &os) const;
@@ -35,30 +28,6 @@ struct TypeDump {
     void dumpDimension(std::ostream &os, size_t offset, size_t elements,
                             const Dwarf::DIE &eltType, std::span<size_t> moreDimensions) const;
 };
-
-using Types = std::unordered_set<std::string_view>;
-
-Dwarf::DIE findTypes(const pstack::Dwarf::Unit::sptr &unit, Types &types, JObject &jo) {
-    for ( const auto &root = unit->root(); auto child : root.children()) {
-        if (auto it = types.find(child.name()); it != types.end()) {
-            child = realtype(std::move(child));
-            if (!bool(child.attribute(Dwarf::DW_AT_declaration))) {
-                jo.field(*it, TypeDump(0, child, 0));
-                types.erase(it);
-            }
-        }
-    }
-    return {};
-}
-
-Dwarf::DIE findTypes(const pstack::Dwarf::Info::sptr &info, Types &types, JObject &jo) {
-    for (auto units = info->getUnits(); auto unit : units) {
-        Dwarf::DIE rv = findTypes(unit, types, jo);
-        if (rv)
-            return rv;
-    }
-    return Dwarf::DIE();
-}
 
 void
 TypeDump::dump(std::ostream &os) const {
@@ -77,7 +46,7 @@ TypeDump::dump(std::ostream &os) const {
          for (auto &member : type.children()) {
             switch (member.tag()) {
                case Dwarf::DW_TAG_member: {
-                  auto chtype = realtype(Dwarf::DIE(member.attribute(Dwarf::DW_AT_type)));
+                  auto chtype = removeTypeQualifiers(Dwarf::DIE(member.attribute(Dwarf::DW_AT_type)));
                   auto fieldOff = member.attribute(Dwarf::DW_AT_data_member_location);
                   auto fieldOffset = fieldOff.valid() ? uintmax_t(fieldOff) : 0;
                   jo.field(member.name(), TypeDump(offset + fieldOffset, chtype));
@@ -115,7 +84,7 @@ void generateOne(Context &ctx, std::filesystem::path path) {
         return;
     }
 
-    Types types {
+    pstack::Dwarf::TypeList types {
        "PyAsyncMethods",
        "_PyRuntimeState",
        "PyBufferProcs",
@@ -158,17 +127,8 @@ void generateOne(Context &ctx, std::filesystem::path path) {
         return;
     }
 
-    unsigned long pyv;
-    auto phdr = elf->getSegmentForAddress(sym.st_value);
-    if (phdr == nullptr) {
-        std::cerr << "no segment for Py_Version in " << path << "\n";
-        return;
-    }
-    auto fileOff = sym.st_value - phdr->p_vaddr + phdr->p_offset;
-    elf->io->readObj(fileOff, &pyv);
-
-    Py::Version version(pyv, elf->getHeader().e_machine);
-
+    auto pyv = elf->virtualView()->readObj<unsigned long>(sym.st_value);
+    Py::Version version(pyv, elf->getMachineName());
     std::filesystem::path outfileName { version.offsetFileName() };
     std::ofstream out(outfileName);
     if (!out.good()) {
@@ -178,11 +138,12 @@ void generateOne(Context &ctx, std::filesystem::path path) {
 
     JObject jo(out);
     auto dwarf = ctx.findDwarf(elf);
-    findTypes(dwarf, types, jo);
+    auto func = [&](std::string_view name, const pstack::Dwarf::DIE &die) { jo.field(name, TypeDump(0, die, 0)); };
+    findTypes(dwarf, types, func);
     if (!types.empty()) {
         auto altDwarf = dwarf->getAltDwarf();
         if (altDwarf)
-            findTypes(altDwarf, types, jo);
+            findTypes(altDwarf, types, func);
     }
     if (!types.empty()) {
         std::clog << outfileName << ": missing types (not necessarily fatal):\n";

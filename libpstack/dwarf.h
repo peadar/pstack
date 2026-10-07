@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <unordered_set>
 
 namespace pstack::Dwarf {
 
@@ -898,6 +899,11 @@ public:
        io->readObj(off, to, size);
        off += size;
     }
+    template <typename T> T getObj() {
+       T t = io->readObj<T>(off);
+       off += sizeof(T);
+       return t;
+    }
     uint32_t getu32() {
         unsigned char q[4];
         io->readObj(off, q, 4);
@@ -1181,6 +1187,37 @@ CIE::execInsns(const CallFrame &dframe, uintptr_t start, uintptr_t end, uintmax_
     }
     return frame;
 }
+
+using TypeList = std::unordered_set<std::string_view>;
+
+DIE removeTypeQualifiers(DIE type);
+
+template <typename Callable>
+void findTypes(const Unit::sptr &unit, TypeList &types, Callable &&c) {
+    for ( const auto &root = unit->root(); auto child : root.children()) {
+        if (auto it = types.find(child.name()); it != types.end()) {
+            child = removeTypeQualifiers(std::move(child));
+            if (!bool(child.attribute(Dwarf::DW_AT_declaration))) {
+                c(*it, child);
+                types.erase(it);
+                if (types.empty())
+                    break;
+            }
+        }
+    }
+}
+
+
+template <typename Callable>
+void findTypes(const Info::sptr &info, TypeList &types, Callable &&c) {
+    for (auto units = info->getUnits(); auto unit : units) {
+        findTypes(unit, types, c);
+        if (types.empty())
+            break;
+    }
+}
+
+
 
 }
 std::ostream &operator << (std::ostream &os, const JSON<Dwarf::Info> &);

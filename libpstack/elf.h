@@ -322,6 +322,7 @@ public:
 
     // Misc operations
     std::string getInterpreter() const;
+    std::string getMachineName() const;
     const Ehdr &getHeader() const { return elfHeader; }
     const Phdr *getSegmentForAddress(Off) const;
     Notes notes() const { return Notes(this); }
@@ -341,6 +342,9 @@ public:
     Context &context;
     Reader::csptr io;
     const bool isDebug; // this is a debug image.
+
+    // returns a reader that you can use object-relative virtual addresses with.
+    Reader::csptr virtualView() const;
 
 private:
     Ehdr elfHeader;

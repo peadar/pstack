@@ -1,0 +1,17 @@
+{
+    "version": "go1.26.8",
+    "machine": "i386",
+    "pointer_size": 4,
+    "allgs_data": 0,
+    "allgs_length": 4,
+    "allgs_stride": 4,
+    "g_size": 288,
+    "g_sched": 28,
+    "g_goid": 80,
+    "gobuf_sp": 0,
+    "gobuf_pc": 4,
+    "gobuf_bp": 20,
+    "gobuf_g": 8,
+    "gobuf_ctxt": 12,
+    "gobuf_lr": 16
+}

@@ -183,6 +183,18 @@ provided.
 Use
 .Fl v
 to report the selected file.
+.Sh GO GOROUTINE OFFSET DATA
+Parked Go goroutine traces require an offset-data file named
+.Pa gooff-<major>.<minor>-<architecture>.json .
+A file generated with one patch release is used for its Go minor series.
+The installed data is searched through the current directory and XDG data
+locations.
+Use
+.Nm pstack-mkgooff
+with a Go executable containing DWARF to generate data for its Go runtime.
+When Go is available at build time, the
+.Pa go-offset-probe
+build target creates a suitable local executable.
 .Sh DEBUG INFORMATION
 Unwinding normally needs
 .Pa .eh_frame

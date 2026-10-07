@@ -8,7 +8,7 @@ The project also provides a small ELF/DWARF library (`libdwelf`), a process insp
 
 - Running Linux processes, by PID
 - ELF core files
-- Native C and C++ programs, plus other native code with usable DWARF unwind data (such as Go or Rust programs)
+- Native C and C++ programs, plus other native code with usable DWARF unwind data (such as Go or Rust programs); for Go, saved stacks of parked goroutines are included
 - Separate debug files located through `.gnu_debuglink` or GNU build IDs
 - Compressed debug sections (zlib and xz)
 - Modern CPython processes, including interpreter frames and, with `-l`, local variables
@@ -126,11 +126,23 @@ The remote inspector needs an offset-data file matching both the target CPython 
 
 Run with `-v` to see which offset-data file was selected. CPython internals change frequently, so support is necessarily version-sensitive.
 
+## Go goroutine offsets
+
+Parked goroutine traces use offsets generated for the Go minor version and architecture that built the target. Go patch releases normally share runtime layouts, so a file generated with one patch release is selected for the whole `major.minor` series. The repository includes data generated with Go 1.26.8 for the Go 1.26 series on x86-64. If a target needs another series, build the local Go runtime probe and generate data with that Go version:
+
+```sh
+cmake --build build --target go-offset-probe
+(cd gooff-data && ../build/pstack-mkgooff ../build/go-offset-probe-bin)
+```
+
+The generated `gooff-<major>.<minor>-<architecture>.json` file is searched through the current directory and the usual XDG data directories, and is installed with pstack when placed in `gooff-data/`. The JSON retains the exact Go version used to generate it. To use it from the source tree before installation, run pstack with `gooff-data/` as the current directory or copy the file into an XDG data directory.
+
 ## Other installed tools
 
 - `canal` searches a process or core for references to selected symbols. Its default vtable pattern can help estimate live polymorphic C++ objects.
 - `hdmp`, used with the supplied `hdbg` allocator library, reports heap debugger allocation information and the corresponding stacks.
 - `pstack-mkpyoff` generates CPython remote-inspection offset data.
+- `pstack-mkgooff` generates Go runtime offset data from a Go executable with DWARF.
 
 `stackusers` is also built for inspecting stack-frame use in ELF images; it is primarily a developer utility and is not installed by the default CMake rules.
 

@@ -394,6 +394,19 @@ Object::getInterpreter() const
     return "";
 }
 
+string
+Object::getMachineName() const
+{
+    switch (elfHeader.e_machine) {
+        case EM_386: return "i386";
+        case EM_X86_64: return "x86_64";
+        case EM_AARCH64: return "aarch64";
+        case EM_ARM: return "arm";
+        case EM_RISCV: return "riscv";
+        default: return "machine-" + std::to_string(elfHeader.e_machine);
+    }
+}
+
 Elf::Object::sptr Object::debugData() const {
     if (debugData_ == nullptr) {
         if (lzmaAvailable()) {
@@ -646,6 +659,45 @@ Object::getDebug() const
                 sect.p_vaddr += diff;
     }
     return debugObject.get();
+}
+
+struct VirtualElfReader : public Reader {
+public:
+    VirtualElfReader(std::shared_ptr<const Object> elf) : elf(std::move(elf)) {}
+    void describe(std::ostream &os) const override {
+        os << "virtually addressed view of ";
+        elf->io->describe(os);
+    }
+    std::string filename() const override { return elf->io->filename(); }
+    Off size() const override { return std::numeric_limits<uintptr_t>::max(); }
+    csptr view(const std::string &name, Off start, Off length=std::numeric_limits<Off>::max()) const override;
+    size_t read(Off off, size_t count, char *ptr) const override;
+private:
+    template <std::integral I> I translate(I from) const;
+    std::shared_ptr<const Object> elf;
+};
+
+template <std::integral I>
+I VirtualElfReader::translate(I from) const {
+    auto seg = elf->getSegmentForAddress( from );
+    if (seg == 0) {
+        throw Exception() << "invalid address for ELF image";
+    }
+    return from - seg->p_vaddr + seg->p_offset;
+}
+
+Reader::csptr VirtualElfReader::view(const std::string &name, Off start, Off length) const {
+    return elf->io->view(name, translate(start), length);
+}
+
+size_t
+VirtualElfReader::read(Off off, size_t count, char *ptr) const {
+    return elf->io->read(translate(off), count, ptr);
+}
+
+Reader::csptr
+Object::virtualView() const {
+    return std::make_shared<VirtualElfReader>(shared_from_this());
 }
 
 SymHash::SymHash(Reader::csptr hash_,
