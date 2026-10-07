@@ -343,6 +343,9 @@ public:
     Reader::csptr io;
     const bool isDebug; // this is a debug image.
 
+    // returns a reader that you can use object-relative virtual addresses with.
+    Reader::csptr virtualView() const;
+
 private:
     Ehdr elfHeader;
     std::optional<std::pair<Sym, std::string>> findSym(auto &table, Addr addr, int type);

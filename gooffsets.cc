@@ -105,29 +105,19 @@ readUvarint(std::span<const char> bytes, size_t offset)
     throw Exception() << "invalid Go build info string length";
 }
 
-Elf::Off
-fileOffsetForAddress(const Elf::Object &elf, Elf::Addr address)
-{
-    const auto *segment = elf.getSegmentForAddress(address);
-    if (!segment || address < segment->p_vaddr || address - segment->p_vaddr >= segment->p_filesz)
-        throw Exception() << "Go build info points outside a file-backed ELF segment";
-    return address - segment->p_vaddr + segment->p_offset;
-}
-
 std::string
-readOldBuildInfoString(const Elf::Object &elf, uint64_t headerAddress, size_t pointerSize,
+readOldBuildInfoString(const Reader::csptr elf, uint64_t headerAddress, size_t pointerSize,
         bool littleEndian)
 {
     std::array<char, 16> header{};
-    elf.io->read(fileOffsetForAddress(elf, headerAddress), 2 * pointerSize, header.data());
+    elf->read(headerAddress, 2 * pointerSize, header.data());
     auto fields = std::span<const char>(header.data(), 2 * pointerSize);
     auto stringAddress = readUint(fields, 0, pointerSize, littleEndian);
     auto stringLength = readUint(fields, pointerSize, pointerSize, littleEndian);
     if (stringLength > 256)
         throw Exception() << "implausible Go version string length";
-    auto offset = fileOffsetForAddress(elf, stringAddress);
     std::string value(stringLength, '\0');
-    elf.io->read(offset, value.size(), value.data());
+    elf->read(stringAddress, value.size(), value.data());
     return value;
 }
 
@@ -276,7 +266,7 @@ version(const Elf::Object &elf)
         throw Exception() << "invalid pointer size in Go build info";
     const bool littleEndian = elf.getHeader().e_ident[EI_DATA] == ELFDATA2LSB;
     const uint64_t stringHeader = readUint(bytes, start + 16, pointerSize, littleEndian);
-    return readOldBuildInfoString(elf, stringHeader, pointerSize, littleEndian);
+    return readOldBuildInfoString(elf.virtualView(), stringHeader, pointerSize, littleEndian);
 }
 
 RuntimeOffsets

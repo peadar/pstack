@@ -158,17 +158,8 @@ void generateOne(Context &ctx, std::filesystem::path path) {
         return;
     }
 
-    unsigned long pyv;
-    auto phdr = elf->getSegmentForAddress(sym.st_value);
-    if (phdr == nullptr) {
-        std::cerr << "no segment for Py_Version in " << path << "\n";
-        return;
-    }
-    auto fileOff = sym.st_value - phdr->p_vaddr + phdr->p_offset;
-    elf->io->readObj(fileOff, &pyv);
-
+    auto pyv = elf->virtualView()->readObj<unsigned long>(sym.st_value);
     Py::Version version(pyv, elf->getMachineName());
-
     std::filesystem::path outfileName { version.offsetFileName() };
     std::ofstream out(outfileName);
     if (!out.good()) {
