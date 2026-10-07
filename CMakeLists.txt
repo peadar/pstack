@@ -122,12 +122,15 @@ add_executable(pstack-mkgooff mkgooff.cc)
 add_executable(${PSTACK_BIN} pstack.cc)
 
 if (GO_EXECUTABLE)
-   set(GO_OFFSET_PROBE ${CMAKE_CURRENT_BINARY_DIR}/go-offset-probe-bin)
-   add_custom_command(OUTPUT ${GO_OFFSET_PROBE}
-      COMMAND ${GO_EXECUTABLE} build -o ${GO_OFFSET_PROBE} ${CMAKE_SOURCE_DIR}/tools/go-offset-probe/main.go
-      DEPENDS ${CMAKE_SOURCE_DIR}/tools/go-offset-probe/main.go
-      VERBATIM)
-   add_custom_target(go-offset-probe DEPENDS ${GO_OFFSET_PROBE})
+    message(STATUS "found go: ${GO_EXECUTABLE}")
+    set(GO_OFFSET_PROBE ${CMAKE_CURRENT_BINARY_DIR}/go-offset-probe-bin)
+    add_custom_command(OUTPUT ${GO_OFFSET_PROBE}
+        COMMAND ${GO_EXECUTABLE} build -o ${GO_OFFSET_PROBE} ${CMAKE_SOURCE_DIR}/tools/go-offset-probe/main.go
+        DEPENDS ${CMAKE_SOURCE_DIR}/tools/go-offset-probe/main.go
+        VERBATIM)
+    add_custom_target(go-offset-probe DEPENDS ${GO_OFFSET_PROBE})
+else()
+    message(WARNING "No go executable - can't build gooff probe")
 endif()
 
 target_link_libraries(procman dwelf dl)

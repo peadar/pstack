@@ -1,0 +1,1 @@
+{ "version":"go1.27.1", "machine":62, "pointer_size":8, "allgs_data":0, "allgs_length":8, "allgs_stride":8, "g_size":456, "g_sched":56, "g_goid":152, "gobuf_sp":0, "gobuf_pc":8, "gobuf_bp":40, "gobuf_g":16, "gobuf_ctxt":24, "gobuf_lr":32 }
