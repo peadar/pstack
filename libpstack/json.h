@@ -378,7 +378,7 @@ skipText(std::istream &l, const char *text)
 static inline Type
 peekType(std::istream &l)
 {
-    char c = skipSpace(l);
+    int c = skipSpace(l);
     switch (c) {
         case '{': return Object;
         case '[': return Array;
