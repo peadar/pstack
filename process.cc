@@ -969,9 +969,8 @@ Elf::Addr
 Process::resolveSymbol(const char *name, bool includeDebug,
         std::function<bool(std::string_view)> match)
 {
-    auto info = resolveSymbolDetail(name, includeDebug, match);
-    return std::get<1>(info) + std::get<2>(info).st_value;
-
+    auto [obj, addr, sym] = resolveSymbolDetail(name, includeDebug, match);
+    return addr + sym.st_value;
 }
 
 Process::~Process()

@@ -1,8 +1,6 @@
 #include "libpstack/go.h"
 #include "libpstack/proc.h"
 
-#include <limits>
-
 namespace pstack::Procman {
 
 // per-platform definitions for GREG and CTXTREG (Go's "g" and "ctxt" registers)
