@@ -236,7 +236,7 @@ const Object::SectionHeaders & Object::sectionHeaders() const {
     if (sectionHeaders_)
        return *sectionHeaders_;
 
-    sectionHeaders_ = std::make_unique<SectionHeaders>();
+    auto newHeaders = std::make_unique<SectionHeaders>();
     if (elfHeader.e_shoff < io->size()) {
        size_t headerCount = elfHeader.e_shnum;
        if (headerCount == 0 && elfHeader.e_shentsize != 0) {
@@ -244,12 +244,12 @@ const Object::SectionHeaders & Object::sectionHeaders() const {
           // iteration of the loop below.
           headerCount = 65536;
        }
-       sectionHeaders_->reserve(headerCount);
+       newHeaders->reserve(headerCount);
        for (Elf::Off off = elfHeader.e_shoff, i = 0; i < headerCount; i++) {
-           sectionHeaders_->push_back(std::make_unique<Section>(this, off, i));
+           newHeaders->push_back(std::make_unique<Section>(this, off, i));
            if (i == 0 && elfHeader.e_shnum == 0) {
-               headerCount = (*sectionHeaders_)[0]->shdr.sh_size;
-               sectionHeaders_->reserve(headerCount);
+               headerCount = (*newHeaders)[0]->shdr.sh_size;
+               newHeaders->reserve(headerCount);
            }
            off += elfHeader.e_shentsize;
        }
@@ -258,18 +258,19 @@ const Object::SectionHeaders & Object::sectionHeaders() const {
           // We need to deal with the fact that e_shstrndx might be too small
           // to hold the index of the string section, and look in sh_link if so.
           size_t shstrSec = elfHeader.e_shstrndx == SHN_XINDEX ?
-             (*sectionHeaders_)[0]->shdr.sh_link : elfHeader.e_shstrndx;
-          auto &sshdr = (*sectionHeaders_)[shstrSec];
+             (*newHeaders)[0]->shdr.sh_link : elfHeader.e_shstrndx;
+          auto &sshdr = (*newHeaders)[shstrSec];
           size_t secid = 0;
-          for (auto &h : *sectionHeaders_) {
+          for (auto &h : *newHeaders) {
               auto name = sshdr->io()->readString(h->shdr.sh_name);
               namedSection[name] = secid++;
               h->name = name;
           }
        }
     }
-    if (sectionHeaders_->size() == 0)
-        sectionHeaders_->push_back(std::make_unique<Section>());
+    if (newHeaders->size() == 0)
+        newHeaders->push_back(std::make_unique<Section>());
+    sectionHeaders_ = std::move(newHeaders);
     return *sectionHeaders_;
 }
 
