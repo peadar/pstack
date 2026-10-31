@@ -306,15 +306,15 @@ public:
     template <typename T> void listThreads(const T &invokeable);
     virtual void listLWPs(const std::function<void(lwpid_t)> &) {};
 
+    using SymMatcher = std::function<bool(const MappedObject &)>;
+    static bool defaultMatcher(const MappedObject &) { return true; };
     // find address of named symbol in the process.
-    Elf::Addr resolveSymbol(const char *symbolName, bool includeDebug,
-            std::function<bool(std::string_view)> matcher = [](std::string_view) { return true; });
+    Elf::Addr resolveSymbol(const char *symbolName, bool includeDebug, SymMatcher matcher = defaultMatcher);
 
     // find symbol data of named symbol in the process.
     // like resolveSymbol, but return the library and that library's load address as well as the address in the process.
     std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Sym>
-        resolveSymbolDetail(const char *name, bool includeDebug,
-                std::function<bool(std::string_view)> match = [](std::string_view) { return true; });
+        resolveSymbolDetail(const char *name, bool includeDebug, SymMatcher matcher = defaultMatcher);
     virtual Stacks getStacks();
     void load();
     [[nodiscard]] virtual pid_t getPID() const = 0;

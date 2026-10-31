@@ -48,13 +48,13 @@ ps_pglobal_lookup(struct ps_prochandle *ph, const char *ld_object_name,
     auto p = static_cast<Process *>(ph);
     try {
         *ld_symbol_addr = psaddr_t(intptr_t(p->resolveSymbol(ld_symbol_name, true,
-            [ld_object_name](std::string_view name) {
+            [ld_object_name](const Procman::MappedObject &mappedObject) {
                 if (ld_object_name == nullptr) {
                   // Null pointer for object name means look at all objects.
                   // Also, avoid constructing a string_view with a nullptr.
                   return true;
                 }
-                auto bn = std::filesystem::path(name).filename();
+                auto bn = std::filesystem::path(mappedObject.name()).filename();
                 return bn == ld_object_name || bn == "libc.so.6";
             }
             )));

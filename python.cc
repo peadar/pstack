@@ -79,7 +79,8 @@ pthreadTidOffset(Procman::Process &proc, size_t *offsetp)
     if (status == notDone) {
         try {
             auto addr = proc.resolveSymbol("_thread_db_pthread_tid", true,
-                  [](std::string_view name) {
+                  [](const Procman::MappedObject &mapped) {
+                     const auto name = mapped.name();
                      return
                      name.find("libc." ) != std::string::npos ||
                      name.find("libpthread" ) != std::string::npos ||
