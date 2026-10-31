@@ -1250,7 +1250,7 @@ Process::getStacks() {
           }
        });
 
-    addGoRoutines(*this, stacks);
+    addGoroutines(stacks);
 
     /*
      * Use the thread db to find at least the thread ids for each lwp. We

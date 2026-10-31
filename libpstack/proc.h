@@ -179,9 +179,6 @@ struct Lwp {
 
 using Stacks = std::map<lwpid_t, Lwp>;
 
-// Add saved Go goroutine stacks to the process stack collection.
-void addGoRoutines(Process &, Stacks &);
-
 struct DevNode {
     int major = -1;
     int minor = -1;
@@ -252,6 +249,7 @@ class Process : public ps_prochandle {
     void loadSharedObjects(Elf::Addr);
     Elf::Addr extractDtDebugFromDynamicSegment(const Elf::Phdr &phdr, Elf::Addr loadAddr, const char *);
     void processAUXV(const Reader &);
+    void addGoroutines(Stacks&);
 
 protected:
     td_thragent_t *agent;
