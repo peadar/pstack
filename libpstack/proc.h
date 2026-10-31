@@ -222,22 +222,22 @@ using AddressSpace = std::vector<AddressRange>;
 // on resource constrained systems.
 struct MappedObject {
     std::string name_;
-    Elf::BuildID bid_;
-    Elf::Object::sptr objptr_;
 public:
+    MappedObject(std::string_view n, Elf::Object::sptr objptr) : name_{n}, objptr_{objptr} {}
+    Elf::BuildID buildID{};
+    bool hasGoNote{};
+    Elf::Object::sptr objptr_{};
     [[nodiscard]] const std::string &name() const { return name_; }
     bool operator < (const MappedObject &rhs) const {
-        return name_ < rhs.name_ || ( name_ == rhs.name_ && bid_ < rhs.bid_); // for comparing pairs.
+        return name_ < rhs.name_ || ( name_ == rhs.name_ && buildID < rhs.buildID); // for comparing pairs.
     }
     Elf::Object::sptr object(Context &ctx) {
         if (objptr_ == nullptr)
-            objptr_ = ctx.findImage(bid_);
+            objptr_ = ctx.findImage(buildID);
         if (objptr_ == nullptr)
             objptr_ = ctx.findImage(name_);
         return objptr_;
     }
-    MappedObject(std::string_view name, Elf::BuildID bid, Elf::Object::sptr objptr = {}) :
-       name_{name}, bid_{std::move(bid)}, objptr_{std::move(objptr)} {}
 };
 
 class Process : public ps_prochandle {

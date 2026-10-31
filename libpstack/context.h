@@ -24,6 +24,7 @@ struct Options {
     bool withDebuginfod = false; // use debuginfod client library.
     bool noBuildIds = false;
     bool noLocalFiles = false;
+    bool forceGo = false;
     unsigned maxdepth = std::numeric_limits<int>::max();
     unsigned maxframes = 30;
     unsigned maxthreads = 1024;

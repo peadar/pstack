@@ -178,8 +178,8 @@ getInterpHead<3>(Procman::Process &proc) {
 
     std::tie(libpython, libpythonAddr, _PyRuntimeSym) = proc.resolveSymbolDetail(
           "_PyRuntime", false,
-          [&](std::string_view name) {
-             auto base = std::filesystem::path(name).filename();
+          [&](const Procman::MappedObject &mo) {
+             auto base = std::filesystem::path(mo.name()).filename();
              return std::string(base).find("python3") != std::string::npos;
           });
 
