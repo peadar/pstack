@@ -409,6 +409,7 @@ public:
    Reader::csptr data() const;
    int type()  const { return note.n_type; }
 };
+BuildID getBuildIDFromNote(const NoteDesc &noted);
 
 class Notes::segment_iterator {
     const Object *object;
