@@ -418,7 +418,7 @@ class Notes::segment_iterator {
     Note curNote;
     Reader::csptr io;
     void readNote() { io->readObj(offset, &curNote); }
-    void startSection();
+    void startSegment();
 public:
     segment_iterator(const Object *object_);
     segment_iterator(const segment_iterator &rhs) = default;
