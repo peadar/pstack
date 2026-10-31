@@ -913,13 +913,10 @@ Process::findRDebugAddr()
         try {
             addElfObject(execImage->getInterpreter(), nullptr, interpBase);
             dt_debug = resolveSymbol("_r_debug", false,
-                    [this](const std::string_view name) {
-                    return execImage->getInterpreter() == name;
-                    });
+                    [this](const MappedObject & mapped) { return execImage->getInterpreter() == mapped.name(); });
             if (dt_debug != 0 && context.debug) {
                 *context.debug << "found DT_DEBUG using address of _r_debug symbol\n";
             }
-
         }
         catch (...) {
         }
@@ -944,11 +941,10 @@ Process::findSegment(Elf::Addr addr)
 }
 
 std::tuple<Elf::Object::sptr, Elf::Addr, Elf::Sym>
-Process::resolveSymbolDetail(const char *name, bool includeDebug,
-        std::function<bool(std::string_view)> match)
+Process::resolveSymbolDetail(const char *name, bool includeDebug, SymMatcher match)
 {
     for (auto &loaded : objects) {
-        if (!match(loaded.second.name()))
+        if (!match(loaded.second))
            continue;
         auto obj = loaded.second.object(context);
         if (!obj)
@@ -966,8 +962,7 @@ Process::resolveSymbolDetail(const char *name, bool includeDebug,
 }
 
 Elf::Addr
-Process::resolveSymbol(const char *name, bool includeDebug,
-        std::function<bool(std::string_view)> match)
+Process::resolveSymbol(const char *name, bool includeDebug, SymMatcher match)
 {
     auto [obj, addr, sym] = resolveSymbolDetail(name, includeDebug, match);
     return addr + sym.st_value;
