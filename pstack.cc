@@ -316,6 +316,12 @@ emain(int argc, char **argv, Context &context)
                std::clog << STR(VERSION) << "\n";
                exitCode = 0; })
 
+    .add("force-go",
+            'G',
+            "attempt to find go routines, even if the process is not "
+            "heuristically characterised as a 'go' process",
+            Flags::setf(context.options.forceGo))
+
 #if defined(HAVE_PYTHON39) ||defined(WITH_PYRDB)
     .add("python-modules",
             'm',

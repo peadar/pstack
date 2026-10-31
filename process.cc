@@ -803,10 +803,18 @@ Process::dumpFrameText(std::ostream &os, const StackFrame &frame, int frameNo)
 void
 Process::addElfObject(std::string_view name, const Elf::Object::sptr &obj, Elf::Addr load)
 {
-    Elf::BuildID bid;
+    MappedObject mo{name, obj};
     try {
         auto bidElf = obj ? obj : std::make_shared<Elf::Object>(context, io->view( "in-memory elf object", load, 0x4000), false);
-        bid = bidElf->getBuildID();
+        for (auto note : bidElf->notes()) {
+            if (note.name() == "GNU") {
+                if (note.type() == pstack::Elf::GNU_BUILD_ID) {
+                    mo.buildID = getBuildIDFromNote(note);
+                }
+            } else if (note.name() == "Go") {
+                mo.hasGoNote = true;
+            }
+        }
     }
     catch (const Exception &ex) {
        // this is not a fatal problem - ELF headers may or may not be present in the core.
@@ -814,14 +822,14 @@ Process::addElfObject(std::string_view name, const Elf::Object::sptr &obj, Elf::
            *context.debug << "failed to read build id from memory image\n";
     }
 
-    objects.emplace(std::make_pair(load, MappedObject{ name, bid, obj }));
     if (context.verbose >= 2) {
         IOFlagSave _(*context.debug);
         *context.debug << "object " << name;
-        if (bid)
-            *context.debug << " with in-process build ID " << bid;
+        if (mo.buildID)
+            *context.debug << " with in-process build ID " << mo.buildID;
         *context.debug << " loaded at address " << std::hex << load << std::dec << std::endl;
     }
+    objects.emplace(std::make_pair(load, std::move(mo)));
 }
 
 /*

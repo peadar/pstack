@@ -24,7 +24,8 @@ Process::addGoroutines(Stacks &stacks)
     Elf::Sym allgsSymbol;
 
     try {
-        std::tie(elf, loadAddress, allgsSymbol) = resolveSymbolDetail("runtime.allgs", true);
+        std::tie(elf, loadAddress, allgsSymbol) = resolveSymbolDetail("runtime.allgs", true,
+                [&](const MappedObject &mo) { return context.options.forceGo || mo.hasGoNote; } );
     }
     catch (const Exception &ex) {
         // Most targets are not Go programs; absence of this runtime symbol is normal.
@@ -96,14 +97,13 @@ Process::addGoroutines(Stacks &stacks)
                 stacks.emplace(goroutine.id, std::move(goroutine));
             }
             catch (const Exception &ex) {
-                if (context.verbose > 1)
-                    *context.debug << "failed to unwind Go goroutine " << i << ": " << ex.what() << "\n";
+                *context.debug << "failed to unwind goroutine " << i << ": " << ex.what() << "\n";
             }
         }
     }
     catch (const Exception &ex) {
         if (context.verbose > 0)
-            *context.debug << "Go goroutine support unavailable: " << ex.what() << "\n";
+            *context.debug << "goroutine support unavailable: " << ex.what() << "\n";
     }
 }
 
