@@ -66,7 +66,7 @@ bool
 Notes::section_iterator::nextNoteSection() {
    sectionOffset = 0;
    ++sectionIndex;
-   for (;sectionIndex < object->getHeader().e_shnum; ++sectionIndex) {
+   for (;sectionIndex < object->sectionHeaders().size(); ++sectionIndex) {
       section = &object->getSection(sectionIndex);
       if (section->shdr.sh_type == SHT_NOTE)
          return true;
@@ -237,7 +237,7 @@ const Object::SectionHeaders & Object::sectionHeaders() const {
        return *sectionHeaders_;
 
     auto newHeaders = std::make_unique<SectionHeaders>();
-    if (elfHeader.e_shoff < io->size()) {
+    if (elfHeader.e_shoff != 0 && elfHeader.e_shoff < io->size()) {
        size_t headerCount = elfHeader.e_shnum;
        if (headerCount == 0 && elfHeader.e_shentsize != 0) {
           // work out the true headerCount form the sh_size field on the first
@@ -570,33 +570,17 @@ Object::findDebugSymbol(const string &name)
     return {undef(), 0};
 }
 
+BuildID getBuildIDFromNote(const NoteDesc &note) {
+   auto noteIo = note.data();
+   std::vector<uint8_t> data(noteIo->size());
+   noteIo->readObj(0, data.data(), noteIo->size());
+   return BuildID{ data };
+}
+
 BuildID Object::getBuildID() const {
-    if (isDebug) {
-       // For debug objects, don't trust the notes segments are accurate
-       // (they're not). Only use sections to derive info in debug objects.
-       const auto &notesec = getSection(".note.gnu.build-id", SHT_NOTE);
-       if (notesec) {
-          auto noteIo = notesec.io();
-          if (noteIo->size() > 4 + sizeof (Note)) {
-             auto note = noteIo->readObj<Note>( 0 );
-             if (note.n_type == GNU_BUILD_ID) {
-                std::vector<uint8_t> data;
-                data.resize(note.n_descsz);
-                noteIo->readObj(sizeof note + roundup2(note.n_namesz, 4), data.data(), note.n_descsz );
-                return BuildID(data);
-             }
-          }
-       }
-    } else {
-       // for "execuable" objects, trust the segments primarily. Find the GNU buildID note.
-       for (const auto &note : notes()) {
-          if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
-             auto noteIo = note.data();
-             std::vector<uint8_t> data;
-             data.resize(noteIo->size());
-             noteIo->readObj(0, data.data(), noteIo->size());
-             return BuildID(data);
-          }
+    for (const auto &note : notes()) {
+       if (note.name() == "GNU" && note.type() == GNU_BUILD_ID) {
+          return getBuildIDFromNote(note);
        }
     }
     return {};

@@ -363,6 +363,7 @@ private:
     mutable std::unique_ptr<GnuHash> gnu_hash_; // Enhanced GNU symbol hash table.
     mutable const Phdr *lastSegmentForAddress; // cache of last segment returned for a specific address.
 
+    friend class Notes::section_iterator;
     friend std::ostream &pstack::operator<< (std::ostream &, const pstack::JSON<Object> &);
 
     // used to cache the debug symbol table by name. Popualted first time something requests such a symbol
@@ -409,6 +410,7 @@ public:
    Reader::csptr data() const;
    int type()  const { return note.n_type; }
 };
+BuildID getBuildIDFromNote(const NoteDesc &noted);
 
 class Notes::segment_iterator {
     const Object *object;
@@ -470,7 +472,7 @@ public:
     }
 
     bool operator == (const sentinel &) const {
-       return sectionIndex >= object->getHeader().e_shnum;
+       return sectionIndex >= object->sectionHeaders().size();
     }
 
     section_iterator &operator++();
