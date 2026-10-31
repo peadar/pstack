@@ -8,6 +8,7 @@
 #include <limits>
 #include <list>
 #include <array>
+#include <filesystem>
 
 #include <sys/mman.h>
 
@@ -190,7 +191,12 @@ public:
     MmapReader(MmapReader &&) = delete;
     auto &operator = (const MmapReader &) = delete;
     auto &operator = (MmapReader &&) = delete;
-    std::string filename() const override { return descr; }
+    std::string filename() const override {
+       std::error_code ec;
+       auto path = std::filesystem::weakly_canonical(descr, ec);
+       return ec? descr : path.string();
+    }
+    void describe(std::ostream &os) const { os << filename(); }
 };
 
 class NullReader final : public Reader {

@@ -623,7 +623,7 @@ Object::getDebug() const
         const auto &hdr = getSection(".gnu_debuglink", SHT_NULL);
         if (hdr) {
             auto link = hdr.io()->readString(0);
-            auto dir = std::filesystem::path(stringify(*io)).parent_path();
+            auto dir = std::filesystem::path(io->filename()).parent_path();
             debugObject = context.findDebugImage(dir / link);
         }
     }
