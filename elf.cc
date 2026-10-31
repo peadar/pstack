@@ -98,15 +98,15 @@ Notes::segment_iterator::segment_iterator(const Object *object_)
     if (phdrs) {
        phdrsi = phdrs->begin();
        if (phdrsi != phdrs->end()) {
-           startSection();
+           startSegment();
            readNote();
        }
     }
 }
 
-void Notes::segment_iterator::startSection() {
+void Notes::segment_iterator::startSegment() {
     offset = 0;
-    io = object->io->view("note section", Off(phdrsi->p_offset), size_t(phdrsi->p_filesz));
+    io = object->io->view("note segment", Off(phdrsi->p_offset), size_t(phdrsi->p_filesz));
 }
 
 Notes::segment_iterator &Notes::segment_iterator::operator++()
@@ -117,7 +117,7 @@ Notes::segment_iterator &Notes::segment_iterator::operator++()
             offset = 0;
             return *this;
         }
-        startSection();
+        startSegment();
     } else {
         offset = newOff;
     }
