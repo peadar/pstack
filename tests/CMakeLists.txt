@@ -25,6 +25,7 @@ add_executable(cpp cpp.cc)
 add_executable(procself procself.cc)
 add_executable(suspend suspend.cc)
 add_executable(elf-regressions elf-regressions.cc)
+add_executable(exception-regressions exception-regressions.cc)
 
 foreach(hash_style sysv gnu)
     add_library(elf-fixture-${hash_style} SHARED elf-fixture.c)
@@ -92,11 +93,12 @@ add_test(NAME thread COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/t
 add_test(NAME jsondump COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/dump-test.py)
 
 add_test(NAME procself COMMAND $<TARGET_FILE:procself>)
+add_test(NAME exception COMMAND exception-regressions)
 add_test(NAME elf COMMAND elf-regressions
     $<TARGET_FILE:elf-fixture-sysv> $<TARGET_FILE:elf-fixture-gnu>
     ${ELF_STRIPPED_FIXTURE} ${ELF_DEBUG_FIXTURE})
 
-set(ALL_TESTS args badfp basic cpp noreturn segv thread jsondump elf)
+set(ALL_TESTS args badfp basic cpp noreturn segv thread jsondump elf exception)
 
 if (Python3_Development_FOUND)
     add_test(NAME python_path_test COMMAND python_path_test)

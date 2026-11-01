@@ -364,9 +364,10 @@ Process::processAUXV(const Reader &auxio)
                 std::vector<uint8_t> data;
                 data.resize(n.n_descsz);
                 io->read(noteVa + sizeof n + 4, n.n_descsz, (char *)data.data());
+                Elf::BuildID buildID{std::move(data)};
                 if (context.verbose > 1)
-                    *context.debug << "build ID From AT_PHDR: " << Elf::BuildID(data) << "\n";
-                execImage = context.findImage(Elf::BuildID{data});
+                    *context.debug << "build ID From AT_PHDR: " << buildID << "\n";
+                execImage = context.findImage(buildID);
                 break;
             }
         }

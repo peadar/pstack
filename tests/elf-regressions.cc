@@ -10,6 +10,8 @@
 #include <iterator>
 #include <sstream>
 #include <stdexcept>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -189,6 +191,47 @@ void testRemovedFile(const fs::path &fixture, const fs::path &removed) {
     check(object->io->readObj<Elf::Ehdr>(0).e_ident[EI_MAG0] == ELFMAG0,
           "removed mapping is unreadable");
 }
+
+void testNoteMoves(const fs::path &fixture) {
+    static_assert(std::is_nothrow_move_constructible_v<Elf::NoteDesc>);
+    static_assert(std::is_nothrow_move_assignable_v<Elf::NoteDesc>);
+    static_assert(std::is_nothrow_move_constructible_v<Elf::Notes::iterator>);
+    static_assert(std::is_nothrow_move_assignable_v<Elf::Notes::iterator>);
+
+    Context context;
+    auto reader = std::make_shared<FileReader>(context, fixture);
+    Elf::Note header{};
+    header.n_type = Elf::GNU_BUILD_ID;
+    Elf::NoteDesc note(header, reader);
+    const auto owners = reader.use_count();
+    Elf::NoteDesc moved(std::move(note));
+    check(reader.use_count() == owners, "moving a note copied its reader");
+    Elf::NoteDesc assigned;
+    assigned = std::move(moved);
+    check(reader.use_count() == owners, "move-assigning a note copied its reader");
+    check(assigned.type() == Elf::GNU_BUILD_ID, "note move lost its type");
+    auto copied = assigned;
+    check(reader.use_count() == owners + 1 && copied.type() == Elf::GNU_BUILD_ID,
+          "copying a note no longer shares its reader");
+
+    auto object = context.openImage(fixture);
+    const auto objectOwners = object->io.use_count();
+    Elf::Notes::segment_iterator segment(object.get());
+    Elf::Notes::iterator iterator(std::move(segment));
+    Elf::Notes::iterator movedIterator(std::move(iterator));
+    {
+        Elf::Notes::iterator assignedIterator;
+        assignedIterator = std::move(movedIterator);
+        check(!(assignedIterator == object->notes().end()), "moved note iterator is at end");
+        check((*assignedIterator).name() == "GNU", "moved note iterator is unreadable");
+        auto copy = assignedIterator;
+        Elf::Notes::iterator copyAssigned;
+        copyAssigned = copy;
+        check(copyAssigned == assignedIterator, "copied note iterator changed position");
+    }
+    check(object->io.use_count() == objectOwners,
+          "moved-from note iterators retained the segment reader");
+}
 }
 
 int main(int argc, char **argv) {
@@ -201,6 +244,7 @@ int main(int argc, char **argv) {
         testPartialImage(argv[2], directory.path / "partial.so");
         testReader(directory.path / "segments.so");
         testRemovedFile(argv[2], directory.path / "removed.so");
+        testNoteMoves(argv[2]);
     } catch (const std::exception &ex) {
         std::cerr << "ELF regression: " << ex.what() << '\n';
         return 1;

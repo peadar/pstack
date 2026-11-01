@@ -8,25 +8,29 @@ class Exception : public std::exception {
     mutable std::ostringstream str;
     mutable std::string intermediate;
 public:
-    Exception() noexcept = default;
-    Exception(const Exception &rhs) noexcept : str{ rhs.str.str() } {}
-    Exception(Exception &&rhs) noexcept : str{ std::move(rhs.str ) } {}
+    Exception() = default;
+    // Keep the put position at the end so streaming onto a copy appends.
+    Exception(const Exception &rhs) : str{ rhs.str.str(), std::ios::out | std::ios::ate } {}
+    Exception(Exception &&rhs) = default;
 
-    Exception &operator = (const Exception &rhs) noexcept {
-       str.clear();
-       str << rhs.str.str();
+    Exception &operator = (const Exception &rhs) {
+       if (this != &rhs) {
+           str = std::ostringstream{rhs.str.str(), std::ios::out | std::ios::ate};
+           intermediate.clear();
+       }
        return *this;
     };
 
-    Exception &operator = (Exception &&rhs) noexcept {
-       str = std::move(rhs.str);
-       return *this;
-    };
+    Exception &operator = (Exception &&rhs) = default;
     ~Exception() noexcept = default;
 
-    const char *what() const noexcept {
-        intermediate = str.str();
-        return intermediate.c_str();
+    const char *what() const noexcept override {
+        try {
+            intermediate = str.str();
+            return intermediate.c_str();
+        } catch (...) {
+            return "pstack exception (message unavailable)";
+        }
     }
     std::ostream &getStream() const { return str; }
     typedef void IsStreamable;
