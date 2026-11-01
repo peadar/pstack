@@ -62,48 +62,49 @@ CoreProcess::CoreProcess(Context &ctx, Elf::Object::sptr exec, Elf::Object::sptr
      , prpsinfo{}
      , coreImage(std::move(core))
 {
+   lwpid_t curLwp = -1;
    for (auto note : coreImage->notes()) {
       if (note.name() == "CORE") {
          switch  (note.type() ) {
             case NT_PRSTATUS: {
-               // for NT_PRSTATUS notes, mark the index of the current note in our
-               // vector as the start of the notes for that LWP. When looking
-               // for an LWP-related note, we start at the index for that LWPs
-               // NT_PRSTATUS, and consider it a failure if we reach another
-               // NT_PRSTATUS or the end of the list.
+               // Notes from here to the next NT_PRSTATUS are potentially
+               // associated with the LWP in the prstatus_t here. Aggregate
+               // those notes appropriately
                auto task = note.data()->readObj<prstatus_t>(0);
-               lwpToPrStatusIdx[task.pr_pid] = notes.size();
+               curLwp = task.pr_pid;
                break;
             }
             case NT_PRPSINFO: {
                note.data()->readObj(0, &prpsinfo); // hold on to a copy of this
                break;
             }
-            default:
+            case NT_SIGINFO:
+               siginfo_ = note.data()->readObj<siginfo_t>(0);
                break;
+            case NT_AUXV:
+                auxv_ = note.data();
+                break;
+            case NT_FILE:
+                break;
+            default:
+                break;
          }
       }
-      notes.push_back( std::move(note) );
+      if (curLwp != -1)
+         lwpNotes[curLwp].push_back(std::move(note));
    }
 }
 
 void CoreProcess::listLWPs(const std::function<void(lwpid_t)> &cb) {
-   for (auto &task : lwpToPrStatusIdx)
+   for (auto &task : lwpNotes)
       cb(task.first);
 }
 
 Reader::csptr
 CoreProcess::getAUXV() const
 {
-#ifdef __linux__
-    for (const auto &note : notes) {
-       if (note.name() == "CORE" && note.type() == NT_AUXV) {
-           return note.data();
-           break;
-       }
-    }
-#endif
-    return {};
+   return auxv_;
+
 }
 
 void CoreReader::describe(std::ostream &os) const
@@ -191,26 +192,21 @@ CoreReader::CoreReader(Process *p_, Elf::Object::sptr core_) : p(p_), core(std::
 size_t
 CoreProcess::getRegs(lwpid_t lwpid, int code, size_t size, void *data)
 {
-   auto idx = lwpToPrStatusIdx.find( lwpid );
-   if ( idx == lwpToPrStatusIdx.end() ) {
+   auto lwpNotesIt =  lwpNotes.find(lwpid);
+   if (lwpNotesIt == lwpNotes.end())
       return 0;
-   }
-   for (size_t i = idx->second;;) {
-      if (notes[i].type() == code) {
+   
+   for (auto note : lwpNotesIt->second) {
+      if (note.type() == code) {
          if (code == NT_PRSTATUS) {
-            auto prstatus = notes[i].data()->readObj<prstatus_t>(0);
+            auto prstatus = note.data()->readObj<prstatus_t>(0);
             size = std::min(size, sizeof prstatus.pr_reg);
             memcpy(data, &prstatus.pr_reg, size);
          } else {
-            size = std::min(size, size_t(notes[i].data()->size()));
-            notes[i].data()->read(0, size, reinterpret_cast<char *>(data));
+            size = std::min(size, size_t(note.data()->size()));
+            note.data()->read(0, size, reinterpret_cast<char *>(data));
          }
          return size;
-      }
-      ++i;
-      if (i == notes.size() || ( notes[i].type() == NT_PRSTATUS && notes[i].name() == "CORE") ) {
-         // We're done if that's all the notes, or the next note is the start of a new LWP.
-         break;
       }
    }
    return 0;
@@ -332,14 +328,8 @@ CoreProcess::loadSharedObjectsFromFileNote()
 
 std::optional<siginfo_t>
 CoreProcess::getSignalInfo() const {
-#ifdef NT_SIGINFO
-   for ( const auto &note : coreImage->notes() ) {
-      if ( note.name() == "CORE" && note.type() == NT_SIGINFO ) {
-         return note.data()->readObj<siginfo_t>(0);
-      }
-   }
-#endif
-   return std::nullopt;
+   return siginfo_;
+
 }
 
 }

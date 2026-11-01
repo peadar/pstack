@@ -416,9 +416,10 @@ public:
 };
 
 class CoreProcess : public Process {
-    std::vector<Elf::NoteDesc> notes;
-    std::map<lwpid_t, size_t> lwpToPrStatusIdx;
     prpsinfo_t prpsinfo;
+    std::optional<siginfo_t> siginfo_;
+    std::map<lwpid_t, std::vector<Elf::NoteDesc>> lwpNotes;
+    Reader::csptr auxv_;
 public:
     Elf::Object::sptr coreImage;
     CoreProcess(Context &, Elf::Object::sptr exec, Elf::Object::sptr core);
