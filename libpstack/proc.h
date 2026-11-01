@@ -223,7 +223,7 @@ using AddressSpace = std::vector<AddressRange>;
 struct MappedObject {
     std::string name_;
 public:
-    MappedObject(std::string_view n, Elf::Object::sptr objptr) : name_{n}, objptr_{objptr} {}
+    MappedObject(std::string_view n, Elf::Object::sptr objptr) : name_{n}, objptr_{std::move(objptr)} {}
     Elf::BuildID buildID{};
     bool hasGoNote{};
     Elf::Object::sptr objptr_{};

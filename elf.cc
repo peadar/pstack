@@ -583,7 +583,7 @@ BuildID getBuildIDFromNote(const NoteDesc &note) {
    auto noteIo = note.data();
    std::vector<uint8_t> data(noteIo->size());
    noteIo->readObj(0, data.data(), noteIo->size());
-   return BuildID{ data };
+   return BuildID{ std::move(data) };
 }
 
 BuildID Object::getBuildID() const {

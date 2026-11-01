@@ -83,7 +83,7 @@ CoreProcess::CoreProcess(Context &ctx, Elf::Object::sptr exec, Elf::Object::sptr
                break;
          }
       }
-      notes.push_back( note );
+      notes.push_back( std::move(note) );
    }
 }
 

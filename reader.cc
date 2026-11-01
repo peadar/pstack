@@ -252,7 +252,7 @@ AbstractMemReader::view(const std::string &name, Off offset, Off subsize) const 
 }
 
 OffsetReader::OffsetReader(std::string name_, Reader::csptr upstream_, Off offset_, Off length_)
-    : upstream(upstream_)
+    : upstream(std::move(upstream_))
     , offset(offset_)
     , name(std::move(name_))
 {

@@ -93,7 +93,7 @@ LineInfo::build(DWARFReader &r, Unit &unit)
             if (path == "") {
                 *unit.dwarf->elf->context.debug << "no path in directory table entry" << std::endl;
             } else {
-                directories.emplace_back(path);
+                directories.emplace_back(std::move(path));
             }
         }
         EntryFormats fileFormat = readEntryFormats(r);
@@ -113,15 +113,15 @@ LineInfo::build(DWARFReader &r, Unit &unit)
                         break;
                 }
             }
-            files.push_back(entry);
+            files.push_back(std::move(entry));
         }
     } else {
         directories.emplace_back(".");
         for (;;) {
-            const auto &s = r.getstring();
+            auto s = r.getstring();
             if (s == "")
                 break;
-            directories.push_back(s);
+            directories.push_back(std::move(s));
         }
 
         files.emplace_back("unknown", 0U, 0U, 0U); // index 0 is special

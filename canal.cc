@@ -72,9 +72,9 @@ struct ListedSymbol {
     ListedSymbol(const Elf::Sym &sym_, Elf::Off objbase_, string name_, string object)
         : sym(sym_)
         , objbase(objbase_)
-        , name(name_)
+        , name(std::move(name_))
         , count(0)
-        , objname(object)
+        , objname(std::move(object))
     {}
     Elf::Off memaddr() const { return  sym.st_value + objbase; }
 };
@@ -84,7 +84,8 @@ class SymbolStore {
 public:
 
     void add(ListedSymbol symbol) {
-        store_.emplace(symbol.memaddr() + symbol.sym.st_size, symbol);
+        const auto end = symbol.memaddr() + symbol.sym.st_size;
+        store_.emplace(end, std::move(symbol));
     }
 
     template <typename Match>

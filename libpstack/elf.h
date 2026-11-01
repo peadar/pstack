@@ -258,7 +258,7 @@ public:
     }
 
     SymbolSection(Reader::csptr symbols_, Reader::csptr strings_)
-       : symbols(symbols_), strings(strings_), array(*symbols)
+       : symbols(std::move(symbols_)), strings(std::move(strings_)), array(*symbols)
     {}
     std::string name(const Sym &sym) const { return strings->readString(sym.st_name, std::numeric_limits<size_t>::max()); }
 };
@@ -411,8 +411,7 @@ class NoteDesc {
 public:
 
    NoteDesc() = default;
-   NoteDesc(const NoteDesc &rhs) = default;
-   NoteDesc(const Note &note_, Reader::csptr io_) : note(note_) , io(io_) { }
+   NoteDesc(const Note &note_, Reader::csptr io_) : note(note_) , io(std::move(io_)) { }
    [[nodiscard]] std::string name() const;
    Reader::csptr data() const;
    int type()  const { return note.n_type; }
@@ -493,11 +492,6 @@ class Notes::iterator {
       bool operator == ( const auto & ) const { return false; }
       invalid & operator ++ ( ) { return *this; }
       invalid operator ++ ( int ) { return *this; }
-      invalid(const invalid &) { }
-      invalid(invalid &&) { }
-      invalid() {}
-      invalid &operator = (const invalid &) = default;
-      invalid &operator = (invalid &&) = default;
       using difference_type = int;
       NoteDesc operator *() { return NoteDesc{}; }
    };
@@ -505,15 +499,9 @@ class Notes::iterator {
 public:
     using difference_type = std::ptrdiff_t;
 
-    iterator(Notes::section_iterator &&it) : choice( it ) {}
-    iterator(Notes::segment_iterator &&it) : choice( it ) {}
+    iterator(Notes::section_iterator &&it) : choice( std::move(it) ) {}
+    iterator(Notes::segment_iterator &&it) : choice( std::move(it) ) {}
     iterator() : choice{invalid{}} {}
-    iterator(const iterator &rhs) : choice{rhs.choice} {}
-
-    iterator & operator = (const iterator &rhs) {
-       std::visit([this](auto &arg) { choice = arg; }, rhs.choice);
-       return *this;
-    }
 
     bool operator == (const sentinel &rhs) const {
        return std::visit([&rhs](auto &lhs) { return lhs == rhs; }, choice);
