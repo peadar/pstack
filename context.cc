@@ -259,7 +259,6 @@ Context::getImageInPath(const std::vector<std::filesystem::path> &paths, NameMap
                     *debug << name << " has an interpreter: " << interpreter << " - opening that instead\n";
                 res = openImage( interpreter, -1, false );
             } else {
-                return std::make_shared<Elf::Object>(*this, reader , isDebug);
                 res = openImage( path, -1, isDebug );
             }
             break;
