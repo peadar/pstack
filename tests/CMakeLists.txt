@@ -24,6 +24,29 @@ add_executable(noreturn noreturn.c noreturn-ext.c)
 add_executable(cpp cpp.cc)
 add_executable(procself procself.cc)
 add_executable(suspend suspend.cc)
+add_executable(elf-regressions elf-regressions.cc)
+
+foreach(hash_style sysv gnu)
+    add_library(elf-fixture-${hash_style} SHARED elf-fixture.c)
+    target_link_options(elf-fixture-${hash_style} PRIVATE
+        -Wl,--hash-style=${hash_style} -Wl,--build-id=sha1)
+endforeach()
+
+set(ELF_STRIPPED_FIXTURE ${CMAKE_CURRENT_BINARY_DIR}/elf-debug-fixture.so)
+set(ELF_DEBUG_FIXTURE ${ELF_STRIPPED_FIXTURE}.debug)
+add_custom_command(
+    OUTPUT ${ELF_STRIPPED_FIXTURE} ${ELF_DEBUG_FIXTURE}
+    COMMAND ${CMAKE_OBJCOPY} --only-keep-debug
+        $<TARGET_FILE:elf-fixture-gnu> ${ELF_DEBUG_FIXTURE}
+    COMMAND ${CMAKE_OBJCOPY} --strip-debug
+        $<TARGET_FILE:elf-fixture-gnu> ${ELF_STRIPPED_FIXTURE}
+    COMMAND ${CMAKE_OBJCOPY} --add-gnu-debuglink=${ELF_DEBUG_FIXTURE}
+        ${ELF_STRIPPED_FIXTURE}
+    DEPENDS elf-fixture-gnu
+    VERBATIM)
+add_custom_target(elf-debug-fixture DEPENDS ${ELF_STRIPPED_FIXTURE} ${ELF_DEBUG_FIXTURE})
+add_dependencies(elf-regressions elf-fixture-sysv elf-debug-fixture)
+target_link_libraries(elf-regressions dwelf)
 
 target_link_libraries(thread pthread testhelper)
 target_link_libraries(badfp testhelper)
@@ -69,8 +92,11 @@ add_test(NAME thread COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/t
 add_test(NAME jsondump COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/dump-test.py)
 
 add_test(NAME procself COMMAND $<TARGET_FILE:procself>)
+add_test(NAME elf COMMAND elf-regressions
+    $<TARGET_FILE:elf-fixture-sysv> $<TARGET_FILE:elf-fixture-gnu>
+    ${ELF_STRIPPED_FIXTURE} ${ELF_DEBUG_FIXTURE})
 
-set(ALL_TESTS args badfp basic cpp noreturn segv thread jsondump)
+set(ALL_TESTS args badfp basic cpp noreturn segv thread jsondump elf)
 
 if (Python3_Development_FOUND)
     add_test(NAME python_path_test COMMAND python_path_test)
