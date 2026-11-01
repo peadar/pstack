@@ -274,20 +274,29 @@ const Object::SectionHeaders & Object::sectionHeaders() const {
     return *sectionHeaders_;
 }
 
-std::map<Sxword, std::vector<Dyn>> &
-Object::dynamic() const {
-   /* Load dynamic entries */
-   if (!dynamic_) {
-      dynamic_ = std::make_shared<std::map<Sxword, std::vector<Dyn>>>();
-      const auto &section = getSection(".dynamic", SHT_DYNAMIC );
-      if (section) {
-         ReaderArray<Dyn> content(*section.io());
-         for (auto dyn : content)
-            (*dynamic_)[dyn.d_tag].push_back(dyn);
+std::span<const Addr>
+Object::dynamic(unsigned tag) const {
+
+   assert (!isDebug);
+   if (dynamic_ == nullptr) {
+      auto newDynamic = std::make_unique<Dynamic>();
+      for (auto &seghdr: getSegments(PT_DYNAMIC)) {
+         auto segio = virtualView()->view("dynamic segment VA", seghdr.p_vaddr, seghdr.p_filesz);
+         for (auto &dyn : ReaderArray<Dyn>(*segio)) {
+            if (dyn.d_tag == DT_NULL) {
+               break;
+            }
+            (*newDynamic)[dyn.d_tag].push_back(dyn.d_un.d_ptr);
+         }
       }
+      dynamic_ = std::move(newDynamic);
    }
-   return *dynamic_;
-};
+   auto it = dynamic_->find(tag);
+   if (it == dynamic_->end())
+      return {};
+   return {it->second.begin(), it->second.end()};
+}
+
 
 const SymbolVersioning &
 Object::symbolVersions() const
@@ -299,11 +308,11 @@ Object::symbolVersions() const
     const auto &gnu_version_r = getSection(".gnu.version_r", SHT_GNU_verneed );
     if (gnu_version_r) {
        const auto &strings = getLinkedSection(gnu_version_r);
-       const auto &verneednum = dynamic().at(DT_VERNEEDNUM);
+       const auto &verneednum = dynamic(DT_VERNEEDNUM);
        if (verneednum.size() != 0) {
 
           size_t off = 0;
-          for (size_t cnt = verneednum[0].d_un.d_val; cnt != 0; --cnt) {
+          for (size_t cnt = verneednum[0]; cnt != 0; --cnt) {
              auto verneed = gnu_version_r.io()->readObj<Verneed>(off);
              Off auxOff = off + verneed.vn_aux;
              auto filename = strings.io()->readString(verneed.vn_file);
@@ -323,10 +332,10 @@ Object::symbolVersions() const
     const auto &gnu_version_d = getSection(".gnu.version_d", SHT_GNU_verdef );
     if (gnu_version_d) {
        const auto &strings = getLinkedSection(gnu_version_d);
-       const auto &verdefnum = dynamic().at(DT_VERDEFNUM);
+       const auto &verdefnum = dynamic(DT_VERDEFNUM);
        if (verdefnum.size() != 0) {
           size_t off = 0;
-          for (size_t cnt = verdefnum[0].d_un.d_val; cnt != 0; --cnt) {
+          for (size_t cnt = verdefnum[0]; cnt != 0; --cnt) {
              auto verdef = gnu_version_d.io()->readObj<Verdef>(off);
              Off auxOff = off + verdef.vd_aux;
              // IF there are multiple verdaux entries, the first is the
@@ -658,26 +667,35 @@ public:
     csptr view(const std::string &name, Off start, Off length=std::numeric_limits<Off>::max()) const override;
     size_t read(Off off, size_t count, char *ptr) const override;
 private:
-    template <std::integral I> I translate(I from) const;
+    std::pair<Off, Off> translate(Off addr, Off size) const;
     std::shared_ptr<const Object> elf;
 };
 
-template <std::integral I>
-I VirtualElfReader::translate(I from) const {
-    auto seg = elf->getSegmentForAddress( from );
+// Translates the offset and length in the virtual address space to an offset
+// and length in the underlying file. the entire range is clamped to fit within
+// whatever segment the first byte is in
+std::pair<Reader::Off, Reader::Off> VirtualElfReader::translate(Reader::Off addr, Reader::Off len) const {
+    auto seg = elf->getSegmentForAddress( addr );
     if (seg == 0) {
         throw Exception() << "invalid address for ELF image";
     }
-    return from - seg->p_vaddr + seg->p_offset;
+    auto segoff = addr - seg->p_vaddr;
+    if (segoff > seg->p_filesz)
+        throw Exception() << "invalid address for ELF image";
+    return { segoff + seg->p_offset, std::min(len, seg->p_filesz - segoff) };
 }
 
 Reader::csptr VirtualElfReader::view(const std::string &name, Off start, Off length) const {
-    return elf->io->view(name, translate(start), length);
+    auto [fileoff, caplen] = translate(start, length);
+    return elf->io->view(name, fileoff, caplen);
 }
 
 size_t
 VirtualElfReader::read(Off off, size_t count, char *ptr) const {
-    return elf->io->read(translate(off), count, ptr);
+    if (count == 0)
+       return 0;
+    auto [fileoff, caplen] = translate(off, count);
+    return elf->io->read(fileoff, caplen, ptr);
 }
 
 Reader::csptr
@@ -692,19 +710,17 @@ SymHash::SymHash(Reader::csptr hash_,
     , strings(std::move(strings_))
 {
     // read the hash table into local memory.
-    size_t words = hash->size() / sizeof (Word);
-    data.resize(words);
-    hash->readObj(0, data.data(), words);
-    nbucket = data[0];
-    nchain = data[1];
-    buckets = data.data() + 2;
-    chains = buckets + nbucket;
+    hash->readObj(0, &header);
+    buckets.resize(header.nbucket);
+    chains.resize(header.nchain);
+    hash->readObj(sizeof header, buckets.data(), buckets.size());
+    hash->readObj(sizeof header + sizeof buckets[0] * buckets.size(), chains.data(), chains.size());
 }
 
 std::pair<uint32_t, Sym>
 SymHash::findSymbol(const string &name)
 {
-    uint32_t bucket = elf_hash(name) % nbucket;
+    uint32_t bucket = elf_hash(name) % header.nbucket;
     for (Word i = buckets[bucket]; i != STN_UNDEF; i = chains[i]) {
         auto candidate = syms->readObj<Sym>(i * sizeof (Sym));
         auto candidateName = strings->readString(candidate.st_name);
@@ -753,7 +769,7 @@ Reader::csptr Section::io() const {
                 }
                 io_ = make_shared<InflateReader>(
                       sz,
-                      *rawIo->view("ZLIB compressed content after magic signature", sizeof sig, sz));
+                      *rawIo->view("ZLIB compressed content after magic signature", sizeof sig, shdr.sh_size - sizeof sig));
             } else {
                 wantedZlib = true;
             }

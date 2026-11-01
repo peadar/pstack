@@ -141,14 +141,16 @@ class SymHash {
     Reader::csptr hash;
     Reader::csptr syms;
     Reader::csptr strings;
-    Word nbucket;
-    Word nchain;
-    std::vector<Word> data;
-    const Word *chains;
-    const Word *buckets;
+    struct {
+       Word nbucket;
+       Word nchain;
+    } header;
+    std::vector<Word> chains;
+    std::vector<Word> buckets;
 public:
-    static const char *tablename() { return ".hash"; }
-    static int sectiontype() { return SHT_HASH; }
+    static constexpr const char *tablename() { return ".hash"; }
+    static constexpr int sectiontype() { return SHT_HASH; }
+    static constexpr int dynhash() { return DT_HASH; }
     SymHash(Reader::csptr hash_, Reader::csptr syms_, Reader::csptr strings_);
     std::pair<uint32_t, Sym> findSymbol(const std::string &name); // fills sym, and returns index.
 };
@@ -174,8 +176,9 @@ class GnuHash {
     [[nodiscard]] uint32_t bucketoff(size_t idx) const noexcept { return bloomoff(header.bloom_size) + idx * 4; }
     [[nodiscard]] uint32_t chainoff(size_t idx) const noexcept { return bucketoff(header.nbuckets) + idx * 4; }
 public:
-    static const char *tablename() noexcept { return ".gnu.hash"; }
-    static int sectiontype() { return SHT_GNU_HASH; }
+    static constexpr const char *tablename() noexcept { return ".gnu.hash"; }
+    static constexpr int sectiontype() { return SHT_GNU_HASH; }
+    static constexpr int dynhash() { return DT_GNU_HASH; }
 
     GnuHash(Reader::csptr hash_, Reader::csptr syms_, Reader::csptr strings_)
         : hash(std::move(hash_))
@@ -289,7 +292,7 @@ class Object : public std::enable_shared_from_this<Object> {
 public:
     using sptr = std::shared_ptr<Object>;
     using ProgramHeaders = std::vector<Phdr>;
-    using Dynamic = std::map<Sxword, std::vector<Dyn>>;
+    using Dynamic = std::map<Sxword, std::vector<Addr>>;
     using ProgramHeadersByType = std::map<Word, ProgramHeaders>;
     using SectionHeaders = std::vector<std::unique_ptr<Section>>;
 
@@ -353,7 +356,7 @@ private:
     mutable std::unique_ptr<SymbolVersioning> symbolVersions_;
     mutable std::unique_ptr<SectionHeaders> sectionHeaders_;
     mutable std::map<std::string, size_t> namedSection;
-    mutable std::shared_ptr<Dynamic> dynamic_;
+    mutable std::unique_ptr<Dynamic> dynamic_;
     mutable std::unique_ptr<SymbolSection> debugSymbols_;
     mutable std::unique_ptr<SymbolSection> dynamicSymbols_;
     mutable Object::sptr debugObject; // debug object as per .gnu_debuglink/other.
@@ -371,7 +374,7 @@ private:
 
     ProgramHeadersByType programHeaders_;
     SymbolSection &getSymtab(std::unique_ptr<SymbolSection> &table, const char *name, int type) const;
-    Dynamic &dynamic() const;
+    std::span<const Addr> dynamic(unsigned) const;
 
     const SectionHeaders &sectionHeaders() const;
 
@@ -379,12 +382,16 @@ private:
     // types and section names, so share the code.
     template <typename HashType> HashType *get_hash(std::unique_ptr<HashType> &ptr) const {
         if (ptr == nullptr) {
-            auto &section { getSection( HashType::tablename(), HashType::sectiontype() ) };
-            if (section) {
-                auto &syms = getLinkedSection(section);
-                auto &strings = getLinkedSection(syms);
-                if (syms && strings)
-                    ptr = std::make_unique<HashType>(section.io(), syms.io(), strings.io());
+            auto dt_strtab = dynamic(DT_STRTAB);
+            auto dt_strsz = dynamic(DT_STRSZ);
+            auto dt_hash  = dynamic(HashType::dynhash());
+            auto dt_symtab  = dynamic(DT_SYMTAB);
+            if (!dt_strtab.empty() && !dt_strsz.empty() && !dt_hash.empty() && !dt_symtab.empty()) {
+                auto elfReader = virtualView();
+                ptr = std::make_unique<HashType>(
+                        elfReader->view("hash table", dt_hash[0]),
+                        elfReader->view("sym table", dt_symtab[0]),
+                        elfReader->view("string table", dt_strtab[0], dt_strsz[0]));
             }
         }
         return ptr.get();

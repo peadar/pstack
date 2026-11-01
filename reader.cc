@@ -106,8 +106,10 @@ Reader::readString(Off offset, size_t maxlen) const
 }
 
 Reader::csptr
-Reader::view(const std::string &name, Off offset, Off size) const {
-   return std::make_shared<OffsetReader>(name, shared_from_this(), offset, size);
+Reader::view(const std::string &name, Off offset, Off subsize) const {
+   if (offset > size())
+      throw Exception() << "invalid subview";
+   return std::make_shared<OffsetReader>(name, shared_from_this(), offset, std::min(subsize, size() - offset));
 }
 
 size_t
@@ -243,8 +245,10 @@ public:
 };
 
 AbstractMemReader::csptr
-AbstractMemReader::view(const std::string &name, Off offset, Off size) const {
-   return std::make_shared<MemOffsetReader>(name, this, offset, size);
+AbstractMemReader::view(const std::string &name, Off offset, Off subsize) const {
+   if (offset > size())
+      throw Exception() << "invalid subview";
+   return std::make_shared<MemOffsetReader>(name, this, offset, std::min(subsize, size() - offset));
 }
 
 OffsetReader::OffsetReader(std::string name_, Reader::csptr upstream_, Off offset_, Off length_)
