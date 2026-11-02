@@ -1011,6 +1011,17 @@ Target::Target(Procman::Process &proc_)
 {
     // find a python interpreter. The first thing with the right section with the right contents will do.
     for (auto &[addr, mapped] : proc.objects) {
+        std::filesystem::path name = mapped.name();
+
+        auto basename = name.filename().native();
+        // If the path name for the image starts with "libpython", "python", or
+        // we are looking at the executable image itself, then go and look at
+        // the file. Otherwise, avoid even attempting to grab the on-disk file
+        if (!proc_.context.options.forcePython &&
+              !basename.starts_with("python") &&
+              !basename.starts_with("libpython")
+              && (mapped.objptr_ == nullptr || mapped.objptr_ != proc_.execImage))
+            continue;
         auto obj = mapped.object(proc.context);
         if (!obj)
             continue;
@@ -1042,8 +1053,10 @@ Target::Target(Procman::Process &proc_)
         } else {
             // See if we can find the Py_Version symbol as a fallback, for python
             // versions before the introduction of the remote debugger protocol
-            auto [obj, loadaddr, sym] = proc_.resolveSymbolDetail("Py_Version", false);
-            version = { proc_.io->readObj<unsigned long>(loadaddr + sym.st_value), obj->getMachineName() };
+            auto [sym, off] = pyObj->findDynamicSymbol("Py_Version");
+            if (sym.st_shndx == SHN_UNDEF)
+               continue;
+            version = { proc_.io->readObj<unsigned long>(addr + sym.st_value), obj->getMachineName() };
         }
         pyRuntime.remote = reinterpret_cast<_PyRuntimeState *>(secaddr);
         pyRuntimeReader = proc.io->view("_PyRuntime", secaddr);

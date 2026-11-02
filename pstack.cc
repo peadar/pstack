@@ -323,6 +323,13 @@ emain(int argc, char **argv, Context &context)
             "heuristically characterised as a 'go' process",
             Flags::setf(context.options.forceGo))
 
+    .add("force-python",
+            'P',
+            "attempt to find python interpreter, even if the process is not "
+            "heuristically characterised as a 'python' process",
+            Flags::setf(context.options.forcePython))
+
+
 #if defined(HAVE_PYTHON39) ||defined(WITH_PYRDB)
     .add("python-modules",
             'm',

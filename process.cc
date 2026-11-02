@@ -859,7 +859,7 @@ Process::loadSharedObjects(Elf::Addr rdebugAddr)
                         << std::hex << execBase << ") does not match link map (" << map.l_addr
                         << "). Trusting link-map\n" << std::dec;
                 }
-                addElfObject("(exe)", execImage, map.l_addr);
+                addElfObject(execImage->io->filename(), execImage, map.l_addr);
             }
             continue;
         }

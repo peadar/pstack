@@ -25,6 +25,7 @@ struct Options {
     bool noBuildIds = false;
     bool noLocalFiles = false;
     bool forceGo = false;
+    bool forcePython = false;
     unsigned maxdepth = std::numeric_limits<int>::max();
     unsigned maxframes = 30;
     unsigned maxthreads = 1024;
