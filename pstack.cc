@@ -237,7 +237,8 @@ emain(int argc, char **argv, Context &context)
             "ELF file",
             "dump details of an ELF image in JSON and exit",
             [&](const char *arg) {
-                *context.output << json(Elf::Object(context, context.loadFile(arg)));
+                auto obj = std::make_shared<Elf::Object>(context, context.loadFile(arg));
+                *context.output << json(*obj);
                 exitCode = 0; })
 
     .add("dwarf-dump",
