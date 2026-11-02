@@ -217,8 +217,10 @@ class OffsetReader final : public Reader {
     Off length;
     std::string name;
 public:
-    std::string readString(Off absoff, size_t maxlen) const override {
-        return upstream->readString(absoff + offset, maxlen);
+    std::string readString(Off reloff, size_t maxlen) const override {
+        if (reloff >= length)
+           return "";
+        return upstream->readString(reloff + offset, std::min(Off(maxlen), length - reloff));
     }
     size_t read(Off off, size_t count, char *ptr) const override;
     OffsetReader(std::string, Reader::csptr upstream_, Off offset_, Off length_ = std::numeric_limits<Off>::max());
@@ -229,8 +231,11 @@ public:
     std::string filename() const override { return upstream->filename(); }
 
     // Implement "view" on the parent with our offset added.
-    Reader::csptr view( const std::string &name, Off offset_, Off subsize) const override {
-       return upstream->view(name, offset + offset_, subsize);
+    Reader::csptr view( const std::string &name, Off reloff, Off subsize) const override {
+        if (reloff > length) {
+            throw Exception() << "invalid subview";
+        }
+        return upstream->view(name, offset + reloff, std::min(subsize, length - reloff));
     }
 
 };
@@ -320,7 +325,10 @@ typename ReaderArray<T, cachesize>::iterator &ReaderArray<T, cachesize>::iterato
 
 template <typename T, size_t cachesize> const T &ReaderArray<T, cachesize>::getitem(size_t idx) const {
    if (unlikely(cacheStart > idx || idx >= cacheEnd)) {
-      size_t rc = reader.read(idx * sizeof(T) + base, cachesize * sizeof (T), reinterpret_cast<char *>(cache.data()));
+      auto off = idx * sizeof(T) + base;
+      auto sz = std::min(reader.size() - off, Reader::Off(cachesize) * sizeof(T));
+      sz -= sz % sizeof(T);
+      size_t rc = reader.read(off, sz, reinterpret_cast<char *>(cache.data()));
       cacheStart = idx;
       cacheEnd = cacheStart + rc / sizeof(T);
       if (unlikely(rc < sizeof(T))) { // short read - consider this EOF.

@@ -83,8 +83,11 @@ AbstractMemReader::describe(std::ostream &os) const
 
 string
 AbstractMemReader::readString(Off offset, size_t maxlen) const {
+   if (offset > size()) {
+      return "";
+   }
    const char *p = ptroff( data(), offset );
-   size_t actual_len = strnlen(p, maxlen);
+   size_t actual_len = strnlen(p, std::min(Off(maxlen), size() - offset));
    return string(p, actual_len);
 }
 
