@@ -181,10 +181,12 @@ GnuHash::findSymbol(const char *name) const {
         return std::make_pair(0, undef());
     }
     for (;;) {
-        auto sym = syms->readObj<Sym>(idx * sizeof (Sym));
         auto chainhash = hash->readObj<uint32_t>(chainoff(idx - header.symoffset));
-        if ((chainhash | 1U)  == (symhash | 1U) && strings->readString(sym.st_name) == name)
-              return std::make_pair(idx, sym);
+        if ((chainhash | 1U) == (symhash | 1U)) {
+              auto sym = syms->readObj<Sym>(idx * sizeof (Sym));
+              if(strings->readString(sym.st_name) == name)
+                 return std::make_pair(idx, sym);
+        }
         if ((chainhash & 1U) != 0) {
            return std::make_pair(0, undef());
         }
