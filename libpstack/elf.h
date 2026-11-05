@@ -381,7 +381,12 @@ private:
     // Section plumbing for hash and gnu_hash is the same, just with different
     // types and section names, so share the code.
     template <typename HashType> HashType *get_hash(std::unique_ptr<HashType> &ptr) const {
-        if (ptr == nullptr) {
+        // Grab a hash table using the dynamic entry. "debug" objects can have
+        // what look like valid ELF program headers, but they are in fact just
+        // junk, and will point you at invalid data - the section headers are
+        // the source of truth for debug objects.
+        // Split-debug images lack usable hash-table contents.
+        if (ptr == nullptr && !isDebug) {
             auto dt_strtab = dynamic(DT_STRTAB);
             auto dt_strsz = dynamic(DT_STRSZ);
             auto dt_hash  = dynamic(HashType::dynhash());
