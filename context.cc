@@ -431,46 +431,42 @@ findUserXdgDataDir() {
     return "/var/tmp";
 }
 
-std::filesystem::path
-findSysXdgDataDir() {
-    const char *dataDirs = getenv("XDG_DATA_DIRS");
-    if (dataDirs) {
-        std::string dds = dataDirs;
-        auto separator = dds.find(':');
-        auto dir = dds.substr(0, separator);
-        return std::filesystem::path(dir) / "pstack";
-    }
-    std::array<char, PATH_MAX> executable;
-    auto size = readlink("/proc/self/exe", executable.data(), executable.size());
-    if (size > 0 && size < static_cast<ssize_t>(executable.size())) {
-        std::filesystem::path path{std::string_view{executable.data(), size_t(size)}};
-        return path.parent_path().parent_path() / "share" / "pstack";
-    }
-    return "/usr/share/pstack";
+static void
+appendExecutableDataDirs(std::vector<std::filesystem::path> &paths) {
+    std::error_code error;
+    const auto executable = std::filesystem::read_symlink("/proc/self/exe", error);
+    if (error)
+        return;
+    const auto directory = executable.parent_path();
+    paths.emplace_back(directory.parent_path() / "share" / "pstack");
+    paths.emplace_back(directory / "pstack");
+    paths.emplace_back(directory);
 }
 
 std::vector<std::filesystem::path>
 findXdgDataDirs() {
     std::vector<std::filesystem::path> paths;
+    paths.reserve(7);
 
     paths.emplace_back(".");
     paths.emplace_back(findUserXdgDataDir());
 
     const char *dataDirs = getenv("XDG_DATA_DIRS");
-    if (dataDirs && *dataDirs) {
-        std::string_view dirs(dataDirs);
-        while (!dirs.empty()) {
-            auto separator = dirs.find(':');
-            auto dir = dirs.substr(0, separator);
-            if (!dir.empty())
-                paths.emplace_back(std::filesystem::path(dir) / "pstack");
-            if (separator == std::string_view::npos)
-                break;
-            dirs.remove_prefix(separator + 1);
-        }
-    } else {
-        paths.push_back( findSysXdgDataDir() );
+    if (!dataDirs || !*dataDirs)
+        dataDirs = "/usr/local/share:/usr/share";
+
+    std::string_view dirs(dataDirs);
+    while (!dirs.empty()) {
+       auto separator = dirs.find(':');
+       auto dir = dirs.substr(0, separator);
+       if (!dir.empty())
+          paths.emplace_back(std::filesystem::path(dir) / "pstack");
+       if (separator == std::string_view::npos)
+          break;
+       dirs.remove_prefix(separator + 1);
     }
+
+    appendExecutableDataDirs(paths);
     return paths;
 }
 

@@ -109,16 +109,21 @@ DESCRIPTION
 
 CPYTHON OFFSET DATA
      The modern CPython inspector requires an offset-data file named pyoff-<version>-<architecture>.json.  Installed
-     data is searched through the current directory and XDG data locations.  Use pstack-mkpyoff with a target
+     data is searched in the current directory, the user data directory ($XDG_DATA_HOME/pstack or
+     $HOME/.local/share/pstack), and each directory in XDG_DATA_DIRS with /pstack appended.  Unset or empty
+     XDG_DATA_DIRS defaults to /usr/local/share:/usr/share; empty entries in a configured list are skipped.
+     Finally, ../share/pstack, pstack, and the executable directory itself are searched relative to the running
+     executable, including when XDG paths are configured.  This also applies to applications using the pstack
+     libraries.  Use pstack-mkpyoff with a target
      libpython to generate data for a compatible interpreter version that is not already provided.  Use -v to report
      the selected file.
 
 GO GOROUTINE OFFSET DATA
      Parked Go goroutine traces require an offset-data file named gooff-<major>.<minor>-<architecture>.json.  A file
-     generated with one patch release is used for its Go minor series.  Installed data is searched through the current
-     directory and XDG data locations.  Use pstack-mkgooff with a Go executable containing DWARF to generate data for
-     its Go runtime.  When Go is available at build time, the go-offset-probe build target creates a suitable local
-     executable.
+     generated with one patch release is used for its Go minor series.  Data uses the same search order as CPython
+     offset data, including the executable-relative fallbacks.  Use pstack-mkgooff with a Go executable containing
+     DWARF to generate data for its Go runtime.  When Go is available at build time, the go-offset-probe build target
+     creates a suitable local executable.
 
 DEBUG INFORMATION
      Unwinding normally needs .eh_frame or .debug_frame.  Symbols, source locations, and argument values improve when

@@ -126,6 +126,8 @@ The remote inspector needs an offset-data file matching both the target CPython 
 
 Run with `-v` to see which offset-data file was selected. CPython internals change frequently, so support is necessarily version-sensitive.
 
+Python and Go offset files share the same search order: the current directory, the user data directory (`$XDG_DATA_HOME/pstack` or `$HOME/.local/share/pstack`), then each directory in `$XDG_DATA_DIRS` with `/pstack` appended. Unset or empty `XDG_DATA_DIRS` defaults to `/usr/local/share:/usr/share`; empty entries in a configured list are skipped. Finally, pstack searches `../share/pstack`, `pstack`, and `.` relative to the running executable's directory, even when XDG paths are configured. These fallbacks also work for applications using the libraries without changing their environment.
+
 ## Go goroutine offsets
 
 Parked goroutine traces use offsets generated for the Go minor version and architecture that built the target. Go patch releases normally share runtime layouts, so a file generated with one patch release is selected for the whole `major.minor` series. The repository includes data generated with Go 1.26.8 for the Go 1.26 series on x86-64. If a target needs another series, build the local Go runtime probe and generate data with that Go version:

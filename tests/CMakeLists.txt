@@ -24,6 +24,7 @@ add_executable(noreturn noreturn.c noreturn-ext.c)
 add_executable(cpp cpp.cc)
 add_executable(procself procself.cc)
 add_executable(suspend suspend.cc)
+add_executable(data_dirs_test data_dirs_test.cc)
 
 target_link_libraries(thread pthread testhelper)
 target_link_libraries(badfp testhelper)
@@ -35,6 +36,7 @@ target_link_libraries(cpp testhelper)
 target_link_libraries(inline testhelper)
 target_link_libraries(procself dwelf procman)
 target_link_libraries(suspend dwelf procman)
+target_link_libraries(data_dirs_test dwelf)
 SET_TARGET_PROPERTIES(noreturn PROPERTIES COMPILE_FLAGS "-O2 -g")
 
 if (Python3_Development_FOUND)
@@ -69,8 +71,9 @@ add_test(NAME thread COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/t
 add_test(NAME jsondump COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/dump-test.py)
 
 add_test(NAME procself COMMAND $<TARGET_FILE:procself>)
+add_test(NAME data_dirs_test COMMAND data_dirs_test)
 
-set(ALL_TESTS args badfp basic cpp noreturn segv thread jsondump)
+set(ALL_TESTS args badfp basic cpp noreturn segv thread jsondump data_dirs_test)
 
 if (Python3_Development_FOUND)
     add_test(NAME python_path_test COMMAND python_path_test)
