@@ -173,7 +173,24 @@ under Valgrind or a heap checker.
 .Sh CPYTHON OFFSET DATA
 The modern CPython inspector requires an offset-data file named
 .Pa pyoff-<version>-<architecture>.json .
-Installed data is searched through the current directory and XDG data locations.
+Data is searched in the current directory, the user data directory
+.Pq Ev XDG_DATA_HOME Ns Pa /pstack No or Pa $HOME/.local/share/pstack ,
+and each directory in
+.Ev XDG_DATA_DIRS
+with
+.Pa /pstack
+appended.
+Unset or empty
+.Ev XDG_DATA_DIRS
+defaults to
+.Pa /usr/local/share:/usr/share ;
+empty entries in a configured list are skipped.
+Finally,
+.Pa ../share/pstack ,
+.Pa pstack ,
+and the executable directory itself are searched relative to the running
+executable, including when XDG paths are configured.
+This also applies to applications using the pstack libraries.
 Use
 .Nm pstack-mkpyoff
 with a target
@@ -187,8 +204,8 @@ to report the selected file.
 Parked Go goroutine traces require an offset-data file named
 .Pa gooff-<major>.<minor>-<architecture>.json .
 A file generated with one patch release is used for its Go minor series.
-The installed data is searched through the current directory and XDG data
-locations.
+Data uses the same search order as CPython offset data, including the
+executable-relative fallbacks.
 Use
 .Nm pstack-mkgooff
 with a Go executable containing DWARF to generate data for its Go runtime.
